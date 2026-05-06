@@ -1,0 +1,234 @@
+"use client";
+import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { StatusBadge } from "@/components/ui/badge";
+import { Card, CardBody } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import type { PV } from "@/lib/types";
+import { CheckCircle, XCircle, ShieldCheck, Eye, EyeOff } from "lucide-react";
+
+export default function ExcoPage() {
+  const supabase = createClient();
+  const [pvs, setPvs] = useState<Partial<PV>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Partial<PV> | null>(null);
+  const [remarks, setRemarks] = useState("");
+  const [pin, setPin] = useState("");
+  const [acting, setActing] = useState(false);
+  const [toast, setToast] = useState({ msg: "", ok: true });
+  const [hasPin, setHasPin] = useState(false);
+  const [showPinSetup, setShowPinSetup] = useState(false);
+
+  function showMsg(msg: string, ok = true) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast({ msg: "", ok: true }), 3000);
+  }
+
+  async function load() {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: profile } = await supabase
+      .from("user_roles")
+      .select("ministries,has_pin")
+      .eq("email", user.email)
+      .single();
+
+    setHasPin(profile?.has_pin ?? false);
+    const ministries: string[] = profile?.ministries ?? [];
+    if (!ministries.length) { setLoading(false); return; }
+
+    const { data } = await supabase
+      .from("pvs")
+      .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email")
+      .eq("status", "PENDING_HEAD")
+      .in("ministry", ministries)
+      .order("submitted_at", { ascending: true });
+
+    setPvs(data ?? []);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function act(pvId: string, action: "APPROVED" | "REJECTED") {
+    if (!pin) { showMsg("Enter your PIN to confirm", false); return; }
+    setActing(true);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/ministry-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pvId, action, remarks, pin }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "Action failed");
+      showMsg(`PV ${action === "APPROVED" ? "verified" : "rejected"}`);
+      setSelected(null); setRemarks(""); setPin("");
+      await load();
+    } catch (err: unknown) {
+      showMsg(err instanceof Error ? err.message : "Action failed", false);
+    } finally {
+      setActing(false);
+    }
+  }
+
+  return (
+    <div className="p-5 max-w-3xl mx-auto space-y-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-stone-800">EXCO Queue</h1>
+          <p className="text-sm text-stone-400">PVs from your ministry awaiting EXCO verification</p>
+        </div>
+        <Button size="sm" variant={hasPin ? "ghost" : "primary"} onClick={() => setShowPinSetup(true)}>
+          <ShieldCheck size={13} /> {hasPin ? "Change My PIN" : "Set My PIN"}
+        </Button>
+      </div>
+
+      {toast.msg && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
+          {toast.msg}
+        </div>
+      )}
+
+      {!hasPin && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          <strong>Set your PIN first</strong> — you need a 6-digit PIN to verify or reject PVs. Click "Set My PIN" above.
+        </div>
+      )}
+
+      {showPinSetup && (
+        <SelfPinModal onClose={() => { setShowPinSetup(false); load(); }} onToast={showMsg} />
+      )}
+
+      {loading ? (
+        <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
+      ) : pvs.length === 0 ? (
+        <Card><CardBody><div className="py-8 text-center text-stone-400 text-sm">No PVs awaiting your verification</div></CardBody></Card>
+      ) : (
+        <div className="space-y-3">
+          {pvs.map((pv) => (
+            <Card key={pv.id} className={selected?.id === pv.id ? "border-[#4a6da7]" : ""}>
+              <div className="px-4 py-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
+                      <StatusBadge status={pv.status!} />
+                    </div>
+                    <div className="text-sm font-semibold text-stone-800">{pv.payee_name}</div>
+                    <div className="text-xs text-stone-500">{pv.ministry} · {pv.purpose}</div>
+                    <div className="text-xs text-stone-400">By {pv.submitted_by_email} · {formatDate(pv.submitted_at!)}</div>
+                  </div>
+                  <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
+                </div>
+
+                {selected?.id === pv.id ? (
+                  <div className="space-y-2 pt-2 border-t border-stone-100">
+                    <textarea
+                      className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
+                      placeholder="Remarks (optional)"
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                    />
+                    <input
+                      className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] tracking-widest"
+                      type="password"
+                      maxLength={6}
+                      placeholder="Enter your 6-digit PIN to confirm"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    />
+                    <div className="flex gap-2">
+                      <Button variant="primary" size="sm" loading={acting} onClick={() => act(pv.id!, "APPROVED")} className="flex-1">
+                        <CheckCircle size={14} /> Verify
+                      </Button>
+                      <Button variant="danger" size="sm" loading={acting} onClick={() => act(pv.id!, "REJECTED")} className="flex-1">
+                        <XCircle size={14} /> Reject
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setRemarks(""); setPin(""); }}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => setSelected(pv)}>Review</Button>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SelfPinModal({ onClose, onToast }: { onClose: () => void; onToast: (m: string, ok?: boolean) => void }) {
+  const supabase = createClient();
+  const [pin, setPin] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (pin.length !== 6 || !/^\d{6}$/.test(pin)) { onToast("PIN must be exactly 6 digits", false); return; }
+    if (pin !== confirm) { onToast("PINs do not match", false); return; }
+    setSaving(true);
+    const session = (await supabase.auth.getSession()).data.session;
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/set-pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ pin }),
+    });
+    const result = await res.json();
+    setSaving(false);
+    if (!res.ok) { onToast("Error: " + result.error, false); return; }
+    onToast("PIN saved successfully");
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+        <div>
+          <h2 className="text-base font-bold text-stone-800">Set Your Approval PIN</h2>
+          <p className="text-xs text-stone-400 mt-0.5">Used to confirm PV verifications. Keep it private.</p>
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 mb-1 block">6-digit PIN</label>
+          <div className="relative">
+            <input
+              className="border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full pr-10 tracking-widest text-lg"
+              type={show ? "text" : "password"}
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="••••••"
+            />
+            <button type="button" onClick={() => setShow(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400">
+              {show ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 mb-1 block">Confirm PIN</label>
+          <input
+            className="border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full tracking-widest text-lg"
+            type="password"
+            maxLength={6}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="••••••"
+          />
+        </div>
+        <p className="text-xs text-stone-400 bg-stone-50 rounded-lg p-2">
+          <strong>Forgot your PIN?</strong> Since you already log in with Google, your identity is verified — just set a new PIN here anytime.
+        </p>
+        <div className="flex gap-2 pt-1">
+          <Button className="flex-1" loading={saving} onClick={save}>Save PIN</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
