@@ -68,6 +68,8 @@ Deno.serve(async (req) => {
       loa_label:             loa.required === 1 ? "Treasurer only (D7 ≤RM30k)" : "Any 2 officers (D7 >RM30k)",
       exco_resolution_ref:   "",
       exco_resolution_date:  "",
+      pv_label:              d.pv_label || "",
+      recurring_id:          d.recurring_id || null,
     };
 
     const { error: insertErr } = await db.from("pvs").insert(pvRow);

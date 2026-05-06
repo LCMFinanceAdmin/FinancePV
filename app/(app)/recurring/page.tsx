@@ -3,10 +3,11 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { StatusBadge } from "@/components/ui/badge";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
-  ChevronDown, ChevronUp, CheckCircle2,
+  ChevronDown, ChevronUp, CheckCircle2, History,
 } from "lucide-react";
 
 const FREQ_LABELS: Record<string, string> = {
@@ -67,6 +68,7 @@ export default function RecurringPage() {
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [ministries, setMinistries] = useState<string[]>([]);
   const [projects, setProjects] = useState<{ name: string; ministry: string }[]>([]);
+  const [historyId, setHistoryId] = useState<string | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -450,10 +452,15 @@ export default function RecurringPage() {
                         {item.active ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}
                       </Button>
                     )}
+                    <Button size="sm" variant="ghost" onClick={() => setHistoryId(h => h === item.id ? null : item.id)}>
+                      <History size={12} />
+                      {historyId === item.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={() => deleteItem(item.id)}>
                       <Trash2 size={12} className="text-red-400" />
                     </Button>
                   </div>
+                  {historyId === item.id && <HistoryPanel recurringId={item.id} />}
                 </CardBody>
               </Card>
             );
@@ -584,6 +591,54 @@ function RunNowModal({ item, ministries, projects, onClose, onDone, onError, cal
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function HistoryPanel({ recurringId }: { recurringId: string }) {
+  const supabase = createClient();
+  const [pvs, setPvs] = useState<{ id: string; pv_no: string; status: string; amount: number; submitted_at: string; purpose: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase
+      .from("pvs")
+      .select("id,pv_no,status,amount,submitted_at,purpose")
+      .eq("recurring_id", recurringId)
+      .order("submitted_at", { ascending: false })
+      .limit(20)
+      .then(({ data }) => { setPvs(data ?? []); setLoading(false); });
+  }, [recurringId]);
+
+  return (
+    <div className="pt-2 border-t border-stone-100">
+      <div className="text-xs font-semibold text-stone-500 mb-2 flex items-center gap-1.5">
+        <History size={11} /> Run History
+      </div>
+      {loading ? (
+        <p className="text-xs text-stone-400">Loading…</p>
+      ) : pvs.length === 0 ? (
+        <p className="text-xs text-stone-400">No PVs generated yet from this template</p>
+      ) : (
+        <div className="space-y-1.5">
+          {pvs.map(pv => (
+            <a
+              key={pv.id}
+              href={`/my-pvs/${pv.id}`}
+              className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-stone-50 transition-colors"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-stone-600">{pv.pv_no}</span>
+                  <StatusBadge status={pv.status as import("@/lib/types").PVStatus} />
+                </div>
+                <div className="text-xs text-stone-400 mt-0.5">{formatDateTime(pv.submitted_at)}</div>
+              </div>
+              <span className="text-xs font-semibold text-stone-700 whitespace-nowrap">{formatCurrency(pv.amount)}</span>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
