@@ -11,10 +11,11 @@ import {
 } from "lucide-react";
 
 const FREQ_LABELS: Record<string, string> = {
-  WEEKLY: "Weekly", MONTHLY: "Monthly", QUARTERLY: "Quarterly", ANNUAL: "Annual",
+  WEEKLY: "Weekly", MONTHLY: "Monthly", QUARTERLY: "Quarterly",
+  ANNUAL: "Annual", HALF_YEARLY: "Half-Yearly",
 };
-const FREQ_OPTIONS = ["WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL"];
-const PAYMENT_METHODS = ["Online Transfer", "Cheque", "Cash", "Auto Debit", "Other"];
+const FREQ_OPTIONS = ["WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL", "HALF_YEARLY"];
+const PAYMENT_METHODS = ["Online Transfer", "Bank transfer", "JomPAY", "Cheque", "Cash", "Auto Debit", "Other"];
 
 interface LineItem { description: string; amount: number; }
 
@@ -69,6 +70,9 @@ export default function RecurringPage() {
   const [ministries, setMinistries] = useState<string[]>([]);
   const [projects, setProjects] = useState<{ name: string; ministry: string }[]>([]);
   const [historyId, setHistoryId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number; errors: string[] } | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -185,11 +189,90 @@ export default function RecurringPage() {
 
   function calcNextDue(freq: string, from?: Date) {
     const d = from ? new Date(from) : new Date();
-    if (freq === "WEEKLY")    d.setDate(d.getDate() + 7);
-    if (freq === "MONTHLY")   d.setMonth(d.getMonth() + 1);
-    if (freq === "QUARTERLY") d.setMonth(d.getMonth() + 3);
-    if (freq === "ANNUAL")    d.setFullYear(d.getFullYear() + 1);
+    if (freq === "WEEKLY")      d.setDate(d.getDate() + 7);
+    if (freq === "MONTHLY")     d.setMonth(d.getMonth() + 1);
+    if (freq === "QUARTERLY")   d.setMonth(d.getMonth() + 3);
+    if (freq === "HALF_YEARLY") d.setMonth(d.getMonth() + 6);
+    if (freq === "ANNUAL")      d.setFullYear(d.getFullYear() + 1);
     return d.toISOString().slice(0, 10);
+  }
+
+  function toggleSelect(id: string) {
+    setSelected(s => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllOverdue() {
+    setSelected(new Set(overdue.map(i => i.id)));
+  }
+
+  async function runBatch() {
+    const toRun = items.filter(i => selected.has(i.id));
+    if (!toRun.length) return;
+    setBatchRunning(true);
+    setBatchProgress({ done: 0, total: toRun.length, errors: [] });
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const session = (await supabase.auth.getSession()).data.session;
+    const today = new Date().toISOString().slice(0, 10);
+    const errors: string[] = [];
+
+    for (const item of toRun) {
+      try {
+        const nextDue = calcNextDue(item.frequency);
+        const isFinal = item.term_type === "FIXED" && item.term_end_date
+          && new Date(nextDue) > new Date(item.term_end_date);
+        let purpose = item.purpose;
+        if (isFinal) {
+          const note = item.final_payment_note || "FINAL PAYMENT — This is the last payment as per the agreed term.";
+          purpose = purpose ? `${purpose}\n\n${note}` : note;
+        }
+        const lineItems = item.line_items?.length
+          ? item.line_items.map(li => ({ date: today, description: li.description, amount: li.amount }))
+          : [{ date: today, description: item.name, amount: item.amount }];
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            applicant_email: user?.email, applicant_name: user?.email,
+            payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
+            payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
+            ministry: item.ministry, dept: item.dept, project: item.project,
+            purpose, pv_label: item.pv_label,
+            amount: item.amount, payment_type: item.payment_type,
+            line_items: lineItems, pvDate: today,
+            sig_applicant_name: user?.email, sig_applicant_confirm: true,
+            recurring_id: item.id,
+          }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error ?? "Failed");
+
+        await supabase.from("recurring_pvs").update({
+          last_run: today, next_due: nextDue,
+          current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD",
+        }).eq("id", item.id);
+
+        setItems(is => is.map(i => i.id === item.id
+          ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD" }
+          : i
+        ));
+      } catch (e) {
+        errors.push(`${item.name}: ${(e as Error).message}`);
+      }
+      setBatchProgress(p => p ? { ...p, done: p.done + 1, errors } : null);
+    }
+
+    setBatchRunning(false);
+    setSelected(new Set());
+    if (errors.length === 0) {
+      showMsg(`${toRun.length} PV${toRun.length > 1 ? "s" : ""} created successfully`);
+      setBatchProgress(null);
+    }
   }
 
   const overdue = items.filter(i => i.active && i.next_due && new Date(i.next_due) < new Date());
@@ -214,9 +297,53 @@ export default function RecurringPage() {
       )}
 
       {overdue.length > 0 && (
-        <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-          <RefreshCw size={15} className="shrink-0 mt-0.5" />
-          <span><strong>{overdue.length} recurring payment{overdue.length > 1 ? "s" : ""} overdue</strong> — click "Run Now" to generate the PV</span>
+        <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          <RefreshCw size={15} className="shrink-0" />
+          <span className="flex-1"><strong>{overdue.length} payment{overdue.length > 1 ? "s" : ""} overdue</strong></span>
+          <button onClick={selectAllOverdue} className="text-xs font-medium text-amber-700 hover:text-amber-900 underline whitespace-nowrap">
+            Select all overdue
+          </button>
+        </div>
+      )}
+
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-[#4a6da7] rounded-xl text-white">
+          <span className="flex-1 text-sm font-medium">{selected.size} template{selected.size > 1 ? "s" : ""} selected</span>
+          <button onClick={() => setSelected(new Set())} className="text-xs text-blue-200 hover:text-white">
+            Clear
+          </button>
+          <Button size="sm" onClick={runBatch} loading={batchRunning}
+            className="bg-white text-[#4a6da7] hover:bg-blue-50 border-0">
+            <Play size={12} /> Run Selected ({selected.size})
+          </Button>
+        </div>
+      )}
+
+      {batchProgress && (batchRunning || batchProgress.errors.length > 0) && (
+        <div className="p-3 bg-white border border-stone-200 rounded-xl space-y-2">
+          {batchRunning && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-stone-500">
+                <span>Generating PVs…</span>
+                <span>{batchProgress.done} / {batchProgress.total}</span>
+              </div>
+              <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#4a6da7] rounded-full transition-all"
+                  style={{ width: `${(batchProgress.done / batchProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {batchProgress.errors.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-red-600">{batchProgress.errors.length} error{batchProgress.errors.length > 1 ? "s" : ""}:</p>
+              {batchProgress.errors.map((e, i) => (
+                <p key={i} className="text-xs text-red-500">{e}</p>
+              ))}
+              <button onClick={() => setBatchProgress(null)} className="text-xs text-stone-400 hover:text-stone-600">Dismiss</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -387,7 +514,10 @@ export default function RecurringPage() {
             const isExpired = isFixed && item.term_end_date && item.next_due
               && new Date(item.next_due) > new Date(item.term_end_date);
             return (
-              <Card key={item.id} className={isOverdue ? "border-amber-300" : isExpired ? "border-stone-300 opacity-70" : ""}>
+              <Card key={item.id} className={
+                selected.has(item.id) ? "border-[#4a6da7] ring-1 ring-[#4a6da7]/30"
+                : isOverdue ? "border-amber-300" : isExpired ? "border-stone-300 opacity-70" : ""
+              }>
                 <CardBody className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -438,7 +568,16 @@ export default function RecurringPage() {
                     <div className="text-sm font-bold text-stone-700 shrink-0">{formatCurrency(item.amount)}</div>
                   </div>
 
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex gap-2 flex-wrap items-center">
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none mr-1">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(item.id)}
+                        onChange={() => toggleSelect(item.id)}
+                        disabled={isExpired || batchRunning}
+                        className="w-3.5 h-3.5 rounded accent-[#4a6da7]"
+                      />
+                    </label>
                     {!isExpired && (
                       <Button size="sm" variant="primary" onClick={() => setRunModal(item)}>
                         <Play size={12} /> Run Now
