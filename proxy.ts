@@ -1,13 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/login") || pathname.startsWith("/auth")) {
     return NextResponse.next();
   }
 
-  // Quick cookie presence check — avoids importing @supabase/ssr on Edge Runtime.
+  // Cookie presence check — avoids Node.js-only APIs on Edge Runtime.
   // Full session validation happens inside each server component via createClient().
   const hasSession = request.cookies.getAll().some(
     (c) => c.name.startsWith("sb-") && c.name.includes("-auth-token")
