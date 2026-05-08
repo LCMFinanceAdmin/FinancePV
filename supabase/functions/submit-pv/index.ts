@@ -62,7 +62,6 @@ Deno.serve(async (req) => {
       approvals:             [],
       signed_pdf_url:        "",
       ministry_verified:     "NO",
-      pv_label:              "",
       payment_type:          ["GENERAL", "ASSET_PURCHASE"].includes((d.payment_type || "").toUpperCase()) ? d.payment_type.toUpperCase() : "GENERAL",
       loa_required:          loa.required,
       loa_label:             loa.required === 1 ? "Treasurer only (D7 ≤RM30k)" : "Any 2 officers (D7 >RM30k)",

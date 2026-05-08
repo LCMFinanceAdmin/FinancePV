@@ -62,7 +62,7 @@ export default function RecurringPage() {
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number; errors: string[] } | null>(null);
   const [search, setSearch] = useState("");
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
@@ -110,8 +110,17 @@ export default function RecurringPage() {
   const overdue = items.filter(i => i.active && i.next_due && new Date(i.next_due) < new Date());
 
   // --- Group management ---
-  function toggleCollapse(g: string) {
-    setCollapsedGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
+  function toggleExpand(g: string) {
+    setExpandedGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
+  }
+
+  function runFolder(groupName: string) {
+    const groupItems = groups[groupName] ?? [];
+    const eligible = groupItems.filter(i => !isExpiredItem(i));
+    // Expand the folder so user can see / deselect
+    setExpandedGroups(s => { const n = new Set(s); n.add(groupName); return n; });
+    // Select all eligible items in this folder
+    setSelected(s => { const n = new Set(s); eligible.forEach(i => n.add(i.id)); return n; });
   }
 
   async function saveGroupRename() {
@@ -488,7 +497,7 @@ export default function RecurringPage() {
         <div className="space-y-6">
           {groupNames.map(groupName => {
             const groupItems = groups[groupName];
-            const collapsed = collapsedGroups.has(groupName);
+            const collapsed = !expandedGroups.has(groupName);
             const isRenaming = renamingGroup === groupName;
             const eligible = groupItems.filter(i => !isExpiredItem(i));
             const allGroupSel = eligible.length > 0 && eligible.every(i => selected.has(i.id));
@@ -499,7 +508,7 @@ export default function RecurringPage() {
               <div key={groupName}>
                 {/* Group header */}
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b-2 border-stone-100">
-                  <button onClick={() => toggleCollapse(groupName)} className="text-stone-400 hover:text-stone-600">
+                  <button onClick={() => toggleExpand(groupName)} className="text-stone-400 hover:text-stone-600">
                     {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                   </button>
                   {collapsed
@@ -527,7 +536,7 @@ export default function RecurringPage() {
                   )}
                   <span className="text-xs text-stone-400 font-normal">({groupItems.length})</span>
 
-                  <div className="ml-auto flex items-center gap-4">
+                  <div className="ml-auto flex items-center gap-3">
                     <span className="text-xs text-stone-400 font-medium hidden sm:block">
                       {formatCurrency(groupTotal)}/cycle
                     </span>
@@ -536,6 +545,14 @@ export default function RecurringPage() {
                         <GroupCheckbox groupItems={eligible} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
                         Select all
                       </label>
+                    )}
+                    {eligible.length > 0 && (
+                      <button
+                        onClick={() => runFolder(groupName)}
+                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5d8f] transition-colors whitespace-nowrap"
+                      >
+                        <Play size={10} /> Generate Bulk PV
+                      </button>
                     )}
                   </div>
                 </div>
