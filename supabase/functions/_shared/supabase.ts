@@ -34,10 +34,16 @@ export function isSignatoryApprovalFinal(approvals: { role: string; action: stri
 
 export async function nextPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
-  const { count } = await db
+  const prefix = `LCM-${year}-`;
+  const { data } = await db
     .from("pvs")
-    .select("id", { count: "exact", head: true })
-    .gte("submitted_at", `${year}-01-01`);
-  const seq = String((count ?? 0) + 1).padStart(3, "0");
-  return `LCM-${year}-${seq}`;
+    .select("pv_no")
+    .like("pv_no", `${prefix}%`)
+    .order("pv_no", { ascending: false })
+    .limit(1);
+  const lastSeq = data?.[0]?.pv_no
+    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
+    : 0;
+  const seq = String(lastSeq + 1).padStart(3, "0");
+  return `${prefix}${seq}`;
 }
