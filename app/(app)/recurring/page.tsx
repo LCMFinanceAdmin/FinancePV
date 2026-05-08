@@ -46,6 +46,32 @@ function isExpiredItem(item: RecurringPV) {
     && new Date(item.next_due) > new Date(item.term_end_date);
 }
 
+function isAlreadyRunThisPeriod(item: RecurringPV): boolean {
+  if (!item.last_run) return false;
+  const lastRun = new Date(item.last_run);
+  const now = new Date();
+  switch (item.frequency) {
+    case "WEEKLY": {
+      const diffDays = (now.getTime() - lastRun.getTime()) / 86400000;
+      return diffDays < 7;
+    }
+    case "MONTHLY":
+      return lastRun.getMonth() === now.getMonth() && lastRun.getFullYear() === now.getFullYear();
+    case "QUARTERLY": {
+      const months = (now.getFullYear() - lastRun.getFullYear()) * 12 + (now.getMonth() - lastRun.getMonth());
+      return months < 3;
+    }
+    case "HALF_YEARLY": {
+      const months = (now.getFullYear() - lastRun.getFullYear()) * 12 + (now.getMonth() - lastRun.getMonth());
+      return months < 6;
+    }
+    case "ANNUAL":
+      return lastRun.getFullYear() === now.getFullYear();
+    default:
+      return false;
+  }
+}
+
 export default function RecurringPage() {
   const supabase = createClient();
   const [items, setItems] = useState<RecurringPV[]>([]);
@@ -107,7 +133,7 @@ export default function RecurringPage() {
   });
   const groupNames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
 
-  const overdue = items.filter(i => i.active && i.next_due && new Date(i.next_due) < new Date());
+  const overdue = items.filter(i => i.active && i.next_due && new Date(i.next_due) < new Date() && !isAlreadyRunThisPeriod(i));
 
   // --- Group management ---
   function toggleExpand(g: string) {
@@ -116,7 +142,8 @@ export default function RecurringPage() {
 
   function runFolder(groupName: string) {
     const groupItems = groups[groupName] ?? [];
-    const eligible = groupItems.filter(i => !isExpiredItem(i));
+    // Only select items not expired and not already run this period
+    const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
     // Expand the folder so user can see / deselect
     setExpandedGroups(s => { const n = new Set(s); n.add(groupName); return n; });
     // Select all eligible items in this folder
@@ -133,7 +160,7 @@ export default function RecurringPage() {
   }
 
   function toggleSelectGroup(groupItems: RecurringPV[]) {
-    const eligible = groupItems.filter(i => !isExpiredItem(i));
+    const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
     const allSel = eligible.every(i => selected.has(i.id));
     setSelected(s => {
       const n = new Set(s);
@@ -226,14 +253,21 @@ export default function RecurringPage() {
 
   // --- Batch run ---
   async function runBatch() {
-    const toRun = items.filter(i => selected.has(i.id));
-    if (!toRun.length) return;
+    const allSelected = items.filter(i => selected.has(i.id));
+    const skipped = allSelected.filter(i => isAlreadyRunThisPeriod(i));
+    const toRun = allSelected.filter(i => !isAlreadyRunThisPeriod(i));
+    if (!toRun.length) {
+      showMsg(skipped.length > 0
+        ? `All ${skipped.length} selected item${skipped.length > 1 ? "s" : ""} already have a PV this cycle`
+        : "Nothing to run", false);
+      return;
+    }
     setBatchRunning(true);
-    setBatchProgress({ done: 0, total: toRun.length, errors: [] });
+    setBatchProgress({ done: 0, total: toRun.length, errors: skipped.map(i => `${i.name}: already ran this cycle (${i.current_pv_no})`) });
     const { data: { user } } = await supabase.auth.getUser();
     const session = (await supabase.auth.getSession()).data.session;
     const today = new Date().toISOString().slice(0, 10);
-    const errors: string[] = [];
+    const errors: string[] = skipped.map(i => `${i.name}: already ran this cycle (${i.current_pv_no})`);
     for (const item of toRun) {
       try {
         const nextDue = calcNextDue(item.frequency);
@@ -264,7 +298,9 @@ export default function RecurringPage() {
       setBatchProgress(p => p ? { ...p, done: p.done + 1, errors } : null);
     }
     setBatchRunning(false); setSelected(new Set());
-    if (errors.length === 0) { showMsg(`${toRun.length} PV${toRun.length > 1 ? "s" : ""} created`); setBatchProgress(null); }
+    const realErrors = errors.filter(e => !e.includes("already ran this cycle"));
+    if (realErrors.length === 0 && skipped.length === 0) { showMsg(`${toRun.length} PV${toRun.length > 1 ? "s" : ""} created`); setBatchProgress(null); }
+    else if (realErrors.length === 0 && skipped.length > 0) { showMsg(`${toRun.length} PV${toRun.length > 1 ? "s" : ""} created · ${skipped.length} skipped (already this cycle)`); setBatchProgress(null); }
   }
 
   const existingGroups = [...new Set(items.map(i => i.group_name || "General"))].sort();
@@ -499,7 +535,7 @@ export default function RecurringPage() {
             const groupItems = groups[groupName];
             const collapsed = !expandedGroups.has(groupName);
             const isRenaming = renamingGroup === groupName;
-            const eligible = groupItems.filter(i => !isExpiredItem(i));
+            const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
             const allGroupSel = eligible.length > 0 && eligible.every(i => selected.has(i.id));
             const someGroupSel = eligible.some(i => selected.has(i.id));
             const groupTotal = groupItems.reduce((s, i) => s + i.amount, 0);
@@ -604,10 +640,12 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
 }) {
   const isExpired = !!(item.term_type === "FIXED" && item.term_end_date && item.next_due && new Date(item.next_due) > new Date(item.term_end_date));
   const isOverdue = !isExpired && item.active && !!item.next_due && new Date(item.next_due) < new Date();
+  const alreadyRan = isAlreadyRunThisPeriod(item);
 
   return (
     <div className={`flex flex-col rounded-2xl border bg-white transition-all ${
       isSelected ? "border-[#4a6da7] ring-2 ring-[#4a6da7]/20 shadow-sm"
+      : alreadyRan ? "border-green-200 bg-green-50/30"
       : isOverdue ? "border-amber-200 shadow-sm"
       : isExpired ? "border-stone-200 opacity-60"
       : "border-stone-200 hover:shadow-sm hover:border-stone-300"
@@ -617,13 +655,14 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
         <div className="flex items-center gap-2 flex-wrap">
           <input
             type="checkbox" checked={isSelected} onChange={onToggleSelect}
-            disabled={isExpired || batchRunning}
+            disabled={isExpired || alreadyRan || batchRunning}
             className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer shrink-0"
           />
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">
             {FREQ_LABELS[item.frequency] ?? item.frequency}
           </span>
-          {isOverdue && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Overdue</span>}
+          {alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">✓ This cycle</span>}
+          {isOverdue && !alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Overdue</span>}
           {!item.active && !isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Paused</span>}
           {isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Expired</span>}
           {item.term_type === "FIXED" && !isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 font-medium">Fixed</span>}
@@ -663,10 +702,17 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
       {/* Action row */}
       <div className="border-t border-stone-100 px-3 py-2 flex items-center gap-1">
         {!isExpired && (
-          <button onClick={onRun}
-            className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] rounded-lg py-1.5 transition-colors">
-            <Play size={10} /> Run
-          </button>
+          alreadyRan ? (
+            <button onClick={onHistory}
+              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
+              <CheckCircle2 size={10} /> View PV
+            </button>
+          ) : (
+            <button onClick={onRun}
+              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] rounded-lg py-1.5 transition-colors">
+              <Play size={10} /> Run
+            </button>
+          )
         )}
         <button onClick={onEdit} title="Edit" className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
           <Pencil size={13} />
