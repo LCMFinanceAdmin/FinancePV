@@ -85,6 +85,8 @@ export interface PV {
   dept_head_name: string;
   dept_head_email: string;
   updated_at: string | null;
+  tracking_token: string | null;
+  signed_pdf_url: string | null;
 }
 
 export interface PVLineItem {
