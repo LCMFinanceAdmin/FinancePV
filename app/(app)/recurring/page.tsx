@@ -27,6 +27,7 @@ interface RecurringPV {
   purpose: string; pv_label: string; payment_type: string;
   line_items: LineItem[]; term_type: string; term_end_date: string | null;
   final_payment_note: string; current_pv_no: string; current_pv_status: string;
+  current_pv_id: string | null;
   created_by: string; created_at: string; group_name: string;
 }
 
@@ -292,8 +293,11 @@ export default function RecurringPage() {
         });
         const result = await res.json();
         if (!res.ok) throw new Error(result.error ?? "Failed");
-        await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD" }).eq("id", item.id);
-        setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD" } : i));
+        // Fetch the new PV's id so we can link directly to it
+        const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
+        const newPvId = pvRow?.id ?? null;
+        await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId }).eq("id", item.id);
+        setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId } : i));
       } catch (e) { errors.push(`${item.name}: ${(e as Error).message}`); }
       setBatchProgress(p => p ? { ...p, done: p.done + 1, errors } : null);
     }
@@ -511,9 +515,9 @@ export default function RecurringPage() {
         <RunNowModal
           item={runModal} ministries={ministries} projects={projects}
           onClose={() => setRunModal(null)}
-          onDone={(pvNo, nextDue) => {
+          onDone={(pvNo, nextDue, pvId) => {
             setItems(is => is.map(i => i.id === runModal.id
-              ? { ...i, last_run: new Date().toISOString().slice(0, 10), next_due: nextDue, current_pv_no: pvNo, current_pv_status: "PENDING_HEAD" }
+              ? { ...i, last_run: new Date().toISOString().slice(0, 10), next_due: nextDue, current_pv_no: pvNo, current_pv_status: "PENDING_HEAD", current_pv_id: pvId ?? null }
               : i));
             setRunModal(null); showMsg(`PV ${pvNo} created`);
           }}
@@ -703,10 +707,17 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
       <div className="border-t border-stone-100 px-3 py-2 flex items-center gap-1">
         {!isExpired && (
           alreadyRan ? (
-            <button onClick={onHistory}
-              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
-              <CheckCircle2 size={10} /> View PV
-            </button>
+            item.current_pv_id ? (
+              <a href={`/my-pvs/${item.current_pv_id}`}
+                className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
+                <CheckCircle2 size={10} /> View PV
+              </a>
+            ) : (
+              <button onClick={onHistory}
+                className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
+                <CheckCircle2 size={10} /> View PV
+              </button>
+            )
           ) : (
             <button onClick={onRun}
               className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] rounded-lg py-1.5 transition-colors">
@@ -742,7 +753,7 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
 // --- Run Now Modal ---
 function RunNowModal({ item, ministries, projects, onClose, onDone, onError, calcNextDue }: {
   item: RecurringPV; ministries: string[]; projects: { name: string; ministry: string }[];
-  onClose: () => void; onDone: (pvNo: string, nextDue: string) => void;
+  onClose: () => void; onDone: (pvNo: string, nextDue: string, pvId?: string) => void;
   onError: (msg: string) => void; calcNextDue: (freq: string) => string;
 }) {
   const supabase = createClient();
@@ -778,8 +789,11 @@ function RunNowModal({ item, ministries, projects, onClose, onDone, onError, cal
     });
     const result = await res.json();
     if (!res.ok) { setRunning(false); onError("Error: " + (result.error ?? "Failed")); return; }
-    await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD" }).eq("id", item.id);
-    onDone(result.pv_no, nextDue);
+    // Fetch the new PV's id for direct navigation
+    const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
+    const newPvId = pvRow?.id;
+    await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId ?? null }).eq("id", item.id);
+    onDone(result.pv_no, nextDue, newPvId);
   }
 
   return (
