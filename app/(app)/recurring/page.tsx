@@ -80,7 +80,6 @@ export default function RecurringPage() {
   const [form, setForm] = useState<FormState>({ ...BLANK_FORM });
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [runModal, setRunModal] = useState<RecurringPV | null>(null);
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [ministries, setMinistries] = useState<string[]>([]);
   const [projects, setProjects] = useState<{ name: string; ministry: string }[]>([]);
@@ -93,6 +92,7 @@ export default function RecurringPage() {
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [groupBulkRuns, setGroupBulkRuns] = useState<Record<string, string>>({}); // group_name → bulk_run_id
+  const [confirmModal, setConfirmModal] = useState<{ msg: string; onOk: () => void; danger?: boolean } | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -156,11 +156,15 @@ export default function RecurringPage() {
     setExpandedGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
   }
 
-  async function resetItem(id: string) {
-    if (!confirm("Reset this recurring PV? It will be treated as not yet run this cycle.")) return;
-    await supabase.from("recurring_pvs").update({ last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null }).eq("id", id);
-    setItems(is => is.map(i => i.id === id ? { ...i, last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null } : i));
-    showMsg("Reset — can be run again");
+  function resetItem(id: string) {
+    setConfirmModal({
+      msg: "Reset this recurring PV? It will be treated as not yet run this cycle.",
+      onOk: async () => {
+        await supabase.from("recurring_pvs").update({ last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null }).eq("id", id);
+        setItems(is => is.map(i => i.id === id ? { ...i, last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null } : i));
+        showMsg("Reset — can be run again");
+      },
+    });
   }
 
   async function createGroupBulkPV(groupName: string) {
@@ -238,13 +242,18 @@ export default function RecurringPage() {
     }
   }
 
-  async function deleteBulkRun(groupName: string) {
+  function deleteBulkRun(groupName: string) {
     const runId = groupBulkRuns[groupName];
     if (!runId) return;
-    if (!confirm(`Remove the Bulk PV record for "${groupName}"? The individual PVs are not deleted.`)) return;
-    await supabase.from("bulk_pv_runs").delete().eq("id", runId);
-    setGroupBulkRuns(r => { const n = { ...r }; delete n[groupName]; return n; });
-    showMsg(`Bulk PV for ${groupName} removed`);
+    setConfirmModal({
+      msg: `Remove the Bulk PV record for "${groupName}"? The individual PVs are not deleted.`,
+      danger: true,
+      onOk: async () => {
+        await supabase.from("bulk_pv_runs").delete().eq("id", runId);
+        setGroupBulkRuns(r => { const n = { ...r }; delete n[groupName]; return n; });
+        showMsg(`Bulk PV for ${groupName} removed`);
+      },
+    });
   }
 
   function runFolder(groupName: string) {
@@ -341,11 +350,16 @@ export default function RecurringPage() {
     showMsg(item.active ? "Paused" : "Resumed");
   }
 
-  async function deleteItem(id: string) {
-    if (!confirm("Delete this recurring expense?")) return;
-    await supabase.from("recurring_pvs").delete().eq("id", id);
-    setItems(is => is.filter(i => i.id !== id));
-    showMsg("Deleted");
+  function deleteItem(id: string) {
+    setConfirmModal({
+      msg: "Delete this recurring expense? This cannot be undone.",
+      danger: true,
+      onOk: async () => {
+        await supabase.from("recurring_pvs").delete().eq("id", id);
+        setItems(is => is.filter(i => i.id !== id));
+        showMsg("Deleted");
+      },
+    });
   }
 
   function calcNextDue(freq: string) {
@@ -475,8 +489,28 @@ export default function RecurringPage() {
 
       {/* Toast */}
       {toast.msg && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white flex items-center gap-2 ${toast.ok ? "bg-green-600" : "bg-red-500"}`}>
+          {toast.ok ? <CheckCircle2 size={15} /> : <X size={15} />}
           {toast.msg}
+        </div>
+      )}
+
+      {/* Confirm modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <p className="text-sm text-stone-700 leading-relaxed">{confirmModal.msg}</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 text-sm rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => { const fn = confirmModal.onOk; setConfirmModal(null); fn(); }}
+                className={`px-4 py-2 text-sm rounded-xl font-semibold text-white transition-colors ${confirmModal.danger ? "bg-red-500 hover:bg-red-600" : "bg-[#4a6da7] hover:bg-[#3d5d8f]"}`}>
+                Confirm
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -645,22 +679,6 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Run Now modal */}
-      {runModal && (
-        <RunNowModal
-          item={runModal} ministries={ministries} projects={projects}
-          onClose={() => setRunModal(null)}
-          onDone={(pvNo, nextDue, pvId) => {
-            setItems(is => is.map(i => i.id === runModal.id
-              ? { ...i, last_run: new Date().toISOString().slice(0, 10), next_due: nextDue, current_pv_no: pvNo, current_pv_status: "PENDING_HEAD", current_pv_id: pvId ?? null }
-              : i));
-            setRunModal(null); showMsg(`PV ${pvNo} created`);
-          }}
-          onError={(msg) => { setRunModal(null); showMsg(msg, false); }}
-          calcNextDue={calcNextDue}
-        />
-      )}
-
       {/* Groups */}
       {loading ? (
         <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
@@ -764,7 +782,6 @@ export default function RecurringPage() {
                         onToggleSelect={() => {
                           setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
                         }}
-                        onRun={() => setRunModal(item)}
                         onEdit={() => openEdit(item)}
                         onToggleActive={() => toggleActive(item)}
                         onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
@@ -796,9 +813,9 @@ function GroupCheckbox({ groupItems, selected, onToggle }: { groupItems: Recurri
 }
 
 // --- Recurring Card ---
-function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
+function RecurringCard({ item, isSelected, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
   item: RecurringPV; isSelected: boolean; onToggleSelect: () => void;
-  onRun: () => void; onEdit: () => void; onToggleActive: () => void;
+  onEdit: () => void; onToggleActive: () => void;
   onHistory: () => void; onDelete: () => void; onReset: () => void; showHistory: boolean; batchRunning: boolean;
 }) {
   const supabase = createClient();
@@ -875,18 +892,11 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
 
       {/* Action row */}
       <div className="border-t border-stone-100 px-3 py-2 flex items-center gap-1">
-        {!isExpired && (
-          alreadyRan ? (
-            <button onClick={handleViewPV}
-              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
-              <CheckCircle2 size={10} /> View PV
-            </button>
-          ) : (
-            <button onClick={onRun}
-              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] rounded-lg py-1.5 transition-colors">
-              <Play size={10} /> Run
-            </button>
-          )
+        {!isExpired && alreadyRan && (
+          <button onClick={handleViewPV}
+            className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
+            <CheckCircle2 size={10} /> View PV
+          </button>
         )}
         <button onClick={onEdit} title="Edit" className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
           <Pencil size={13} />
