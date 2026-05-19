@@ -21,6 +21,36 @@ Deno.serve(async (req) => {
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
 
+    // CANCEL is allowed for the PV submitter OR any Finance Admin
+    if (action === "CANCEL") {
+      const isSubmitter = pv.submitted_by_email === user.email;
+      if (!adminRoles.includes(profile?.role) && !isSubmitter) {
+        return json({ error: "Not authorised to cancel this PV" }, 403);
+      }
+      if (pv.status === "PAID") return json({ error: "Cannot cancel a paid PV" }, 400);
+      await db.from("pvs").update({
+        status: "CANCELLED",
+        admin_comment: body.remarks?.trim() || (isSubmitter ? "Withdrawn by submitter" : "Cancelled by Finance Admin"),
+        updated_at: new Date().toISOString(),
+      }).eq("id", pv_id);
+      // Notify submitter if cancelled by admin (not self)
+      if (!isSubmitter) {
+        await db.from("notifications").insert({
+          recipient_email: pv.submitted_by_email,
+          type: "PV_CANCELLED",
+          pv_no: pv.pv_no,
+          pv_id,
+          message: `Your PV ${pv.pv_no} has been cancelled${body.remarks ? ": " + body.remarks : ""}`,
+          read: false,
+          created_at: new Date().toISOString(),
+        });
+      }
+      return json({ ok: true, status: "CANCELLED" });
+    }
+
+    // All other actions require Finance Admin
+    if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Admin only" }, 403);
+
     if (action === "REVIEW") {
       if (pv.status !== "PENDING") return json({ error: "PV is not in PENDING status" }, 400);
       const now = new Date().toISOString();
@@ -103,15 +133,6 @@ Deno.serve(async (req) => {
         created_at: new Date().toISOString(),
       });
       return json({ ok: true, status: "REJECTED" });
-    }
-
-    if (action === "CANCEL") {
-      await db.from("pvs").update({
-        status: "CANCELLED",
-        admin_comment: body.remarks ?? "Cancelled by Finance Admin",
-        updated_at: new Date().toISOString(),
-      }).eq("id", pv_id);
-      return json({ ok: true, status: "CANCELLED" });
     }
 
     return json({ error: "Unknown action" }, 400);

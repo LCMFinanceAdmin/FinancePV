@@ -8,7 +8,7 @@ import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
   AlertTriangle, Banknote, FileText, User, Calendar,
-  ShieldCheck, Send, CreditCard,
+  ShieldCheck, Send, CreditCard, Trash2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -134,6 +134,8 @@ export default function PVDetailPage() {
   const [rejectRemarks, setRejectRemarks] = useState("");
   const [showPayModal, setShowPayModal] = useState(false);
   const [payForm, setPayForm] = useState({ ref: "", date: "", method: "Bank Transfer" });
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelRemarks, setCancelRemarks] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -180,6 +182,7 @@ export default function PVDetailPage() {
       setActionLoading(false);
       setShowRejectModal(false);
       setShowPayModal(false);
+      setShowCancelModal(false);
       setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
     }
   }
@@ -317,6 +320,18 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── Cancel / Withdraw PV ──────────────────────────────────── */}
+      {(user?.isFinanceAdmin || user?.email === pv.submitted_by_email) &&
+        !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD"].includes(pv.status) && (
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
+          <button onClick={() => { setCancelRemarks(""); setShowCancelModal(true); }}
+            className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors">
+            <Trash2 size={13} />
+            {user?.email === pv.submitted_by_email && !user?.isFinanceAdmin ? "Withdraw PV" : "Cancel PV"}
+          </button>
+        </div>
+      )}
+
       {/* ── Reject Modal ───────────────────────────────────────────── */}
       {showRejectModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -382,6 +397,44 @@ export default function PVDetailPage() {
               <button onClick={() => setShowPayModal(false)}
                 className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-lg text-sm font-medium hover:bg-stone-50 transition-colors">
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cancel / Withdraw Modal ───────────────────────────────── */}
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-2 mb-1">
+              <Trash2 size={18} className="text-red-500" />
+              <h2 className="text-lg font-bold text-stone-800">
+                {user?.email === pv.submitted_by_email && !user?.isFinanceAdmin ? "Withdraw PV" : "Cancel PV"}
+              </h2>
+            </div>
+            <p className="text-sm text-stone-500 mb-1">{pv.pv_no} — {pv.payee_name}</p>
+            <p className="text-xs text-stone-400 mb-4">
+              This PV will be marked as <strong>Cancelled</strong> and can no longer be processed. This action cannot be undone.
+            </p>
+            <label className="text-xs font-semibold text-stone-600 block mb-1">Reason (optional)</label>
+            <textarea
+              value={cancelRemarks}
+              onChange={e => setCancelRemarks(e.target.value)}
+              placeholder="e.g. Submitted by mistake, duplicate PV…"
+              className="w-full border border-stone-300 rounded-lg p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none mb-4"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => callAdminAction("CANCEL", { remarks: cancelRemarks })}
+                disabled={actionLoading}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                <Trash2 size={14} />
+                {actionLoading ? "Cancelling…" : "Yes, Cancel this PV"}
+              </button>
+              <button onClick={() => setShowCancelModal(false)}
+                className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-lg text-sm font-medium hover:bg-stone-50 transition-colors">
+                Keep PV
               </button>
             </div>
           </div>
