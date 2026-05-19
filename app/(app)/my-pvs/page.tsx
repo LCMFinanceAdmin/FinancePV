@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { PV } from "@/lib/types";
-import { Search, Layers, FileText } from "lucide-react";
+import { Search, Layers, FileText, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 type FilterStatus = "ALL" | "IN_PROGRESS" | "APPROVED" | "PAID" | "REJECTED";
@@ -31,11 +31,6 @@ interface BulkRun {
   pv_count: number; total_amount: number; ministry: string; pv_ids: string[];
 }
 
-// Unified list item
-type ListItem =
-  | { kind: "pv"; data: Partial<PV> }
-  | { kind: "bulk"; data: BulkRun };
-
 export default function MyPVsPage() {
   const supabase = createClient();
   const [pvs, setPvs] = useState<Partial<PV>[]>([]);
@@ -44,6 +39,9 @@ export default function MyPVsPage() {
   const [filter, setFilter] = useState<FilterStatus>("ALL");
   const [search, setSearch] = useState("");
   const [showBulk, setShowBulk] = useState(false);
+  const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Partial<PV> | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -51,25 +49,46 @@ export default function MyPVsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      let query = supabase
-        .from("pvs")
-        .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type")
-        .eq("submitted_by_email", user.email)
-        .order("submitted_at", { ascending: false });
-
-      if (filter !== "ALL") query = query.in("status", STATUS_MAP[filter]);
-
-      const [{ data: pvData }, { data: bulkData }] = await Promise.all([
-        query,
+      const [pvResult, bulkResult, profileResult] = await Promise.all([
+        (() => {
+          let q = supabase
+            .from("pvs")
+            .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type")
+            .eq("submitted_by_email", user.email)
+            .order("submitted_at", { ascending: false });
+          if (filter !== "ALL") q = q.in("status", STATUS_MAP[filter]);
+          return q;
+        })(),
         supabase.from("bulk_pv_runs").select("*").eq("run_by", user.email).order("run_date", { ascending: false }),
+        supabase.from("user_roles").select("role").eq("email", user.email).single(),
       ]);
 
-      setPvs(pvData ?? []);
-      setBulkRuns(bulkData ?? []);
+      setPvs(pvResult.data ?? []);
+      setBulkRuns(bulkResult.data ?? []);
+      const role = profileResult.data?.role ?? "";
+      setIsFinanceAdmin(["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role));
       setLoading(false);
     }
     load();
   }, [filter]);
+
+  async function handleDelete(pv: Partial<PV>) {
+    setDeleting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pv.id, action: "HARD_DELETE" }),
+      });
+      if (res.ok) {
+        setPvs(list => list.filter(p => p.id !== pv.id));
+        setDeleteTarget(null);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const filteredPvs = pvs.filter(pv => {
     if (!search) return true;
@@ -141,6 +160,39 @@ export default function MyPVsPage() {
         </div>
       )}
 
+      {/* Hard Delete Confirm Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 size={18} className="text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-stone-800">Delete Permanently</p>
+                <p className="text-xs text-red-600 font-medium">This cannot be undone</p>
+              </div>
+            </div>
+            <div className="bg-stone-50 rounded-xl p-3 text-sm">
+              <span className="font-semibold text-stone-700">{deleteTarget.pv_no}</span>
+              <span className="text-stone-500"> — {deleteTarget.payee_name}</span>
+              <div className="text-xs text-stone-400 mt-0.5">{formatCurrency(deleteTarget.amount!)}</div>
+            </div>
+            <p className="text-xs text-stone-500">This PV will be permanently removed with no audit trail.</p>
+            <div className="flex gap-2">
+              <button onClick={() => handleDelete(deleteTarget)} disabled={deleting}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors">
+                {deleting ? "Deleting…" : "Yes, Delete"}
+              </button>
+              <button onClick={() => setDeleteTarget(null)}
+                className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* List */}
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
@@ -153,25 +205,39 @@ export default function MyPVsPage() {
         ) : (
           <div className="space-y-2">
             {filteredPvs.map(pv => (
-              <Link key={pv.id} href={`/my-pvs/${pv.id}`}>
-                <div className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                        <StatusBadge status={pv.status!} />
-                        {pv.payment_type === "ASSET_PURCHASE" && (
-                          <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Asset</span>
+              <div key={pv.id} className="relative group">
+                <Link href={`/my-pvs/${pv.id}`}>
+                  <div className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
+                          <StatusBadge status={pv.status!} />
+                          {pv.payment_type === "ASSET_PURCHASE" && (
+                            <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Asset</span>
+                          )}
+                        </div>
+                        <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
+                        <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>
+                        <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)}</div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
+                        {/* Delete button — Finance Admin only, not on PAID */}
+                        {isFinanceAdmin && pv.status !== "PAID" && (
+                          <button
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(pv); }}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                            title="Delete permanently"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         )}
                       </div>
-                      <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
-                      <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>
-                      <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)}</div>
                     </div>
-                    <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+              </div>
             ))}
           </div>
         )
@@ -184,7 +250,7 @@ export default function MyPVsPage() {
               <p className="text-stone-400 text-sm font-medium">No Bulk PVs yet</p>
               <p className="text-stone-400 text-xs">
                 Go to <strong>Recurring Expenses</strong>, open a folder and click{" "}
-                <strong>Create Bulk PV</strong> or <strong>Generate Bulk PV</strong>
+                <strong>Create Bulk PV</strong>
               </p>
             </div>
           </Card>
