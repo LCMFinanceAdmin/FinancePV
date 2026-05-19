@@ -642,9 +642,20 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
   onRun: () => void; onEdit: () => void; onToggleActive: () => void;
   onHistory: () => void; onDelete: () => void; showHistory: boolean; batchRunning: boolean;
 }) {
+  const supabase = createClient();
   const isExpired = !!(item.term_type === "FIXED" && item.term_end_date && item.next_due && new Date(item.next_due) > new Date(item.term_end_date));
   const isOverdue = !isExpired && item.active && !!item.next_due && new Date(item.next_due) < new Date();
   const alreadyRan = isAlreadyRunThisPeriod(item);
+
+  async function handleViewPV() {
+    if (item.current_pv_id) {
+      window.location.href = `/my-pvs/${item.current_pv_id}`;
+    } else if (item.current_pv_no) {
+      const { data } = await supabase.from("pvs").select("id").eq("pv_no", item.current_pv_no).single();
+      if (data?.id) window.location.href = `/my-pvs/${data.id}`;
+      else onHistory(); // fallback to history panel
+    }
+  }
 
   return (
     <div className={`flex flex-col rounded-2xl border bg-white transition-all ${
@@ -707,17 +718,10 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
       <div className="border-t border-stone-100 px-3 py-2 flex items-center gap-1">
         {!isExpired && (
           alreadyRan ? (
-            item.current_pv_id ? (
-              <a href={`/my-pvs/${item.current_pv_id}`}
-                className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
-                <CheckCircle2 size={10} /> View PV
-              </a>
-            ) : (
-              <button onClick={onHistory}
-                className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
-                <CheckCircle2 size={10} /> View PV
-              </button>
-            )
+            <button onClick={handleViewPV}
+              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg py-1.5 transition-colors border border-green-200">
+              <CheckCircle2 size={10} /> View PV
+            </button>
           ) : (
             <button onClick={onRun}
               className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] rounded-lg py-1.5 transition-colors">
