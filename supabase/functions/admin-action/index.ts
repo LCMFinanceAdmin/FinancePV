@@ -116,6 +116,43 @@ Deno.serve(async (req) => {
       return json({ ok: true, status: "PAID" });
     }
 
+    if (action === "EDIT") {
+      if (pv.status === "PAID") return json({ error: "Cannot edit a paid PV" }, 400);
+      const lineItems = Array.isArray(body.line_items) ? body.line_items : pv.line_items;
+      const amount = lineItems?.length > 0
+        ? lineItems.reduce((s: number, li: { amount: number }) => s + (Number(li.amount) || 0), 0)
+        : Number(body.amount) || pv.amount;
+      await db.from("pvs").update({
+        payee_name:           body.payee_name           ?? pv.payee_name,
+        payee_bank_name:      body.payee_bank_name      ?? pv.payee_bank_name,
+        payee_bank_acct:      body.payee_bank_acct      ?? pv.payee_bank_acct,
+        payment_method:       body.payment_method       ?? pv.payment_method,
+        payment_type:         body.payment_type         ?? pv.payment_type,
+        amount,
+        line_items:           lineItems,
+        ministry:             body.ministry             ?? pv.ministry,
+        dept:                 body.dept                 ?? pv.dept,
+        project:              body.project              ?? pv.project,
+        pv_label:             body.pv_label             ?? pv.pv_label,
+        purpose:              body.purpose              ?? pv.purpose,
+        applicant_name:       body.applicant_name       ?? pv.applicant_name,
+        biller_code:          body.biller_code          ?? pv.biller_code,
+        ref_no:               body.ref_no               ?? pv.ref_no,
+        cheque_no:            body.cheque_no            ?? pv.cheque_no,
+        exco_resolution_ref:  body.exco_resolution_ref  ?? pv.exco_resolution_ref,
+        exco_resolution_date: body.exco_resolution_date ?? pv.exco_resolution_date,
+        loa_required:         body.loa_required         ?? pv.loa_required,
+        updated_at:           new Date().toISOString(),
+      }).eq("id", pv_id);
+      return json({ ok: true, action: "EDITED" });
+    }
+
+    if (action === "HARD_DELETE") {
+      if (pv.status === "PAID") return json({ error: "Cannot delete a paid PV" }, 400);
+      await db.from("pvs").delete().eq("id", pv_id);
+      return json({ ok: true, action: "DELETED" });
+    }
+
     if (action === "REJECT") {
       if (!body.remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
       await db.from("pvs").update({
