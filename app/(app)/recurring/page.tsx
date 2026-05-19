@@ -92,7 +92,14 @@ export default function RecurringPage() {
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [groupBulkRuns, setGroupBulkRuns] = useState<Record<string, string>>({}); // group_name → bulk_run_id
-  const [confirmModal, setConfirmModal] = useState<{ msg: string; onOk: () => void; danger?: boolean } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    title?: string;
+    msg: string;
+    onOk: () => void;
+    okLabel?: string;
+    danger?: boolean;
+    secondaryAction?: { label: string; onClick: () => void };
+  } | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -156,30 +163,117 @@ export default function RecurringPage() {
     setExpandedGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
   }
 
-  function resetItem(id: string) {
+  async function doResetItems(ids: string[]) {
+    for (const id of ids) {
+      await supabase.from("recurring_pvs").update({ last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null }).eq("id", id);
+    }
+    setItems(is => is.map(i => ids.includes(i.id) ? { ...i, last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null } : i));
+  }
+
+  async function removeFromBulkRuns(itemsToRemove: RecurringPV[]) {
+    // Group items by their bulk run
+    const byRun: Record<string, RecurringPV[]> = {};
+    for (const item of itemsToRemove) {
+      const runId = groupBulkRuns[item.group_name];
+      if (!runId || !item.current_pv_id) continue;
+      if (!byRun[runId]) byRun[runId] = [];
+      byRun[runId].push(item);
+    }
+    for (const [runId, runItems] of Object.entries(byRun)) {
+      const { data: bulkRun } = await supabase.from("bulk_pv_runs").select("*").eq("id", runId).single();
+      if (!bulkRun) continue;
+      const removeIds = new Set(runItems.map(i => i.current_pv_id));
+      const removeNos = new Set(runItems.map(i => i.current_pv_no));
+      const newIds = (bulkRun.pv_ids as string[]).filter((id: string) => !removeIds.has(id));
+      const newNos = (bulkRun.pv_nos as string[]).filter((no: string) => !removeNos.has(no));
+      const removedAmt = runItems.reduce((s, i) => s + i.amount, 0);
+      if (newIds.length === 0) {
+        await supabase.from("bulk_pv_runs").delete().eq("id", runId);
+        const groupName = runItems[0].group_name;
+        setGroupBulkRuns(r => { const n = { ...r }; delete n[groupName]; return n; });
+      } else {
+        await supabase.from("bulk_pv_runs").update({
+          pv_ids: newIds, pv_nos: newNos,
+          total_amount: bulkRun.total_amount - removedAmt,
+          pv_count: newIds.length,
+        }).eq("id", runId);
+      }
+    }
+  }
+
+  async function resetItem(id: string) {
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    const bulkRunId = item.current_pv_id ? groupBulkRuns[item.group_name] : null;
+    if (bulkRunId) {
+      // Check if this PV is actually in the bulk run
+      const { data: bulkRun } = await supabase.from("bulk_pv_runs").select("pv_ids").eq("id", bulkRunId).single();
+      const isInBulk = bulkRun && (bulkRun.pv_ids as string[]).includes(item.current_pv_id!);
+      if (isInBulk) {
+        setConfirmModal({
+          title: "This PV is part of a Bulk PV",
+          msg: `${item.current_pv_no} is included in the ${item.group_name} Bulk PV. Do you want to remove it from the Bulk PV as well, or just reset the cycle?`,
+          okLabel: "Remove from Bulk & Reset",
+          danger: true,
+          onOk: async () => {
+            await removeFromBulkRuns([item]);
+            await doResetItems([id]);
+            showMsg("Removed from Bulk PV and cycle reset");
+          },
+          secondaryAction: {
+            label: "Reset Cycle Only (keep in Bulk PV)",
+            onClick: async () => {
+              await doResetItems([id]);
+              showMsg("Cycle reset — PV kept in Bulk PV");
+            },
+          },
+        });
+        return;
+      }
+    }
     setConfirmModal({
       msg: "Reset this recurring PV? It will be treated as not yet run this cycle.",
       onOk: async () => {
-        await supabase.from("recurring_pvs").update({ last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null }).eq("id", id);
-        setItems(is => is.map(i => i.id === id ? { ...i, last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null } : i));
+        await doResetItems([id]);
         showMsg("Reset — can be run again");
       },
     });
   }
 
-  function resetSelected() {
+  async function resetSelected() {
     const toReset = items.filter(i => selected.has(i.id) && isAlreadyRunThisPeriod(i));
     if (!toReset.length) {
       showMsg("None of the selected items have run this cycle", false);
       return;
     }
+    const inBulk = toReset.filter(i => i.current_pv_id && groupBulkRuns[i.group_name]);
+    if (inBulk.length > 0) {
+      setConfirmModal({
+        title: `${inBulk.length} PV${inBulk.length > 1 ? "s are" : " is"} part of a Bulk PV`,
+        msg: `${inBulk.map(i => i.current_pv_no).join(", ")} ${inBulk.length > 1 ? "are" : "is"} included in a Bulk PV. Remove ${inBulk.length > 1 ? "them" : "it"} from the Bulk PV as well, or just reset the cycles?`,
+        okLabel: "Remove from Bulk & Reset All",
+        danger: true,
+        onOk: async () => {
+          await removeFromBulkRuns(inBulk);
+          await doResetItems(toReset.map(i => i.id));
+          setSelected(new Set());
+          showMsg(`${toReset.length} PV${toReset.length > 1 ? "s" : ""} reset, ${inBulk.length} removed from Bulk PV`);
+        },
+        secondaryAction: {
+          label: "Reset Cycles Only (keep in Bulk PV)",
+          onClick: async () => {
+            await doResetItems(toReset.map(i => i.id));
+            setSelected(new Set());
+            showMsg(`${toReset.length} PV${toReset.length > 1 ? "s" : ""} reset`);
+          },
+        },
+      });
+      return;
+    }
     setConfirmModal({
       msg: `Undo this cycle for ${toReset.length} PV${toReset.length > 1 ? "s" : ""}? They will be treated as not yet run.`,
       onOk: async () => {
-        for (const item of toReset) {
-          await supabase.from("recurring_pvs").update({ last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null }).eq("id", item.id);
-        }
-        setItems(is => is.map(i => selected.has(i.id) ? { ...i, last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null } : i));
+        await doResetItems(toReset.map(i => i.id));
         setSelected(new Set());
         showMsg(`${toReset.length} PV${toReset.length > 1 ? "s" : ""} reset`);
       },
@@ -518,15 +612,24 @@ export default function RecurringPage() {
       {confirmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
-            <p className="text-sm text-stone-700 leading-relaxed">{confirmModal.msg}</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmModal(null)}
-                className="px-4 py-2 text-sm rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 transition-colors">
-                Cancel
-              </button>
+            {confirmModal.title && (
+              <p className="text-sm font-bold text-stone-800">{confirmModal.title}</p>
+            )}
+            <p className="text-sm text-stone-600 leading-relaxed">{confirmModal.msg}</p>
+            <div className="flex flex-col gap-2 pt-1">
+              {confirmModal.secondaryAction && (
+                <button onClick={() => { const fn = confirmModal.secondaryAction!.onClick; setConfirmModal(null); fn(); }}
+                  className="w-full px-4 py-2.5 text-sm rounded-xl font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors">
+                  {confirmModal.secondaryAction.label}
+                </button>
+              )}
               <button onClick={() => { const fn = confirmModal.onOk; setConfirmModal(null); fn(); }}
-                className={`px-4 py-2 text-sm rounded-xl font-semibold text-white transition-colors ${confirmModal.danger ? "bg-red-500 hover:bg-red-600" : "bg-[#4a6da7] hover:bg-[#3d5d8f]"}`}>
-                Confirm
+                className={`w-full px-4 py-2.5 text-sm rounded-xl font-semibold text-white transition-colors ${confirmModal.danger ? "bg-red-500 hover:bg-red-600" : "bg-[#4a6da7] hover:bg-[#3d5d8f]"}`}>
+                {confirmModal.okLabel ?? "Confirm"}
+              </button>
+              <button onClick={() => setConfirmModal(null)}
+                className="w-full px-4 py-2 text-sm rounded-xl border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors">
+                Cancel
               </button>
             </div>
           </div>
