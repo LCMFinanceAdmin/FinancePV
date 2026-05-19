@@ -167,6 +167,25 @@ export default function RecurringPage() {
     });
   }
 
+  function resetSelected() {
+    const toReset = items.filter(i => selected.has(i.id) && isAlreadyRunThisPeriod(i));
+    if (!toReset.length) {
+      showMsg("None of the selected items have run this cycle", false);
+      return;
+    }
+    setConfirmModal({
+      msg: `Undo this cycle for ${toReset.length} PV${toReset.length > 1 ? "s" : ""}? They will be treated as not yet run.`,
+      onOk: async () => {
+        for (const item of toReset) {
+          await supabase.from("recurring_pvs").update({ last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null }).eq("id", item.id);
+        }
+        setItems(is => is.map(i => selected.has(i.id) ? { ...i, last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null } : i));
+        setSelected(new Set());
+        showMsg(`${toReset.length} PV${toReset.length > 1 ? "s" : ""} reset`);
+      },
+    });
+  }
+
   async function createGroupBulkPV(groupName: string) {
     const allGroupItems = groups[groupName] ?? [];
     // Use selected items in this group, or fall back to all already-ran items
@@ -526,8 +545,12 @@ export default function RecurringPage() {
       {/* Selected action bar */}
       {selected.size > 0 && (
         <div className="flex items-center gap-3 p-3 bg-[#4a6da7] rounded-xl text-white">
-          <span className="flex-1 text-sm font-medium">{selected.size} template{selected.size > 1 ? "s" : ""} selected</span>
+          <span className="flex-1 text-sm font-medium">{selected.size} item{selected.size > 1 ? "s" : ""} selected</span>
           <button onClick={() => setSelected(new Set())} className="text-xs text-blue-200 hover:text-white">Clear</button>
+          <button onClick={resetSelected}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-400 text-amber-900 hover:bg-amber-300 transition-colors whitespace-nowrap">
+            <RotateCcw size={12} /> Undo Cycle
+          </button>
           <Button size="sm" onClick={runBatch} loading={batchRunning} className="bg-white text-[#4a6da7] hover:bg-blue-50 border-0">
             <Play size={12} /> Run Selected ({selected.size})
           </Button>
@@ -1016,18 +1039,27 @@ function HistoryPanel({ recurringId }: { recurringId: string }) {
       .eq("recurring_id", recurringId).order("submitted_at", { ascending: false }).limit(10)
       .then(({ data }) => { setPvs(data ?? []); setLoading(false); });
   }, [recurringId]);
+
+  function fmtDT(iso: string) {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" })
+      + " · " + d.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: true });
+  }
+
   return (
     <div className="pt-2">
-      <div className="text-[11px] font-semibold text-stone-400 mb-2">Run History</div>
+      <div className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mb-2">Run History</div>
       {loading ? <p className="text-[11px] text-stone-400">Loading…</p>
         : pvs.length === 0 ? <p className="text-[11px] text-stone-400">No PVs generated yet</p>
-        : <div className="space-y-1">
+        : <div className="divide-y divide-stone-100">
           {pvs.map(pv => (
             <a key={pv.id} href={`/my-pvs/${pv.id}`}
-              className="flex items-center gap-2 py-1 px-1 rounded-lg hover:bg-stone-50 transition-colors">
-              <span className="text-[11px] font-semibold text-stone-600 shrink-0">{pv.pv_no}</span>
+              className="flex items-center justify-between gap-3 py-2 px-1 hover:bg-stone-50 rounded-lg transition-colors group">
+              <div className="min-w-0">
+                <div className="text-[12px] font-semibold text-stone-700 group-hover:text-[#4a6da7] transition-colors">{pv.pv_no}</div>
+                <div className="text-[10px] text-stone-400 mt-0.5">{fmtDT(pv.submitted_at)}</div>
+              </div>
               <StatusBadge status={pv.status as import("@/lib/types").PVStatus} />
-              <span className="text-[11px] text-stone-400 ml-auto">{formatDate(pv.submitted_at)}</span>
             </a>
           ))}
         </div>
