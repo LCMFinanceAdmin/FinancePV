@@ -7,7 +7,7 @@ import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
-  Search, Folder, FolderOpen, ChevronUp, FileText,
+  Search, Folder, FolderOpen, ChevronUp, FileText, RotateCcw,
 } from "lucide-react";
 
 const FREQ_LABELS: Record<string, string> = {
@@ -156,25 +156,85 @@ export default function RecurringPage() {
     setExpandedGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
   }
 
+  async function resetItem(id: string) {
+    if (!confirm("Reset this recurring PV? It will be treated as not yet run this cycle.")) return;
+    await supabase.from("recurring_pvs").update({ last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null }).eq("id", id);
+    setItems(is => is.map(i => i.id === id ? { ...i, last_run: null, current_pv_no: null, current_pv_id: null, current_pv_status: null } : i));
+    showMsg("Reset — can be run again");
+  }
+
   async function createGroupBulkPV(groupName: string) {
-    const groupItems = (groups[groupName] ?? []).filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
-    if (!groupItems.length) { showMsg("No PVs from this cycle to bundle", false); return; }
+    const allGroupItems = groups[groupName] ?? [];
+    // Use selected items in this group, or fall back to all already-ran items
+    const selectedInGroup = allGroupItems.filter(i => selected.has(i.id));
+    const toInclude = selectedInGroup.length > 0
+      ? selectedInGroup
+      : allGroupItems.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
+
+    if (!toInclude.length) {
+      showMsg("Select at least one PV to include in the Bulk PV", false);
+      return;
+    }
+
+    const toRun = toInclude.filter(i => !isAlreadyRunThisPeriod(i) || !i.current_pv_id);
+    const alreadyRanItems = toInclude.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
+    const created: { id: string; pv_no: string; amount: number }[] = [];
+
+    if (toRun.length > 0) {
+      setBatchRunning(true);
+      setBatchProgress({ done: 0, total: toRun.length, errors: [] });
+      const { data: { user: u } } = await supabase.auth.getUser();
+      const session = (await supabase.auth.getSession()).data.session;
+      const today = new Date().toISOString().slice(0, 10);
+      for (const item of toRun) {
+        try {
+          const nextDue = calcNextDue(item.frequency);
+          const lineItems = item.line_items?.length
+            ? item.line_items.map(li => ({ date: today, description: li.description, amount: li.amount }))
+            : [{ date: today, description: item.name, amount: item.amount }];
+          const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+            body: JSON.stringify({
+              applicant_email: u?.email, applicant_name: u?.email,
+              payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
+              payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
+              ministry: item.ministry, dept: item.dept, project: item.project,
+              purpose: item.purpose, pv_label: item.pv_label, amount: item.amount,
+              payment_type: item.payment_type, line_items: lineItems, pvDate: today,
+              sig_applicant_name: u?.email, sig_applicant_confirm: true, recurring_id: item.id,
+            }),
+          });
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error ?? "Failed");
+          const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
+          const newPvId = pvRow?.id ?? null;
+          await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId }).eq("id", item.id);
+          setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId } : i));
+          if (newPvId) created.push({ id: newPvId, pv_no: result.pv_no, amount: item.amount });
+        } catch (e) { showMsg(`${item.name}: ${(e as Error).message}`, false); }
+        setBatchProgress(p => p ? { ...p, done: p.done + 1, errors: p.errors } : null);
+      }
+      setBatchRunning(false);
+    }
+
+    const allIds = [...alreadyRanItems.map(i => i.current_pv_id!), ...created.map(c => c.id)];
+    const allNos = [...alreadyRanItems.map(i => i.current_pv_no), ...created.map(c => c.pv_no)].filter(Boolean);
+    const totalAmt = toInclude.reduce((s, i) => s + i.amount, 0);
     const { data: { user } } = await supabase.auth.getUser();
-    const pv_ids = groupItems.map(i => i.current_pv_id!);
-    const pv_nos = groupItems.map(i => i.current_pv_no).filter(Boolean);
-    const total = groupItems.reduce((s, i) => s + i.amount, 0);
     const { data: bulkRun } = await supabase.from("bulk_pv_runs").insert({
       group_name: groupName,
       run_by: user?.email ?? "",
       run_date: new Date().toISOString(),
-      pv_ids, pv_nos,
-      total_amount: total,
-      pv_count: pv_ids.length,
-      ministry: groupItems[0]?.ministry || "",
+      pv_ids: allIds, pv_nos: allNos,
+      total_amount: totalAmt, pv_count: allIds.length,
+      ministry: toInclude[0]?.ministry || "",
     }).select("id").single();
+
     if (bulkRun?.id) {
       setGroupBulkRuns(r => ({ ...r, [groupName]: bulkRun.id }));
-      showMsg(`Bulk PV created for ${groupName}`);
+      setSelected(new Set());
+      showMsg(`Bulk PV created for ${groupName} (${allIds.length} PV${allIds.length !== 1 ? "s" : ""})`);
     }
   }
 
@@ -207,7 +267,7 @@ export default function RecurringPage() {
   }
 
   function toggleSelectGroup(groupItems: RecurringPV[]) {
-    const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
+    const eligible = groupItems.filter(i => !isExpiredItem(i));
     const allSel = eligible.every(i => selected.has(i.id));
     setSelected(s => {
       const n = new Set(s);
@@ -655,52 +715,39 @@ export default function RecurringPage() {
                     <span className="text-xs text-stone-400 font-medium hidden sm:block">
                       {formatCurrency(groupTotal)}/cycle
                     </span>
-                    {!collapsed && eligible.length > 0 && (
+                    {!collapsed && (
                       <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
-                        <GroupCheckbox groupItems={eligible} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
+                        <GroupCheckbox groupItems={groupItems} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
                         Select all
                       </label>
                     )}
                     {(() => {
-                      const hasRanThisCycle = groupItems.some(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
                       const hasBulkRun = !!groupBulkRuns[groupName];
+                      const selectedInGroup = groupItems.filter(i => selected.has(i.id));
+                      const ranWithoutBulk = !hasBulkRun && groupItems.some(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
+                      const canCreate = selectedInGroup.length > 0 || ranWithoutBulk;
+                      const createCount = selectedInGroup.length > 0
+                        ? selectedInGroup.length
+                        : groupItems.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id).length;
                       return (
                         <>
                           {hasBulkRun ? (
-                            /* Already has a bulk run — show View + Delete */
                             <div className="flex items-center gap-1">
-                              <a
-                                href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
-                                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
-                              >
+                              <a href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
+                                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap">
                                 <FileText size={10} /> View Bulk PV
                               </a>
-                              <button
-                                onClick={() => deleteBulkRun(groupName)}
-                                title="Remove bulk PV record"
-                                className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                              >
+                              <button onClick={() => deleteBulkRun(groupName)} title="Remove bulk PV record"
+                                className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
                                 <Trash2 size={13} />
                               </button>
                             </div>
-                          ) : hasRanThisCycle ? (
-                            /* Ran this cycle but no bulk run yet — offer to create one */
-                            <button
-                              onClick={() => createGroupBulkPV(groupName)}
-                              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
-                            >
-                              <FileText size={10} /> Create Bulk PV
+                          ) : canCreate ? (
+                            <button onClick={() => createGroupBulkPV(groupName)} disabled={batchRunning}
+                              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                              <FileText size={10} /> Create Bulk PV{createCount > 0 ? ` (${createCount})` : ""}
                             </button>
                           ) : null}
-                          {eligible.length > 0 && (
-                            /* Has items not yet run — offer to generate */
-                            <button
-                              onClick={() => runFolder(groupName)}
-                              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5d8f] transition-colors whitespace-nowrap"
-                            >
-                              <Play size={10} /> Generate Bulk PV
-                            </button>
-                          )}
                         </>
                       );
                     })()}
@@ -722,6 +769,7 @@ export default function RecurringPage() {
                         onToggleActive={() => toggleActive(item)}
                         onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
                         onDelete={() => deleteItem(item.id)}
+                        onReset={() => resetItem(item.id)}
                         showHistory={historyId === item.id}
                         batchRunning={batchRunning}
                       />
@@ -740,17 +788,18 @@ export default function RecurringPage() {
 // --- Group checkbox with indeterminate state ---
 function GroupCheckbox({ groupItems, selected, onToggle }: { groupItems: RecurringPV[]; selected: Set<string>; onToggle: () => void }) {
   const ref = useRef<HTMLInputElement>(null);
-  const checked = groupItems.length > 0 && groupItems.every(i => selected.has(i.id));
-  const indeterminate = !checked && groupItems.some(i => selected.has(i.id));
+  const selectable = groupItems.filter(i => !(i.term_type === "FIXED" && i.term_end_date && i.next_due && new Date(i.next_due) > new Date(i.term_end_date)));
+  const checked = selectable.length > 0 && selectable.every(i => selected.has(i.id));
+  const indeterminate = !checked && selectable.some(i => selected.has(i.id));
   useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate; }, [indeterminate]);
   return <input ref={ref} type="checkbox" checked={checked} onChange={onToggle} className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer" />;
 }
 
 // --- Recurring Card ---
-function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onToggleActive, onHistory, onDelete, showHistory, batchRunning }: {
+function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
   item: RecurringPV; isSelected: boolean; onToggleSelect: () => void;
   onRun: () => void; onEdit: () => void; onToggleActive: () => void;
-  onHistory: () => void; onDelete: () => void; showHistory: boolean; batchRunning: boolean;
+  onHistory: () => void; onDelete: () => void; onReset: () => void; showHistory: boolean; batchRunning: boolean;
 }) {
   const supabase = createClient();
   const isExpired = !!(item.term_type === "FIXED" && item.term_end_date && item.next_due && new Date(item.next_due) > new Date(item.term_end_date));
@@ -780,7 +829,7 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
         <div className="flex items-center gap-2 flex-wrap">
           <input
             type="checkbox" checked={isSelected} onChange={onToggleSelect}
-            disabled={isExpired || alreadyRan || batchRunning}
+            disabled={isExpired || batchRunning}
             className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer shrink-0"
           />
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">
@@ -850,6 +899,11 @@ function RecurringCard({ item, isSelected, onToggleSelect, onRun, onEdit, onTogg
         <button onClick={onHistory} title="History" className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
           <History size={13} />
         </button>
+        {alreadyRan && (
+          <button onClick={onReset} title="Undo this cycle — reset to allow re-run" className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-400 hover:text-amber-600 transition-colors">
+            <RotateCcw size={13} />
+          </button>
+        )}
         <button onClick={onDelete} title="Delete" className="p-1.5 rounded-lg hover:bg-stone-100 text-red-400 hover:text-red-600 transition-colors">
           <Trash2 size={13} />
         </button>
