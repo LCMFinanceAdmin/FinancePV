@@ -23,7 +23,13 @@ Deno.serve(async (req) => {
 
     if (action === "REVIEW") {
       if (pv.status !== "PENDING") return json({ error: "PV is not in PENDING status" }, 400);
-      await db.from("pvs").update({ status: "REVIEWED", updated_at: new Date().toISOString() }).eq("id", pv_id);
+      const now = new Date().toISOString();
+      await db.from("pvs").update({
+        status: "REVIEWED",
+        finance_verified_by: profile.full_name || user.email,
+        finance_verified_at: now,
+        updated_at: now,
+      }).eq("id", pv_id);
       return json({ ok: true, status: "REVIEWED" });
     }
 

@@ -8,6 +8,7 @@ import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
   AlertTriangle, Banknote, FileText, User, Calendar,
+  ShieldCheck, Send, CreditCard,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -62,7 +63,7 @@ function WorkflowBar({ pv }: { pv: PV }) {
               }`}>
                 {done ? <CheckCircle2 size={13} /> : i + 1}
               </div>
-              <span className={`text-[10px] mt-1 font-medium truncate text-center ${
+              <span className={`text-[12px] mt-1 font-medium truncate text-center ${
                 done ? "text-green-600" : active ? "text-[#4a6da7]" : "text-stone-400"
               }`}>{step.label}</span>
             </div>
@@ -83,15 +84,15 @@ function SigBlock({ title, role, approval, pending }: {
 }) {
   return (
     <div className="flex flex-col" style={{ minHeight: 110 }}>
-      <div className="text-[10px] font-bold mb-0.5">{title}</div>
-      <div className="text-[9px] text-gray-600 mb-2">({role})</div>
+      <div className="text-[12px] font-bold mb-0.5">{title}</div>
+      <div className="text-[13px] text-stone-800 mb-2">({role})</div>
       {/* Signature space */}
       <div className="flex-1 border-b border-black mb-1" />
       {/* Name line */}
-      <div className="text-[9px] flex items-end gap-1 mb-0.5">
+      <div className="text-[13px] flex items-end gap-1 mb-0.5">
         <span className="font-semibold whitespace-nowrap">Name 姓名:</span>
         {approval ? (
-          <span className="flex-1 border-b border-black text-[9px] font-semibold text-green-700 flex items-center gap-0.5">
+          <span className="flex-1 border-b border-black text-[13px] font-semibold text-green-700 flex items-center gap-0.5">
             <CheckCircle2 size={8} className="shrink-0" />
             {approval.name || approval.email}
           </span>
@@ -100,17 +101,17 @@ function SigBlock({ title, role, approval, pending }: {
         )}
       </div>
       {/* Date line */}
-      <div className="text-[9px] flex items-center gap-1">
+      <div className="text-[13px] flex items-center gap-1">
         <span className="font-semibold whitespace-nowrap">Date 日期:</span>
-        <span className="flex-1 border-b border-black text-[9px] text-gray-600">
+        <span className="flex-1 border-b border-black text-[13px] text-stone-800">
           {approval ? fmtDate(approval.timestamp) : ""}
         </span>
       </div>
       {approval?.remarks && (
-        <div className="text-[9px] text-gray-500 italic mt-0.5">"{approval.remarks}"</div>
+        <div className="text-[13px] text-stone-700 italic mt-0.5">"{approval.remarks}"</div>
       )}
       {pending && !approval && (
-        <div className="text-[9px] text-gray-400 flex items-center gap-0.5 mt-0.5">
+        <div className="text-[13px] text-stone-600 flex items-center gap-0.5 mt-0.5">
           <Clock size={8} /> Awaiting
         </div>
       )}
@@ -127,6 +128,12 @@ export default function PVDetailPage() {
   const [pv, setPv] = useState<PV | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionToast, setActionToast] = useState({ msg: "", ok: true });
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectRemarks, setRejectRemarks] = useState("");
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payForm, setPayForm] = useState({ ref: "", date: "", method: "Bank Transfer" });
 
   useEffect(() => {
     async function load() {
@@ -151,6 +158,31 @@ export default function PVDetailPage() {
     }
     load();
   }, [id]);
+
+  async function callAdminAction(action: string, extras?: Record<string, string>) {
+    if (!pv) return;
+    setActionLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pv.id, action, ...extras }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Action failed");
+      setActionToast({ msg: `Done — PV is now ${json.status}`, ok: true });
+      const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
+      if (fresh) setPv(fresh as PV);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+    } finally {
+      setActionLoading(false);
+      setShowRejectModal(false);
+      setShowPayModal(false);
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    }
+  }
 
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
   if (!pv) return <div className="p-8 text-center text-stone-400 text-sm">PV not found</div>;
@@ -229,11 +261,138 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── Finance Admin Action Panel ─────────────────────────────── */}
+      {user?.isFinanceAdmin && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD"].includes(pv.status) && (
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck size={16} className="text-blue-600" />
+              <span className="text-sm font-semibold text-blue-800">Finance Admin Actions</span>
+              <span className="ml-auto text-xs text-stone-500">PV is <strong>{pv.status.replace(/_/g, " ")}</strong></span>
+            </div>
+
+            {pv.status === "PENDING" && (
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => callAdminAction("REVIEW")} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-[#4a6da7] text-white text-sm rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
+                  <CheckCircle2 size={14} /> Mark as Reviewed
+                </button>
+                <button onClick={() => setShowRejectModal(true)} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
+                  <XCircle size={14} /> Reject
+                </button>
+              </div>
+            )}
+
+            {["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => callAdminAction("SEND_TO_SIGNATORY")} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-[#4a6da7] text-white text-sm rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
+                  <Send size={14} /> Send to Signatory
+                </button>
+                <button onClick={() => setShowRejectModal(true)} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
+                  <XCircle size={14} /> Reject
+                </button>
+              </div>
+            )}
+
+            {pv.status === "PENDING_SIGNATORY" && (
+              <p className="text-sm text-stone-600">Awaiting signatory signature — no action needed from Finance at this stage.</p>
+            )}
+
+            {pv.status === "APPROVED" && (
+              <button onClick={() => setShowPayModal(true)} disabled={actionLoading}
+                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors">
+                <CreditCard size={14} /> Mark as Paid
+              </button>
+            )}
+
+            {actionToast.msg && (
+              <div className={`mt-2 text-sm font-medium ${actionToast.ok ? "text-green-700" : "text-red-600"}`}>
+                {actionToast.msg}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Reject Modal ───────────────────────────────────────────── */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h2 className="text-lg font-bold text-stone-800 mb-1">Reject PV</h2>
+            <p className="text-sm text-stone-500 mb-3">{pv.pv_no} — {pv.payee_name}</p>
+            <textarea
+              value={rejectRemarks}
+              onChange={e => setRejectRemarks(e.target.value)}
+              placeholder="Enter reason for rejection…"
+              className="w-full border border-stone-300 rounded-lg p-3 text-sm outline-none focus:border-red-400 min-h-[96px] resize-none"
+            />
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => callAdminAction("REJECT", { remarks: rejectRemarks })}
+                disabled={!rejectRemarks.trim() || actionLoading}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors">
+                {actionLoading ? "Rejecting…" : "Confirm Reject"}
+              </button>
+              <button onClick={() => setShowRejectModal(false)}
+                className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-lg text-sm font-medium hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mark as Paid Modal ─────────────────────────────────────── */}
+      {showPayModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h2 className="text-lg font-bold text-stone-800 mb-1">Mark as Paid</h2>
+            <p className="text-sm text-stone-500 mb-4">{pv.pv_no} — {pv.payee_name} — <strong>{formatCurrency(pv.amount)}</strong></p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-stone-600 block mb-1">Payment Reference</label>
+                <input value={payForm.ref} onChange={e => setPayForm(p => ({ ...p, ref: e.target.value }))}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#4a6da7]"
+                  placeholder="e.g. IBG/TT reference no." />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-600 block mb-1">Payment Date</label>
+                <input type="date" value={payForm.date} onChange={e => setPayForm(p => ({ ...p, date: e.target.value }))}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#4a6da7]" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-600 block mb-1">Payment Method</label>
+                <select value={payForm.method} onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#4a6da7] bg-white">
+                  <option>Bank Transfer</option>
+                  <option>Cheque</option>
+                  <option>Cash</option>
+                  <option>JomPay</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => callAdminAction("MARK_PAID", { payment_ref: payForm.ref, payment_date: payForm.date, payment_method: payForm.method })}
+                disabled={actionLoading}
+                className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors">
+                {actionLoading ? "Processing…" : "✓ Confirm Paid"}
+              </button>
+              <button onClick={() => setShowPayModal(false)}
+                className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-lg text-sm font-medium hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── THE VOUCHER ─────────────────────────────────────────────── */}
       <div className="max-w-4xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
         <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
           {/* voucher body */}
-          <div className="px-10 py-8 print:px-8 print:py-6" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 11 }}>
+          <div className="px-10 py-8 print:px-8 print:py-6" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}>
 
             {/* ══ ROW 1–3: header row (logo left, office-use box right) ══ */}
             <div className="flex items-start gap-4 mb-1">
@@ -251,7 +410,7 @@ export default function PVDetailPage() {
               </div>
 
               {/* For Office Use Only box — col J–K, rows 1–3 */}
-              <div className="border border-black shrink-0 text-[10px]" style={{ width: 160 }}>
+              <div className="border border-black shrink-0 text-[12px]" style={{ width: 160 }}>
                 <div className="px-2 py-1 border-b border-black font-medium">For Office Use Only:</div>
                 <div className="px-2 py-1 border-b border-black flex items-center gap-1">
                   <span className="shrink-0">Ref No:</span>
@@ -266,16 +425,16 @@ export default function PVDetailPage() {
 
             {/* ══ ROWS 4–7: Title + Chinese subtitle ══ */}
             <div className="text-center mb-1" style={{ fontFamily: "Calibri, Arial, sans-serif" }}>
-              <div className="font-bold" style={{ fontSize: 13 }}>
+              <div className="font-bold" style={{ fontSize: 15 }}>
                 LUTHERAN CHURCH IN MALAYSIA (REIMBURSEMENT CLAIM FORM/ PAYMENT VOUCHER)
               </div>
-              <div className="font-bold border-b border-black pb-1 mt-0.5" style={{ fontSize: 13, fontFamily: "KaiTi, STKaiti, serif" }}>
+              <div className="font-bold border-b border-black pb-1 mt-0.5" style={{ fontSize: 15, fontFamily: "KaiTi, STKaiti, serif" }}>
                 马来西亚基督教信义会 （费用报销 / 付款凭证表格）
               </div>
             </div>
 
             {/* ══ ROWS 9–13: Field rows ══ */}
-            <table className="w-full border-collapse text-[11px] mt-3" style={{ tableLayout: "fixed" }}>
+            <table className="w-full border-collapse text-[13px] mt-3" style={{ tableLayout: "fixed" }}>
               <colgroup>
                 <col style={{ width: "22%" }} />
                 <col style={{ width: "43%" }} />
@@ -309,7 +468,7 @@ export default function PVDetailPage() {
                 </tr>
                 {/* Bank A/C */}
                 <tr>
-                  <td className="font-bold py-1.5 pr-1 align-bottom text-[10px] leading-tight">
+                  <td className="font-bold py-1.5 pr-1 align-bottom text-[12px] leading-tight">
                     Payee Bank A/C No<br />
                     <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收款人账户号码</span>：
                   </td>
@@ -338,7 +497,7 @@ export default function PVDetailPage() {
                 {/* EXCO (conditional) */}
                 {pv.exco_resolution_ref && (
                   <tr>
-                    <td className="font-bold py-1.5 pr-1 align-top text-[10px] bg-amber-50">
+                    <td className="font-bold py-1.5 pr-1 align-top text-[12px] bg-amber-50">
                       EXCO Resolution Ref:
                     </td>
                     <td className="border-b border-black py-1.5 px-1 bg-amber-50 font-semibold" colSpan={3}>
@@ -351,13 +510,13 @@ export default function PVDetailPage() {
             </table>
 
             {/* ══ ROW 15: Section note ══ */}
-            <div className="font-bold text-[10px] mt-3 mb-0">
+            <div className="font-bold text-[12px] mt-3 mb-0">
               Particulars of Claim/Payment (Please attach relevant Receipts/Invoices/Bills){" "}
               <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>费用报销/付款详情（请附上有关收据/单据）</span>
             </div>
 
             {/* ══ ROWS 16–24: Line items table ══ */}
-            <table className="w-full border-collapse border border-black text-[11px]" style={{ tableLayout: "fixed" }}>
+            <table className="w-full border-collapse border border-black text-[13px]" style={{ tableLayout: "fixed" }}>
               <colgroup>
                 <col style={{ width: "5%" }} />
                 <col style={{ width: "14%" }} />
@@ -379,8 +538,8 @@ export default function PVDetailPage() {
               <tbody>
                 {items.map((item, i) => (
                   <tr key={i}>
-                    <td className="border border-black px-1 py-2 text-center text-gray-700">{i + 1}</td>
-                    <td className="border border-black px-2 py-2 text-gray-700">{item.date ? fmtDate(item.date) : ""}</td>
+                    <td className="border border-black px-1 py-2 text-center text-stone-900">{i + 1}</td>
+                    <td className="border border-black px-2 py-2 text-stone-900">{item.date ? fmtDate(item.date) : ""}</td>
                     <td className="border border-black px-2 py-2">{item.description}</td>
                     <td className="border border-black px-2 py-2 text-right tabular-nums">{Number(item.amount).toFixed(2)}</td>
                   </tr>
@@ -396,7 +555,7 @@ export default function PVDetailPage() {
                 {/* Total row */}
                 <tr>
                   <td className="border border-black px-2 py-1.5 text-right font-bold" colSpan={3}>
-                    <span className="text-[10px] text-gray-500 font-normal mr-4">
+                    <span className="text-[12px] text-stone-700 font-normal mr-4">
                       Please use a separate sheet of paper if space is insufficient{" "}
                       <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>如果空间不足，请加附另一张纸</span>
                     </span>
@@ -412,19 +571,19 @@ export default function PVDetailPage() {
             {/* ══ ROWS 26–29: Applicant + Approver signatures ══ */}
             <div className="mt-5 space-y-4">
               {/* Row 26: Applicant signature */}
-              <div className="grid grid-cols-3 gap-6 text-[11px]">
+              <div className="grid grid-cols-3 gap-6 text-[13px]">
                 <div className="col-span-1">
                   <div className="font-bold mb-1">
                     Applicant{"'"}s Signature <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>申请者签名</span>:
                   </div>
                   <div className="h-8 border-b border-black mb-1" />
                   <div className="flex items-center gap-1">
-                    <span className="font-bold whitespace-nowrap text-[10px]">Name <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>姓名</span>：</span>
-                    <span className="flex-1 border-b border-black text-[10px]">{pv.sig_applicant_name || pv.applicant_name}</span>
+                    <span className="font-bold whitespace-nowrap text-[12px]">Name <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>姓名</span>：</span>
+                    <span className="flex-1 border-b border-black text-[12px]">{pv.sig_applicant_name || pv.applicant_name}</span>
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
-                    <span className="font-bold whitespace-nowrap text-[10px]">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</span>
-                    <span className="flex-1 border-b border-black text-[10px]">{fmtDate(pv.submitted_at)}</span>
+                    <span className="font-bold whitespace-nowrap text-[12px]">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</span>
+                    <span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.submitted_at)}</span>
                   </div>
                 </div>
 
@@ -436,7 +595,7 @@ export default function PVDetailPage() {
                     </div>
                     <div className="h-8 border-b border-black mb-1">
                       {ministryVerified && (
-                        <div className="flex items-center gap-1 h-full text-[10px] text-green-700">
+                        <div className="flex items-center gap-1 h-full text-[12px] text-green-700">
                           <CheckCircle2 size={11} />
                           <span>{pv.ministry_verified_by ?? headApproval?.name}</span>
                         </div>
@@ -444,15 +603,15 @@ export default function PVDetailPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex items-center gap-1">
-                        <span className="font-bold whitespace-nowrap text-[10px]">Name <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>姓名</span>：</span>
-                        <span className="flex-1 border-b border-black text-[10px]">{pv.ministry_verified_by ?? headApproval?.name ?? ""}</span>
+                        <span className="font-bold whitespace-nowrap text-[12px]">Name <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>姓名</span>：</span>
+                        <span className="flex-1 border-b border-black text-[12px]">{pv.ministry_verified_by ?? headApproval?.name ?? ""}</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="font-bold whitespace-nowrap text-[10px]">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</span>
-                        <span className="flex-1 border-b border-black text-[10px]">{fmtDate(pv.ministry_verified_at ?? headApproval?.timestamp)}</span>
+                        <span className="font-bold whitespace-nowrap text-[12px]">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</span>
+                        <span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.ministry_verified_at ?? headApproval?.timestamp)}</span>
                       </div>
                     </div>
-                    <div className="text-[9px] text-gray-600 mt-0.5">
+                    <div className="text-[13px] text-stone-800 mt-0.5">
                       (By Chairperson/Treasurer/Person in Charge of the Project{" "}
                       <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>主席/财政/事工负责人</span>)
                     </div>
@@ -464,12 +623,12 @@ export default function PVDetailPage() {
             {/* ══ ROWS 31–39: Finance Office section ══ */}
             <div className="mt-6 border-t-2 border-t-black border-b-2 border-b-black border-l border-r border-black">
               {/* Header */}
-              <div className="text-center font-bold text-[10px] py-1.5 border-b border-black bg-gray-100 uppercase tracking-wide">
+              <div className="text-center font-bold text-[12px] py-1.5 border-b border-black bg-gray-100 uppercase tracking-wide">
                 For LCM Finance Office Use Only &emsp;
                 <span style={{ fontFamily: "KaiTi, STKaiti, serif", fontWeight: "normal" }}>LCM财务处专用</span>
               </div>
 
-              <div className="px-3 py-1.5 text-[10px] font-bold border-b border-black">
+              <div className="px-3 py-1.5 text-[12px] font-bold border-b border-black">
                 Particulars of CLAIM Checked
               </div>
 
@@ -497,24 +656,24 @@ export default function PVDetailPage() {
 
                 {/* Approved by — Signatory(ies) */}
                 <div className="px-4 py-3">
-                  <div className="text-[10px] font-bold mb-0.5">Approved by:</div>
-                  <div className="text-[9px] text-gray-600 mb-1">
+                  <div className="text-[12px] font-bold mb-0.5">Approved by:</div>
+                  <div className="text-[13px] text-stone-800 mb-1">
                     (Bishop / Secretary / Treasurer)
                   </div>
                   {loa.required === 1 ? (
                     <div className="mt-1">
                       <div className="border-b border-black h-8 mb-1">
                         {sigSlots[0] && (
-                          <div className="flex items-center gap-1 h-full text-[9px] text-green-700">
+                          <div className="flex items-center gap-1 h-full text-[13px] text-green-700">
                             <CheckCircle2 size={9} />{sigSlots[0].name}
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 text-[9px]">
+                      <div className="flex items-center gap-1 text-[13px]">
                         <span className="font-bold whitespace-nowrap">Name:</span>
                         <span className="flex-1 border-b border-black">{sigSlots[0]?.name ?? ""}</span>
                       </div>
-                      <div className="flex items-center gap-1 text-[9px] mt-0.5">
+                      <div className="flex items-center gap-1 text-[13px] mt-0.5">
                         <span className="font-bold whitespace-nowrap">Date:</span>
                         <span className="flex-1 border-b border-black">{fmtDate(sigSlots[0]?.timestamp)}</span>
                       </div>
@@ -525,26 +684,26 @@ export default function PVDetailPage() {
                         <div key={i}>
                           <div className="border-b border-black h-8 mb-1">
                             {appr && (
-                              <div className="flex items-center gap-0.5 h-full text-[9px] text-green-700">
+                              <div className="flex items-center gap-0.5 h-full text-[13px] text-green-700">
                                 <CheckCircle2 size={8} />{appr.name}
                               </div>
                             )}
                           </div>
-                          <div className="flex items-center gap-0.5 text-[9px]">
+                          <div className="flex items-center gap-0.5 text-[13px]">
                             <span className="font-bold">Name:</span>
-                            <span className="flex-1 border-b border-black text-[8px]">{appr?.name ?? ""}</span>
+                            <span className="flex-1 border-b border-black text-[12px]">{appr?.name ?? ""}</span>
                           </div>
-                          <div className="flex items-center gap-0.5 text-[9px] mt-0.5">
+                          <div className="flex items-center gap-0.5 text-[13px] mt-0.5">
                             <span className="font-bold">Date:</span>
-                            <span className="flex-1 border-b border-black text-[8px]">{fmtDate(appr?.timestamp)}</span>
+                            <span className="flex-1 border-b border-black text-[12px]">{fmtDate(appr?.timestamp)}</span>
                           </div>
-                          {appr && <div className="text-[8px] text-gray-500 mt-0.5">{appr.role}</div>}
+                          {appr && <div className="text-[12px] text-stone-700 mt-0.5">{appr.role}</div>}
                         </div>
                       ))}
                     </div>
                   )}
                   {!sigSlots[0] && (
-                    <div className="text-[9px] text-gray-400 flex items-center gap-0.5 mt-1">
+                    <div className="text-[13px] text-stone-600 flex items-center gap-0.5 mt-1">
                       <Clock size={8} /> Awaiting {loa.required} signature{loa.required > 1 ? "s" : ""}
                     </div>
                   )}
