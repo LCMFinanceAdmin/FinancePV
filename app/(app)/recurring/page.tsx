@@ -156,6 +156,28 @@ export default function RecurringPage() {
     setExpandedGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
   }
 
+  async function createGroupBulkPV(groupName: string) {
+    const groupItems = (groups[groupName] ?? []).filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
+    if (!groupItems.length) { showMsg("No PVs from this cycle to bundle", false); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    const pv_ids = groupItems.map(i => i.current_pv_id!);
+    const pv_nos = groupItems.map(i => i.current_pv_no).filter(Boolean);
+    const total = groupItems.reduce((s, i) => s + i.amount, 0);
+    const { data: bulkRun } = await supabase.from("bulk_pv_runs").insert({
+      group_name: groupName,
+      run_by: user?.email ?? "",
+      run_date: new Date().toISOString(),
+      pv_ids, pv_nos,
+      total_amount: total,
+      pv_count: pv_ids.length,
+      ministry: groupItems[0]?.ministry || "",
+    }).select("id").single();
+    if (bulkRun?.id) {
+      setGroupBulkRuns(r => ({ ...r, [groupName]: bulkRun.id }));
+      showMsg(`Bulk PV created for ${groupName}`);
+    }
+  }
+
   async function deleteBulkRun(groupName: string) {
     const runId = groupBulkRuns[groupName];
     if (!runId) return;
@@ -639,31 +661,49 @@ export default function RecurringPage() {
                         Select all
                       </label>
                     )}
-                    {groupBulkRuns[groupName] && (
-                      <div className="flex items-center gap-1">
-                        <a
-                          href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
-                          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
-                        >
-                          <FileText size={10} /> View Bulk PV
-                        </a>
-                        <button
-                          onClick={() => deleteBulkRun(groupName)}
-                          title="Remove bulk PV record"
-                          className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    )}
-                    {eligible.length > 0 && (
-                      <button
-                        onClick={() => runFolder(groupName)}
-                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5d8f] transition-colors whitespace-nowrap"
-                      >
-                        <Play size={10} /> Generate Bulk PV
-                      </button>
-                    )}
+                    {(() => {
+                      const hasRanThisCycle = groupItems.some(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
+                      const hasBulkRun = !!groupBulkRuns[groupName];
+                      return (
+                        <>
+                          {hasBulkRun ? (
+                            /* Already has a bulk run — show View + Delete */
+                            <div className="flex items-center gap-1">
+                              <a
+                                href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
+                                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
+                              >
+                                <FileText size={10} /> View Bulk PV
+                              </a>
+                              <button
+                                onClick={() => deleteBulkRun(groupName)}
+                                title="Remove bulk PV record"
+                                className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : hasRanThisCycle ? (
+                            /* Ran this cycle but no bulk run yet — offer to create one */
+                            <button
+                              onClick={() => createGroupBulkPV(groupName)}
+                              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
+                            >
+                              <FileText size={10} /> Create Bulk PV
+                            </button>
+                          ) : null}
+                          {eligible.length > 0 && (
+                            /* Has items not yet run — offer to generate */
+                            <button
+                              onClick={() => runFolder(groupName)}
+                              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5d8f] transition-colors whitespace-nowrap"
+                            >
+                              <Play size={10} /> Generate Bulk PV
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
