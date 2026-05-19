@@ -26,7 +26,7 @@ interface RecurringPV {
   amount: number; ministry: string; dept: string; project: string;
   purpose: string; pv_label: string; payment_type: string;
   line_items: LineItem[]; term_type: string; term_end_date: string | null;
-  final_payment_note: string; current_pv_no: string; current_pv_status: string;
+  final_payment_note: string; current_pv_no: string | null; current_pv_status: string | null;
   current_pv_id: string | null;
   created_by: string; created_at: string; group_name: string;
 }
