@@ -156,6 +156,15 @@ export default function RecurringPage() {
     setExpandedGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
   }
 
+  async function deleteBulkRun(groupName: string) {
+    const runId = groupBulkRuns[groupName];
+    if (!runId) return;
+    if (!confirm(`Remove the Bulk PV record for "${groupName}"? The individual PVs are not deleted.`)) return;
+    await supabase.from("bulk_pv_runs").delete().eq("id", runId);
+    setGroupBulkRuns(r => { const n = { ...r }; delete n[groupName]; return n; });
+    showMsg(`Bulk PV for ${groupName} removed`);
+  }
+
   function runFolder(groupName: string) {
     const groupItems = groups[groupName] ?? [];
     // Only select items not expired and not already run this period
@@ -284,6 +293,8 @@ export default function RecurringPage() {
     const session = (await supabase.auth.getSession()).data.session;
     const today = new Date().toISOString().slice(0, 10);
     const errors: string[] = skipped.map(i => `${i.name}: already ran this cycle (${i.current_pv_no})`);
+    // Track created PVs directly (don't rely on stale state)
+    const created: { id: string; pv_no: string; amount: number; group: string; ministry: string }[] = [];
     for (const item of toRun) {
       try {
         const nextDue = calcNextDue(item.frequency);
@@ -308,11 +319,11 @@ export default function RecurringPage() {
         });
         const result = await res.json();
         if (!res.ok) throw new Error(result.error ?? "Failed");
-        // Fetch the new PV's id so we can link directly to it
         const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
         const newPvId = pvRow?.id ?? null;
         await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId }).eq("id", item.id);
         setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId } : i));
+        if (newPvId) created.push({ id: newPvId, pv_no: result.pv_no, amount: item.amount, group: item.group_name || "General", ministry: item.ministry || "" });
       } catch (e) { errors.push(`${item.name}: ${(e as Error).message}`); }
       setBatchProgress(p => p ? { ...p, done: p.done + 1, errors } : null);
     }
@@ -321,15 +332,13 @@ export default function RecurringPage() {
     if (realErrors.length === 0 && skipped.length === 0) { showMsg(`${toRun.length} PV${toRun.length > 1 ? "s" : ""} created`); setBatchProgress(null); }
     else if (realErrors.length === 0 && skipped.length > 0) { showMsg(`${toRun.length} PV${toRun.length > 1 ? "s" : ""} created · ${skipped.length} skipped (already this cycle)`); setBatchProgress(null); }
 
-    // Create bulk_pv_run records, grouped by group_name
+    // Create bulk_pv_run records grouped by group_name, using directly-tracked created PVs
     const createdByGroup: Record<string, { ids: string[]; nos: string[]; amount: number; ministry: string }> = {};
-    for (const item of toRun) {
-      const g = item.group_name || "General";
-      if (!createdByGroup[g]) createdByGroup[g] = { ids: [], nos: [], amount: 0, ministry: item.ministry || "" };
-      const updatedItem = items.find(i => i.id === item.id);
-      if (updatedItem?.current_pv_id) createdByGroup[g].ids.push(updatedItem.current_pv_id);
-      if (updatedItem?.current_pv_no) createdByGroup[g].nos.push(updatedItem.current_pv_no);
-      createdByGroup[g].amount += item.amount;
+    for (const c of created) {
+      if (!createdByGroup[c.group]) createdByGroup[c.group] = { ids: [], nos: [], amount: 0, ministry: c.ministry };
+      createdByGroup[c.group].ids.push(c.id);
+      createdByGroup[c.group].nos.push(c.pv_no);
+      createdByGroup[c.group].amount += c.amount;
     }
     const newGroupRuns: Record<string, string> = {};
     for (const [groupName, data] of Object.entries(createdByGroup)) {
@@ -631,12 +640,21 @@ export default function RecurringPage() {
                       </label>
                     )}
                     {groupBulkRuns[groupName] && (
-                      <a
-                        href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
-                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
-                      >
-                        <FileText size={10} /> View Bulk PV
-                      </a>
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
+                          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
+                        >
+                          <FileText size={10} /> View Bulk PV
+                        </a>
+                        <button
+                          onClick={() => deleteBulkRun(groupName)}
+                          title="Remove bulk PV record"
+                          className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     )}
                     {eligible.length > 0 && (
                       <button
