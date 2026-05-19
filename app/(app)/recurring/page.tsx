@@ -7,7 +7,7 @@ import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
-  Search, Folder, FolderOpen, ChevronUp,
+  Search, Folder, FolderOpen, ChevronUp, FileText,
 } from "lucide-react";
 
 const FREQ_LABELS: Record<string, string> = {
@@ -92,6 +92,7 @@ export default function RecurringPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [groupBulkRuns, setGroupBulkRuns] = useState<Record<string, string>>({}); // group_name → bulk_run_id
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -107,6 +108,20 @@ export default function RecurringPage() {
     setItems((rec ?? []).map((r: RecurringPV) => ({ ...r, line_items: r.line_items ?? [], group_name: r.group_name || "General" })));
     setMinistries((min ?? []).map((m: { name: string }) => m.name));
     setProjects(proj ?? []);
+
+    // Load most recent bulk run per group
+    const { data: bulkRuns } = await supabase
+      .from("bulk_pv_runs")
+      .select("id,group_name,run_date")
+      .order("run_date", { ascending: false });
+    if (bulkRuns) {
+      const latestByGroup: Record<string, string> = {};
+      for (const br of bulkRuns as { id: string; group_name: string; run_date: string }[]) {
+        if (!latestByGroup[br.group_name]) latestByGroup[br.group_name] = br.id;
+      }
+      setGroupBulkRuns(latestByGroup);
+    }
+
     setLoading(false);
   }
 
@@ -305,6 +320,35 @@ export default function RecurringPage() {
     const realErrors = errors.filter(e => !e.includes("already ran this cycle"));
     if (realErrors.length === 0 && skipped.length === 0) { showMsg(`${toRun.length} PV${toRun.length > 1 ? "s" : ""} created`); setBatchProgress(null); }
     else if (realErrors.length === 0 && skipped.length > 0) { showMsg(`${toRun.length} PV${toRun.length > 1 ? "s" : ""} created · ${skipped.length} skipped (already this cycle)`); setBatchProgress(null); }
+
+    // Create bulk_pv_run records, grouped by group_name
+    const createdByGroup: Record<string, { ids: string[]; nos: string[]; amount: number; ministry: string }> = {};
+    for (const item of toRun) {
+      const g = item.group_name || "General";
+      if (!createdByGroup[g]) createdByGroup[g] = { ids: [], nos: [], amount: 0, ministry: item.ministry || "" };
+      const updatedItem = items.find(i => i.id === item.id);
+      if (updatedItem?.current_pv_id) createdByGroup[g].ids.push(updatedItem.current_pv_id);
+      if (updatedItem?.current_pv_no) createdByGroup[g].nos.push(updatedItem.current_pv_no);
+      createdByGroup[g].amount += item.amount;
+    }
+    const newGroupRuns: Record<string, string> = {};
+    for (const [groupName, data] of Object.entries(createdByGroup)) {
+      if (data.ids.length === 0) continue;
+      const { data: bulkRun } = await supabase.from("bulk_pv_runs").insert({
+        group_name: groupName,
+        run_by: (await supabase.auth.getUser()).data.user?.email ?? "",
+        run_date: new Date().toISOString(),
+        pv_ids: data.ids,
+        pv_nos: data.nos,
+        total_amount: data.amount,
+        pv_count: data.ids.length,
+        ministry: data.ministry,
+      }).select("id").single();
+      if (bulkRun?.id) newGroupRuns[groupName] = bulkRun.id;
+    }
+    if (Object.keys(newGroupRuns).length > 0) {
+      setGroupBulkRuns(r => ({ ...r, ...newGroupRuns }));
+    }
   }
 
   const existingGroups = [...new Set(items.map(i => i.group_name || "General"))].sort();
@@ -585,6 +629,14 @@ export default function RecurringPage() {
                         <GroupCheckbox groupItems={eligible} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
                         Select all
                       </label>
+                    )}
+                    {groupBulkRuns[groupName] && (
+                      <a
+                        href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
+                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
+                      >
+                        <FileText size={10} /> View Bulk PV
+                      </a>
                     )}
                     {eligible.length > 0 && (
                       <button
