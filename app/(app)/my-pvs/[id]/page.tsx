@@ -8,7 +8,7 @@ import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
   AlertTriangle, Banknote, FileText, User, Calendar,
-  ShieldCheck, Send, CreditCard, Trash2,
+  ShieldCheck, Send, CreditCard, Trash2, Pencil, Plus, X as XIcon,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -77,6 +77,17 @@ function WorkflowBar({ pv }: { pv: PV }) {
   );
 }
 
+// ── Edit form helpers ──────────────────────────────────────────────────
+function EField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-stone-500 mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+const ei = "w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white";
+
 // ── Signature block ────────────────────────────────────────────────────
 function SigBlock({ title, role, approval, pending }: {
   title: string; role: string;
@@ -136,6 +147,9 @@ export default function PVDetailPage() {
   const [payForm, setPayForm] = useState({ ref: "", date: "", method: "Bank Transfer" });
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelRemarks, setCancelRemarks] = useState("");
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState<Record<string, unknown>>({});
+  const [showHardDeleteModal, setShowHardDeleteModal] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -173,6 +187,14 @@ export default function PVDetailPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Action failed");
+      if (json.action === "DELETED") { router.push("/my-pvs"); return; }
+      if (json.action === "EDITED") {
+        const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
+        if (fresh) setPv(fresh as PV);
+        setShowEditModal(false);
+        setActionToast({ msg: "PV updated", ok: true });
+        return;
+      }
       setActionToast({ msg: `Done — PV is now ${json.status}`, ok: true });
       const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
       if (fresh) setPv(fresh as PV);
@@ -320,15 +342,46 @@ export default function PVDetailPage() {
         </div>
       )}
 
-      {/* ── Cancel / Withdraw PV ──────────────────────────────────── */}
+      {/* ── Admin / Submitter actions ─────────────────────────────── */}
       {(user?.isFinanceAdmin || user?.email === pv.submitted_by_email) &&
         !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD"].includes(pv.status) && (
-        <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-3 flex items-center gap-2 flex-wrap">
+          {/* Edit — Finance Admin only */}
+          {user?.isFinanceAdmin && (
+            <button onClick={() => {
+              setEditForm({
+                payee_name: pv.payee_name, payee_bank_name: pv.payee_bank_name,
+                payee_bank_acct: pv.payee_bank_acct, payment_method: pv.payment_method,
+                payment_type: pv.payment_type, amount: pv.amount,
+                line_items: pv.line_items ?? [],
+                ministry: pv.ministry, dept: pv.dept, project: pv.project,
+                pv_label: pv.pv_label, purpose: pv.purpose,
+                applicant_name: pv.applicant_name,
+                biller_code: pv.biller_code ?? "", ref_no: pv.ref_no ?? "",
+                cheque_no: pv.cheque_no ?? "",
+                exco_resolution_ref: pv.exco_resolution_ref ?? "",
+                exco_resolution_date: pv.exco_resolution_date ?? "",
+                loa_required: pv.loa_required ?? 1,
+              });
+              setShowEditModal(true);
+            }}
+              className="flex items-center gap-1.5 text-xs font-medium text-[#4a6da7] hover:text-[#3d5a8e] hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors">
+              <Pencil size={13} /> Edit PV
+            </button>
+          )}
+          {/* Cancel / Withdraw */}
           <button onClick={() => { setCancelRemarks(""); setShowCancelModal(true); }}
             className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors">
-            <Trash2 size={13} />
+            <XIcon size={13} />
             {user?.email === pv.submitted_by_email && !user?.isFinanceAdmin ? "Withdraw PV" : "Cancel PV"}
           </button>
+          {/* Hard Delete — Finance Admin only */}
+          {user?.isFinanceAdmin && (
+            <button onClick={() => setShowHardDeleteModal(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 transition-colors">
+              <Trash2 size={13} /> Delete Permanently
+            </button>
+          )}
         </div>
       )}
 
@@ -434,6 +487,176 @@ export default function PVDetailPage() {
               </button>
               <button onClick={() => setShowCancelModal(false)}
                 className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-lg text-sm font-medium hover:bg-stone-50 transition-colors">
+                Keep PV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit PV Modal ─────────────────────────────────────────── */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200">
+              <div>
+                <h2 className="text-base font-bold text-stone-800">Edit PV — {pv.pv_no}</h2>
+                <p className="text-xs text-stone-400 mt-0.5">All changes are saved immediately. Status is not affected.</p>
+              </div>
+              <button onClick={() => setShowEditModal(false)} className="text-stone-400 hover:text-stone-600 p-1"><XIcon size={18} /></button>
+            </div>
+            <div className="overflow-y-auto px-6 py-4 space-y-4 flex-1">
+              {/* Payee */}
+              <fieldset className="space-y-3">
+                <legend className="text-xs font-bold text-stone-500 uppercase tracking-wide">Payee</legend>
+                <EField label="Payee Name">
+                  <input className={ei} value={String(editForm.payee_name ?? "")} onChange={e => setEditForm(f => ({ ...f, payee_name: e.target.value }))} />
+                </EField>
+                <div className="grid grid-cols-2 gap-3">
+                  <EField label="Bank Name">
+                    <input className={ei} value={String(editForm.payee_bank_name ?? "")} onChange={e => setEditForm(f => ({ ...f, payee_bank_name: e.target.value }))} />
+                  </EField>
+                  <EField label="Account No.">
+                    <input className={ei} value={String(editForm.payee_bank_acct ?? "")} onChange={e => setEditForm(f => ({ ...f, payee_bank_acct: e.target.value }))} />
+                  </EField>
+                </div>
+              </fieldset>
+              {/* Payment */}
+              <fieldset className="space-y-3">
+                <legend className="text-xs font-bold text-stone-500 uppercase tracking-wide">Payment</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  <EField label="Payment Method">
+                    <select className={ei} value={String(editForm.payment_method ?? "")} onChange={e => setEditForm(f => ({ ...f, payment_method: e.target.value }))}>
+                      {["Bank transfer","JomPAY","Online Transfer","Cheque","Cash","Auto Debit","Other"].map(m => <option key={m}>{m}</option>)}
+                    </select>
+                  </EField>
+                  <EField label="Payment Type">
+                    <select className={ei} value={String(editForm.payment_type ?? "GENERAL")} onChange={e => setEditForm(f => ({ ...f, payment_type: e.target.value }))}>
+                      <option value="GENERAL">General</option>
+                      <option value="ASSET_PURCHASE">Asset Purchase</option>
+                    </select>
+                  </EField>
+                </div>
+                {/* Line items or flat amount */}
+                <EField label="Amount / Line Items">
+                  {(editForm.line_items as {description:string;amount:number}[])?.length === 0 ? (
+                    <div className="flex gap-2 items-center">
+                      <input className={`${ei} flex-1`} type="number" value={String(editForm.amount ?? "")} onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                      <button type="button" onClick={() => setEditForm(f => ({ ...f, line_items: [{description:"",amount:0}] }))}
+                        className="text-xs text-[#4a6da7] border border-blue-200 px-2 py-1.5 rounded-lg hover:bg-blue-50 whitespace-nowrap">
+                        <Plus size={11} className="inline mr-0.5" />Line items
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {(editForm.line_items as {description:string;amount:number}[]).map((li, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <input className={`${ei} flex-1`} value={li.description} placeholder="Description"
+                            onChange={e => setEditForm(f => { const l = [...(f.line_items as {description:string;amount:number}[])]; l[i]={...l[i],description:e.target.value}; return {...f,line_items:l}; })} />
+                          <input className={ei} type="number" value={li.amount||""} placeholder="Amount" style={{width:100}}
+                            onChange={e => setEditForm(f => { const l = [...(f.line_items as {description:string;amount:number}[])]; l[i]={...l[i],amount:Number(e.target.value)}; return {...f,line_items:l}; })} />
+                          <button type="button" onClick={() => setEditForm(f => ({ ...f, line_items: (f.line_items as {description:string;amount:number}[]).filter((_,j)=>j!==i) }))}
+                            className="text-stone-400 hover:text-red-500"><XIcon size={14}/></button>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between">
+                        <button type="button" onClick={() => setEditForm(f => ({ ...f, line_items: [...(f.line_items as {description:string;amount:number}[]), {description:"",amount:0}] }))}
+                          className="text-xs text-[#4a6da7] hover:underline flex items-center gap-1"><Plus size={11}/>Add row</button>
+                        <span className="text-xs font-semibold text-stone-600">
+                          Total: RM {(editForm.line_items as {description:string;amount:number}[]).reduce((s,l)=>s+(Number(l.amount)||0),0).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </EField>
+              </fieldset>
+              {/* Ministry / Project */}
+              <fieldset className="space-y-3">
+                <legend className="text-xs font-bold text-stone-500 uppercase tracking-wide">Ministry / Project</legend>
+                <div className="grid grid-cols-3 gap-3">
+                  <EField label="Ministry">
+                    <input className={ei} value={String(editForm.ministry ?? "")} onChange={e => setEditForm(f => ({ ...f, ministry: e.target.value }))} />
+                  </EField>
+                  <EField label="Department">
+                    <input className={ei} value={String(editForm.dept ?? "")} onChange={e => setEditForm(f => ({ ...f, dept: e.target.value }))} />
+                  </EField>
+                  <EField label="Project">
+                    <input className={ei} value={String(editForm.project ?? "")} onChange={e => setEditForm(f => ({ ...f, project: e.target.value }))} />
+                  </EField>
+                </div>
+                <EField label="PV Label (A/C Code)">
+                  <input className={ei} value={String(editForm.pv_label ?? "")} onChange={e => setEditForm(f => ({ ...f, pv_label: e.target.value }))} />
+                </EField>
+              </fieldset>
+              {/* Purpose */}
+              <EField label="Purpose">
+                <textarea className={`${ei} min-h-[72px] resize-none`} value={String(editForm.purpose ?? "")} onChange={e => setEditForm(f => ({ ...f, purpose: e.target.value }))} />
+              </EField>
+              {/* Misc */}
+              <fieldset className="space-y-3">
+                <legend className="text-xs font-bold text-stone-500 uppercase tracking-wide">Other</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  <EField label="Applicant Name">
+                    <input className={ei} value={String(editForm.applicant_name ?? "")} onChange={e => setEditForm(f => ({ ...f, applicant_name: e.target.value }))} />
+                  </EField>
+                  <EField label="LOA Required">
+                    <select className={ei} value={String(editForm.loa_required ?? 1)} onChange={e => setEditForm(f => ({ ...f, loa_required: Number(e.target.value) }))}>
+                      <option value={1}>1 Signatory</option>
+                      <option value={2}>2 Signatories</option>
+                    </select>
+                  </EField>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <EField label="EXCO Resolution Ref">
+                    <input className={ei} value={String(editForm.exco_resolution_ref ?? "")} onChange={e => setEditForm(f => ({ ...f, exco_resolution_ref: e.target.value }))} />
+                  </EField>
+                  <EField label="EXCO Resolution Date">
+                    <input className={ei} type="date" value={String(editForm.exco_resolution_date ?? "")} onChange={e => setEditForm(f => ({ ...f, exco_resolution_date: e.target.value }))} />
+                  </EField>
+                </div>
+              </fieldset>
+            </div>
+            <div className="px-6 py-4 border-t border-stone-200 flex gap-2">
+              <button onClick={() => callAdminAction("EDIT", editForm as Record<string,string>)} disabled={actionLoading}
+                className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
+                {actionLoading ? "Saving…" : "Save Changes"}
+              </button>
+              <button onClick={() => setShowEditModal(false)}
+                className="py-2.5 px-5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Hard Delete Modal ──────────────────────────────────────── */}
+      {showHardDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 size={18} className="text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-stone-800">Permanently Delete PV</h2>
+                <p className="text-xs text-red-600 font-medium">This cannot be undone</p>
+              </div>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-sm text-red-800 space-y-1">
+              <div className="font-semibold">{pv.pv_no} — {pv.payee_name}</div>
+              <div className="text-xs">Amount: {formatCurrency(pv.amount)}</div>
+            </div>
+            <p className="text-sm text-stone-600 mb-5">
+              This will <strong>permanently remove</strong> the PV from the database. There will be no audit trail. Only do this for PVs submitted in error.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => callAdminAction("HARD_DELETE")} disabled={actionLoading}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                <Trash2 size={14} /> {actionLoading ? "Deleting…" : "Yes, Delete Permanently"}
+              </button>
+              <button onClick={() => setShowHardDeleteModal(false)}
+                className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
                 Keep PV
               </button>
             </div>
