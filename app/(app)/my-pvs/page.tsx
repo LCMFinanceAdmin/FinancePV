@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { PV } from "@/lib/types";
-import { Search, Layers, FileText, Trash2 } from "lucide-react";
+import { Search, Layers, FileText, Trash2, CheckCircle2, XCircle } from "lucide-react";
 import Link from "next/link";
 
 type FilterStatus = "ALL" | "IN_PROGRESS" | "APPROVED" | "PAID" | "REJECTED";
@@ -42,6 +42,15 @@ export default function MyPVsPage() {
   const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Partial<PV> | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<Partial<PV> | null>(null);
+  const [rejectRemarks, setRejectRemarks] = useState("");
+  const [actioning, setActioning] = useState<string | null>(null); // pv.id being actioned
+  const [toast, setToast] = useState({ msg: "", ok: true });
+
+  function showMsg(msg: string, ok = true) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast({ msg: "", ok: true }), 3500);
+  }
 
   useEffect(() => {
     async function load() {
@@ -71,6 +80,26 @@ export default function MyPVsPage() {
     }
     load();
   }, [filter]);
+
+  async function callAdminAction(pvId: string, action: string, extras?: Record<string, string>) {
+    setActioning(pvId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pvId, action, ...extras }),
+      });
+      const json = await res.json();
+      if (!res.ok) { showMsg(json.error ?? "Action failed", false); return; }
+      // Update PV status in list
+      setPvs(list => list.map(p => p.id === pvId ? { ...p, status: json.status } : p));
+      showMsg(`Done — PV is now ${json.status?.replace(/_/g, " ")}`);
+      setRejectTarget(null);
+    } finally {
+      setActioning(null);
+    }
+  }
 
   async function handleDelete(pv: Partial<PV>) {
     setDeleting(true);
@@ -160,6 +189,36 @@ export default function MyPVsPage() {
         </div>
       )}
 
+      {/* Toast */}
+      {toast.msg && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white flex items-center gap-2 ${toast.ok ? "bg-green-600" : "bg-red-500"}`}>
+          {toast.ok ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Quick Reject Modal */}
+      {rejectTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <h2 className="text-base font-bold text-stone-800">Reject PV</h2>
+            <p className="text-sm text-stone-500">{rejectTarget.pv_no} — {rejectTarget.payee_name}</p>
+            <textarea value={rejectRemarks} onChange={e => setRejectRemarks(e.target.value)}
+              placeholder="Reason for rejection (required)…"
+              className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
+            <div className="flex gap-2">
+              <button onClick={() => callAdminAction(rejectTarget.id!, "REJECT", { remarks: rejectRemarks })}
+                disabled={!rejectRemarks.trim() || !!actioning}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors">
+                {actioning ? "Rejecting…" : "Confirm Reject"}
+              </button>
+              <button onClick={() => setRejectTarget(null)}
+                className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hard Delete Confirm Modal */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -221,17 +280,38 @@ export default function MyPVsPage() {
                         <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>
                         <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)}</div>
                       </div>
-                      <div className="flex items-start gap-2">
-                        <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
-                        {/* Delete button — Finance Admin only, not on PAID */}
-                        {isFinanceAdmin && pv.status !== "PAID" && (
-                          <button
-                            onClick={e => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(pv); }}
-                            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                            title="Delete permanently"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5">
+                          <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
+                          {isFinanceAdmin && pv.status !== "PAID" && (
+                            <button
+                              onClick={e => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(pv); }}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                              title="Delete permanently">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                        {/* Quick approve/reject for Finance Admin */}
+                        {isFinanceAdmin && ["PENDING", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status!) && (
+                          <div className="flex gap-1" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+                            <button
+                              onClick={() => {
+                                const action = pv.status === "PENDING" ? "REVIEW" : "SEND_TO_SIGNATORY";
+                                callAdminAction(pv.id!, action);
+                              }}
+                              disabled={actioning === pv.id}
+                              className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                              <CheckCircle2 size={10} />
+                              {pv.status === "PENDING" ? "Review" : "→ Signatory"}
+                            </button>
+                            <button
+                              onClick={() => { setRejectRemarks(""); setRejectTarget(pv); }}
+                              disabled={actioning === pv.id}
+                              className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-colors">
+                              <XCircle size={10} /> Reject
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
