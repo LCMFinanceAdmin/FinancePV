@@ -8,7 +8,7 @@ import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
   AlertTriangle, Banknote, FileText, User, Calendar,
-  ShieldCheck, Send, CreditCard, Trash2, Pencil, Plus, X as XIcon,
+  ShieldCheck, Send, CreditCard, Trash2, Pencil, Plus, X as XIcon, RotateCcw,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -319,11 +319,21 @@ export default function PVDetailPage() {
                   className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
                   <XCircle size={14} /> Reject
                 </button>
+                <button onClick={() => callAdminAction("UNREVIEW")} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 border border-amber-300 text-amber-700 bg-amber-50 text-sm rounded-lg font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors">
+                  <RotateCcw size={14} /> Unreview
+                </button>
               </div>
             )}
 
             {pv.status === "PENDING_SIGNATORY" && (
-              <p className="text-sm text-stone-600">Awaiting signatory signature — no action needed from Finance at this stage.</p>
+              <div className="flex gap-2 flex-wrap items-center">
+                <p className="text-sm text-stone-600">Awaiting signatory signature — no action needed from Finance at this stage.</p>
+                <button onClick={() => callAdminAction("UNREVIEW")} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 text-sm rounded-lg font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors shrink-0">
+                  <RotateCcw size={13} /> Unreview (revert to Pending)
+                </button>
+              </div>
             )}
 
             {pv.status === "APPROVED" && (
