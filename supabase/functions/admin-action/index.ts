@@ -153,6 +153,19 @@ Deno.serve(async (req) => {
       return json({ ok: true, action: "DELETED" });
     }
 
+    if (action === "UNREVIEW") {
+      if (!["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(pv.status))
+        return json({ error: "PV is not in a reviewable state to unreview" }, 400);
+      await db.from("pvs").update({
+        status: "PENDING",
+        finance_verified_by: null,
+        finance_verified_at: null,
+        approvals: [],
+        updated_at: new Date().toISOString(),
+      }).eq("id", pv_id);
+      return json({ ok: true, status: "PENDING" });
+    }
+
     if (action === "REJECT") {
       if (!body.remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
       await db.from("pvs").update({

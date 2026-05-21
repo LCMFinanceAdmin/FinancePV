@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import {
   CheckCircle2, XCircle, Clock, Search, ChevronDown, ChevronRight,
-  Layers, CheckSquare,
+  Layers, CheckSquare, RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 import type { PV, PVApproval } from "@/lib/types";
@@ -29,8 +29,9 @@ interface PendingPV {
 
 interface HistoryRow {
   pvId: string; pvNo: string; applicantName: string; ministry: string;
-  amount: number; role: string; signatoryName: string;
+  amount: number; role: string; signatoryName: string; signatoryEmail: string;
   action: "APPROVED" | "REJECTED"; timestamp: string; remarks: string;
+  pvStatus: string;
 }
 
 interface BulkRun { id: string; group_name: string; pv_ids: string[]; total_amount: number; pv_count: number; }
@@ -42,6 +43,7 @@ export default function SignatoryActivityPage() {
   const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState("");
+  const [userEmail, setUserEmail] = useState("");
   const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
   const [isSignatory, setIsSignatory] = useState(false);
   const [search, setSearch] = useState("");
@@ -50,6 +52,7 @@ export default function SignatoryActivityPage() {
 
   // Action modals
   const [pinModal, setPinModal] = useState<{ pvIds: string[]; action: "APPROVED" } | null>(null);
+  const [revertPinModal, setRevertPinModal] = useState<{ pvId: string } | null>(null);
   const [pin, setPin] = useState("");
   const [rejectModal, setRejectModal] = useState<{ pvIds: string[] } | null>(null);
   const [rejectRemarks, setRejectRemarks] = useState("");
@@ -73,7 +76,7 @@ export default function SignatoryActivityPage() {
           .in("status", ["PENDING_SIGNATORY", "PENDING", "REVIEWED"])
           .order("submitted_at", { ascending: false }),
         supabase.from("pvs")
-          .select("id,pv_no,applicant_name,ministry,amount,approvals")
+          .select("id,pv_no,applicant_name,ministry,amount,approvals,status")
           .not("approvals", "eq", "[]")
           .order("updated_at", { ascending: false })
           .limit(200),
@@ -82,6 +85,7 @@ export default function SignatoryActivityPage() {
 
       const role = profile?.role ?? "";
       setUserRole(role);
+      setUserEmail(user.email ?? "");
       setIsFinanceAdmin(["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role));
       setIsSignatory(SIGNATORY_ROLES.includes(role));
 
@@ -109,14 +113,16 @@ export default function SignatoryActivityPage() {
 
       // History
       const flat: HistoryRow[] = [];
-      for (const pv of (histData ?? []) as { id: string; pv_no: string; applicant_name?: string; ministry?: string; amount: number; approvals: PVApproval[] }[]) {
+      for (const pv of (histData ?? []) as { id: string; pv_no: string; applicant_name?: string; ministry?: string; amount: number; approvals: PVApproval[]; status: string }[]) {
         for (const a of (pv.approvals ?? [])) {
           if (!SIGNATORY_ROLES.includes(a.role)) continue;
           flat.push({
             pvId: pv.id, pvNo: pv.pv_no, applicantName: pv.applicant_name ?? "",
             ministry: pv.ministry ?? "", amount: pv.amount, role: a.role,
-            signatoryName: a.name || a.email, action: a.action as "APPROVED" | "REJECTED",
+            signatoryName: a.name || a.email, signatoryEmail: a.email ?? "",
+            action: a.action as "APPROVED" | "REJECTED",
             timestamp: a.timestamp, remarks: a.remarks ?? "",
+            pvStatus: pv.status,
           });
         }
       }
@@ -164,6 +170,41 @@ export default function SignatoryActivityPage() {
     setRejectRemarks("");
   }
 
+  function handleRevert(pvId: string) {
+    const needsPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(userRole);
+    if (needsPin) { setRevertPinModal({ pvId }); setPin(""); }
+    else doRevert(pvId, "");
+  }
+
+  async function doRevert(pvId: string, pinValue: string) {
+    setActioning(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pvId, action: "REVERT", pin: pinValue }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Revert failed");
+      // Update pending list: re-add PV or update its approvals
+      // Simplest: remove from pending list so page reflects state (user can refresh to see it back in pending)
+      setPendingPvs(pvs => pvs.map(p => {
+        if (p.id !== pvId) return p;
+        return { ...p, approvals: (p.approvals ?? []).filter(a => a.role !== userRole), status: json.status };
+      }));
+      // Remove from history (optimistic)
+      setHistoryRows(rows => rows.filter(r => !(r.pvId === pvId && r.signatoryEmail === userEmail)));
+      showMsg("Decision reverted — PV returned to pending queue");
+    } catch (e) {
+      showMsg((e as Error).message, false);
+    } finally {
+      setActioning(false);
+      setRevertPinModal(null);
+      setPin("");
+    }
+  }
+
   // Group by bulk run
   const { bulkGroups, standalones } = useMemo(() => {
     const q = search.toLowerCase();
@@ -209,7 +250,10 @@ export default function SignatoryActivityPage() {
 
   function PVRow({ pv, compact = false }: { pv: PendingPV; compact?: boolean }) {
     const canAct = isSignatory && !hasSigned(pv);
+    const alreadySigned = isSignatory && hasSigned(pv);
+    const myApproval = (pv.approvals ?? []).find(a => a.role === userRole);
     const isSel = selected.has(pv.id);
+    const canRevert = alreadySigned && !["PAID", "CANCELLED"].includes(pv.status);
     return (
       <div className={`flex items-center gap-3 px-4 py-3 ${compact ? "bg-stone-50/60" : "bg-white border border-stone-200 rounded-xl hover:shadow-sm"} transition-all group`}>
         {canAct && (
@@ -237,6 +281,17 @@ export default function SignatoryActivityPage() {
               <button onClick={() => handleReject([pv.id])}
                 className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors">
                 <XCircle size={11} /> Reject
+              </button>
+            </div>
+          )}
+          {canRevert && (
+            <div className="flex items-center gap-1 mt-1.5 justify-end">
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${myApproval?.action === "APPROVED" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                {myApproval?.action === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
+              </span>
+              <button onClick={() => handleRevert(pv.id)} disabled={actioning}
+                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50">
+                <RotateCcw size={10} /> Revert
               </button>
             </div>
           )}
@@ -396,10 +451,14 @@ export default function SignatoryActivityPage() {
                       <th className="px-4 py-3 text-left font-medium">Decision</th>
                       <th className="px-4 py-3 text-left font-medium">Date & Time</th>
                       <th className="px-4 py-3 text-left font-medium">Remarks</th>
+                      <th className="px-4 py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-50">
-                    {historyRows.map((r, i) => (
+                    {historyRows.map((r, i) => {
+                      const isMyRow = r.signatoryEmail === userEmail;
+                      const canRevertRow = isMyRow && !["PAID", "CANCELLED"].includes(r.pvStatus);
+                      return (
                       <tr key={i} className="hover:bg-stone-50/50 transition-colors">
                         <td className="px-4 py-3">
                           <Link href={`/my-pvs/${r.pvId}`} className="text-[#4a6da7] font-semibold hover:underline text-xs">{r.pvNo}</Link>
@@ -420,13 +479,52 @@ export default function SignatoryActivityPage() {
                         </td>
                         <td className="px-4 py-3 text-xs text-stone-400 whitespace-nowrap">{formatDateTime(r.timestamp)}</td>
                         <td className="px-4 py-3 text-xs text-stone-400 max-w-[160px] truncate" title={r.remarks}>{r.remarks || "—"}</td>
+                        <td className="px-4 py-3">
+                          {canRevertRow && (
+                            <button onClick={() => handleRevert(r.pvId)} disabled={actioning}
+                              className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 whitespace-nowrap">
+                              <RotateCcw size={10} /> Revert
+                            </button>
+                          )}
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Revert PIN Modal ── */}
+      {revertPinModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4">
+            <div className="flex items-center gap-2">
+              <RotateCcw size={18} className="text-amber-600" />
+              <h2 className="text-base font-bold text-stone-800">Confirm Revert Decision</h2>
+            </div>
+            <p className="text-sm text-stone-500">Enter your PIN to revert your decision on this PV. The PV will return to pending status.</p>
+            <input
+              type="password" inputMode="numeric" maxLength={6}
+              value={pin} onChange={e => setPin(e.target.value)}
+              placeholder="••••••"
+              className="w-full border border-stone-300 rounded-xl px-4 py-3 text-center text-2xl tracking-widest outline-none focus:border-amber-400"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => doRevert(revertPinModal.pvId, pin)}
+                disabled={!pin || actioning}
+                className="flex-1 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {actioning ? "Reverting…" : "Confirm Revert"}
+              </button>
+              <button onClick={() => { setRevertPinModal(null); setPin(""); }}
+                className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
     if (!signatoryRoles.includes(profile?.role)) return json({ error: "Not a signatory" }, 403);
 
     const { pv_id, action, remarks, pin } = await req.json();
-    if (!["APPROVED", "REJECTED"].includes(action)) return json({ error: "Invalid action" }, 400);
+    if (!["APPROVED", "REJECTED", "REVERT"].includes(action)) return json({ error: "Invalid action" }, 400);
     if (action === "REJECTED" && !remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
 
     // PIN verification (required for church officer signatories)
@@ -40,6 +40,28 @@ Deno.serve(async (req) => {
     if (!pv) return json({ error: "PV not found" }, 404);
 
     const isGM = profile.role === "GENERAL_MANAGER";
+
+    // ── REVERT: remove this signatory's approval entry ──────────────
+    if (action === "REVERT") {
+      const existingApprovals: { role: string }[] = pv.approvals ?? [];
+      const hadEntry = existingApprovals.some(a => a.role === profile.role);
+      if (!hadEntry) return json({ error: "No action found to revert for your role" }, 400);
+      if (["PAID", "CANCELLED"].includes(pv.status)) return json({ error: "Cannot revert a finalised PV" }, 400);
+
+      const newApprovals = existingApprovals.filter(a => a.role !== profile.role);
+      // Determine status after removal
+      let revertedStatus = pv.status;
+      if (isGM && pv.status === "REVIEWED") {
+        // GM approval is what set it to REVIEWED → revert to PENDING
+        revertedStatus = "PENDING";
+      } else if (["APPROVED", "REJECTED"].includes(pv.status)) {
+        revertedStatus = "PENDING_SIGNATORY";
+      }
+      // If still PENDING_SIGNATORY just keep it (other signatories still pending)
+      await db.from("pvs").update({ approvals: newApprovals, status: revertedStatus, updated_at: new Date().toISOString() }).eq("id", pv_id);
+      return json({ ok: true, status: revertedStatus });
+    }
+
     const allowedStatuses = isGM ? ["PENDING", "REVIEWED"] : ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"];
     if (!allowedStatuses.includes(pv.status)) return json({ error: `Cannot act on PV with status ${pv.status}` }, 400);
 
@@ -59,7 +81,7 @@ Deno.serve(async (req) => {
     let newStatus = pv.status;
 
     if (action === "REJECTED") {
-      newStatus = isGM ? "REJECTED" : "REJECTED";
+      newStatus = "REJECTED";
     } else if (isGM) {
       newStatus = "REVIEWED";
     } else {
