@@ -130,6 +130,7 @@ export default function SubmitPVPage() {
 
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [userRole, setUserRole] = useState("");
+  const [userMinistries, setUserMinistries] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -138,8 +139,9 @@ export default function SubmitPVPage() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("user_roles").select("full_name,role").eq("email", user.email).single().then(({ data: profile }) => {
+      supabase.from("user_roles").select("full_name,role,ministries").eq("email", user.email).single().then(({ data: profile }) => {
         setUserRole(profile?.role ?? "");
+        setUserMinistries(profile?.ministries ?? []);
         setForm(f => ({
           ...f,
           applicant_email: user.email ?? "",
@@ -160,7 +162,13 @@ export default function SubmitPVPage() {
   const totalFromItems = form.line_items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const displayAmount = totalFromItems;
   const loa = getLOATier(displayAmount, "GENERAL");
-  const canManageProjects = PROJECT_MANAGER_ROLES.includes(userRole);
+  // Finance Admin / senior roles can always manage; Ministry Heads only for their assigned ministry
+  const DIRECT_MANAGER_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "GENERAL_MANAGER", "TREASURER", "BISHOP", "SECRETARY"];
+  const canManageProjects =
+    DIRECT_MANAGER_ROLES.includes(userRole) ||
+    (userRole === "MINISTRY_HEAD" && form.ministry !== "" && userMinistries.includes(form.ministry)) ||
+    (userMinistries.length > 0 && form.ministry !== "" && userMinistries.includes(form.ministry));
+  const budgetManageUrl = `/budget?ministry=${encodeURIComponent(form.ministry)}`;
 
   function setField<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm(f => ({ ...f, [key]: value }));
@@ -356,9 +364,9 @@ export default function SubmitPVPage() {
                       <option value="">— Select project (optional) —</option>
                       {projects.map(p => <option key={p} value={p}>{p}</option>)}
                     </InlineSelect>
-                    {canManageProjects && (
-                      <a href="/control-center/budget" target="_blank"
-                        className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap">
+                    {canManageProjects && form.ministry && (
+                      <a href={budgetManageUrl} target="_blank"
+                        className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap font-medium">
                         + Manage
                       </a>
                     )}
@@ -368,9 +376,9 @@ export default function SubmitPVPage() {
                     <input className={`${uline} flex-1`} value={form.project}
                       onChange={e => setField("project", e.target.value)}
                       placeholder="No projects set up yet — type or leave blank" />
-                    {canManageProjects && (
-                      <a href="/control-center?tab=projects" target="_blank"
-                        className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap">
+                    {canManageProjects && form.ministry && (
+                      <a href={budgetManageUrl} target="_blank"
+                        className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap font-medium">
                         + Add projects
                       </a>
                     )}
