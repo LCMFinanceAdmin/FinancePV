@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import type { PV, PVApproval } from "@/lib/types";
@@ -7,6 +7,22 @@ import { getLOATier } from "@/lib/utils";
 import {
   pdf, Document, Page, Text, View, StyleSheet, Image, Font,
 } from "@react-pdf/renderer";
+
+/** Convert an SVG file at /lcm-logo.svg to a PNG data URI usable by react-pdf */
+async function svgToPngDataUri(svgPath: string, size = 200): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (ctx) { ctx.drawImage(img, 0, 0, size, size); }
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(""); // fail silently
+    img.src = svgPath;
+  });
+}
 
 Font.register({
   family: "Arial",
@@ -55,7 +71,7 @@ const s = StyleSheet.create({
   finHeader:   { backgroundColor: "#000", color: "#fff", textAlign: "center", fontSize: 8, fontFamily: "Helvetica-Bold", padding: "3pt" },
 });
 
-function PVDocument({ pv }: { pv: PV }) {
+function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
   const items = pv.line_items ?? [];
   const approvals: PVApproval[] = pv.approvals ?? [];
   const total = items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0) || pv.amount;
@@ -88,7 +104,9 @@ function PVDocument({ pv }: { pv: PV }) {
           <View style={{ flex: 1 }}>
             <View style={s.row}>
               <View style={{ width: 55 }}>
-                <Image src="https://www.lutheran.org.my/wp-content/uploads/2018/09/LCM-Logo-120px.png" style={{ width: 50 }} />
+                {logoDataUri ? (
+                  <Image src={logoDataUri} style={{ width: 50, height: 50 }} />
+                ) : null}
               </View>
               <View style={{ flex: 1, paddingLeft: 6 }}>
                 <Text style={[s.bold, { fontSize: 11 }]}>LUTHERAN CHURCH IN MALAYSIA</Text>
@@ -271,11 +289,17 @@ function PVDocument({ pv }: { pv: PV }) {
 
 export default function PVPdfDownload({ pv }: { pv: PV }) {
   const [loading, setLoading] = useState(false);
+  const [logoDataUri, setLogoDataUri] = useState("");
+
+  useEffect(() => {
+    svgToPngDataUri("/lcm-logo.svg", 200).then(setLogoDataUri);
+  }, []);
 
   async function download() {
     setLoading(true);
     try {
-      const blob = await pdf(<PVDocument pv={pv} />).toBlob();
+      const logo = logoDataUri || await svgToPngDataUri("/lcm-logo.svg", 200);
+      const blob = await pdf(<PVDocument pv={pv} logoDataUri={logo} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
