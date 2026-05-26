@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid,
   RefreshCw, Users, Building2, Settings, LogOut,
-  ChevronRight, Activity, ClipboardCheck,
+  ChevronRight, Activity, ClipboardCheck, PiggyBank,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -35,6 +35,12 @@ const NAV_SECTIONS = [
       { href: "/signatory-activity",  label: "Signatory Activity",icon: <Activity size={16} />,       show: (u: UserProfile) => u.isFinanceAdmin },
       { href: "/hod-activity",        label: "EXCO Activity",     icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isFinanceAdmin },
       { href: "/settings",            label: "Settings",          icon: <Settings size={16} />,       show: (u: UserProfile) => u.isFinanceAdmin },
+    ],
+  },
+  {
+    label: "Budget",
+    items: [
+      { href: "/budget", label: "Ministry Budget", icon: <PiggyBank size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory },
     ],
   },
   {
