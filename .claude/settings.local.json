@@ -18,7 +18,15 @@
       "Bash(npx supabase *)",
       "PowerShell(Invoke-WebRequest -Uri \"https://www.lutheran.org.my/wp-content/uploads/2018/09/LCM-Logo-120px.png\" -OutFile \"C:\\\\Users\\\\Admin\\\\lcm-finance-app\\\\.claude\\\\worktrees\\\\youthful-raman-103d3b\\\\public\\\\lcm-logo.png\" -UseBasicParsing; if \\(Test-Path \"C:\\\\Users\\\\Admin\\\\lcm-finance-app\\\\.claude\\\\worktrees\\\\youthful-raman-103d3b\\\\public\\\\lcm-logo.png\"\\) { \"Downloaded OK - size: $\\(\\(Get-Item 'C:\\\\Users\\\\Admin\\\\lcm-finance-app\\\\.claude\\\\worktrees\\\\youthful-raman-103d3b\\\\public\\\\lcm-logo.png'\\).Length\\) bytes\" } else { \"Download failed\" })",
       "mcp__Claude_Preview__preview_start",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git rebase *)",
+      "Bash(git restore *)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(npm run *)"
     ]
   }
 }

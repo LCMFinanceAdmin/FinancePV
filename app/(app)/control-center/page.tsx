@@ -45,6 +45,18 @@ interface MinistryProject {
   description: string; active: boolean; sort_order: number;
 }
 
+interface BudgetProject {
+  id: string;
+  ministry: string;
+  name: string;
+  project_name?: string;
+  estimated_income: number;
+  estimated_expenses: number;
+  spent?: number;
+  balance?: number;
+  color?: "red" | "yellow" | "green";
+}
+
 interface Stats {
   pending_review: number;
   pending_signatory: number;
@@ -74,7 +86,7 @@ function ControlCenterInner() {
   const [userEmail, setUserEmail] = useState("");
 
   // Projects state
-  const [projects, setProjects] = useState<MinistryProject[]>([]);
+  const [projects, setProjects] = useState<BudgetProject[]>([]);
   const [projMinistry, setProjMinistry] = useState(MINISTRIES[0]);
   const [projModal, setProjModal] = useState<{ mode: "add" | "edit"; item?: MinistryProject } | null>(null);
   const [projForm, setProjForm] = useState({ name: "", description: "" });
@@ -86,9 +98,59 @@ function ControlCenterInner() {
   }
 
   async function loadProjects(ministry: string) {
-    const { data } = await supabase.from("ministry_projects").select("*")
-      .eq("ministry", ministry).order("sort_order").order("name");
-    setProjects(data ?? []);
+    try {
+      // Load budget items
+      const { data: budgetItems } = await supabase
+        .from("budget_items")
+        .select("*")
+        .eq("ministry", ministry)
+        .order("project_name");
+
+      if (!budgetItems) {
+        setProjects([]);
+        return;
+      }
+
+      // Get spending data per project
+      const { data: pvs } = await supabase
+        .from("pvs")
+        .select("project, amount")
+        .eq("ministry", ministry)
+        .in("status", ["APPROVED", "PAID"]);
+
+      const spendingMap: Record<string, number> = {};
+      (pvs ?? []).forEach((pv: any) => {
+        if (pv.project) {
+          spendingMap[pv.project] = (spendingMap[pv.project] || 0) + (pv.amount || 0);
+        }
+      });
+
+      // Calculate balance and color-code
+      const withSpending: BudgetProject[] = (budgetItems ?? []).map((item: any) => {
+        const spent = spendingMap[item.project_name] || 0;
+        const balance = (item.estimated_income + item.estimated_expenses) - spent;
+        let color: "red" | "yellow" | "green" = "green";
+        if (balance < 0) color = "red";
+        else if (balance <= 200) color = "yellow";
+
+        return {
+          id: item.id,
+          ministry: item.ministry,
+          name: item.project_name,
+          project_name: item.project_name,
+          estimated_income: item.estimated_income,
+          estimated_expenses: item.estimated_expenses,
+          spent,
+          balance,
+          color,
+        };
+      });
+
+      setProjects(withSpending);
+    } catch (err) {
+      console.error("Load projects error:", err);
+      setProjects([]);
+    }
   }
 
   async function saveProject() {
@@ -114,16 +176,18 @@ function ControlCenterInner() {
     setProjSaving(false);
   }
 
-  async function toggleProjectActive(proj: MinistryProject) {
-    await supabase.from("ministry_projects").update({ active: !proj.active }).eq("id", proj.id);
-    setProjects(ps => ps.map(p => p.id === proj.id ? { ...p, active: !p.active } : p));
-  }
+  // Note: Project management is now handled through /control-center/budget
+  // These functions are kept for reference but not used
+  // async function toggleProjectActive(proj: MinistryProject) {
+  //   await supabase.from("ministry_projects").update({ active: !proj.active }).eq("id", proj.id);
+  //   setProjects(ps => ps.map(p => p.id === proj.id ? { ...p, active: !p.active } : p));
+  // }
 
-  async function deleteProject(proj: MinistryProject) {
-    await supabase.from("ministry_projects").delete().eq("id", proj.id);
-    setProjects(ps => ps.filter(p => p.id !== proj.id));
-    showToast("Project deleted");
-  }
+  // async function deleteProject(proj: MinistryProject) {
+  //   await supabase.from("ministry_projects").delete().eq("id", proj.id);
+  //   setProjects(ps => ps.filter(p => p.id !== proj.id));
+  //   showToast("Project deleted");
+  // }
 
   async function load() {
     const now = new Date();
@@ -281,7 +345,7 @@ function ControlCenterInner() {
           {MINISTRIES.map((ministry) => {
             const ministryProjects = projects.filter(p => p.ministry === ministry);
             const totalBudget = ministryProjects.reduce((sum, p) => sum + (p.estimated_income + p.estimated_expenses), 0);
-            const totalSpent = ministryProjects.reduce((sum, p) => sum + p.spent, 0);
+            const totalSpent = ministryProjects.reduce((sum, p) => sum + (p.spent || 0), 0);
             const totalBalance = totalBudget - totalSpent;
 
             return (
@@ -320,7 +384,7 @@ function ControlCenterInner() {
                         <div className="flex-1">
                           <div className="font-medium text-stone-800">{proj.name}</div>
                           <div className="text-stone-500 mt-0.5">
-                            Est: {formatCurrency(proj.estimated_income + proj.estimated_expenses)} | Spent: {formatCurrency(proj.spent)}
+                            Est: {formatCurrency(proj.estimated_income + proj.estimated_expenses)} | Spent: {formatCurrency(proj.spent || 0)}
                           </div>
                         </div>
                         <div className={`font-semibold whitespace-nowrap ml-2 ${
@@ -328,7 +392,7 @@ function ControlCenterInner() {
                           proj.color === "yellow" ? "text-amber-600" :
                           "text-green-600"
                         }`}>
-                          {formatCurrency(proj.balance)}
+                          {formatCurrency(proj.balance || 0)}
                         </div>
                       </div>
                     ))}
@@ -339,72 +403,7 @@ function ControlCenterInner() {
           })}
         </div>
 
-        {/* Hidden old project list - keeping for reference */}
-        <div className="space-y-2 hidden">
-          {projects.length === 0 ? (
-            <div className="text-sm text-stone-400 py-6 text-center border border-dashed border-stone-200 rounded-xl">
-              No projects for <span className="font-medium text-stone-500">{projMinistry}</span>.
-              {canManageProjects && (
-                <button
-                  onClick={() => { setProjForm({ name: "", description: "" }); setProjModal({ mode: "add" }); }}
-                  className="ml-1.5 text-[#4a6da7] underline underline-offset-2"
-                >
-                  Add one now
-                </button>
-              )}
-            </div>
-          ) : (
-            projects.map((proj) => (
-              <div
-                key={proj.id}
-                className={`flex items-start gap-3 p-3 rounded-xl border transition-colors ${
-                  proj.active ? "bg-white border-stone-200" : "bg-stone-50 border-stone-100"
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className={`text-sm font-semibold ${proj.active ? "text-stone-800" : "text-stone-400 line-through"}`}>
-                    {proj.name}
-                  </div>
-                  {proj.description && (
-                    <div className="text-xs text-stone-400 mt-0.5 truncate">{proj.description}</div>
-                  )}
-                </div>
-                {canManageProjects && (
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <button
-                      onClick={() => toggleProjectActive(proj)}
-                      title={proj.active ? "Deactivate" : "Activate"}
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium border transition-colors ${
-                        proj.active
-                          ? "bg-green-50 text-green-700 border-green-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                          : "bg-stone-100 text-stone-400 border-stone-200 hover:bg-green-50 hover:text-green-700 hover:border-green-200"
-                      }`}
-                    >
-                      {proj.active ? "Active" : "Inactive"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setProjForm({ name: proj.name, description: proj.description ?? "" });
-                        setProjModal({ mode: "edit", item: proj });
-                      }}
-                      className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors"
-                      title="Edit"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      onClick={() => { if (confirm(`Delete "${proj.name}"?`)) deleteProject(proj); }}
-                      className="p-1.5 rounded-lg hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+        {/* Old project management moved to /control-center/budget */}
       </div>
 
       {/* Add/Edit Project Modal */}
