@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
@@ -37,11 +38,18 @@ interface BudgetWithSpending extends BudgetItem {
 
 export default function BudgetPage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+
+  // Get ministry from URL parameter, otherwise default to first ministry
+  const ministryParam = searchParams.get("ministry");
+  const initialMinistry = ministryParam && MINISTRIES.includes(decodeURIComponent(ministryParam))
+    ? decodeURIComponent(ministryParam)
+    : MINISTRIES[0];
 
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState("");
   const [userEmail, setUserEmail] = useState("");
-  const [ministry, setMinistry] = useState(MINISTRIES[0]);
+  const [ministry, setMinistry] = useState(initialMinistry);
   const [budgetItems, setBudgetItems] = useState<BudgetWithSpending[]>([]);
   const [modal, setModal] = useState<{ mode: "add" | "edit"; item?: BudgetItem } | null>(null);
   const [form, setForm] = useState({
