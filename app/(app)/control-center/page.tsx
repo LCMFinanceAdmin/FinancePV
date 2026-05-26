@@ -354,17 +354,27 @@ function ControlCenterInner() {
                 className="bg-white border border-stone-200 rounded-lg p-4 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between mb-3">
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-bold text-stone-800">{ministry}</h3>
                     <p className="text-xs text-stone-500 mt-0.5">
                       {ministryProjects.length} project{ministryProjects.length !== 1 ? 's' : ''} · {formatCurrency(totalBudget)} total budget
                     </p>
                   </div>
-                  <div className="text-right">
-                    <div className={`text-sm font-bold ${totalBalance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {formatCurrency(totalBalance)}
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="text-right">
+                      <div className={`text-sm font-bold ${totalBalance >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        {formatCurrency(totalBalance)}
+                      </div>
+                      <div className="text-xs text-stone-500">Balance</div>
                     </div>
-                    <div className="text-xs text-stone-500">Balance</div>
+                    {canManageProjects && (
+                      <a
+                        href={`/control-center/budget?ministry=${encodeURIComponent(ministry)}`}
+                        className="text-xs font-semibold px-3 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors"
+                      >
+                        Edit Budget
+                      </a>
+                    )}
                   </div>
                 </div>
 
