@@ -175,7 +175,7 @@ export default function BudgetPage() {
         } else {
           showToast("Budget created successfully");
           setModal(null);
-          setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0 });
+          setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" });
           await loadBudgetItems(ministry);
         }
       }
@@ -259,7 +259,7 @@ export default function BudgetPage() {
         <div className="mb-8">
           <button
             onClick={() => {
-              setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0 });
+              setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" });
               setModal({ mode: "add" });
             }}
             className="w-full md:w-auto bg-[#4a6da7] hover:bg-[#3d5a8f] text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-md"
@@ -279,7 +279,7 @@ export default function BudgetPage() {
             {canManageBudget && (
               <button
                 onClick={() => {
-                  setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0 });
+                  setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" });
                   setModal({ mode: "add" });
                 }}
                 className="text-[#4a6da7] font-semibold hover:underline"
