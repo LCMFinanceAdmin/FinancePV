@@ -267,40 +267,80 @@ function ControlCenterInner() {
         </div>
       </div>
 
-      {/* Ministry Projects */}
+      {/* Budget Overview */}
       <div ref={projSectionRef}>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-bold text-stone-700">Ministry Projects</h2>
-          {canManageProjects && (
-            <Button
-              size="sm"
-              onClick={() => { setProjForm({ name: "", description: "" }); setProjModal({ mode: "add" }); }}
-              className="flex items-center gap-1.5"
-            >
-              <Plus size={14} /> Add Project
-            </Button>
-          )}
+          <h2 className="text-base font-bold text-stone-700">Budget Overview by Ministry</h2>
+          <a href="/control-center/budget" className="text-xs text-[#4a6da7] hover:underline font-semibold">
+            Full Budget Management →
+          </a>
         </div>
 
-        {/* Ministry tabs */}
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-thin">
-          {MINISTRIES.map((m) => (
-            <button
-              key={m}
-              onClick={() => setProjMinistry(m)}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                projMinistry === m
-                  ? "bg-[#4a6da7] text-white border-[#4a6da7]"
-                  : "bg-white text-stone-500 border-stone-200 hover:border-[#4a6da7]/40 hover:text-stone-700"
-              }`}
-            >
-              {m}
-            </button>
-          ))}
+        {/* Ministry Budget Cards - Vertical Layout */}
+        <div className="space-y-3">
+          {MINISTRIES.map((ministry) => {
+            const ministryProjects = projects.filter(p => p.ministry === ministry);
+            const totalBudget = ministryProjects.reduce((sum, p) => sum + (p.estimated_income + p.estimated_expenses), 0);
+            const totalSpent = ministryProjects.reduce((sum, p) => sum + p.spent, 0);
+            const totalBalance = totalBudget - totalSpent;
+
+            return (
+              <div
+                key={ministry}
+                className="bg-white border border-stone-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="font-bold text-stone-800">{ministry}</h3>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      {ministryProjects.length} project{ministryProjects.length !== 1 ? 's' : ''} · {formatCurrency(totalBudget)} total budget
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-sm font-bold ${totalBalance >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {formatCurrency(totalBalance)}
+                    </div>
+                    <div className="text-xs text-stone-500">Balance</div>
+                  </div>
+                </div>
+
+                {ministryProjects.length === 0 ? (
+                  <div className="text-xs text-stone-400 py-3">
+                    No budgets set up yet.
+                    {canManageProjects && (
+                      <a href="/control-center/budget" className="ml-1 text-[#4a6da7] underline">
+                        Add one
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-2 border-t border-stone-100">
+                    {ministryProjects.map((proj) => (
+                      <div key={proj.id} className="flex justify-between items-start text-xs">
+                        <div className="flex-1">
+                          <div className="font-medium text-stone-800">{proj.name}</div>
+                          <div className="text-stone-500 mt-0.5">
+                            Est: {formatCurrency(proj.estimated_income + proj.estimated_expenses)} | Spent: {formatCurrency(proj.spent)}
+                          </div>
+                        </div>
+                        <div className={`font-semibold whitespace-nowrap ml-2 ${
+                          proj.color === "red" ? "text-red-600" :
+                          proj.color === "yellow" ? "text-amber-600" :
+                          "text-green-600"
+                        }`}>
+                          {formatCurrency(proj.balance)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
-        {/* Project list */}
-        <div className="space-y-2">
+        {/* Hidden old project list - keeping for reference */}
+        <div className="space-y-2 hidden">
           {projects.length === 0 ? (
             <div className="text-sm text-stone-400 py-6 text-center border border-dashed border-stone-200 rounded-xl">
               No projects for <span className="font-medium text-stone-500">{projMinistry}</span>.

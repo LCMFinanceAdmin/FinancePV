@@ -22,6 +22,9 @@ interface BudgetItem {
   project_name: string;
   estimated_income: number;
   estimated_expenses: number;
+  contributions_received?: number;
+  contributions_expected?: number;
+  special_notes?: string;
   created_by?: string;
   created_at?: string;
 }
@@ -41,7 +44,14 @@ export default function BudgetPage() {
   const [ministry, setMinistry] = useState(MINISTRIES[0]);
   const [budgetItems, setBudgetItems] = useState<BudgetWithSpending[]>([]);
   const [modal, setModal] = useState<{ mode: "add" | "edit"; item?: BudgetItem } | null>(null);
-  const [form, setForm] = useState({ project_name: "", estimated_income: 0, estimated_expenses: 0 });
+  const [form, setForm] = useState({
+    project_name: "",
+    estimated_income: 0,
+    estimated_expenses: 0,
+    contributions_received: 0,
+    contributions_expected: 0,
+    special_notes: ""
+  });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
 
@@ -132,6 +142,9 @@ export default function BudgetPage() {
             project_name: form.project_name.trim(),
             estimated_income: form.estimated_income,
             estimated_expenses: form.estimated_expenses,
+            contributions_received: form.contributions_received,
+            contributions_expected: form.contributions_expected,
+            special_notes: form.special_notes,
             updated_at: new Date().toISOString(),
           })
           .eq("id", modal.item.id);
@@ -151,6 +164,9 @@ export default function BudgetPage() {
             project_name: form.project_name.trim(),
             estimated_income: form.estimated_income,
             estimated_expenses: form.estimated_expenses,
+            contributions_received: form.contributions_received,
+            contributions_expected: form.contributions_expected,
+            special_notes: form.special_notes,
             created_by: userEmail,
           });
 
@@ -328,6 +344,9 @@ export default function BudgetPage() {
                             project_name: item.project_name,
                             estimated_income: item.estimated_income,
                             estimated_expenses: item.estimated_expenses,
+                            contributions_received: item.contributions_received || 0,
+                            contributions_expected: item.contributions_expected || 0,
+                            special_notes: item.special_notes || "",
                           });
                           setModal({ mode: "edit", item });
                         }}
@@ -423,6 +442,51 @@ export default function BudgetPage() {
               <div className="bg-[#4a6da7] text-white rounded-lg p-4">
                 <div className="text-sm font-medium text-blue-100">Total Budget (Income + Expenses)</div>
                 <div className="text-3xl font-bold mt-2">{formatCurrency((form.estimated_income + form.estimated_expenses))}</div>
+              </div>
+
+              {/* Contributions Received */}
+              <div>
+                <label className="block text-sm font-bold text-stone-800 mb-2">
+                  Contributions Received (RM)
+                </label>
+                <input
+                  type="number"
+                  value={form.contributions_received}
+                  onChange={(e) => setForm(f => ({ ...f, contributions_received: parseFloat(e.target.value) || 0 }))}
+                  placeholder="0.00"
+                  className="w-full border-2 border-stone-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:border-[#4a6da7] focus:ring-2 focus:ring-[#4a6da7]/20"
+                />
+                <p className="text-xs text-stone-500 mt-2">Actual contributions/income received to date</p>
+              </div>
+
+              {/* Contributions Expected */}
+              <div>
+                <label className="block text-sm font-bold text-stone-800 mb-2">
+                  Expected Contributions (RM)
+                </label>
+                <input
+                  type="number"
+                  value={form.contributions_expected}
+                  onChange={(e) => setForm(f => ({ ...f, contributions_expected: parseFloat(e.target.value) || 0 }))}
+                  placeholder="0.00"
+                  className="w-full border-2 border-stone-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:border-[#4a6da7] focus:ring-2 focus:ring-[#4a6da7]/20"
+                />
+                <p className="text-xs text-stone-500 mt-2">Expected future contributions/pledged amount</p>
+              </div>
+
+              {/* Special Notes / Journal */}
+              <div>
+                <label className="block text-sm font-bold text-stone-800 mb-2">
+                  Special Arrangements (Journal)
+                </label>
+                <textarea
+                  value={form.special_notes}
+                  onChange={(e) => setForm(f => ({ ...f, special_notes: e.target.value }))}
+                  placeholder="e.g., Budget shared with Mission ministry, special approval from Bishop..."
+                  rows={3}
+                  className="w-full border-2 border-stone-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:border-[#4a6da7] focus:ring-2 focus:ring-[#4a6da7]/20"
+                />
+                <p className="text-xs text-stone-500 mt-2">Document any special arrangements, sharing agreements, or important notes</p>
               </div>
             </div>
 
