@@ -217,9 +217,8 @@ export default function SubmitPVPage() {
           {/* Header bar */}
           <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b-2 border-stone-800">
             <div className="flex flex-col">
-              <div className="w-16 h-10 bg-stone-100 border border-stone-300 flex items-center justify-center text-[10px] text-stone-400 rounded">
-                LCM Logo
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/lcm-logo.svg" alt="LCM Logo" className="w-16 h-16 object-contain" />
             </div>
             <div className="text-right">
               <table className="border border-stone-800 text-xs">
