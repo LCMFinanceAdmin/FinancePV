@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -65,7 +66,17 @@ const emptyForm = {
 };
 
 export default function BudgetPage() {
+  return (
+    <Suspense>
+      <BudgetInner />
+    </Suspense>
+  );
+}
+
+function BudgetInner() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const queryMinistry = searchParams.get("ministry") ?? "";
 
   const [userRole, setUserRole] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -119,7 +130,12 @@ export default function BudgetPage() {
     const visible = (FINANCE_ADMIN_ROLES.includes(role) || SENIOR_ROLES.includes(role))
       ? MINISTRIES
       : ministries;
-    if (visible.length > 0) setSelectedMinistry(visible[0]);
+    // Honor ?ministry= query param if it's in the visible list, otherwise pick first
+    if (queryMinistry && visible.includes(queryMinistry)) {
+      setSelectedMinistry(queryMinistry);
+    } else if (visible.length > 0) {
+      setSelectedMinistry(visible[0]);
+    }
 
     setLoading(false);
   }
