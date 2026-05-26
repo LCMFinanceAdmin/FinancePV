@@ -65,6 +65,12 @@ interface Stats {
   paid_amount: number;
 }
 
+interface BudgetWithSpending extends BudgetProject {
+  spent?: number;
+  balance?: number;
+  color?: "red" | "yellow" | "green";
+}
+
 export default function ControlCenterPage() {
   return (
     <Suspense>
@@ -92,9 +98,61 @@ function ControlCenterInner() {
   const [projForm, setProjForm] = useState({ name: "", description: "" });
   const [projSaving, setProjSaving] = useState(false);
 
+  // Budget editor modal state
+  const [budgetEditMinistry, setBudgetEditMinistry] = useState<string | null>(null);
+  const [budgetItemsEdit, setBudgetItemsEdit] = useState<BudgetWithSpending[]>([]);
+  const [budgetEditSaving, setBudgetEditSaving] = useState(false);
+
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
     setTimeout(() => setToast({ msg: "", ok: true }), 3000);
+  }
+
+  async function openBudgetEditor(ministry: string) {
+    try {
+      // Load budget items for this ministry
+      const { data: budgetItems } = await supabase
+        .from("budget_items")
+        .select("*")
+        .eq("ministry", ministry)
+        .order("project_name");
+
+      if (!budgetItems) {
+        setBudgetItemsEdit([]);
+      } else {
+        // Get spending data
+        const { data: pvs } = await supabase
+          .from("pvs")
+          .select("project, amount")
+          .eq("ministry", ministry)
+          .in("status", ["APPROVED", "PAID"]);
+
+        const spendingMap: Record<string, number> = {};
+        (pvs ?? []).forEach((pv: any) => {
+          if (pv.project) {
+            spendingMap[pv.project] = (spendingMap[pv.project] || 0) + (pv.amount || 0);
+          }
+        });
+
+        // Calculate balance and color
+        const withSpending: BudgetWithSpending[] = (budgetItems ?? []).map((item: any) => {
+          const spent = spendingMap[item.project_name] || 0;
+          const balance = (item.estimated_income + item.estimated_expenses) - spent;
+          let color: "red" | "yellow" | "green" = "green";
+          if (balance < 0) color = "red";
+          else if (balance <= 200) color = "yellow";
+
+          return { ...item, spent, balance, color };
+        });
+
+        setBudgetItemsEdit(withSpending);
+      }
+
+      setBudgetEditMinistry(ministry);
+    } catch (err) {
+      console.error("Error loading budget items:", err);
+      showToast("Error loading budgets", false);
+    }
   }
 
   async function loadProjects(ministry: string) {
@@ -321,9 +379,6 @@ function ControlCenterInner() {
       <div ref={projSectionRef}>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-bold text-stone-700">Budget Overview by Ministry</h2>
-          <a href="/control-center/budget" className="text-xs text-[#4a6da7] hover:underline font-semibold">
-            Full Budget Management →
-          </a>
         </div>
 
         {/* Ministry Budget Cards - Vertical Layout */}
@@ -355,20 +410,20 @@ function ControlCenterInner() {
                     </div>
                     {canManageProjects && (
                       <div className="flex gap-2">
-                        <a
-                          href={`/control-center/budget?ministry=${encodeURIComponent(ministry)}`}
+                        <button
+                          onClick={() => openBudgetEditor(ministry)}
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors"
                         >
-                          Manage
-                        </a>
+                          Edit Budget
+                        </button>
                         {ministryProjects.length > 0 && (
-                          <a
-                            href={`/control-center/budget?ministry=${encodeURIComponent(ministry)}`}
+                          <button
+                            onClick={() => openBudgetEditor(ministry)}
                             className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors border border-green-200"
                             title="Add new budget item"
                           >
                             <Plus size={13} />
-                          </a>
+                          </button>
                         )}
                       </div>
                     )}
@@ -379,12 +434,12 @@ function ControlCenterInner() {
                   <div className="text-center py-4">
                     <div className="text-stone-400 text-sm mb-3">No budgets set up yet</div>
                     {canManageProjects && (
-                      <a
-                        href={`/control-center/budget?ministry=${encodeURIComponent(ministry)}`}
+                      <button
+                        onClick={() => openBudgetEditor(ministry)}
                         className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors border border-green-200"
                       >
                         <Plus size={14} /> Add Budget Item
-                      </a>
+                      </button>
                     )}
                   </div>
                 ) : (
@@ -466,6 +521,88 @@ function ControlCenterInner() {
               >
                 {projSaving ? "Saving…" : projModal.mode === "add" ? "Add Project" : "Save Changes"}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Budget Editor Modal */}
+      {budgetEditMinistry && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="bg-[#4a6da7] text-white p-6 flex items-center justify-between sticky top-0">
+              <h2 className="text-lg font-bold">Edit Budget - {budgetEditMinistry}</h2>
+              <button
+                onClick={() => setBudgetEditMinistry(null)}
+                className="hover:bg-white/20 p-1 rounded transition-colors"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              {budgetItemsEdit.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-stone-500 mb-4">No budget items yet for {budgetEditMinistry}</div>
+                  <a
+                    href={`/control-center/budget?ministry=${encodeURIComponent(budgetEditMinistry)}`}
+                    className="inline-flex items-center gap-1 text-sm font-semibold px-4 py-2 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors border border-green-200"
+                  >
+                    <Plus size={16} /> Add First Budget Item
+                  </a>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <table className="w-full text-sm">
+                    <thead className="bg-stone-50 border-b border-stone-200">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-semibold text-stone-700">Project</th>
+                        <th className="text-right px-3 py-2 font-semibold text-stone-700">Est. Amount</th>
+                        <th className="text-right px-3 py-2 font-semibold text-stone-700">Spent</th>
+                        <th className="text-right px-3 py-2 font-semibold text-stone-700">Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {budgetItemsEdit.map((item) => (
+                        <tr key={item.id} className="border-b border-stone-100 hover:bg-stone-50 transition-colors">
+                          <td className="px-3 py-3 font-medium text-stone-800">
+                            <a
+                              href={`/control-center/budget?ministry=${encodeURIComponent(budgetEditMinistry)}`}
+                              className="text-[#4a6da7] hover:underline"
+                            >
+                              {item.project_name}
+                            </a>
+                          </td>
+                          <td className="text-right px-3 py-3 text-stone-600">
+                            {formatCurrency(item.estimated_income + item.estimated_expenses)}
+                          </td>
+                          <td className="text-right px-3 py-3 text-orange-600 font-medium">
+                            {formatCurrency(item.spent || 0)}
+                          </td>
+                          <td className={`text-right px-3 py-3 font-semibold ${
+                            item.color === "red" ? "text-red-600" :
+                            item.color === "yellow" ? "text-amber-600" :
+                            "text-green-600"
+                          }`}>
+                            {formatCurrency(item.balance || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div className="mt-6 pt-4 border-t border-stone-200">
+                    <a
+                      href={`/control-center/budget?ministry=${encodeURIComponent(budgetEditMinistry)}`}
+                      className="inline-flex items-center gap-1 text-sm font-semibold px-4 py-2 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors border border-blue-200"
+                    >
+                      Go to Full Budget Management
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
