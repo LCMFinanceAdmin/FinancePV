@@ -108,12 +108,17 @@ function ControlCenterInner() {
   const [budgetItemModal, setBudgetItemModal] = useState<{ mode: "add" | "edit"; item?: BudgetWithSpending } | null>(null);
   const [budgetItemForm, setBudgetItemForm] = useState({
     project_name: "",
+    project_type: "expense" as "expense" | "income",
+    description: "",
     estimated_income: 0,
     estimated_expenses: 0,
     contributions_received: 0,
     contributions_expected: 0,
     special_notes: "",
+    document_url: "",
+    document_name: "",
   });
+  const [uploadingDoc, setUploadingDoc] = useState(false);
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -167,36 +172,51 @@ function ControlCenterInner() {
     }
   }
 
+  async function uploadBudgetDoc(file: File) {
+    setUploadingDoc(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `budget-docs/${Date.now()}-${file.name}`;
+      const { error: upErr } = await supabase.storage.from("signatures").upload(path, file, { upsert: true });
+      if (upErr) { showToast("Upload failed: " + upErr.message, false); return; }
+      const { data: { publicUrl } } = supabase.storage.from("signatures").getPublicUrl(path);
+      setBudgetItemForm(f => ({ ...f, document_url: publicUrl, document_name: file.name }));
+      showToast("Document uploaded");
+    } catch (err: any) {
+      showToast("Upload error: " + err.message, false);
+    } finally {
+      setUploadingDoc(false);
+    }
+  }
+
   async function saveBudgetItem() {
     if (!budgetItemForm.project_name.trim() || !budgetEditMinistry) return;
     setBudgetEditSaving(true);
     try {
+      const payload = {
+        project_name: budgetItemForm.project_name.trim(),
+        project_type: budgetItemForm.project_type,
+        description: budgetItemForm.description.trim(),
+        estimated_income: budgetItemForm.project_type === "income" ? budgetItemForm.estimated_income : 0,
+        estimated_expenses: budgetItemForm.project_type === "expense" ? budgetItemForm.estimated_expenses : 0,
+        contributions_received: budgetItemForm.contributions_received,
+        contributions_expected: budgetItemForm.contributions_expected,
+        special_notes: budgetItemForm.special_notes,
+        document_url: budgetItemForm.document_url || null,
+        document_name: budgetItemForm.document_name || null,
+        updated_at: new Date().toISOString(),
+      };
+
       if (budgetItemModal?.mode === "edit" && budgetItemModal.item) {
-        const { error } = await supabase.from("budget_items").update({
-          project_name: budgetItemForm.project_name.trim(),
-          estimated_income: budgetItemForm.estimated_income,
-          estimated_expenses: budgetItemForm.estimated_expenses,
-          contributions_received: budgetItemForm.contributions_received,
-          contributions_expected: budgetItemForm.contributions_expected,
-          special_notes: budgetItemForm.special_notes,
-          updated_at: new Date().toISOString(),
-        }).eq("id", budgetItemModal.item.id);
-        if (error) showToast("Error updating: " + error.message, false);
-        else { showToast("Budget updated"); setBudgetItemModal(null); }
+        const { error } = await supabase.from("budget_items").update(payload).eq("id", budgetItemModal.item.id);
+        if (error) { showToast("Error updating: " + error.message, false); return; }
+        showToast("Project updated");
       } else {
-        const { error } = await supabase.from("budget_items").insert({
-          ministry: budgetEditMinistry,
-          project_name: budgetItemForm.project_name.trim(),
-          estimated_income: budgetItemForm.estimated_income,
-          estimated_expenses: budgetItemForm.estimated_expenses,
-          contributions_received: budgetItemForm.contributions_received,
-          contributions_expected: budgetItemForm.contributions_expected,
-          special_notes: budgetItemForm.special_notes,
-          created_by: userEmail,
-        });
-        if (error) showToast("Error creating: " + error.message, false);
-        else { showToast("Budget item added"); setBudgetItemModal(null); }
+        const { error } = await supabase.from("budget_items").insert({ ...payload, ministry: budgetEditMinistry, created_by: userEmail });
+        if (error) { showToast("Error saving: " + error.message, false); return; }
+        showToast("Project added");
       }
+      setBudgetItemModal(null);
       await openBudgetEditor(budgetEditMinistry);
       await loadProjects(projMinistry);
     } catch (err: any) {
@@ -571,7 +591,7 @@ function ControlCenterInner() {
               <div className="flex justify-between items-center mb-4">
                 <p className="text-sm text-stone-500">{budgetItemsEdit.length} project{budgetItemsEdit.length !== 1 ? 's' : ''}</p>
                 <button
-                  onClick={() => { setBudgetItemForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" }); setBudgetItemModal({ mode: "add" }); }}
+                  onClick={() => { setBudgetItemForm({ project_name: "", project_type: "expense", description: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "", document_url: "", document_name: "" }); setBudgetItemModal({ mode: "add" }); }}
                   className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
                 >
                   <Plus size={14} /> Add Project
@@ -623,7 +643,7 @@ function ControlCenterInner() {
                           <td className="px-3 py-3">
                             <div className="flex gap-1 justify-end">
                               <button
-                                onClick={() => { setBudgetItemForm({ project_name: item.project_name ?? "", estimated_income: item.estimated_income, estimated_expenses: item.estimated_expenses, contributions_received: item.contributions_received || 0, contributions_expected: item.contributions_expected || 0, special_notes: item.special_notes || "" }); setBudgetItemModal({ mode: "edit", item }); }}
+                                onClick={() => { setBudgetItemForm({ project_name: item.project_name ?? "", project_type: (item as any).project_type || "expense", description: (item as any).description || "", estimated_income: item.estimated_income, estimated_expenses: item.estimated_expenses, contributions_received: item.contributions_received || 0, contributions_expected: item.contributions_expected || 0, special_notes: item.special_notes || "", document_url: (item as any).document_url || "", document_name: (item as any).document_name || "" }); setBudgetItemModal({ mode: "edit", item }); }}
                                 className="p-1.5 rounded hover:bg-stone-200 text-stone-500 hover:text-stone-700"
                                 title="Edit"
                               ><Pencil size={13} /></button>
@@ -648,49 +668,118 @@ function ControlCenterInner() {
       {/* Add/Edit Budget Item sub-modal */}
       {budgetItemModal && (
         <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="bg-[#4a6da7] text-white p-5 flex items-center justify-between sticky top-0">
-              <h3 className="font-bold">{budgetItemModal.mode === "add" ? "Add New Project" : "Edit Project"}</h3>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="bg-[#4a6da7] text-white p-5 flex items-center justify-between sticky top-0 rounded-t-xl">
+              <div>
+                <h3 className="font-bold text-base">{budgetItemModal.mode === "add" ? "Add New Project" : "Edit Project"}</h3>
+                <p className="text-blue-200 text-xs mt-0.5">Ministry: {budgetEditMinistry}</p>
+              </div>
               <button onClick={() => setBudgetItemModal(null)} className="hover:bg-white/20 p-1 rounded"><XIcon size={18} /></button>
             </div>
-            <div className="p-5 space-y-4">
-              <div className="bg-stone-50 rounded-lg px-3 py-2 text-sm"><span className="text-stone-400">Ministry: </span><span className="font-semibold">{budgetEditMinistry}</span></div>
+
+            <div className="p-5 space-y-5">
+              {/* Step 1: Project Type */}
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">Project Name *</label>
-                <input type="text" value={budgetItemForm.project_name} onChange={(e) => setBudgetItemForm(f => ({ ...f, project_name: e.target.value }))} placeholder="e.g. Soup Kitchen 2026" className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" autoFocus />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">Estimated Income (RM)</label>
-                  <input type="number" value={budgetItemForm.estimated_income} onChange={(e) => setBudgetItemForm(f => ({ ...f, estimated_income: parseFloat(e.target.value) || 0 }))} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">Estimated Expenses (RM)</label>
-                  <input type="number" value={budgetItemForm.estimated_expenses} onChange={(e) => setBudgetItemForm(f => ({ ...f, estimated_expenses: parseFloat(e.target.value) || 0 }))} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" />
-                </div>
-              </div>
-              <div className="bg-[#4a6da7]/10 rounded-lg p-3 text-center">
-                <div className="text-xs text-stone-500">Total Budget</div>
-                <div className="text-lg font-bold text-[#4a6da7]">{formatCurrency(budgetItemForm.estimated_income + budgetItemForm.estimated_expenses)}</div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">Contributions Received (RM)</label>
-                  <input type="number" value={budgetItemForm.contributions_received} onChange={(e) => setBudgetItemForm(f => ({ ...f, contributions_received: parseFloat(e.target.value) || 0 }))} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">Expected Contributions (RM)</label>
-                  <input type="number" value={budgetItemForm.contributions_expected} onChange={(e) => setBudgetItemForm(f => ({ ...f, contributions_expected: parseFloat(e.target.value) || 0 }))} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                <label className="block text-xs font-bold text-stone-700 mb-2 uppercase tracking-wide">Type of Project</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setBudgetItemForm(f => ({ ...f, project_type: "expense" }))}
+                    className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all ${budgetItemForm.project_type === "expense" ? "border-red-400 bg-red-50 text-red-700" : "border-stone-200 text-stone-500 hover:border-stone-300"}`}
+                  >
+                    💸 Expense<div className="text-xs font-normal mt-0.5">Budget for spending</div>
+                  </button>
+                  <button
+                    onClick={() => setBudgetItemForm(f => ({ ...f, project_type: "income" }))}
+                    className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all ${budgetItemForm.project_type === "income" ? "border-green-400 bg-green-50 text-green-700" : "border-stone-200 text-stone-500 hover:border-stone-300"}`}
+                  >
+                    💰 Income<div className="text-xs font-normal mt-0.5">Grant / inflow expected</div>
+                  </button>
                 </div>
               </div>
+
+              {/* Project Name */}
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">Special Notes / Arrangements</label>
-                <textarea value={budgetItemForm.special_notes} onChange={(e) => setBudgetItemForm(f => ({ ...f, special_notes: e.target.value }))} rows={2} placeholder="e.g. Shared budget with Education ministry..." className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7] resize-none" />
+                <label className="block text-xs font-bold text-stone-700 mb-1">Project Name *</label>
+                <input type="text" value={budgetItemForm.project_name} onChange={(e) => setBudgetItemForm(f => ({ ...f, project_name: e.target.value }))} placeholder="e.g. Soup Kitchen 2026" className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]" autoFocus />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">Description</label>
+                <textarea value={budgetItemForm.description} onChange={(e) => setBudgetItemForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder={budgetItemForm.project_type === "expense" ? "What is this budget for?" : "Describe the grant or income source…"} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7] resize-none" />
+              </div>
+
+              {/* Amount — conditional on type */}
+              {budgetItemForm.project_type === "expense" ? (
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">Budget Amount (RM) *</label>
+                  <input type="number" min="0" step="0.01" value={budgetItemForm.estimated_expenses || ""} onChange={(e) => setBudgetItemForm(f => ({ ...f, estimated_expenses: parseFloat(e.target.value) || 0 }))} placeholder="0.00" className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                  <p className="text-xs text-stone-400 mt-1">Total amount budgeted for this project's expenses</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">Estimated Income (RM) *</label>
+                    <input type="number" min="0" step="0.01" value={budgetItemForm.estimated_income || ""} onChange={(e) => setBudgetItemForm(f => ({ ...f, estimated_income: parseFloat(e.target.value) || 0 }))} placeholder="0.00" className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">Contributions Received (RM)</label>
+                      <input type="number" min="0" step="0.01" value={budgetItemForm.contributions_received || ""} onChange={(e) => setBudgetItemForm(f => ({ ...f, contributions_received: parseFloat(e.target.value) || 0 }))} placeholder="0.00" className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">Expected Contributions (RM)</label>
+                      <input type="number" min="0" step="0.01" value={budgetItemForm.contributions_expected || ""} onChange={(e) => setBudgetItemForm(f => ({ ...f, contributions_expected: parseFloat(e.target.value) || 0 }))} placeholder="0.00" className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Budget summary */}
+              <div className={`rounded-lg p-3 text-center ${budgetItemForm.project_type === "expense" ? "bg-red-50 border border-red-100" : "bg-green-50 border border-green-100"}`}>
+                <div className="text-xs text-stone-500">{budgetItemForm.project_type === "expense" ? "Budgeted Amount" : "Expected Income"}</div>
+                <div className={`text-xl font-bold mt-1 ${budgetItemForm.project_type === "expense" ? "text-red-600" : "text-green-600"}`}>
+                  {formatCurrency(budgetItemForm.project_type === "expense" ? budgetItemForm.estimated_expenses : budgetItemForm.estimated_income)}
+                </div>
+              </div>
+
+              {/* Special notes */}
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">Special Arrangements / Notes</label>
+                <textarea value={budgetItemForm.special_notes} onChange={(e) => setBudgetItemForm(f => ({ ...f, special_notes: e.target.value }))} rows={2} placeholder="e.g. Shared with Education ministry, approved by Bishop…" className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7] resize-none" />
+              </div>
+
+              {/* Document Upload */}
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  {budgetItemForm.project_type === "expense" ? "Attach Supporting Document" : "Attach Grant / Agreement"}
+                </label>
+                <p className="text-xs text-stone-400 mb-2">
+                  {budgetItemForm.project_type === "expense" ? "Upload a letter, proposal, or any document with project details" : "Upload the grant letter, MOU, or agreement showing expected inflows"}
+                </p>
+                {budgetItemForm.document_name ? (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <span className="text-green-700 text-sm flex-1 truncate">📄 {budgetItemForm.document_name}</span>
+                    <button onClick={() => setBudgetItemForm(f => ({ ...f, document_url: "", document_name: "" }))} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
+                  </div>
+                ) : (
+                  <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-stone-300 rounded-lg py-4 cursor-pointer hover:border-[#4a6da7] transition-colors ${uploadingDoc ? "opacity-50" : ""}`}>
+                    <input type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" disabled={uploadingDoc} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadBudgetDoc(f); }} />
+                    <span className="text-stone-400 text-sm">{uploadingDoc ? "Uploading…" : "📎 Click to upload PDF, Word, or image"}</span>
+                  </label>
+                )}
               </div>
             </div>
-            <div className="p-5 border-t border-stone-100 flex gap-3 sticky bottom-0 bg-white">
-              <button onClick={() => setBudgetItemModal(null)} className="flex-1 py-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-sm">Cancel</button>
-              <button onClick={saveBudgetItem} disabled={budgetEditSaving || !budgetItemForm.project_name.trim()} className="flex-1 py-2 rounded-lg bg-[#4a6da7] hover:bg-[#3d5a8f] disabled:bg-stone-300 text-white font-semibold text-sm">
+
+            {/* Footer */}
+            <div className="p-5 border-t border-stone-100 flex gap-3 sticky bottom-0 bg-white rounded-b-xl">
+              <button onClick={() => setBudgetItemModal(null)} className="flex-1 py-2.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-sm">Cancel</button>
+              <button
+                onClick={saveBudgetItem}
+                disabled={budgetEditSaving || !budgetItemForm.project_name.trim() || uploadingDoc}
+                className="flex-1 py-2.5 rounded-lg bg-[#4a6da7] hover:bg-[#3d5a8f] disabled:bg-stone-300 text-white font-semibold text-sm"
+              >
                 {budgetEditSaving ? "Saving…" : budgetItemModal.mode === "add" ? "Add Project" : "Save Changes"}
               </button>
             </div>
