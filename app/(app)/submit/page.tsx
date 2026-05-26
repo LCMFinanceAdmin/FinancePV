@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
 import { Plus, Trash2, Info, ChevronDown } from "lucide-react";
+import { loadBudgetProjects } from "@/lib/budget-utils";
 import type { PVLineItem } from "@/lib/types";
 
 // ── Ministry list (hardcoded per LCM structure) ────────────────────────
@@ -129,7 +130,7 @@ export default function SubmitPVPage() {
 
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [userRole, setUserRole] = useState("");
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projects, setProjects] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -152,14 +153,8 @@ export default function SubmitPVPage() {
   // Load projects when ministry changes
   useEffect(() => {
     if (!form.ministry) { setProjects([]); return; }
-    supabase
-      .from("ministry_projects")
-      .select("id,name")
-      .eq("ministry", form.ministry)
-      .eq("active", true)
-      .order("sort_order")
-      .order("name")
-      .then(({ data }) => setProjects(data ?? []));
+    loadBudgetProjects(supabase, form.ministry)
+      .then((projectNames) => setProjects(projectNames));
   }, [form.ministry]);
 
   const totalFromItems = form.line_items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
@@ -352,17 +347,17 @@ export default function SubmitPVPage() {
               </InlineSelect>
             </Row>
 
-            {/* Project dropdown — loads from DB per ministry */}
+            {/* Project dropdown — loads from budget_items per ministry */}
             <Row label="Project 计划" sublabel="Sub-project or budget code">
               {form.ministry ? (
                 projects.length > 0 ? (
                   <div className="flex-1 flex items-end gap-2">
                     <InlineSelect value={form.project} onChange={v => setField("project", v)}>
                       <option value="">— Select project (optional) —</option>
-                      {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                      {projects.map(p => <option key={p} value={p}>{p}</option>)}
                     </InlineSelect>
                     {canManageProjects && (
-                      <a href="/control-center?tab=projects" target="_blank"
+                      <a href="/control-center/budget" target="_blank"
                         className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap">
                         + Manage
                       </a>

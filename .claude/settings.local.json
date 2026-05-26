@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(python3 -c ' *)",
+      "Read(//c/Users/Admin/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/06e3aa29-4760-4426-96d1-76886ab19184/3fce6d85-d119-4b96-b946-390f1a8c6b6b/skills/xlsx/**)",
+      "Bash(pip install *)",
+      "Bash(python -)",
+      "Bash(python -c ' *)",
+      "PowerShell($cred = Get-StoredCredential -Target \"git:https://github.com\" 2>$null; if \\($cred\\) { $cred.UserName } else { \"not found\" })",
+      "Bash(git config *)",
+      "Read(//c/Users/Admin/lcm-finance-app/**)",
+      "Bash(npx tsc *)",
+      "PowerShell(cmdkey /delete:\"git:https://github.com\" 2>&1)",
+      "Bash(/c/Users/Admin/AppData/Local/GitHubDesktop/app-3.5.8/resources/app/git/mingw64/bin/git.exe config *)",
+      "Bash(/c/Users/Admin/AppData/Local/GitHubDesktop/app-3.5.8/resources/app/git/mingw64/bin/git.exe push *)",
+      "Bash(npx supabase *)",
+      "PowerShell(Invoke-WebRequest -Uri \"https://www.lutheran.org.my/wp-content/uploads/2018/09/LCM-Logo-120px.png\" -OutFile \"C:\\\\Users\\\\Admin\\\\lcm-finance-app\\\\.claude\\\\worktrees\\\\youthful-raman-103d3b\\\\public\\\\lcm-logo.png\" -UseBasicParsing; if \\(Test-Path \"C:\\\\Users\\\\Admin\\\\lcm-finance-app\\\\.claude\\\\worktrees\\\\youthful-raman-103d3b\\\\public\\\\lcm-logo.png\"\\) { \"Downloaded OK - size: $\\(\\(Get-Item 'C:\\\\Users\\\\Admin\\\\lcm-finance-app\\\\.claude\\\\worktrees\\\\youthful-raman-103d3b\\\\public\\\\lcm-logo.png'\\).Length\\) bytes\" } else { \"Download failed\" })"
+    ]
+  }
+}

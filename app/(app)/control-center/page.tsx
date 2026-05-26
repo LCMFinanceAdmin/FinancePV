@@ -231,6 +231,21 @@ function ControlCenterInner() {
         <StatCard label="Paid This Month"    value={`${stats.paid_month} · ${formatCurrency(stats.paid_amount)}`} color="text-[#4a6da7]" />
       </div>
 
+      {/* Budget Status Quick View */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-stone-700">Ministry Budget Status</h2>
+          <a href="/control-center/budget" className="text-xs text-[#4a6da7] hover:underline">
+            View Full Budget Details →
+          </a>
+        </div>
+        <div className="bg-stone-50 border border-stone-200 rounded-xl px-4 py-3">
+          <p className="text-xs text-stone-500">
+            💡 Check the Budget Management page to allocate yearly budgets per project and track spending in real-time.
+          </p>
+        </div>
+      </div>
+
       {/* Signatories */}
       <div>
         <h2 className="text-base font-bold text-stone-700 mb-3">Authorised Signatories</h2>
@@ -412,12 +427,12 @@ function ControlCenterInner() {
         <h2 className="text-base font-bold text-stone-700 mb-3">Quick Actions</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[
-            { href: "/admin",               label: "Review PVs",           desc: "Process pending vouchers" },
-            { href: "/recurring",           label: "Recurring Expenses",   desc: "Manage scheduled payments" },
-            { href: "/signatory-activity",  label: "Signatory Activity",   desc: "View approval history" },
-            { href: "/hod-activity",        label: "HOD Activity",         desc: "View HOD verifications" },
-            { href: "/settings/signatories",label: "Manage Users",         desc: "Roles & approval PINs" },
-            { href: "/settings/lookups",    label: "Manage Lookups",       desc: "Depts, ministries, projects" },
+            { href: "/admin",                  label: "Review PVs",           desc: "Process pending vouchers" },
+            { href: "/recurring",              label: "Recurring Expenses",   desc: "Manage scheduled payments" },
+            { href: "/control-center/budget",  label: "Budget Management",    desc: "Allocate & track budgets" },
+            { href: "/signatory-activity",     label: "Signatory Activity",   desc: "View approval history" },
+            { href: "/hod-activity",           label: "HOD Activity",         desc: "View HOD verifications" },
+            { href: "/settings/signatories",   label: "Manage Users",         desc: "Roles & approval PINs" },
           ].map((q) => (
             <a key={q.href} href={q.href} className="block p-3 bg-white border border-stone-200 rounded-xl hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
               <div className="text-sm font-semibold text-stone-700">{q.label}</div>
