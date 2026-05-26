@@ -79,7 +79,8 @@ export default function BudgetPage() {
         .order("project_name");
 
       if (itemsError) {
-        console.error("Budget items error:", itemsError);
+        console.error("Budget items error:", itemsError.message || itemsError);
+        // If table doesn't exist yet, just show empty state
         setBudgetItems([]);
         return;
       }
@@ -163,7 +164,9 @@ export default function BudgetPage() {
         }
       }
     } catch (err: any) {
-      showToast("Error saving budget: " + err.message, false);
+      const message = err?.message || err?.toString() || "Unknown error";
+      console.error("Error saving budget:", err);
+      showToast("Error saving budget: " + message, false);
     } finally {
       setSaving(false);
     }
