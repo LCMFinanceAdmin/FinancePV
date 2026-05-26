@@ -69,6 +69,9 @@ interface BudgetWithSpending extends BudgetProject {
   spent?: number;
   balance?: number;
   color?: "red" | "yellow" | "green";
+  contributions_received?: number;
+  contributions_expected?: number;
+  special_notes?: string;
 }
 
 export default function ControlCenterPage() {
@@ -102,6 +105,15 @@ function ControlCenterInner() {
   const [budgetEditMinistry, setBudgetEditMinistry] = useState<string | null>(null);
   const [budgetItemsEdit, setBudgetItemsEdit] = useState<BudgetWithSpending[]>([]);
   const [budgetEditSaving, setBudgetEditSaving] = useState(false);
+  const [budgetItemModal, setBudgetItemModal] = useState<{ mode: "add" | "edit"; item?: BudgetWithSpending } | null>(null);
+  const [budgetItemForm, setBudgetItemForm] = useState({
+    project_name: "",
+    estimated_income: 0,
+    estimated_expenses: 0,
+    contributions_received: 0,
+    contributions_expected: 0,
+    special_notes: "",
+  });
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -153,6 +165,53 @@ function ControlCenterInner() {
       console.error("Error loading budget items:", err);
       showToast("Error loading budgets", false);
     }
+  }
+
+  async function saveBudgetItem() {
+    if (!budgetItemForm.project_name.trim() || !budgetEditMinistry) return;
+    setBudgetEditSaving(true);
+    try {
+      if (budgetItemModal?.mode === "edit" && budgetItemModal.item) {
+        const { error } = await supabase.from("budget_items").update({
+          project_name: budgetItemForm.project_name.trim(),
+          estimated_income: budgetItemForm.estimated_income,
+          estimated_expenses: budgetItemForm.estimated_expenses,
+          contributions_received: budgetItemForm.contributions_received,
+          contributions_expected: budgetItemForm.contributions_expected,
+          special_notes: budgetItemForm.special_notes,
+          updated_at: new Date().toISOString(),
+        }).eq("id", budgetItemModal.item.id);
+        if (error) showToast("Error updating: " + error.message, false);
+        else { showToast("Budget updated"); setBudgetItemModal(null); }
+      } else {
+        const { error } = await supabase.from("budget_items").insert({
+          ministry: budgetEditMinistry,
+          project_name: budgetItemForm.project_name.trim(),
+          estimated_income: budgetItemForm.estimated_income,
+          estimated_expenses: budgetItemForm.estimated_expenses,
+          contributions_received: budgetItemForm.contributions_received,
+          contributions_expected: budgetItemForm.contributions_expected,
+          special_notes: budgetItemForm.special_notes,
+          created_by: userEmail,
+        });
+        if (error) showToast("Error creating: " + error.message, false);
+        else { showToast("Budget item added"); setBudgetItemModal(null); }
+      }
+      await openBudgetEditor(budgetEditMinistry);
+      await loadProjects(projMinistry);
+    } catch (err: any) {
+      showToast("Error: " + err.message, false);
+    } finally {
+      setBudgetEditSaving(false);
+    }
+  }
+
+  async function deleteBudgetItem(item: BudgetWithSpending) {
+    if (!confirm(`Delete "${item.project_name}"? This cannot be undone.`)) return;
+    if (!budgetEditMinistry) return;
+    const { error } = await supabase.from("budget_items").delete().eq("id", item.id);
+    if (error) showToast("Error deleting: " + error.message, false);
+    else { showToast("Deleted"); await openBudgetEditor(budgetEditMinistry); await loadProjects(projMinistry); }
   }
 
   async function loadProjects(ministry: string) {
@@ -390,79 +449,44 @@ function ControlCenterInner() {
             const totalBalance = totalBudget - totalSpent;
 
             return (
-              <div
-                key={ministry}
-                className="bg-white border border-stone-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-stone-800">{ministry}</h3>
-                    <p className="text-xs text-stone-500 mt-0.5">
-                      {ministryProjects.length} project{ministryProjects.length !== 1 ? 's' : ''} · {formatCurrency(totalBudget)} total budget
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <div className="text-right">
-                      <div className={`text-sm font-bold ${totalBalance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                        {formatCurrency(totalBalance)}
-                      </div>
-                      <div className="text-xs text-stone-500">Balance</div>
+              <div key={ministry} className="bg-white border border-stone-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
+                {/* Card Header */}
+                <div className="px-4 pt-4 pb-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-stone-800">{ministry}</h3>
+                      <p className="text-xs text-stone-400 mt-0.5">{ministryProjects.length} project{ministryProjects.length !== 1 ? 's' : ''}</p>
                     </div>
-                    {canManageProjects && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => openBudgetEditor(ministry)}
-                          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors"
-                        >
-                          Edit Budget
-                        </button>
-                        {ministryProjects.length > 0 && (
-                          <button
-                            onClick={() => openBudgetEditor(ministry)}
-                            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors border border-green-200"
-                            title="Add new budget item"
-                          >
-                            <Plus size={13} />
-                          </button>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </div>
 
-                {ministryProjects.length === 0 ? (
-                  <div className="text-center py-4">
-                    <div className="text-stone-400 text-sm mb-3">No budgets set up yet</div>
-                    {canManageProjects && (
-                      <button
-                        onClick={() => openBudgetEditor(ministry)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors border border-green-200"
-                      >
-                        <Plus size={14} /> Add Budget Item
-                      </button>
-                    )}
+                {/* Stats Row */}
+                <div className="grid grid-cols-3 divide-x divide-stone-100 border-t border-stone-100">
+                  <div className="px-4 py-3">
+                    <div className="text-xs text-stone-400 mb-1">Total Budget</div>
+                    <div className="text-sm font-bold text-stone-700">{formatCurrency(totalBudget)}</div>
                   </div>
-                ) : (
-                  <div className="space-y-2 pt-2 border-t border-stone-100">
-                    {ministryProjects.map((proj) => (
-                      <div key={proj.id} className="flex justify-between items-start text-xs">
-                        <div className="flex-1">
-                          <div className="font-medium text-stone-800">{proj.name}</div>
-                          <div className="text-stone-500 mt-0.5">
-                            Est: {formatCurrency(proj.estimated_income + proj.estimated_expenses)} | Spent: {formatCurrency(proj.spent || 0)}
-                          </div>
-                        </div>
-                        <div className={`font-semibold whitespace-nowrap ml-2 ${
-                          proj.color === "red" ? "text-red-600" :
-                          proj.color === "yellow" ? "text-amber-600" :
-                          "text-green-600"
-                        }`}>
-                          {formatCurrency(proj.balance || 0)}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="px-4 py-3">
+                    <div className="text-xs text-stone-400 mb-1">Total Spent</div>
+                    <div className="text-sm font-bold text-orange-600">{formatCurrency(totalSpent)}</div>
                   </div>
-                )}
+                  <div className="px-4 py-3">
+                    <div className="text-xs text-stone-400 mb-1">Current Balance</div>
+                    <div className={`text-sm font-bold ${totalBalance < 0 ? "text-red-600" : totalBalance <= 200 ? "text-amber-600" : "text-green-600"}`}>
+                      {formatCurrency(totalBalance)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer with Adjust button */}
+                <div className="px-4 py-3 bg-stone-50 border-t border-stone-100 flex justify-end">
+                  <button
+                    onClick={() => openBudgetEditor(ministry)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors"
+                  >
+                    <Pencil size={12} /> Adjust
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -542,67 +566,133 @@ function ControlCenterInner() {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6">
+            <div className="p-5">
+              {/* Add button */}
+              <div className="flex justify-between items-center mb-4">
+                <p className="text-sm text-stone-500">{budgetItemsEdit.length} project{budgetItemsEdit.length !== 1 ? 's' : ''}</p>
+                <button
+                  onClick={() => { setBudgetItemForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" }); setBudgetItemModal({ mode: "add" }); }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+                >
+                  <Plus size={14} /> Add Project
+                </button>
+              </div>
+
               {budgetItemsEdit.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="text-stone-500 mb-4">No budget items yet for {budgetEditMinistry}</div>
-                  <a
-                    href={`/control-center/budget?ministry=${encodeURIComponent(budgetEditMinistry)}`}
-                    className="inline-flex items-center gap-1 text-sm font-semibold px-4 py-2 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors border border-green-200"
-                  >
-                    <Plus size={16} /> Add First Budget Item
-                  </a>
-                </div>
+                <div className="text-center py-10 text-stone-400 text-sm">No projects yet. Click "Add Project" to get started.</div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
+                  {/* Summary totals */}
+                  <div className="grid grid-cols-3 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-200">
+                    <div className="text-center">
+                      <div className="text-xs text-stone-400">Total Budget</div>
+                      <div className="text-sm font-bold text-stone-700">{formatCurrency(budgetItemsEdit.reduce((s, i) => s + i.estimated_income + i.estimated_expenses, 0))}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-stone-400">Total Spent</div>
+                      <div className="text-sm font-bold text-orange-600">{formatCurrency(budgetItemsEdit.reduce((s, i) => s + (i.spent || 0), 0))}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-stone-400">Balance</div>
+                      <div className={`text-sm font-bold ${budgetItemsEdit.reduce((s, i) => s + (i.balance || 0), 0) < 0 ? "text-red-600" : "text-green-600"}`}>
+                        {formatCurrency(budgetItemsEdit.reduce((s, i) => s + (i.balance || 0), 0))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Project rows */}
                   <table className="w-full text-sm">
                     <thead className="bg-stone-50 border-b border-stone-200">
                       <tr>
-                        <th className="text-left px-3 py-2 font-semibold text-stone-700">Project</th>
-                        <th className="text-right px-3 py-2 font-semibold text-stone-700">Est. Amount</th>
-                        <th className="text-right px-3 py-2 font-semibold text-stone-700">Spent</th>
-                        <th className="text-right px-3 py-2 font-semibold text-stone-700">Balance</th>
+                        <th className="text-left px-3 py-2 text-xs font-semibold text-stone-500 uppercase">Project</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold text-stone-500 uppercase">Budget</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold text-stone-500 uppercase">Spent</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold text-stone-500 uppercase">Balance</th>
+                        <th className="px-3 py-2"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {budgetItemsEdit.map((item) => (
-                        <tr key={item.id} className="border-b border-stone-100 hover:bg-stone-50 transition-colors">
-                          <td className="px-3 py-3 font-medium text-stone-800">
-                            <a
-                              href={`/control-center/budget?ministry=${encodeURIComponent(budgetEditMinistry)}`}
-                              className="text-[#4a6da7] hover:underline"
-                            >
-                              {item.project_name}
-                            </a>
-                          </td>
-                          <td className="text-right px-3 py-3 text-stone-600">
-                            {formatCurrency(item.estimated_income + item.estimated_expenses)}
-                          </td>
-                          <td className="text-right px-3 py-3 text-orange-600 font-medium">
-                            {formatCurrency(item.spent || 0)}
-                          </td>
-                          <td className={`text-right px-3 py-3 font-semibold ${
-                            item.color === "red" ? "text-red-600" :
-                            item.color === "yellow" ? "text-amber-600" :
-                            "text-green-600"
-                          }`}>
+                        <tr key={item.id} className="border-b border-stone-100 hover:bg-stone-50">
+                          <td className="px-3 py-3 font-medium text-stone-800">{item.project_name}</td>
+                          <td className="text-right px-3 py-3 text-stone-600">{formatCurrency(item.estimated_income + item.estimated_expenses)}</td>
+                          <td className="text-right px-3 py-3 text-orange-600">{formatCurrency(item.spent || 0)}</td>
+                          <td className={`text-right px-3 py-3 font-semibold ${item.color === "red" ? "text-red-600" : item.color === "yellow" ? "text-amber-600" : "text-green-600"}`}>
                             {formatCurrency(item.balance || 0)}
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => { setBudgetItemForm({ project_name: item.project_name ?? "", estimated_income: item.estimated_income, estimated_expenses: item.estimated_expenses, contributions_received: item.contributions_received || 0, contributions_expected: item.contributions_expected || 0, special_notes: item.special_notes || "" }); setBudgetItemModal({ mode: "edit", item }); }}
+                                className="p-1.5 rounded hover:bg-stone-200 text-stone-500 hover:text-stone-700"
+                                title="Edit"
+                              ><Pencil size={13} /></button>
+                              <button
+                                onClick={() => deleteBudgetItem(item)}
+                                className="p-1.5 rounded hover:bg-red-100 text-stone-400 hover:text-red-600"
+                                title="Delete"
+                              ><Trash2 size={13} /></button>
+                            </div>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-
-                  <div className="mt-6 pt-4 border-t border-stone-200">
-                    <a
-                      href={`/control-center/budget?ministry=${encodeURIComponent(budgetEditMinistry)}`}
-                      className="inline-flex items-center gap-1 text-sm font-semibold px-4 py-2 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors border border-blue-200"
-                    >
-                      Go to Full Budget Management
-                    </a>
-                  </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Budget Item sub-modal */}
+      {budgetItemModal && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="bg-[#4a6da7] text-white p-5 flex items-center justify-between sticky top-0">
+              <h3 className="font-bold">{budgetItemModal.mode === "add" ? "Add New Project" : "Edit Project"}</h3>
+              <button onClick={() => setBudgetItemModal(null)} className="hover:bg-white/20 p-1 rounded"><XIcon size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-stone-50 rounded-lg px-3 py-2 text-sm"><span className="text-stone-400">Ministry: </span><span className="font-semibold">{budgetEditMinistry}</span></div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Project Name *</label>
+                <input type="text" value={budgetItemForm.project_name} onChange={(e) => setBudgetItemForm(f => ({ ...f, project_name: e.target.value }))} placeholder="e.g. Soup Kitchen 2026" className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" autoFocus />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">Estimated Income (RM)</label>
+                  <input type="number" value={budgetItemForm.estimated_income} onChange={(e) => setBudgetItemForm(f => ({ ...f, estimated_income: parseFloat(e.target.value) || 0 }))} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">Estimated Expenses (RM)</label>
+                  <input type="number" value={budgetItemForm.estimated_expenses} onChange={(e) => setBudgetItemForm(f => ({ ...f, estimated_expenses: parseFloat(e.target.value) || 0 }))} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                </div>
+              </div>
+              <div className="bg-[#4a6da7]/10 rounded-lg p-3 text-center">
+                <div className="text-xs text-stone-500">Total Budget</div>
+                <div className="text-lg font-bold text-[#4a6da7]">{formatCurrency(budgetItemForm.estimated_income + budgetItemForm.estimated_expenses)}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">Contributions Received (RM)</label>
+                  <input type="number" value={budgetItemForm.contributions_received} onChange={(e) => setBudgetItemForm(f => ({ ...f, contributions_received: parseFloat(e.target.value) || 0 }))} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">Expected Contributions (RM)</label>
+                  <input type="number" value={budgetItemForm.contributions_expected} onChange={(e) => setBudgetItemForm(f => ({ ...f, contributions_expected: parseFloat(e.target.value) || 0 }))} className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7]" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Special Notes / Arrangements</label>
+                <textarea value={budgetItemForm.special_notes} onChange={(e) => setBudgetItemForm(f => ({ ...f, special_notes: e.target.value }))} rows={2} placeholder="e.g. Shared budget with Education ministry..." className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7] resize-none" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-stone-100 flex gap-3 sticky bottom-0 bg-white">
+              <button onClick={() => setBudgetItemModal(null)} className="flex-1 py-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-sm">Cancel</button>
+              <button onClick={saveBudgetItem} disabled={budgetEditSaving || !budgetItemForm.project_name.trim()} className="flex-1 py-2 rounded-lg bg-[#4a6da7] hover:bg-[#3d5a8f] disabled:bg-stone-300 text-white font-semibold text-sm">
+                {budgetEditSaving ? "Saving…" : budgetItemModal.mode === "add" ? "Add Project" : "Save Changes"}
+              </button>
             </div>
           </div>
         </div>
@@ -615,7 +705,6 @@ function ControlCenterInner() {
           {[
             { href: "/admin",                  label: "Review PVs",           desc: "Process pending vouchers" },
             { href: "/recurring",              label: "Recurring Expenses",   desc: "Manage scheduled payments" },
-            { href: "/control-center/budget",  label: "Budget Management",    desc: "Allocate & track budgets" },
             { href: "/signatory-activity",     label: "Signatory Activity",   desc: "View approval history" },
             { href: "/hod-activity",           label: "HOD Activity",         desc: "View HOD verifications" },
             { href: "/settings/signatories",   label: "Manage Users",         desc: "Roles & approval PINs" },
