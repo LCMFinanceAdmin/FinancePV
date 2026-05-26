@@ -295,20 +295,6 @@ function ControlCenterInner() {
         <StatCard label="Paid This Month"    value={`${stats.paid_month} · ${formatCurrency(stats.paid_amount)}`} color="text-[#4a6da7]" />
       </div>
 
-      {/* Budget Status Quick View */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-bold text-stone-700">Ministry Budget Status</h2>
-          <a href="/control-center/budget" className="text-xs text-[#4a6da7] hover:underline">
-            View Full Budget Details →
-          </a>
-        </div>
-        <div className="bg-stone-50 border border-stone-200 rounded-xl px-4 py-3">
-          <p className="text-xs text-stone-500">
-            💡 Check the Budget Management page to allocate yearly budgets per project and track spending in real-time.
-          </p>
-        </div>
-      </div>
 
       {/* Signatories */}
       <div>
@@ -368,22 +354,36 @@ function ControlCenterInner() {
                       <div className="text-xs text-stone-500">Balance</div>
                     </div>
                     {canManageProjects && (
-                      <a
-                        href={`/control-center/budget?ministry=${encodeURIComponent(ministry)}`}
-                        className="text-xs font-semibold px-3 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors"
-                      >
-                        Edit Budget
-                      </a>
+                      <div className="flex gap-2">
+                        <a
+                          href={`/control-center/budget?ministry=${encodeURIComponent(ministry)}`}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors"
+                        >
+                          Manage
+                        </a>
+                        {ministryProjects.length > 0 && (
+                          <a
+                            href={`/control-center/budget?ministry=${encodeURIComponent(ministry)}`}
+                            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors border border-green-200"
+                            title="Add new budget item"
+                          >
+                            <Plus size={13} />
+                          </a>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
 
                 {ministryProjects.length === 0 ? (
-                  <div className="text-xs text-stone-400 py-3">
-                    No budgets set up yet.
+                  <div className="text-center py-4">
+                    <div className="text-stone-400 text-sm mb-3">No budgets set up yet</div>
                     {canManageProjects && (
-                      <a href="/control-center/budget" className="ml-1 text-[#4a6da7] underline">
-                        Add one
+                      <a
+                        href={`/control-center/budget?ministry=${encodeURIComponent(ministry)}`}
+                        className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors border border-green-200"
+                      >
+                        <Plus size={14} /> Add Budget Item
                       </a>
                     )}
                   </div>
