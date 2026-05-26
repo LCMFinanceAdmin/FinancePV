@@ -5,25 +5,28 @@ import { StatusBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { PV } from "@/lib/types";
-import { Search, Layers, FileText, Trash2, CheckCircle2, XCircle } from "lucide-react";
+import {
+  Search, Layers, FileText, Trash2,
+  CheckCircle2, XCircle, RotateCcw, ShieldCheck,
+} from "lucide-react";
 import Link from "next/link";
 
 type FilterStatus = "ALL" | "IN_PROGRESS" | "APPROVED" | "PAID" | "REJECTED";
 
 const FILTER_OPTIONS: { label: string; value: FilterStatus }[] = [
-  { label: "All", value: "ALL" },
-  { label: "In Progress", value: "IN_PROGRESS" },
-  { label: "Approved", value: "APPROVED" },
-  { label: "Paid", value: "PAID" },
-  { label: "Rejected", value: "REJECTED" },
+  { label: "All",        value: "ALL"         },
+  { label: "In Progress",value: "IN_PROGRESS" },
+  { label: "Approved",   value: "APPROVED"    },
+  { label: "Paid",       value: "PAID"        },
+  { label: "Rejected",   value: "REJECTED"    },
 ];
 
 const STATUS_MAP: Record<FilterStatus, string[]> = {
-  ALL: [],
+  ALL:         [],
   IN_PROGRESS: ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"],
-  APPROVED: ["APPROVED"],
-  PAID: ["PAID"],
-  REJECTED: ["REJECTED", "REJECTED_HEAD", "CANCELLED"],
+  APPROVED:    ["APPROVED"],
+  PAID:        ["PAID"],
+  REJECTED:    ["REJECTED", "REJECTED_HEAD", "CANCELLED"],
 };
 
 interface BulkRun {
@@ -31,21 +34,41 @@ interface BulkRun {
   pv_count: number; total_amount: number; ministry: string; pv_ids: string[];
 }
 
+type RejectCtx = "admin" | "ministry";
+
 export default function MyPVsPage() {
   const supabase = createClient();
-  const [pvs, setPvs] = useState<Partial<PV>[]>([]);
-  const [bulkRuns, setBulkRuns] = useState<BulkRun[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<FilterStatus>("ALL");
-  const [search, setSearch] = useState("");
-  const [showBulk, setShowBulk] = useState(false);
-  const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Partial<PV> | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [rejectTarget, setRejectTarget] = useState<Partial<PV> | null>(null);
-  const [rejectRemarks, setRejectRemarks] = useState("");
-  const [actioning, setActioning] = useState<string | null>(null); // pv.id being actioned
-  const [toast, setToast] = useState({ msg: "", ok: true });
+  const [pvs,        setPvs]        = useState<Partial<PV>[]>([]);
+  const [bulkRuns,   setBulkRuns]   = useState<BulkRun[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [filter,     setFilter]     = useState<FilterStatus>("ALL");
+  const [search,     setSearch]     = useState("");
+  const [showBulk,   setShowBulk]   = useState(false);
+
+  // Profile / role
+  const [userRole,       setUserRole]       = useState("");
+  const [userMinistries, setUserMinistries] = useState<string[]>([]);
+  const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(userRole);
+  const isSignatory    = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"].includes(userRole);
+  const needsPin       = ["BISHOP", "TREASURER", "SECRETARY"].includes(userRole);
+
+  // Action state
+  const [actioning,      setActioning]     = useState<string | null>(null);
+  const [toast,          setToast]         = useState({ msg: "", ok: true });
+
+  // Finance Admin / Ministry Head reject modal
+  const [rejectTarget,   setRejectTarget]  = useState<Partial<PV> | null>(null);
+  const [rejectRemarks,  setRejectRemarks] = useState("");
+  const [rejectCtx,      setRejectCtx]     = useState<RejectCtx>("admin");
+
+  // Signatory modal (approve or reject, with optional PIN)
+  const [sigModal,       setSigModal]      = useState<{ pv: Partial<PV>; action: "APPROVED" | "REJECTED" } | null>(null);
+  const [sigPin,         setSigPin]        = useState("");
+  const [sigRemarks,     setSigRemarks]    = useState("");
+
+  // Hard-delete modal
+  const [deleteTarget,   setDeleteTarget]  = useState<Partial<PV> | null>(null);
+  const [deleting,       setDeleting]      = useState(false);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -69,33 +92,69 @@ export default function MyPVsPage() {
           return q;
         })(),
         supabase.from("bulk_pv_runs").select("*").eq("run_by", user.email).order("run_date", { ascending: false }),
-        supabase.from("user_roles").select("role").eq("email", user.email).single(),
+        supabase.from("user_roles").select("role,ministries").eq("email", user.email).single(),
       ]);
 
       setPvs(pvResult.data ?? []);
       setBulkRuns(bulkResult.data ?? []);
       const role = profileResult.data?.role ?? "";
-      setIsFinanceAdmin(["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role));
+      setUserRole(role);
+      setUserMinistries(profileResult.data?.ministries ?? []);
       setLoading(false);
     }
     load();
   }, [filter]);
 
+  // ── Edge-function callers ──────────────────────────────────────────────
+  async function callEdge(endpoint: string, body: Record<string, unknown>) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? "Action failed");
+    return json;
+  }
+
   async function callAdminAction(pvId: string, action: string, extras?: Record<string, string>) {
     setActioning(pvId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ pv_id: pvId, action, ...extras }),
-      });
-      const json = await res.json();
-      if (!res.ok) { showMsg(json.error ?? "Action failed", false); return; }
-      // Update PV status in list
+      const json = await callEdge("admin-action", { pv_id: pvId, action, ...extras });
       setPvs(list => list.map(p => p.id === pvId ? { ...p, status: json.status } : p));
       showMsg(`Done — PV is now ${json.status?.replace(/_/g, " ")}`);
       setRejectTarget(null);
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : "Action failed", false);
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  async function callMinistryAction(pvId: string, action: string, remarks?: string) {
+    setActioning(pvId);
+    try {
+      const json = await callEdge("ministry-action", { pv_id: pvId, action, remarks });
+      setPvs(list => list.map(p => p.id === pvId ? { ...p, status: json.status ?? (action === "APPROVED" ? "PENDING" : "REJECTED_HEAD") } : p));
+      showMsg(action === "APPROVED" ? "PV verified — sent to Finance" : "PV rejected");
+      setRejectTarget(null);
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : "Action failed", false);
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  async function callSignatoryAction(pvId: string, action: string, pin?: string, remarks?: string) {
+    setActioning(pvId);
+    try {
+      const json = await callEdge("signatory-action", { pv_id: pvId, action, pin, remarks });
+      setPvs(list => list.map(p => p.id === pvId ? { ...p, status: json.status } : p));
+      showMsg(action === "APPROVED" ? "PV approved" : "PV rejected");
+      setSigModal(null);
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : "Action failed", false);
     } finally {
       setActioning(null);
     }
@@ -119,13 +178,32 @@ export default function MyPVsPage() {
     }
   }
 
-  const filteredPvs = pvs.filter(pv => {
+  // ── Button config per role + status ──────────────────────────────────
+  function getPVActions(pv: Partial<PV>) {
+    const s = pv.status ?? "";
+    const isMH = userMinistries.length > 0 && !!pv.ministry && userMinistries.includes(pv.ministry);
+
+    if (isFinanceAdmin) {
+      if (s === "PENDING")
+        return { type: "admin", review: true,  signatory: false, revert: false, reject: true  } as const;
+      if (s === "REVIEWED" || s === "MINISTRY_VERIFIED")
+        return { type: "admin", review: false, signatory: true,  revert: true,  reject: true  } as const;
+      if (s === "PENDING_SIGNATORY")
+        return { type: "admin", review: false, signatory: false, revert: true,  reject: false } as const;
+    }
+    if (isSignatory && s === "PENDING_SIGNATORY")
+      return { type: "signatory" } as const;
+    if (isMH && s === "PENDING_HEAD")
+      return { type: "ministry" } as const;
+    return null;
+  }
+
+  const filteredPvs  = pvs.filter(pv => {
     if (!search) return true;
     const q = search.toLowerCase();
     return pv.pv_no?.toLowerCase().includes(q) || pv.payee_name?.toLowerCase().includes(q) ||
       pv.ministry?.toLowerCase().includes(q) || pv.purpose?.toLowerCase().includes(q);
   });
-
   const filteredBulk = bulkRuns.filter(b => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -141,18 +219,13 @@ export default function MyPVsPage() {
 
       {/* Toggle */}
       <div className="flex gap-1 bg-stone-100 p-1 rounded-xl w-fit">
-        <button
-          onClick={() => setShowBulk(false)}
-          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${!showBulk ? "bg-white text-[#4a6da7] shadow-sm" : "text-stone-500 hover:text-stone-700"}`}
-        >
+        <button onClick={() => setShowBulk(false)}
+          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${!showBulk ? "bg-white text-[#4a6da7] shadow-sm" : "text-stone-500 hover:text-stone-700"}`}>
           Individual PVs
         </button>
-        <button
-          onClick={() => setShowBulk(true)}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${showBulk ? "bg-white text-[#4a6da7] shadow-sm" : "text-stone-500 hover:text-stone-700"}`}
-        >
-          <Layers size={12} />
-          Bulk PVs
+        <button onClick={() => setShowBulk(true)}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${showBulk ? "bg-white text-[#4a6da7] shadow-sm" : "text-stone-500 hover:text-stone-700"}`}>
+          <Layers size={12} />Bulk PVs
           {bulkRuns.length > 0 && (
             <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${showBulk ? "bg-[#4a6da7] text-white" : "bg-stone-300 text-stone-600"}`}>
               {bulkRuns.length}
@@ -164,25 +237,19 @@ export default function MyPVsPage() {
       {/* Search */}
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-        <input
-          className="w-full border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7]"
+        <input className="w-full border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7]"
           placeholder={showBulk ? "Search by group or ministry…" : "Search by PV no., payee, or purpose…"}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+          value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      {/* Filter tabs — individual only */}
+      {/* Filter tabs */}
       {!showBulk && (
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {FILTER_OPTIONS.map(f => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
+            <button key={f.value} onClick={() => setFilter(f.value)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 filter === f.value ? "bg-[#4a6da7] text-white" : "bg-white border border-stone-200 text-stone-600 hover:bg-stone-50"
-              }`}
-            >
+              }`}>
               {f.label}
             </button>
           ))}
@@ -197,7 +264,7 @@ export default function MyPVsPage() {
         </div>
       )}
 
-      {/* Quick Reject Modal */}
+      {/* ── Finance Admin / Ministry Head Reject modal ── */}
       {rejectTarget && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
@@ -207,7 +274,11 @@ export default function MyPVsPage() {
               placeholder="Reason for rejection (required)…"
               className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
             <div className="flex gap-2">
-              <button onClick={() => callAdminAction(rejectTarget.id!, "REJECT", { remarks: rejectRemarks })}
+              <button
+                onClick={() => {
+                  if (rejectCtx === "admin")   callAdminAction(rejectTarget.id!, "REJECT", { remarks: rejectRemarks });
+                  if (rejectCtx === "ministry") callMinistryAction(rejectTarget.id!, "REJECTED", rejectRemarks);
+                }}
                 disabled={!rejectRemarks.trim() || !!actioning}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors">
                 {actioning ? "Rejecting…" : "Confirm Reject"}
@@ -219,7 +290,68 @@ export default function MyPVsPage() {
         </div>
       )}
 
-      {/* Hard Delete Confirm Modal */}
+      {/* ── Signatory Action modal (Approve / Reject) ── */}
+      {sigModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <h2 className="text-base font-bold text-stone-800">
+              {sigModal.action === "APPROVED" ? "Approve PV" : "Reject PV"}
+            </h2>
+            <p className="text-sm text-stone-500">{sigModal.pv.pv_no} — {sigModal.pv.payee_name}</p>
+            <p className="text-xs text-stone-400">{formatCurrency(sigModal.pv.amount!)}</p>
+
+            {sigModal.action === "REJECTED" && (
+              <textarea value={sigRemarks} onChange={e => setSigRemarks(e.target.value)}
+                placeholder="Reason for rejection (required)…"
+                className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
+            )}
+
+            {needsPin && (
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1.5 flex items-center gap-1.5">
+                  <ShieldCheck size={13} /> Approval PIN required
+                </label>
+                <input
+                  type="password"
+                  value={sigPin}
+                  onChange={e => setSigPin(e.target.value)}
+                  placeholder="Enter your PIN"
+                  className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-[#4a6da7] text-center tracking-widest text-base"
+                  maxLength={8}
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      const canSubmit = sigPin.length >= 4 && (sigModal.action !== "REJECTED" || sigRemarks.trim());
+                      if (canSubmit) callSignatoryAction(sigModal.pv.id!, sigModal.action, sigPin, sigRemarks);
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => callSignatoryAction(sigModal.pv.id!, sigModal.action, needsPin ? sigPin : undefined, sigModal.action === "REJECTED" ? sigRemarks : undefined)}
+                disabled={
+                  !!actioning ||
+                  (needsPin && sigPin.length < 4) ||
+                  (sigModal.action === "REJECTED" && !sigRemarks.trim())
+                }
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors text-white ${
+                  sigModal.action === "APPROVED" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"
+                }`}>
+                {actioning ? "Processing…" : sigModal.action === "APPROVED" ? "Approve" : "Confirm Reject"}
+              </button>
+              <button onClick={() => { setSigModal(null); setSigPin(""); setSigRemarks(""); }}
+                className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Hard-Delete Confirm modal ── */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4">
@@ -237,14 +369,13 @@ export default function MyPVsPage() {
               <span className="text-stone-500"> — {deleteTarget.payee_name}</span>
               <div className="text-xs text-stone-400 mt-0.5">{formatCurrency(deleteTarget.amount!)}</div>
             </div>
-            <p className="text-xs text-stone-500">This PV will be permanently removed with no audit trail.</p>
             <div className="flex gap-2">
               <button onClick={() => handleDelete(deleteTarget)} disabled={deleting}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors">
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
                 {deleting ? "Deleting…" : "Yes, Delete"}
               </button>
               <button onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
+                className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">
                 Cancel
               </button>
             </div>
@@ -252,73 +383,114 @@ export default function MyPVsPage() {
         </div>
       )}
 
-      {/* List */}
+      {/* ── List ── */}
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : !showBulk ? (
-        /* ── Individual PVs ── */
         filteredPvs.length === 0 ? (
           <Card><div className="py-12 text-center text-stone-400 text-sm">
             {search ? "No results match your search" : "No payment vouchers found"}
           </div></Card>
         ) : (
           <div className="space-y-2">
-            {filteredPvs.map(pv => (
-              <div key={pv.id} className="relative group">
-                <Link href={`/my-pvs/${pv.id}`}>
-                  <div className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                          <StatusBadge status={pv.status!} />
-                          {pv.payment_type === "ASSET_PURCHASE" && (
-                            <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Asset</span>
-                          )}
-                        </div>
-                        <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
-                        <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>
-                        <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)}</div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <div className="flex items-center gap-1.5">
-                          <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
-                          {isFinanceAdmin && pv.status !== "PAID" && (
-                            <button
-                              onClick={e => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(pv); }}
-                              className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                              title="Delete permanently">
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                        {/* Quick approve/reject for Finance Admin */}
-                        {isFinanceAdmin && ["PENDING", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status!) && (
-                          <div className="flex gap-1" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
-                            <button
-                              onClick={() => {
-                                const action = pv.status === "PENDING" ? "REVIEW" : "SEND_TO_SIGNATORY";
-                                callAdminAction(pv.id!, action);
-                              }}
-                              disabled={actioning === pv.id}
-                              className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
-                              <CheckCircle2 size={10} />
-                              {pv.status === "PENDING" ? "Review" : "→ Signatory"}
-                            </button>
-                            <button
-                              onClick={() => { setRejectRemarks(""); setRejectTarget(pv); }}
-                              disabled={actioning === pv.id}
-                              className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-colors">
-                              <XCircle size={10} /> Reject
-                            </button>
+            {filteredPvs.map(pv => {
+              const actions = getPVActions(pv);
+              return (
+                <div key={pv.id} className="relative group">
+                  <Link href={`/my-pvs/${pv.id}`}>
+                    <div className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
+                      <div className="flex items-start justify-between gap-3">
+                        {/* Left: PV info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
+                            <StatusBadge status={pv.status!} />
+                            {pv.payment_type === "ASSET_PURCHASE" && (
+                              <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Asset</span>
+                            )}
                           </div>
-                        )}
+                          <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
+                          <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>
+                          <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)}</div>
+                        </div>
+
+                        {/* Right: amount + action buttons */}
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
+                            {isFinanceAdmin && pv.status !== "PAID" && (
+                              <button
+                                onClick={e => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(pv); }}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                                title="Delete permanently">
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Role-based action buttons */}
+                          {actions && (
+                            <div className="flex gap-1 flex-wrap justify-end"
+                              onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+
+                              {/* ─ Finance Admin actions ─ */}
+                              {actions.type === "admin" && (
+                                <>
+                                  {actions.review && (
+                                    <Btn color="green" icon={<CheckCircle2 size={10} />} label="Review"
+                                      loading={actioning === pv.id}
+                                      onClick={() => callAdminAction(pv.id!, "REVIEW")} />
+                                  )}
+                                  {actions.signatory && (
+                                    <Btn color="blue" label="→ Signatory"
+                                      loading={actioning === pv.id}
+                                      onClick={() => callAdminAction(pv.id!, "SEND_TO_SIGNATORY")} />
+                                  )}
+                                  {actions.revert && (
+                                    <Btn color="gray" icon={<RotateCcw size={10} />} label="Revert"
+                                      loading={actioning === pv.id}
+                                      onClick={() => callAdminAction(pv.id!, "UNREVIEW")} />
+                                  )}
+                                  {actions.reject && (
+                                    <Btn color="red" icon={<XCircle size={10} />} label="Reject"
+                                      loading={actioning === pv.id}
+                                      onClick={() => { setRejectRemarks(""); setRejectCtx("admin"); setRejectTarget(pv); }} />
+                                  )}
+                                </>
+                              )}
+
+                              {/* ─ Signatory actions ─ */}
+                              {actions.type === "signatory" && (
+                                <>
+                                  <Btn color="green" icon={<CheckCircle2 size={10} />} label="Approve"
+                                    loading={actioning === pv.id}
+                                    onClick={() => { setSigPin(""); setSigRemarks(""); setSigModal({ pv, action: "APPROVED" }); }} />
+                                  <Btn color="red" icon={<XCircle size={10} />} label="Reject"
+                                    loading={actioning === pv.id}
+                                    onClick={() => { setSigPin(""); setSigRemarks(""); setSigModal({ pv, action: "REJECTED" }); }} />
+                                </>
+                              )}
+
+                              {/* ─ Ministry Head actions ─ */}
+                              {actions.type === "ministry" && (
+                                <>
+                                  <Btn color="green" icon={<CheckCircle2 size={10} />} label="Verify"
+                                    loading={actioning === pv.id}
+                                    onClick={() => callMinistryAction(pv.id!, "APPROVED")} />
+                                  <Btn color="red" icon={<XCircle size={10} />} label="Reject"
+                                    loading={actioning === pv.id}
+                                    onClick={() => { setRejectRemarks(""); setRejectCtx("ministry"); setRejectTarget(pv); }} />
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              </div>
-            ))}
+                  </Link>
+                </div>
+              );
+            })}
           </div>
         )
       ) : (
@@ -329,8 +501,7 @@ export default function MyPVsPage() {
               <Layers size={28} className="text-stone-300 mx-auto" />
               <p className="text-stone-400 text-sm font-medium">No Bulk PVs yet</p>
               <p className="text-stone-400 text-xs">
-                Go to <strong>Recurring Expenses</strong>, open a folder and click{" "}
-                <strong>Create Bulk PV</strong>
+                Go to <strong>Recurring Expenses</strong>, open a folder and click <strong>Create Bulk PV</strong>
               </p>
             </div>
           </Card>
@@ -364,5 +535,23 @@ export default function MyPVsPage() {
         )
       )}
     </div>
+  );
+}
+
+function Btn({ label, icon, color, loading, onClick }: {
+  label: string; icon?: React.ReactNode; color: "green" | "red" | "blue" | "gray";
+  loading?: boolean; onClick: () => void;
+}) {
+  const cls = {
+    green: "bg-green-600 hover:bg-green-700 text-white",
+    red:   "bg-red-500   hover:bg-red-600   text-white",
+    blue:  "bg-[#4a6da7] hover:bg-[#3d5a8f] text-white",
+    gray:  "bg-stone-200 hover:bg-stone-300  text-stone-700",
+  }[color];
+  return (
+    <button onClick={onClick} disabled={loading}
+      className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg ${cls} disabled:opacity-50 transition-colors whitespace-nowrap`}>
+      {icon}{label}
+    </button>
   );
 }
