@@ -263,38 +263,35 @@ export default function BudgetPage() {
       </div>
 
       {/* Add Budget Button - Prominent */}
-      {canManageBudget && (
-        <div className="mb-8">
-          <button
-            onClick={() => {
-              setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" });
-              setModal({ mode: "add" });
-            }}
-            className="w-full md:w-auto bg-[#4a6da7] hover:bg-[#3d5a8f] text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-md"
-          >
-            <Plus size={20} />
-            Add New Budget Item
-          </button>
-        </div>
-      )}
+      <div className="mb-8">
+        <button
+          onClick={() => {
+            setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" });
+            setModal({ mode: "add" });
+          }}
+          className="w-full md:w-auto bg-[#4a6da7] hover:bg-[#3d5a8f] text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-md"
+        >
+          <Plus size={20} />
+          Add New Budget Item
+        </button>
+      </div>
 
       {/* Budget Items */}
       <div>
         {budgetItems.length === 0 ? (
           <div className="bg-stone-50 border-2 border-dashed border-stone-300 rounded-lg p-12 text-center">
-            <div className="text-5xl mb-3">📋</div>
-            <p className="text-stone-600 font-medium mb-4">No budget items for {ministry} yet</p>
-            {canManageBudget && (
-              <button
-                onClick={() => {
-                  setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" });
-                  setModal({ mode: "add" });
-                }}
-                className="text-[#4a6da7] font-semibold hover:underline"
-              >
-                Click here to create the first budget →
-              </button>
-            )}
+            <div className="text-5xl mb-4">📋</div>
+            <p className="text-stone-600 font-medium mb-6">No budget items for {ministry} yet</p>
+            <button
+              onClick={() => {
+                setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0, contributions_received: 0, contributions_expected: 0, special_notes: "" });
+                setModal({ mode: "add" });
+              }}
+              className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg transition-colors shadow-lg"
+            >
+              <Plus size={20} />
+              Add Your First Budget Item
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
