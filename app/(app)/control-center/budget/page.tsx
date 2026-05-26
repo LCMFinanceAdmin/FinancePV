@@ -1,10 +1,9 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Pencil, Trash2, X as XIcon } from "lucide-react";
+import { Plus, Pencil, Trash2, X as XIcon, ChevronRight } from "lucide-react";
 
 const MINISTRIES = [
   "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
@@ -35,7 +34,6 @@ interface BudgetWithSpending extends BudgetItem {
 
 export default function BudgetPage() {
   const supabase = createClient();
-  const budgetSectionRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState("");
@@ -140,7 +138,7 @@ export default function BudgetPage() {
         if (error) {
           showToast("Error updating budget: " + error.message, false);
         } else {
-          showToast("Budget item updated");
+          showToast("Budget updated successfully");
           setModal(null);
           await loadBudgetItems(ministry);
         }
@@ -158,7 +156,7 @@ export default function BudgetPage() {
         if (error) {
           showToast("Error creating budget: " + error.message, false);
         } else {
-          showToast("Budget item created");
+          showToast("Budget created successfully");
           setModal(null);
           setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0 });
           await loadBudgetItems(ministry);
@@ -183,7 +181,7 @@ export default function BudgetPage() {
       if (error) {
         showToast("Error deleting budget: " + error.message, false);
       } else {
-        showToast("Budget item deleted");
+        showToast("Budget deleted successfully");
         await loadBudgetItems(ministry);
       }
     } catch (err: any) {
@@ -200,227 +198,247 @@ export default function BudgetPage() {
   }, [ministry, loading]);
 
   const canManageBudget = BUDGET_MANAGER_ROLES.includes(userRole);
-  const totalIncome = budgetItems.reduce((sum, b) => sum + b.estimated_income, 0);
-  const totalExpenses = budgetItems.reduce((sum, b) => sum + b.estimated_expenses, 0);
-  const totalSpent = budgetItems.reduce((sum, b) => sum + b.spent, 0);
-  const totalBudget = totalIncome + totalExpenses;
-  const overallBalance = totalBudget - totalSpent;
 
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
-    <div className="p-5 max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-stone-800">Ministry Budget Management</h1>
-        <p className="text-sm text-stone-400">Allocate and track budgets per project for each ministry</p>
+    <div className="p-6 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-stone-900 mb-2">Budget Management</h1>
+        <p className="text-stone-500">Create project budgets for each ministry. These will appear as options when submitting payment vouchers.</p>
       </div>
 
       {toast.msg && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.msg}
         </div>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardBody className="py-3">
-            <div className="text-lg font-bold text-blue-600">{formatCurrency(totalIncome)}</div>
-            <div className="text-xs text-stone-400 mt-0.5">Total Income</div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody className="py-3">
-            <div className="text-lg font-bold text-amber-600">{formatCurrency(totalExpenses)}</div>
-            <div className="text-xs text-stone-400 mt-0.5">Total Expenses</div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody className="py-3">
-            <div className="text-lg font-bold text-orange-600">{formatCurrency(totalSpent)}</div>
-            <div className="text-xs text-stone-400 mt-0.5">Total Spent</div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody className="py-3">
-            <div className={`text-lg font-bold ${overallBalance >= 0 ? "text-green-600" : "text-red-600"}`}>
-              {formatCurrency(overallBalance)}
-            </div>
-            <div className="text-xs text-stone-400 mt-0.5">Balance</div>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Ministry selector and actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2 overflow-x-auto pb-2 flex-1">
+      {/* Ministry Selector */}
+      <div className="mb-8">
+        <label className="block text-sm font-bold text-stone-700 mb-3">Select Ministry</label>
+        <div className="flex gap-2 overflow-x-auto pb-2">
           {MINISTRIES.map((m) => (
             <button
               key={m}
               onClick={() => setMinistry(m)}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 ministry === m
-                  ? "bg-[#4a6da7] text-white border-[#4a6da7]"
-                  : "bg-white text-stone-500 border-stone-200 hover:border-[#4a6da7]/40"
+                  ? "bg-[#4a6da7] text-white shadow-md"
+                  : "bg-white text-stone-700 border-2 border-stone-200 hover:border-[#4a6da7]"
               }`}
             >
               {m}
             </button>
           ))}
         </div>
-        {canManageBudget && (
-          <Button
-            size="sm"
+      </div>
+
+      {/* Add Budget Button - Prominent */}
+      {canManageBudget && (
+        <div className="mb-8">
+          <button
             onClick={() => {
               setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0 });
               setModal({ mode: "add" });
             }}
-            className="ml-2 flex-shrink-0"
+            className="w-full md:w-auto bg-[#4a6da7] hover:bg-[#3d5a8f] text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-md"
           >
-            <Plus size={14} /> Add Budget
-          </Button>
-        )}
-      </div>
+            <Plus size={20} />
+            Add New Budget Item
+          </button>
+        </div>
+      )}
 
-      {/* Budget items list */}
-      <div className="space-y-2">
+      {/* Budget Items */}
+      <div>
         {budgetItems.length === 0 ? (
-          <div className="text-sm text-stone-400 py-6 text-center border border-dashed border-stone-200 rounded-xl">
-            No budgets for <span className="font-medium text-stone-500">{ministry}</span>
+          <div className="bg-stone-50 border-2 border-dashed border-stone-300 rounded-lg p-12 text-center">
+            <div className="text-5xl mb-3">📋</div>
+            <p className="text-stone-600 font-medium mb-4">No budget items for {ministry} yet</p>
             {canManageBudget && (
               <button
                 onClick={() => {
                   setForm({ project_name: "", estimated_income: 0, estimated_expenses: 0 });
                   setModal({ mode: "add" });
                 }}
-                className="ml-1.5 text-[#4a6da7] underline underline-offset-2"
+                className="text-[#4a6da7] font-semibold hover:underline"
               >
-                Create one
+                Click here to create the first budget →
               </button>
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-stone-200">
-                  <th className="text-left py-2 px-3 font-semibold text-stone-700">Project</th>
-                  <th className="text-right py-2 px-3 font-semibold text-stone-700">Est. Income</th>
-                  <th className="text-right py-2 px-3 font-semibold text-stone-700">Est. Expenses</th>
-                  <th className="text-right py-2 px-3 font-semibold text-stone-700">Spent</th>
-                  <th className="text-right py-2 px-3 font-semibold text-stone-700">Balance</th>
-                  {canManageBudget && <th className="text-center py-2 px-3 font-semibold text-stone-700">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {budgetItems.map((item) => (
-                  <tr key={item.id} className="border-b border-stone-100 hover:bg-stone-50 transition-colors">
-                    <td className="py-2 px-3 font-medium text-stone-800">{item.project_name}</td>
-                    <td className="text-right py-2 px-3 text-stone-600">{formatCurrency(item.estimated_income)}</td>
-                    <td className="text-right py-2 px-3 text-stone-600">{formatCurrency(item.estimated_expenses)}</td>
-                    <td className="text-right py-2 px-3 text-stone-600">{formatCurrency(item.spent)}</td>
-                    <td className={`text-right py-2 px-3 font-semibold ${item.color === "red" ? "text-red-600" : item.color === "yellow" ? "text-amber-600" : "text-green-600"}`}>
-                      {formatCurrency(item.balance)}
-                    </td>
-                    {canManageBudget && (
-                      <td className="text-center py-2 px-3">
-                        <button
-                          onClick={() => {
-                            setForm({
-                              project_name: item.project_name,
-                              estimated_income: item.estimated_income,
-                              estimated_expenses: item.estimated_expenses,
-                            });
-                            setModal({ mode: "edit", item });
-                          }}
-                          className="inline-block p-1.5 rounded hover:bg-stone-200 text-stone-400 hover:text-stone-600 transition-colors"
-                          title="Edit"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={() => deleteBudgetItem(item)}
-                          className="inline-block p-1.5 rounded hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors ml-1"
-                          title="Delete"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {budgetItems.map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-lg border-2 p-4 transition-all ${
+                  item.color === "red"
+                    ? "bg-red-50 border-red-300"
+                    : item.color === "yellow"
+                    ? "bg-amber-50 border-amber-300"
+                    : "bg-green-50 border-green-300"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <h3 className="font-bold text-stone-900 text-lg mb-3">{item.project_name}</h3>
+
+                    {/* Budget Display */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                      <div className="bg-white rounded p-3 border border-stone-200">
+                        <div className="text-xs text-stone-500 font-medium">Estimated Income</div>
+                        <div className="text-lg font-bold text-blue-600 mt-1">{formatCurrency(item.estimated_income)}</div>
+                      </div>
+                      <div className="bg-white rounded p-3 border border-stone-200">
+                        <div className="text-xs text-stone-500 font-medium">Estimated Expenses</div>
+                        <div className="text-lg font-bold text-amber-600 mt-1">{formatCurrency(item.estimated_expenses)}</div>
+                      </div>
+                      <div className="bg-white rounded p-3 border border-stone-200">
+                        <div className="text-xs text-stone-500 font-medium">Amount Spent</div>
+                        <div className="text-lg font-bold text-orange-600 mt-1">{formatCurrency(item.spent)}</div>
+                      </div>
+                      <div className="bg-white rounded p-3 border border-stone-200">
+                        <div className="text-xs text-stone-500 font-medium">Remaining Balance</div>
+                        <div className={`text-lg font-bold mt-1 ${item.color === "red" ? "text-red-600" : item.color === "yellow" ? "text-amber-600" : "text-green-600"}`}>
+                          {formatCurrency(item.balance)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <div className="text-xs text-stone-600 font-medium">
+                      {item.color === "red" && "⚠️ Budget exceeded"}
+                      {item.color === "yellow" && "⚠️ Low balance remaining"}
+                      {item.color === "green" && "✓ Budget healthy"}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  {canManageBudget && (
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => {
+                          setForm({
+                            project_name: item.project_name,
+                            estimated_income: item.estimated_income,
+                            estimated_expenses: item.estimated_expenses,
+                          });
+                          setModal({ mode: "edit", item });
+                        }}
+                        className="p-2 rounded-lg bg-white hover:bg-stone-100 border border-stone-300 text-stone-700 transition-colors"
+                        title="Edit"
+                      >
+                        <Pencil size={18} />
+                      </button>
+                      <button
+                        onClick={() => deleteBudgetItem(item)}
+                        className="p-2 rounded-lg bg-white hover:bg-red-100 border border-stone-300 text-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Add/Edit modal */}
+      {/* Modal */}
       {modal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setModal(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-stone-800">
-                {modal.mode === "add" ? "Add Budget" : "Edit Budget"}
-              </h3>
-              <button onClick={() => setModal(null)} className="text-stone-400 hover:text-stone-600">
-                <XIcon size={16} />
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="bg-[#4a6da7] text-white p-6 flex items-center justify-between sticky top-0">
+              <h2 className="text-xl font-bold">
+                {modal.mode === "add" ? "Add New Budget Item" : "Edit Budget Item"}
+              </h2>
+              <button onClick={() => setModal(null)} className="hover:bg-white/20 p-1 rounded transition-colors">
+                <XIcon size={20} />
               </button>
             </div>
-            <div className="text-xs text-stone-500 bg-stone-50 rounded-lg px-3 py-2">
-              Ministry: <span className="font-semibold text-stone-700">{ministry}</span>
-            </div>
-            <div className="space-y-3">
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
+              <div className="bg-stone-100 rounded-lg p-4 border-l-4 border-[#4a6da7]">
+                <div className="text-xs text-stone-600 font-medium">Ministry</div>
+                <div className="text-lg font-bold text-stone-800 mt-1">{ministry}</div>
+              </div>
+
+              {/* Project Name */}
               <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1">
-                  Project Name <span className="text-red-400">*</span>
+                <label className="block text-sm font-bold text-stone-800 mb-2">
+                  Project Name *
                 </label>
                 <input
                   type="text"
                   value={form.project_name}
                   onChange={(e) => setForm(f => ({ ...f, project_name: e.target.value }))}
-                  placeholder="e.g. Soup Kitchen 2026"
-                  className="w-full text-sm border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-[#4a6da7] focus:ring-1 focus:ring-[#4a6da7]/20"
+                  placeholder="e.g., Soup Kitchen 2026"
+                  className="w-full border-2 border-stone-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:border-[#4a6da7] focus:ring-2 focus:ring-[#4a6da7]/20"
                   autoFocus
                 />
+                <p className="text-xs text-stone-500 mt-2">This will appear in the payment voucher dropdown</p>
               </div>
+
+              {/* Estimated Income */}
               <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1">
-                  Estimated Income (RM)
+                <label className="block text-sm font-bold text-stone-800 mb-2">
+                  Estimated Annual Income (RM)
                 </label>
                 <input
                   type="number"
                   value={form.estimated_income}
                   onChange={(e) => setForm(f => ({ ...f, estimated_income: parseFloat(e.target.value) || 0 }))}
                   placeholder="0.00"
-                  className="w-full text-sm border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-[#4a6da7] focus:ring-1 focus:ring-[#4a6da7]/20"
+                  className="w-full border-2 border-stone-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:border-[#4a6da7] focus:ring-2 focus:ring-[#4a6da7]/20"
                 />
+                <p className="text-xs text-stone-500 mt-2">Expected donations, grants, offerings, etc.</p>
               </div>
+
+              {/* Estimated Expenses */}
               <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1">
-                  Estimated Expenses (RM)
+                <label className="block text-sm font-bold text-stone-800 mb-2">
+                  Estimated Annual Expenses (RM)
                 </label>
                 <input
                   type="number"
                   value={form.estimated_expenses}
                   onChange={(e) => setForm(f => ({ ...f, estimated_expenses: parseFloat(e.target.value) || 0 }))}
                   placeholder="0.00"
-                  className="w-full text-sm border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-[#4a6da7] focus:ring-1 focus:ring-[#4a6da7]/20"
+                  className="w-full border-2 border-stone-300 rounded-lg px-4 py-3 text-base focus:outline-none focus:border-[#4a6da7] focus:ring-2 focus:ring-[#4a6da7]/20"
                 />
+                <p className="text-xs text-stone-500 mt-2">Planned spending for this project</p>
+              </div>
+
+              {/* Total Budget Display */}
+              <div className="bg-[#4a6da7] text-white rounded-lg p-4">
+                <div className="text-sm font-medium text-blue-100">Total Budget (Income + Expenses)</div>
+                <div className="text-3xl font-bold mt-2">{formatCurrency((form.estimated_income + form.estimated_expenses))}</div>
               </div>
             </div>
-            <div className="flex gap-2 pt-1">
-              <Button variant="secondary" size="sm" onClick={() => setModal(null)} className="flex-1">
+
+            {/* Modal Footer */}
+            <div className="bg-stone-50 p-6 border-t border-stone-200 flex gap-3 sticky bottom-0">
+              <button
+                onClick={() => setModal(null)}
+                className="flex-1 bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold py-2 rounded-lg transition-colors"
+              >
                 Cancel
-              </Button>
-              <Button
-                size="sm"
+              </button>
+              <button
                 onClick={saveBudgetItem}
                 disabled={saving || !form.project_name.trim()}
-                className="flex-1"
+                className="flex-1 bg-[#4a6da7] hover:bg-[#3d5a8f] disabled:bg-stone-300 text-white font-bold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                {saving ? "Saving…" : modal.mode === "add" ? "Add Budget" : "Save Changes"}
-              </Button>
+                {saving ? "Saving…" : modal.mode === "add" ? "Create Budget" : "Save Changes"}
+                {!saving && <ChevronRight size={16} />}
+              </button>
             </div>
           </div>
         </div>
