@@ -112,32 +112,34 @@ function BudgetInner() {
   }
 
   async function load() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    setUserEmail(user.email ?? "");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUserEmail(user.email ?? "");
 
-    const { data: profile } = await supabase
-      .from("user_roles")
-      .select("role, ministries")
-      .eq("email", user.email)
-      .maybeSingle();
+      const { data: profile } = await supabase
+        .from("user_roles")
+        .select("role, ministries")
+        .eq("email", user.email)
+        .maybeSingle();
 
-    const role = profile?.role ?? "STAFF";
-    const ministries: string[] = profile?.ministries ?? [];
-    setUserRole(role);
-    setUserMinistries(ministries);
+      const role = profile?.role ?? "STAFF";
+      const ministries: string[] = profile?.ministries ?? [];
+      setUserRole(role);
+      setUserMinistries(ministries);
 
-    const visible = (FINANCE_ADMIN_ROLES.includes(role) || SENIOR_ROLES.includes(role))
-      ? MINISTRIES
-      : ministries;
-    // Honor ?ministry= query param if it's in the visible list, otherwise pick first
-    if (queryMinistry && visible.includes(queryMinistry)) {
-      setSelectedMinistry(queryMinistry);
-    } else if (visible.length > 0) {
-      setSelectedMinistry(visible[0]);
+      const visible = (FINANCE_ADMIN_ROLES.includes(role) || SENIOR_ROLES.includes(role))
+        ? MINISTRIES
+        : ministries;
+      // Honor ?ministry= query param if it's in the visible list, otherwise pick first
+      if (queryMinistry && visible.includes(queryMinistry)) {
+        setSelectedMinistry(queryMinistry);
+      } else if (visible.length > 0) {
+        setSelectedMinistry(visible[0]);
+      }
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   async function loadBudgetData(ministry: string) {

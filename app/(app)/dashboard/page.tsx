@@ -46,32 +46,35 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-      const [pvResult, profileResult, pendingResult, approvedResult] = await Promise.all([
-        supabase.from("pvs")
-          .select("id,pv_no,status,amount,payee_name,ministry,submitted_at,purpose,payment_type")
-          .eq("submitted_by_email", user.email)
-          .order("submitted_at", { ascending: false })
-          .limit(5),
-        supabase.from("user_roles").select("full_name,role,ministries").eq("email", user.email).single(),
-        supabase.from("pvs").select("id", { count: "exact", head: true })
-          .in("status", ["PENDING", "PENDING_HEAD", "MINISTRY_VERIFIED", "REVIEWED", "PENDING_SIGNATORY"])
-          .eq("submitted_by_email", user.email),
-        supabase.from("pvs").select("id", { count: "exact", head: true })
-          .in("status", ["APPROVED", "PAID"])
-          .eq("submitted_by_email", user.email),
-      ]);
+        const [pvResult, profileResult, pendingResult, approvedResult] = await Promise.all([
+          supabase.from("pvs")
+            .select("id,pv_no,status,amount,payee_name,ministry,submitted_at,purpose,payment_type")
+            .eq("submitted_by_email", user.email)
+            .order("submitted_at", { ascending: false })
+            .limit(5),
+          supabase.from("user_roles").select("full_name,role,ministries").eq("email", user.email).single(),
+          supabase.from("pvs").select("id", { count: "exact", head: true })
+            .in("status", ["PENDING", "PENDING_HEAD", "MINISTRY_VERIFIED", "REVIEWED", "PENDING_SIGNATORY"])
+            .eq("submitted_by_email", user.email),
+          supabase.from("pvs").select("id", { count: "exact", head: true })
+            .in("status", ["APPROVED", "PAID"])
+            .eq("submitted_by_email", user.email),
+        ]);
 
-      const profile = profileResult.data;
-      setPvs(pvResult.data ?? []);
-      setFirstName((profile?.full_name ?? user.email ?? "").split(" ")[0]);
-      setUserRole(profile?.role ?? "");
-      setUserMinistries(profile?.ministries ?? []);
-      setPendingCount(pendingResult.count ?? 0);
-      setApprovedCount(approvedResult.count ?? 0);
-      setLoading(false);
+        const profile = profileResult.data;
+        setPvs(pvResult.data ?? []);
+        setFirstName((profile?.full_name ?? user.email ?? "").split(" ")[0]);
+        setUserRole(profile?.role ?? "");
+        setUserMinistries(profile?.ministries ?? []);
+        setPendingCount(pendingResult.count ?? 0);
+        setApprovedCount(approvedResult.count ?? 0);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
