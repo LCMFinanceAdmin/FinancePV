@@ -66,6 +66,7 @@ export default function SignatoryActivityPage() {
 
   useEffect(() => {
     async function load() {
+      try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -128,7 +129,9 @@ export default function SignatoryActivityPage() {
       }
       flat.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setHistoryRows(flat);
-      setLoading(false);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
