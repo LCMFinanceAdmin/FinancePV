@@ -154,13 +154,15 @@ Deno.serve(async (req) => {
     }
 
     if (action === "UNREVIEW") {
-      if (!["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(pv.status))
-        return json({ error: "PV is not in a reviewable state to unreview" }, 400);
+      const revertable = ["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY", "REJECTED", "REJECTED_HEAD"];
+      if (!revertable.includes(pv.status))
+        return json({ error: "PV cannot be reverted from its current state" }, 400);
       await db.from("pvs").update({
         status: "PENDING",
         finance_verified_by: null,
         finance_verified_at: null,
         approvals: [],
+        admin_comment: null,
         updated_at: new Date().toISOString(),
       }).eq("id", pv_id);
       return json({ ok: true, status: "PENDING" });
