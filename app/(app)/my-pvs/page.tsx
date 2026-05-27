@@ -82,29 +82,32 @@ export default function MyPVsPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-      const [pvResult, bulkResult, profileResult] = await Promise.all([
-        (() => {
-          let q = supabase
-            .from("pvs")
-            .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type")
-            .eq("submitted_by_email", user.email)
-            .order("submitted_at", { ascending: false });
-          if (filter !== "ALL") q = q.in("status", STATUS_MAP[filter]);
-          return q;
-        })(),
-        supabase.from("bulk_pv_runs").select("*").eq("run_by", user.email).order("run_date", { ascending: false }),
-        supabase.from("user_roles").select("role,ministries").eq("email", user.email).single(),
-      ]);
+        const [pvResult, bulkResult, profileResult] = await Promise.all([
+          (() => {
+            let q = supabase
+              .from("pvs")
+              .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type")
+              .eq("submitted_by_email", user.email)
+              .order("submitted_at", { ascending: false });
+            if (filter !== "ALL") q = q.in("status", STATUS_MAP[filter]);
+            return q;
+          })(),
+          supabase.from("bulk_pv_runs").select("*").eq("run_by", user.email).order("run_date", { ascending: false }),
+          supabase.from("user_roles").select("role,ministries").eq("email", user.email).single(),
+        ]);
 
-      setPvs(pvResult.data ?? []);
-      setBulkRuns(bulkResult.data ?? []);
-      const role = profileResult.data?.role ?? "";
-      setUserRole(role);
-      setUserMinistries(profileResult.data?.ministries ?? []);
-      setLoading(false);
+        setPvs(pvResult.data ?? []);
+        setBulkRuns(bulkResult.data ?? []);
+        const role = profileResult.data?.role ?? "";
+        setUserRole(role);
+        setUserMinistries(profileResult.data?.ministries ?? []);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, [filter]);
