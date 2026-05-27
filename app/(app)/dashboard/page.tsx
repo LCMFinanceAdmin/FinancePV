@@ -333,6 +333,9 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                             <span className="text-xs font-semibold text-stone-600">{pv.pv_no}</span>
                             <StatusBadge status={pv.status!} />
+                            {pv.ministry && (
+                              <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-1.5 py-0.5 rounded-full font-medium">{pv.ministry}</span>
+                            )}
                           </div>
                           <div className="text-sm text-stone-700 truncate">{pv.payee_name}</div>
                           <div className="text-xs text-stone-400 mt-0.5">{pv.ministry} · {formatDate(pv.submitted_at!)}</div>

@@ -482,6 +482,9 @@ export default function MyPVsPage() {
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
                             <StatusBadge status={pv.status!} />
+                            {pv.ministry && (
+                              <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-1.5 py-0.5 rounded-full font-medium">{pv.ministry}</span>
+                            )}
                             {pv.payment_type === "ASSET_PURCHASE" && (
                               <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Asset</span>
                             )}

@@ -31,9 +31,13 @@ interface BudgetItem {
   special_notes: string;
   document_url: string | null;
   document_name: string | null;
-  spent?: number;
-  balance?: number;
+  spent?: number;         // APPROVED + PAID PVs
+  pending?: number;       // in-flight PVs (PENDING_HEAD → PENDING_SIGNATORY)
+  pendingCount?: number;  // number of in-flight PVs
+  balance?: number;       // budget - spent (current; does not deduct pending)
+  availableBalance?: number; // budget - spent - pending (conservative)
   color?: "red" | "yellow" | "green";
+  availableColor?: "red" | "yellow" | "green";
 }
 
 interface ChangeRequest {
@@ -143,25 +147,43 @@ function BudgetInner() {
   }
 
   async function loadBudgetData(ministry: string) {
-    const [{ data: items }, { data: pvs }, { data: requests }] = await Promise.all([
+    const IN_FLIGHT = ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"];
+    const [{ data: items }, { data: allPvs }, { data: requests }] = await Promise.all([
       supabase.from("budget_items").select("*").eq("ministry", ministry).order("project_name"),
-      supabase.from("pvs").select("project, amount").eq("ministry", ministry).in("status", ["APPROVED", "PAID"]),
+      supabase.from("pvs").select("project, amount, status")
+        .eq("ministry", ministry)
+        .not("status", "in", `(${["CANCELLED", "REJECTED", "REJECTED_HEAD"].map(s => `"${s}"`).join(",")})`),
       supabase.from("budget_change_requests").select("*").eq("ministry", ministry).order("requested_at", { ascending: false }),
     ]);
 
-    const spendingMap: Record<string, number> = {};
-    (pvs ?? []).forEach((pv: { project: string; amount: number }) => {
-      if (pv.project) spendingMap[pv.project] = (spendingMap[pv.project] || 0) + (pv.amount || 0);
+    const spentMap: Record<string, number> = {};
+    const pendingMap: Record<string, number> = {};
+    const pendingCountMap: Record<string, number> = {};
+
+    (allPvs ?? []).forEach((pv: { project: string; amount: number; status: string }) => {
+      if (!pv.project) return;
+      if (["APPROVED", "PAID"].includes(pv.status)) {
+        spentMap[pv.project] = (spentMap[pv.project] || 0) + (pv.amount || 0);
+      } else if (IN_FLIGHT.includes(pv.status)) {
+        pendingMap[pv.project] = (pendingMap[pv.project] || 0) + (pv.amount || 0);
+        pendingCountMap[pv.project] = (pendingCountMap[pv.project] || 0) + 1;
+      }
     });
 
+    function colorFor(v: number): "red" | "yellow" | "green" {
+      if (v < 0) return "red";
+      if (v <= 200) return "yellow";
+      return "green";
+    }
+
     const withSpending: BudgetItem[] = (items ?? []).map((item: BudgetItem) => {
-      const spent = spendingMap[item.project_name] || 0;
-      const budget = (item.estimated_income || 0) + (item.estimated_expenses || 0);
-      const balance = budget - spent;
-      let color: "red" | "yellow" | "green" = "green";
-      if (balance < 0) color = "red";
-      else if (balance <= 200) color = "yellow";
-      return { ...item, spent, balance, color };
+      const spent            = spentMap[item.project_name] || 0;
+      const pending          = pendingMap[item.project_name] || 0;
+      const pendingCount     = pendingCountMap[item.project_name] || 0;
+      const budget           = (item.estimated_income || 0) + (item.estimated_expenses || 0);
+      const balance          = budget - spent;
+      const availableBalance = budget - spent - pending;
+      return { ...item, spent, pending, pendingCount, balance, availableBalance, color: colorFor(balance), availableColor: colorFor(availableBalance) };
     });
 
     setBudgetItems(withSpending);
@@ -325,9 +347,11 @@ function BudgetInner() {
 
   const pendingRequests = changeRequests.filter(r => r.status === "pending");
   const resolvedRequests = changeRequests.filter(r => r.status !== "pending");
-  const totalBudget = budgetItems.reduce((s, i) => s + (i.estimated_income || 0) + (i.estimated_expenses || 0), 0);
-  const totalSpent = budgetItems.reduce((s, i) => s + (i.spent || 0), 0);
-  const totalBalance = totalBudget - totalSpent;
+  const totalBudget    = budgetItems.reduce((s, i) => s + (i.estimated_income || 0) + (i.estimated_expenses || 0), 0);
+  const totalSpent     = budgetItems.reduce((s, i) => s + (i.spent    || 0), 0);
+  const totalPending   = budgetItems.reduce((s, i) => s + (i.pending  || 0), 0);
+  const totalBalance   = totalBudget - totalSpent;
+  const totalAvailable = totalBudget - totalSpent - totalPending;
 
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
@@ -459,19 +483,29 @@ function BudgetInner() {
             ) : (
               <>
                 {/* Summary row */}
-                <div className="grid grid-cols-3 divide-x divide-stone-100 border-b border-stone-100 bg-stone-50/50">
-                  <div className="px-5 py-3 text-center">
+                <div className="grid grid-cols-5 divide-x divide-stone-100 border-b border-stone-100 bg-stone-50/50">
+                  <div className="px-4 py-3 text-center">
                     <div className="text-xs text-stone-400 mb-0.5">Total Budget</div>
                     <div className="text-sm font-bold text-stone-700">{formatCurrency(totalBudget)}</div>
                   </div>
-                  <div className="px-5 py-3 text-center">
-                    <div className="text-xs text-stone-400 mb-0.5">Total Spent</div>
+                  <div className="px-4 py-3 text-center">
+                    <div className="text-xs text-stone-400 mb-0.5">Paid / Approved</div>
                     <div className="text-sm font-bold text-orange-600">{formatCurrency(totalSpent)}</div>
                   </div>
-                  <div className="px-5 py-3 text-center">
-                    <div className="text-xs text-stone-400 mb-0.5">Balance</div>
+                  <div className="px-4 py-3 text-center">
+                    <div className="text-xs text-stone-400 mb-0.5">PVs In Progress</div>
+                    <div className="text-sm font-bold text-amber-600">{formatCurrency(totalPending)}</div>
+                  </div>
+                  <div className="px-4 py-3 text-center">
+                    <div className="text-xs text-stone-400 mb-0.5">Current Balance</div>
                     <div className={`text-sm font-bold ${totalBalance < 0 ? "text-red-600" : totalBalance <= 200 ? "text-amber-600" : "text-green-600"}`}>
                       {formatCurrency(totalBalance)}
+                    </div>
+                  </div>
+                  <div className="px-4 py-3 text-center">
+                    <div className="text-xs text-stone-400 mb-0.5">Available Balance</div>
+                    <div className={`text-sm font-bold ${totalAvailable < 0 ? "text-red-600" : totalAvailable <= 200 ? "text-amber-600" : "text-green-600"}`}>
+                      {formatCurrency(totalAvailable)}
                     </div>
                   </div>
                 </div>
@@ -484,8 +518,10 @@ function BudgetInner() {
                         <th className="text-left px-5 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Project</th>
                         <th className="text-left px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Type</th>
                         <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Budget</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Spent</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Balance</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Paid</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">PVs Raised</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Current Bal.</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Available Bal.</th>
                         <th className="px-3 py-2.5 w-16"></th>
                       </tr>
                     </thead>
@@ -495,7 +531,7 @@ function BudgetInner() {
                           <td className="px-5 py-3">
                             <div className="font-medium text-stone-800">{item.project_name}</div>
                             {item.description && (
-                              <div className="text-xs text-stone-400 mt-0.5 max-w-[220px] truncate">{item.description}</div>
+                              <div className="text-xs text-stone-400 mt-0.5 max-w-[180px] truncate">{item.description}</div>
                             )}
                           </td>
                           <td className="px-3 py-3">
@@ -513,12 +549,29 @@ function BudgetInner() {
                           <td className="text-right px-3 py-3 text-orange-600">
                             {formatCurrency(item.spent || 0)}
                           </td>
-                          <td className={`text-right px-3 py-3 font-semibold ${
+                          <td className="text-right px-3 py-3">
+                            {(item.pendingCount || 0) > 0 ? (
+                              <div>
+                                <div className="text-amber-600 font-medium text-xs">{formatCurrency(item.pending || 0)}</div>
+                                <div className="text-[10px] text-stone-400">{item.pendingCount} PV{(item.pendingCount || 0) !== 1 ? "s" : ""}</div>
+                              </div>
+                            ) : (
+                              <span className="text-stone-300 text-xs">—</span>
+                            )}
+                          </td>
+                          <td className={`text-right px-3 py-3 font-semibold text-sm ${
                             item.color === "red" ? "text-red-600"
                             : item.color === "yellow" ? "text-amber-600"
                             : "text-green-600"
                           }`}>
                             {formatCurrency(item.balance || 0)}
+                          </td>
+                          <td className={`text-right px-3 py-3 font-semibold text-sm ${
+                            item.availableColor === "red" ? "text-red-600"
+                            : item.availableColor === "yellow" ? "text-amber-600"
+                            : "text-green-600"
+                          }`}>
+                            {formatCurrency(item.availableBalance ?? item.balance ?? 0)}
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex gap-1 justify-end">
