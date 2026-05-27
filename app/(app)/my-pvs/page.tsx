@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -15,11 +15,11 @@ import Link from "next/link";
 type FilterStatus = "ALL" | "IN_PROGRESS" | "APPROVED" | "PAID" | "REJECTED";
 
 const FILTER_OPTIONS: { label: string; value: FilterStatus }[] = [
-  { label: "All",        value: "ALL"         },
-  { label: "In Progress",value: "IN_PROGRESS" },
-  { label: "Approved",   value: "APPROVED"    },
-  { label: "Paid",       value: "PAID"        },
-  { label: "Rejected",   value: "REJECTED"    },
+  { label: "All",         value: "ALL"         },
+  { label: "In Progress", value: "IN_PROGRESS" },
+  { label: "Approved",    value: "APPROVED"    },
+  { label: "Paid",        value: "PAID"        },
+  { label: "Rejected",    value: "REJECTED"    },
 ];
 
 const STATUS_MAP: Record<FilterStatus, string[]> = {
@@ -37,14 +37,17 @@ interface BulkRun {
 
 type RejectCtx = "admin" | "ministry";
 
+type ListItem =
+  | { kind: "pv";   data: Partial<PV>; date: string }
+  | { kind: "bulk"; data: BulkRun;     date: string };
+
 export default function MyPVsPage() {
   const supabase = createClient();
-  const [pvs,        setPvs]        = useState<Partial<PV>[]>([]);
-  const [bulkRuns,   setBulkRuns]   = useState<BulkRun[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [filter,     setFilter]     = useState<FilterStatus>("ALL");
-  const [search,     setSearch]     = useState("");
-  const [showBulk,   setShowBulk]   = useState(false);
+  const [pvs,      setPvs]      = useState<Partial<PV>[]>([]);
+  const [bulkRuns, setBulkRuns] = useState<BulkRun[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [filter,   setFilter]   = useState<FilterStatus>("ALL");
+  const [search,   setSearch]   = useState("");
 
   // Profile / role
   const [userRole,       setUserRole]       = useState("");
@@ -54,22 +57,22 @@ export default function MyPVsPage() {
   const needsPin       = ["BISHOP", "TREASURER", "SECRETARY"].includes(userRole);
 
   // Bulk expand state
-  const [expandedBulk,    setExpandedBulk]    = useState<Set<string>>(new Set());
-  const [bulkPVs,         setBulkPVs]         = useState<Record<string, Partial<PV>[]>>({});
-  const [loadingBulkPVs,  setLoadingBulkPVs]  = useState<Record<string, boolean>>({});
+  const [expandedBulk,   setExpandedBulk]   = useState<Set<string>>(new Set());
+  const [bulkPVs,        setBulkPVs]        = useState<Record<string, Partial<PV>[]>>({});
+  const [loadingBulkPVs, setLoadingBulkPVs] = useState<Record<string, boolean>>({});
 
   // Action state
-  const [actioning,    setActioning]   = useState<string | null>(null);
-  const [toast,        setToast]       = useState({ msg: "", ok: true });
-  const [rejectTarget, setRejectTarget]= useState<Partial<PV> | null>(null);
-  const [rejectRemarks,setRejectRemarks]=useState("");
-  const [rejectCtx,    setRejectCtx]   = useState<RejectCtx>("admin");
-  const [rejectBulkId, setRejectBulkId]= useState<string | undefined>();
-  const [sigModal,     setSigModal]    = useState<{ pv: Partial<PV>; action: "APPROVED" | "REJECTED"; bulkId?: string } | null>(null);
-  const [sigPin,       setSigPin]      = useState("");
-  const [sigRemarks,   setSigRemarks]  = useState("");
-  const [deleteTarget, setDeleteTarget]= useState<Partial<PV> | null>(null);
-  const [deleting,     setDeleting]    = useState(false);
+  const [actioning,     setActioning]    = useState<string | null>(null);
+  const [toast,         setToast]        = useState({ msg: "", ok: true });
+  const [rejectTarget,  setRejectTarget] = useState<Partial<PV> | null>(null);
+  const [rejectRemarks, setRejectRemarks]= useState("");
+  const [rejectCtx,     setRejectCtx]    = useState<RejectCtx>("admin");
+  const [rejectBulkId,  setRejectBulkId] = useState<string | undefined>();
+  const [sigModal,      setSigModal]     = useState<{ pv: Partial<PV>; action: "APPROVED" | "REJECTED"; bulkId?: string } | null>(null);
+  const [sigPin,        setSigPin]       = useState("");
+  const [sigRemarks,    setSigRemarks]   = useState("");
+  const [deleteTarget,  setDeleteTarget] = useState<Partial<PV> | null>(null);
+  const [deleting,      setDeleting]     = useState(false);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -187,7 +190,7 @@ export default function MyPVsPage() {
       return;
     }
     setExpandedBulk(prev => new Set([...prev, id]));
-    if (bulkPVs[id] || !run.pv_ids?.length) return; // already loaded
+    if (bulkPVs[id] || !run.pv_ids?.length) return;
     setLoadingBulkPVs(prev => ({ ...prev, [id]: true }));
     try {
       const { data } = await supabase
@@ -214,33 +217,45 @@ export default function MyPVsPage() {
   function getPVActions(pv: Partial<PV>) {
     const s = pv.status ?? "";
     const isMH = userMinistries.length > 0 && !!pv.ministry && userMinistries.includes(pv.ministry);
-    // Revert only allowed if higher chain hasn't finalised (APPROVED/PAID blocks it)
-    const canRevert = !["APPROVED", "PAID", "REJECTED", "CANCELLED", "REJECTED_HEAD"].includes(s);
+    // Revert blocked only once GM/signatories have fully approved (APPROVED/PAID/CANCELLED)
+    const canRevert = !["APPROVED", "PAID", "CANCELLED"].includes(s);
 
     if (isFinanceAdmin) {
       if (s === "PENDING")
-        return { type: "admin", review: true,  signatory: false, revert: false,              reject: true  } as const;
+        return { type: "admin", review: true,  signatory: false, revert: false,      reject: true  } as const;
       if (s === "REVIEWED" || s === "MINISTRY_VERIFIED")
-        return { type: "admin", review: false, signatory: true,  revert: canRevert,          reject: true  } as const;
+        return { type: "admin", review: false, signatory: true,  revert: canRevert,  reject: true  } as const;
       if (s === "PENDING_SIGNATORY")
-        return { type: "admin", review: false, signatory: false, revert: canRevert,          reject: false } as const;
+        return { type: "admin", review: false, signatory: false, revert: canRevert,  reject: false } as const;
+      if (s === "REJECTED" || s === "REJECTED_HEAD")
+        return { type: "admin", review: false, signatory: false, revert: true,       reject: false } as const;
     }
     if (isSignatory && s === "PENDING_SIGNATORY") return { type: "signatory" } as const;
     if (isMH && s === "PENDING_HEAD")             return { type: "ministry"  } as const;
     return null;
   }
 
-  const filteredPvs  = pvs.filter(pv => {
+  // ── Filtered + merged unified list (PVs + bulk runs, sorted by date) ──
+  const filteredPvs = pvs.filter(pv => {
     if (!search) return true;
     const q = search.toLowerCase();
     return pv.pv_no?.toLowerCase().includes(q) || pv.payee_name?.toLowerCase().includes(q) ||
       pv.ministry?.toLowerCase().includes(q) || pv.purpose?.toLowerCase().includes(q);
   });
+
   const filteredBulk = bulkRuns.filter(b => {
     if (!search) return true;
     const q = search.toLowerCase();
     return b.group_name?.toLowerCase().includes(q) || b.ministry?.toLowerCase().includes(q);
   });
+
+  const unifiedList = useMemo<ListItem[]>(() => {
+    const items: ListItem[] = [
+      ...filteredPvs.map(pv  => ({ kind: "pv"   as const, data: pv,  date: pv.submitted_at ?? "" })),
+      ...filteredBulk.map(run => ({ kind: "bulk" as const, data: run, date: run.run_date    ?? "" })),
+    ];
+    return items.sort((a, b) => b.date.localeCompare(a.date));
+  }, [filteredPvs, filteredBulk]);
 
   // ── Shared PV action button row ────────────────────────────────────────
   function PVActionRow({ pv, bulkId }: { pv: Partial<PV>; bulkId?: string }) {
@@ -303,44 +318,28 @@ export default function MyPVsPage() {
         <p className="text-sm text-stone-400">Track the status of all your submitted PVs</p>
       </div>
 
-      {/* Toggle */}
-      <div className="flex gap-1 bg-stone-100 p-1 rounded-xl w-fit">
-        <button onClick={() => setShowBulk(false)}
-          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${!showBulk ? "bg-white text-[#4a6da7] shadow-sm" : "text-stone-500 hover:text-stone-700"}`}>
-          Individual PVs
-        </button>
-        <button onClick={() => setShowBulk(true)}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${showBulk ? "bg-white text-[#4a6da7] shadow-sm" : "text-stone-500 hover:text-stone-700"}`}>
-          <Layers size={12} />Bulk PVs
-          {bulkRuns.length > 0 && (
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${showBulk ? "bg-[#4a6da7] text-white" : "bg-stone-300 text-stone-600"}`}>
-              {bulkRuns.length}
-            </span>
-          )}
-        </button>
-      </div>
-
       {/* Search */}
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-        <input className="w-full border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7]"
-          placeholder={showBulk ? "Search by group or ministry…" : "Search by PV no., payee, or purpose…"}
-          value={search} onChange={e => setSearch(e.target.value)} />
+        <input
+          className="w-full border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7]"
+          placeholder="Search by PV no., payee, ministry, or purpose…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
       </div>
 
       {/* Filter tabs */}
-      {!showBulk && (
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {FILTER_OPTIONS.map(f => (
-            <button key={f.value} onClick={() => setFilter(f.value)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                filter === f.value ? "bg-[#4a6da7] text-white" : "bg-white border border-stone-200 text-stone-600 hover:bg-stone-50"
-              }`}>
-              {f.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {FILTER_OPTIONS.map(f => (
+          <button key={f.value} onClick={() => setFilter(f.value)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              filter === f.value ? "bg-[#4a6da7] text-white" : "bg-white border border-stone-200 text-stone-600 hover:bg-stone-50"
+            }`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
 
       {/* Toast */}
       {toast.msg && (
@@ -454,169 +453,154 @@ export default function MyPVsPage() {
         </div>
       )}
 
-      {/* ── List ── */}
+      {/* ── Unified list ── */}
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
-      ) : !showBulk ? (
-
-        /* ── Individual PVs ── */
-        filteredPvs.length === 0 ? (
-          <Card><div className="py-12 text-center text-stone-400 text-sm">
-            {search ? "No results match your search" : "No payment vouchers found"}
-          </div></Card>
-        ) : (
-          <div className="space-y-2">
-            {filteredPvs.map(pv => (
-              <div key={pv.id} className="relative group">
-                <Link href={`/my-pvs/${pv.id}`}>
-                  <div className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                          <StatusBadge status={pv.status!} />
-                          {pv.payment_type === "ASSET_PURCHASE" && (
-                            <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Asset</span>
-                          )}
-                        </div>
-                        <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
-                        <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>
-                        <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)}</div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <div className="flex items-center gap-1.5">
-                          <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
-                          {isFinanceAdmin && pv.status !== "PAID" && (
-                            <button
-                              onClick={e => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(pv); }}
-                              className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                              title="Delete permanently">
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                        <PVActionRow pv={pv} />
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              </div>
-            ))}
+      ) : unifiedList.length === 0 ? (
+        <Card>
+          <div className="py-12 text-center space-y-2">
+            <Layers size={28} className="text-stone-300 mx-auto" />
+            <p className="text-stone-400 text-sm font-medium">
+              {search ? "No results match your search" : "No payment vouchers found"}
+            </p>
           </div>
-        )
-
+        </Card>
       ) : (
-
-        /* ── Bulk PVs ── */
-        filteredBulk.length === 0 ? (
-          <Card>
-            <div className="py-12 text-center space-y-2">
-              <Layers size={28} className="text-stone-300 mx-auto" />
-              <p className="text-stone-400 text-sm font-medium">No Bulk PVs yet</p>
-              <p className="text-stone-400 text-xs">
-                Go to <strong>Recurring Expenses</strong>, open a folder and click <strong>Create Bulk PV</strong>
-              </p>
-            </div>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {filteredBulk.map(run => {
-              const isExpanded = expandedBulk.has(run.id);
-              const loadingPVs = loadingBulkPVs[run.id];
-              const visible = visibleBulkPVs(run.id);
-
+        <div className="space-y-2">
+          {unifiedList.map(item => {
+            if (item.kind === "pv") {
+              const pv = item.data;
               return (
-                <div key={run.id} className="bg-white border border-stone-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
-                  {/* ── Bulk run header (click to expand) ── */}
-                  <button
-                    className="w-full text-left px-4 py-3.5 flex items-start justify-between gap-3 hover:bg-stone-50 transition-colors"
-                    onClick={() => toggleBulkExpand(run)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
-                          <FileText size={10} /> BULK
-                        </span>
-                        <span className="text-xs font-semibold text-stone-600">{run.group_name}</span>
-                        <span className="text-xs text-stone-400">{run.pv_count} PV{run.pv_count !== 1 ? "s" : ""}</span>
-                      </div>
-                      <div className="text-sm font-medium text-stone-800">{run.group_name} — Batch Payment</div>
-                      {run.ministry && <div className="text-xs text-stone-400 mt-0.5">{run.ministry}</div>}
-                      <div className="text-xs text-stone-400 mt-0.5">{formatDate(run.run_date)}</div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(run.total_amount)}</div>
-                      <div className="text-xs text-stone-400">{run.pv_count} vouchers</div>
-                      <div className="mt-1 text-stone-400">
-                        {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* ── Expanded: individual PV cards ── */}
-                  {isExpanded && (
-                    <div className="border-t border-stone-100">
-                      {loadingPVs ? (
-                        <div className="py-6 text-center text-stone-400 text-xs">Loading vouchers…</div>
-                      ) : visible.length === 0 ? (
-                        <div className="py-6 text-center text-stone-400 text-xs">
-                          {(bulkPVs[run.id] ?? []).length > 0
-                            ? "No PVs in your ministry within this batch."
-                            : "No vouchers found."}
+                <div key={pv.id} className="relative group">
+                  <Link href={`/my-pvs/${pv.id}`}>
+                    <div className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
+                            <StatusBadge status={pv.status!} />
+                            {pv.payment_type === "ASSET_PURCHASE" && (
+                              <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Asset</span>
+                            )}
+                          </div>
+                          <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
+                          <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>
+                          <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)}</div>
                         </div>
-                      ) : (
-                        <div className="divide-y divide-stone-50">
-                          {visible.map((pv, idx) => (
-                            <div key={pv.id}
-                              className={`px-4 py-3 flex items-start gap-3 transition-colors hover:bg-stone-50/70 ${idx % 2 === 0 ? "" : "bg-stone-50/30"}`}>
-                              {/* PV info */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                                  <Link href={`/my-pvs/${pv.id}`}
-                                    className="text-xs font-semibold text-[#4a6da7] hover:underline"
-                                    onClick={e => e.stopPropagation()}>
-                                    {pv.pv_no}
-                                  </Link>
-                                  <StatusBadge status={pv.status!} />
-                                  {pv.ministry && (
-                                    <span className="text-xs bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full">
-                                      {pv.ministry}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-sm text-stone-700 truncate">{pv.payee_name}</div>
-                                {pv.purpose && (
-                                  <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.purpose}</div>
-                                )}
-                              </div>
-                              {/* Amount + action buttons */}
-                              <div className="flex flex-col items-end gap-1.5 shrink-0">
-                                <div className="text-sm font-bold text-stone-700 whitespace-nowrap">
-                                  {formatCurrency(pv.amount!)}
-                                </div>
-                                <PVActionRow pv={pv} bulkId={run.id} />
-                              </div>
-                            </div>
-                          ))}
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
+                            {isFinanceAdmin && pv.status !== "PAID" && (
+                              <button
+                                onClick={e => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(pv); }}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                                title="Delete permanently">
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                          <PVActionRow pv={pv} />
                         </div>
-                      )}
-
-                      {/* Footer: link to full bulk view */}
-                      <div className="px-4 py-2.5 bg-stone-50 border-t border-stone-100 flex justify-between items-center">
-                        <span className="text-xs text-stone-400">{visible.length} of {run.pv_count} shown</span>
-                        <Link href={`/bulk-pvs/${run.id}`}
-                          className="text-xs font-medium text-[#4a6da7] hover:underline"
-                          onClick={e => e.stopPropagation()}>
-                          View full batch →
-                        </Link>
                       </div>
                     </div>
-                  )}
+                  </Link>
                 </div>
               );
-            })}
-          </div>
-        )
+            }
+
+            // kind === "bulk"
+            const run = item.data;
+            const isExpanded  = expandedBulk.has(run.id);
+            const loadingPVs  = loadingBulkPVs[run.id];
+            const visible     = visibleBulkPVs(run.id);
+
+            return (
+              <div key={run.id} className="bg-white border border-stone-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
+                {/* Bulk run header */}
+                <button
+                  className="w-full text-left px-4 py-3.5 flex items-start justify-between gap-3 hover:bg-stone-50 transition-colors"
+                  onClick={() => toggleBulkExpand(run)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
+                        <FileText size={10} /> BULK
+                      </span>
+                      <span className="text-xs font-semibold text-stone-600">{run.group_name}</span>
+                      <span className="text-xs text-stone-400">{run.pv_count} PV{run.pv_count !== 1 ? "s" : ""}</span>
+                    </div>
+                    <div className="text-sm font-medium text-stone-800">{run.group_name} — Batch Payment</div>
+                    {run.ministry && <div className="text-xs text-stone-400 mt-0.5">{run.ministry}</div>}
+                    <div className="text-xs text-stone-400 mt-0.5">{formatDate(run.run_date)}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(run.total_amount)}</div>
+                    <div className="text-xs text-stone-400">{run.pv_count} vouchers</div>
+                    <div className="mt-1 text-stone-400">
+                      {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Expanded: individual PV cards */}
+                {isExpanded && (
+                  <div className="border-t border-stone-100">
+                    {loadingPVs ? (
+                      <div className="py-6 text-center text-stone-400 text-xs">Loading vouchers…</div>
+                    ) : visible.length === 0 ? (
+                      <div className="py-6 text-center text-stone-400 text-xs">
+                        {(bulkPVs[run.id] ?? []).length > 0
+                          ? "No PVs in your ministry within this batch."
+                          : "No vouchers found."}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-stone-50">
+                        {visible.map((pv, idx) => (
+                          <div key={pv.id}
+                            className={`px-4 py-3 flex items-start gap-3 transition-colors hover:bg-stone-50/70 ${idx % 2 === 0 ? "" : "bg-stone-50/30"}`}>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                                <Link href={`/my-pvs/${pv.id}`}
+                                  className="text-xs font-semibold text-[#4a6da7] hover:underline"
+                                  onClick={e => e.stopPropagation()}>
+                                  {pv.pv_no}
+                                </Link>
+                                <StatusBadge status={pv.status!} />
+                                {pv.ministry && (
+                                  <span className="text-xs bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full">
+                                    {pv.ministry}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-sm text-stone-700 truncate">{pv.payee_name}</div>
+                              {pv.purpose && (
+                                <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.purpose}</div>
+                              )}
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              <div className="text-sm font-bold text-stone-700 whitespace-nowrap">
+                                {formatCurrency(pv.amount!)}
+                              </div>
+                              <PVActionRow pv={pv} bulkId={run.id} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="px-4 py-2.5 bg-stone-50 border-t border-stone-100 flex justify-between items-center">
+                      <span className="text-xs text-stone-400">{visible.length} of {run.pv_count} shown</span>
+                      <Link href={`/bulk-pvs/${run.id}`}
+                        className="text-xs font-medium text-[#4a6da7] hover:underline"
+                        onClick={e => e.stopPropagation()}>
+                        View full batch →
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
