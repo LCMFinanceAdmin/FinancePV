@@ -19,18 +19,21 @@ export default function SignatoryPage() {
   const [toast, setToast] = useState("");
 
   async function load() {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    const { data } = await supabase
-      .from("pvs")
-      .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name")
-      .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"])
-      .order("submitted_at", { ascending: true });
+      const { data } = await supabase
+        .from("pvs")
+        .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name")
+        .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"])
+        .order("submitted_at", { ascending: true });
 
-    setPvs(data ?? []);
-    setLoading(false);
+      setPvs(data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);

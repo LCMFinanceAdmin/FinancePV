@@ -26,29 +26,32 @@ export default function ExcoPage() {
   }
 
   async function load() {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    const { data: profile } = await supabase
-      .from("user_roles")
-      .select("ministries,has_pin")
-      .eq("email", user.email)
-      .single();
+      const { data: profile } = await supabase
+        .from("user_roles")
+        .select("ministries,has_pin")
+        .eq("email", user.email)
+        .single();
 
-    setHasPin(profile?.has_pin ?? false);
-    const ministries: string[] = profile?.ministries ?? [];
-    if (!ministries.length) { setLoading(false); return; }
+      setHasPin(profile?.has_pin ?? false);
+      const ministries: string[] = profile?.ministries ?? [];
+      if (!ministries.length) return;
 
-    const { data } = await supabase
-      .from("pvs")
-      .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email")
-      .eq("status", "PENDING_HEAD")
-      .in("ministry", ministries)
-      .order("submitted_at", { ascending: true });
+      const { data } = await supabase
+        .from("pvs")
+        .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email")
+        .eq("status", "PENDING_HEAD")
+        .in("ministry", ministries)
+        .order("submitted_at", { ascending: true });
 
-    setPvs(data ?? []);
-    setLoading(false);
+      setPvs(data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
