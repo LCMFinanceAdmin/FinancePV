@@ -171,7 +171,7 @@ function ControlCenterInner() {
       {/* Ministry Head Assignments */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-bold text-stone-700">Ministry Head Assignments</h2>
+          <h2 className="text-base font-bold text-stone-700">EXCO Member Assignments</h2>
           <a
             href="/settings/signatories"
             className="text-xs text-[#4a6da7] hover:underline font-medium"

@@ -31,7 +31,7 @@ export function formatDateTime(iso: string): string {
 }
 
 export const STATUS_LABELS: Record<PVStatus, string> = {
-  PENDING_HEAD:       "Pending Ministry Head",
+  PENDING_HEAD:       "Pending EXCO Review",
   PENDING:            "Pending Finance Review",
   REVIEWED:           "Finance Reviewed",
   MINISTRY_VERIFIED:  "Ministry Verified",
@@ -39,7 +39,7 @@ export const STATUS_LABELS: Record<PVStatus, string> = {
   APPROVED:           "Approved",
   PAID:               "Paid",
   REJECTED:           "Rejected",
-  REJECTED_HEAD:      "Rejected by Ministry Head",
+  REJECTED_HEAD:      "Rejected by EXCO Member",
   CANCELLED:          "Cancelled",
 };
 

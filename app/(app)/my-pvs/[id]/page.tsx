@@ -277,7 +277,7 @@ export default function PVDetailPage() {
           <div className="flex gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" />
             <div>
-              <strong>PV {pv.status === "REJECTED_HEAD" ? "Rejected by Ministry Head" : "Rejected"}</strong>
+              <strong>PV {pv.status === "REJECTED_HEAD" ? "Rejected by EXCO Member" : "Rejected"}</strong>
               {approvals.filter(a => a.action === "REJECTED").map((a, i) => (
                 <div key={i} className="text-xs mt-1">{a.role} ({a.name}): {a.remarks || "No remarks"}</div>
               ))}
