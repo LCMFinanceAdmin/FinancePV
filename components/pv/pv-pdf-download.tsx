@@ -201,7 +201,7 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
             <>
               <View style={{ height: 40 }} />
               <View style={[s.borderT, { paddingTop: 3 }]}>
-                <Text style={[s.bold, s.tiny]}>{pv.ministry_verified_by ?? "Ministry Head"}</Text>
+                <Text style={[s.bold, s.tiny]}>{pv.ministry_verified_by ?? "EXCO Member"}</Text>
                 <Text style={s.tiny}>{pv.ministry}  Date: {fmtDate(pv.ministry_verified_at ?? pv.head_verified_at)}</Text>
               </View>
             </>
