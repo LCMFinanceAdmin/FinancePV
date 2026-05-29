@@ -1,177 +1,436 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { Card, CardBody } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, getLOATier } from "@/lib/utils";
 import type { PV } from "@/lib/types";
-import { CheckCircle, XCircle, Eye } from "lucide-react";
+import { CheckCircle, XCircle, X, Building2, TrendingDown, Wallet } from "lucide-react";
+
+interface BudgetSummary {
+  project_name: string;
+  estimated_income: number;
+  estimated_expenses: number;
+  spent: number;
+  pending: number;
+}
+
+interface PinModal {
+  pvIds: string[];
+  action: "APPROVED" | "REJECTED";
+}
+
+interface MinistryPopup {
+  ministry: string;
+  pvAmount: number;
+}
 
 export default function SignatoryPage() {
   const supabase = createClient();
   const [pvs, setPvs] = useState<Partial<PV>[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<Partial<PV> | null>(null);
-  const [remarks, setRemarks] = useState("");
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [pinModal, setPinModal] = useState<PinModal | null>(null);
   const [pin, setPin] = useState("");
+  const [remarks, setRemarks] = useState("");
   const [acting, setActing] = useState(false);
   const [toast, setToast] = useState("");
+  const [toastOk, setToastOk] = useState(true);
+  const [ministryPopup, setMinistryPopup] = useState<MinistryPopup | null>(null);
+  const [budgetRows, setBudgetRows] = useState<BudgetSummary[]>([]);
+  const [budgetLoading, setBudgetLoading] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       const { data } = await supabase
         .from("pvs")
         .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name")
         .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"])
         .order("submitted_at", { ascending: true });
-
       setPvs(data ?? []);
+      setCheckedIds(new Set());
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  function showToast(msg: string, ok = true) {
+    setToast(msg); setToastOk(ok);
+    setTimeout(() => setToast(""), 3500);
   }
 
-  useEffect(() => { load(); }, []);
+  function openPin(pvIds: string[], action: "APPROVED" | "REJECTED") {
+    setPinModal({ pvIds, action });
+    setPin(""); setRemarks("");
+  }
 
-  async function act(pvId: string, action: "APPROVED" | "REJECTED") {
+  async function submitPin() {
+    if (!pinModal) return;
+    if (pinModal.action === "REJECTED" && !remarks.trim()) {
+      showToast("Remarks are required for rejection", false); return;
+    }
     setActing(true);
     try {
       const session = (await supabase.auth.getSession()).data.session;
-      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({ pv_id: pvId, action, remarks, pin }),
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error ?? "Action failed");
-
-      setToast(`PV ${action === "APPROVED" ? "approved" : "rejected"} successfully`);
-      setSelected(null);
-      setRemarks("");
-      setPin("");
+      let successCount = 0;
+      let lastError = "";
+      for (const pvId of pinModal.pvIds) {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ pv_id: pvId, action: pinModal.action, remarks, pin }),
+        });
+        const result = await res.json();
+        if (res.ok) successCount++;
+        else lastError = result.error ?? "Action failed";
+      }
+      setPinModal(null);
+      if (successCount > 0) {
+        showToast(`${successCount} PV${successCount > 1 ? "s" : ""} ${pinModal.action === "APPROVED" ? "approved" : "rejected"} successfully`);
+      }
+      if (lastError) showToast(lastError, false);
       await load();
-      setTimeout(() => setToast(""), 3000);
     } catch (err: unknown) {
-      setToast(err instanceof Error ? err.message : "Action failed");
+      showToast(err instanceof Error ? err.message : "Action failed", false);
     } finally {
       setActing(false);
     }
   }
 
+  async function openMinistryPopup(ministry: string, pvAmount: number) {
+    setMinistryPopup({ ministry, pvAmount });
+    setBudgetRows([]);
+    setBudgetLoading(true);
+    try {
+      const [{ data: items }, { data: spentPvs }, { data: pendingPvs }] = await Promise.all([
+        supabase.from("budget_items").select("project_name,estimated_income,estimated_expenses").eq("ministry", ministry),
+        supabase.from("pvs").select("project,amount").eq("ministry", ministry).in("status", ["APPROVED", "PAID"]),
+        supabase.from("pvs").select("project,amount").eq("ministry", ministry)
+          .in("status", ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"]),
+      ]);
+      const spentMap: Record<string, number> = {};
+      for (const p of spentPvs ?? []) spentMap[p.project] = (spentMap[p.project] ?? 0) + (p.amount ?? 0);
+      const pendingMap: Record<string, number> = {};
+      for (const p of pendingPvs ?? []) pendingMap[p.project] = (pendingMap[p.project] ?? 0) + (p.amount ?? 0);
+      setBudgetRows((items ?? []).map(item => ({
+        project_name: item.project_name,
+        estimated_income: item.estimated_income ?? 0,
+        estimated_expenses: item.estimated_expenses ?? 0,
+        spent: spentMap[item.project_name] ?? 0,
+        pending: pendingMap[item.project_name] ?? 0,
+      })));
+    } finally {
+      setBudgetLoading(false);
+    }
+  }
+
+  const allIds = pvs.map(p => p.id!).filter(Boolean);
+  const allChecked = allIds.length > 0 && allIds.every(id => checkedIds.has(id));
+  const anyChecked = checkedIds.size > 0;
+
+  function toggleAll() {
+    if (allChecked) setCheckedIds(new Set());
+    else setCheckedIds(new Set(allIds));
+  }
+
+  function toggleOne(id: string) {
+    setCheckedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  const totalBudget = budgetRows.reduce((s, r) => s + r.estimated_income, 0);
+  const totalSpent  = budgetRows.reduce((s, r) => s + r.spent, 0);
+  const totalPending = budgetRows.reduce((s, r) => s + r.pending, 0);
+  const currentBalance = totalBudget - totalSpent;
+  const afterBalance = currentBalance - (ministryPopup?.pvAmount ?? 0);
+
   return (
     <div className="p-5 max-w-3xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-xl font-bold text-stone-800">Signatory Queue</h1>
-        <p className="text-sm text-stone-400">Payment vouchers awaiting your approval</p>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-stone-800">Signatory Queue</h1>
+          <p className="text-sm text-stone-400">Payment vouchers awaiting your approval</p>
+        </div>
+        {anyChecked && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => openPin([...checkedIds], "APPROVED")}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors"
+            >
+              <CheckCircle size={14} /> Bulk Approve ({checkedIds.size})
+            </button>
+            <button
+              onClick={() => openPin([...checkedIds], "REJECTED")}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors"
+            >
+              <XCircle size={14} /> Bulk Reject ({checkedIds.size})
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* Toast */}
       {toast && (
-        <div className="fixed top-4 right-4 z-50 px-4 py-3 bg-green-600 text-white rounded-xl text-sm shadow-lg">
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toastOk ? "bg-green-600" : "bg-red-500"}`}>
           {toast}
         </div>
       )}
 
+      {/* Ministry Budget Popup */}
+      {ministryPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Building2 size={18} className="text-[#4a6da7]" />
+                <div>
+                  <div className="font-bold text-stone-800">{ministryPopup.ministry}</div>
+                  <div className="text-xs text-stone-400">Budget summary</div>
+                </div>
+              </div>
+              <button onClick={() => setMinistryPopup(null)} className="text-stone-400 hover:text-stone-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            {budgetLoading ? (
+              <div className="text-center py-6 text-stone-400 text-sm">Loading budget…</div>
+            ) : budgetRows.length === 0 ? (
+              <div className="text-center py-6 text-stone-400 text-sm">No budget set for this ministry</div>
+            ) : (
+              <>
+                {/* Summary row */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: "Total Budget", value: formatCurrency(totalBudget), color: "text-stone-800" },
+                    { label: "Paid / Approved", value: formatCurrency(totalSpent), color: "text-stone-600" },
+                    { label: "In Progress", value: formatCurrency(totalPending), color: "text-amber-600" },
+                    { label: "Current Balance", value: formatCurrency(currentBalance), color: currentBalance < 0 ? "text-red-600" : currentBalance < 500 ? "text-amber-600" : "text-green-600" },
+                  ].map(s => (
+                    <div key={s.label} className="bg-stone-50 rounded-xl p-3">
+                      <div className="text-[10px] text-stone-400 uppercase tracking-wider mb-0.5">{s.label}</div>
+                      <div className={`text-sm font-bold ${s.color}`}>{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* This PV impact */}
+                <div className={`rounded-xl p-3 border-2 space-y-1 ${afterBalance < 0 ? "border-red-300 bg-red-50" : afterBalance < 500 ? "border-amber-300 bg-amber-50" : "border-green-300 bg-green-50"}`}>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-600">
+                    <TrendingDown size={13} /> Balance after approving this PV
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-stone-500">
+                      {formatCurrency(currentBalance)} − {formatCurrency(ministryPopup.pvAmount)}
+                    </div>
+                    <div className={`text-base font-bold ${afterBalance < 0 ? "text-red-600" : afterBalance < 500 ? "text-amber-600" : "text-green-700"}`}>
+                      {formatCurrency(afterBalance)}
+                    </div>
+                  </div>
+                  {afterBalance < 0 && (
+                    <div className="text-xs text-red-600 font-medium">⚠ This will put the ministry over budget</div>
+                  )}
+                </div>
+
+                {/* Per-project breakdown */}
+                <div className="space-y-1.5">
+                  <div className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Projects</div>
+                  {budgetRows.map(row => {
+                    const bal = row.estimated_income - row.spent;
+                    const balColor = bal < 0 ? "text-red-600" : bal < 500 ? "text-amber-600" : "text-green-600";
+                    return (
+                      <div key={row.project_name} className="flex items-center justify-between text-xs py-1 border-b border-stone-100 last:border-0">
+                        <div className="text-stone-700 font-medium">{row.project_name}</div>
+                        <div className="flex items-center gap-3 text-right">
+                          <span className="text-stone-400">Budget {formatCurrency(row.estimated_income)}</span>
+                          <span className="text-stone-400">Spent {formatCurrency(row.spent)}</span>
+                          <span className={`font-semibold ${balColor}`}>{formatCurrency(bal)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <button
+              onClick={() => setMinistryPopup(null)}
+              className="w-full py-2 rounded-xl border border-stone-200 text-stone-600 text-sm hover:bg-stone-50 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* PIN Modal */}
+      {pinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className={`text-base font-bold ${pinModal.action === "APPROVED" ? "text-green-700" : "text-red-600"}`}>
+                  {pinModal.action === "APPROVED" ? "✓ Approve" : "✕ Reject"} {pinModal.pvIds.length > 1 ? `${pinModal.pvIds.length} PVs` : "PV"}
+                </div>
+                <div className="text-xs text-stone-400 mt-0.5">Enter your 6-digit approval PIN to confirm</div>
+              </div>
+              <button onClick={() => setPinModal(null)} className="text-stone-400 hover:text-stone-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs text-stone-500 block mb-1">
+                Remarks {pinModal.action === "REJECTED" ? <span className="text-red-400">* required</span> : "(optional)"}
+              </label>
+              <textarea
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
+                placeholder={pinModal.action === "REJECTED" ? "Reason for rejection…" : "Optional remarks…"}
+                value={remarks}
+                onChange={e => setRemarks(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-stone-500 block mb-1">
+                Approval PIN <span className="text-red-400">*</span>
+              </label>
+              <input
+                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#4a6da7] font-mono"
+                type="password"
+                maxLength={6}
+                placeholder="••••••"
+                value={pin}
+                onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={submitPin}
+                disabled={acting || pin.length < 6}
+                className={`flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-colors disabled:opacity-40 ${
+                  pinModal.action === "APPROVED"
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-red-500 hover:bg-red-600"
+                }`}
+              >
+                {acting ? "Processing…" : pinModal.action === "APPROVED" ? "Confirm Approval" : "Confirm Rejection"}
+              </button>
+              <button
+                onClick={() => setPinModal(null)}
+                className="px-4 py-3 rounded-xl border border-stone-200 text-stone-600 text-sm hover:bg-stone-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : pvs.length === 0 ? (
         <Card>
-          <CardBody>
-            <div className="py-8 text-center text-stone-400 text-sm">No PVs awaiting your signature</div>
-          </CardBody>
+          <div className="py-8 text-center text-stone-400 text-sm">No PVs awaiting your signature</div>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {pvs.map((pv) => {
-            const loa = getLOATier(pv.amount ?? 0, pv.payment_type);
-            const approvals: { role: string; action: string }[] = pv.approvals ?? [];
-            const signatoryApprovals = approvals.filter(
-              (a) => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
-            );
+        <>
+          {/* Select all */}
+          <div className="flex items-center gap-2 px-1">
+            <input
+              type="checkbox"
+              className="accent-[#4a6da7] w-4 h-4 cursor-pointer"
+              checked={allChecked}
+              onChange={toggleAll}
+            />
+            <span className="text-xs text-stone-500">
+              {allChecked ? "Deselect all" : `Select all (${allIds.length})`}
+            </span>
+          </div>
 
-            return (
-              <Card key={pv.id} className={selected?.id === pv.id ? "border-[#4a6da7]" : ""}>
-                <div className="px-4 py-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                        <StatusBadge status={pv.status!} />
-                      </div>
-                      <div className="text-sm font-semibold text-stone-800">{pv.payee_name}</div>
-                      <div className="text-xs text-stone-500 mt-0.5">{pv.ministry || pv.dept} · {pv.purpose}</div>
-                      <div className="text-xs text-stone-400">Submitted {formatDate(pv.submitted_at!)} by {pv.submitted_by_email}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
-                      <div className="text-xs text-stone-400 mt-0.5">{loa.label}</div>
-                      <div className="text-xs text-[#4a6da7] font-medium">{signatoryApprovals.length}/{loa.required} signed</div>
-                    </div>
+          <div className="space-y-3">
+            {pvs.map((pv) => {
+              const loa = getLOATier(pv.amount ?? 0, pv.payment_type);
+              const approvals: { role: string; action: string }[] = pv.approvals ?? [];
+              const signatoryApprovals = approvals.filter(
+                a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
+              );
+              const isChecked = checkedIds.has(pv.id!);
+
+              return (
+                <div key={pv.id} className="flex items-start gap-3">
+                  {/* Checkbox */}
+                  <div className="pt-4">
+                    <input
+                      type="checkbox"
+                      className="accent-[#4a6da7] w-4 h-4 cursor-pointer"
+                      checked={isChecked}
+                      onChange={() => toggleOne(pv.id!)}
+                    />
                   </div>
 
-                  {/* Actions */}
-                  {selected?.id === pv.id ? (
-                    <div className="space-y-2 pt-2 border-t border-stone-100">
-                      <textarea
-                        className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
-                        placeholder="Remarks (optional for approval, required for rejection)"
-                        value={remarks}
-                        onChange={(e) => setRemarks(e.target.value)}
-                      />
-                      <div>
-                        <label className="text-xs text-stone-500 block mb-1">Approval PIN <span className="text-red-400">*</span></label>
-                        <input
-                          className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] tracking-widest"
-                          type="password"
-                          maxLength={6}
-                          placeholder="6-digit PIN"
-                          value={pin}
-                          onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                        />
+                  <Card className={`flex-1 ${isChecked ? "border-[#4a6da7]/50 bg-[#4a6da7]/5" : ""}`}>
+                    <div className="px-4 py-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          {/* Badges row */}
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
+                            <StatusBadge status={pv.status!} />
+                            {pv.ministry && (
+                              <button
+                                onClick={() => openMinistryPopup(pv.ministry!, pv.amount ?? 0)}
+                                className="flex items-center gap-1 text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium hover:bg-[#4a6da7]/20 transition-colors cursor-pointer"
+                              >
+                                <Wallet size={10} />
+                                {pv.ministry}
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-sm font-semibold text-stone-800">{pv.payee_name}</div>
+                          <div className="text-xs text-stone-500 mt-0.5">{pv.purpose}</div>
+                          <div className="text-xs text-stone-400">Submitted {formatDate(pv.submitted_at!)} by {pv.submitted_by_email}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
+                          <div className="text-xs text-stone-400 mt-0.5">{loa.label}</div>
+                          <div className="text-xs text-[#4a6da7] font-medium">{signatoryApprovals.length}/{loa.required} signed</div>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          loading={acting}
-                          onClick={() => act(pv.id!, "APPROVED")}
-                          className="flex-1"
+
+                      {/* Action buttons — always visible */}
+                      <div className="flex gap-2 pt-1 border-t border-stone-100">
+                        <button
+                          onClick={() => openPin([pv.id!], "APPROVED")}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors"
                         >
                           <CheckCircle size={14} /> Approve
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          loading={acting}
-                          onClick={() => act(pv.id!, "REJECTED")}
-                          className="flex-1"
+                        </button>
+                        <button
+                          onClick={() => openPin([pv.id!], "REJECTED")}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors"
                         >
                           <XCircle size={14} /> Reject
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setRemarks(""); setPin(""); }}>
-                          Cancel
-                        </Button>
+                        </button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => setSelected(pv)}>
-                        <Eye size={14} /> Review & Sign
-                      </Button>
-                    </div>
-                  )}
+                  </Card>
                 </div>
-              </Card>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
