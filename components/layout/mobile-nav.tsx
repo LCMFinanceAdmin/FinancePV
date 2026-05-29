@@ -141,13 +141,13 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
           })}
 
           {/* Role switcher tab */}
-          <button
-            onClick={() => setShowSwitcher(true)}
+          <Link
+            href="/switch-role"
             className="flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px] text-amber-500"
           >
             <FlaskConical size={20} />
             <span>Role</span>
-          </button>
+          </Link>
         </div>
       </nav>
     </>
