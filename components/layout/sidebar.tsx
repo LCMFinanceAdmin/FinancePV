@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid,
   RefreshCw, Users, Building2, Settings, LogOut,
-  ChevronRight, Activity, ClipboardCheck, PiggyBank,
+  ChevronRight, Activity, ClipboardCheck, PiggyBank, FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -52,14 +53,47 @@ const NAV_SECTIONS = [
   },
 ] satisfies { label: string | null; items: NavItem[] }[];
 
-export function Sidebar({ user }: { user: UserProfile }) {
+const TEST_ROLES = [
+  { value: "FINANCE_ADMIN",  label: "Finance Executive" },
+  { value: "FINANCE_ADMIN_2", label: "Accounts Executive" },
+  { value: "GENERAL_MANAGER", label: "General Manager" },
+  { value: "BISHOP",          label: "Bishop" },
+  { value: "TREASURER",       label: "Treasurer" },
+  { value: "SECRETARY",       label: "Secretary" },
+  { value: "MINISTRY_HEAD",   label: "EXCO Member" },
+  { value: "STAFF",           label: "Staff" },
+];
+
+const TEST_MINISTRIES = [
+  "Mission", "Worship", "Youth", "Children", "Discipleship",
+  "Community", "Admin", "Outreach",
+];
+
+export function Sidebar({ user, ministryList }: { user: UserProfile; ministryList?: string[] }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [selectedRole, setSelectedRole] = useState(user.role);
+  const [selectedMinistries, setSelectedMinistries] = useState<string[]>(user.ministries ?? []);
+  const availableMinistries = ministryList?.length ? ministryList : TEST_MINISTRIES;
 
   async function signOut() {
     await supabase.auth.signOut();
     router.push("/login");
+  }
+
+  async function switchRole() {
+    setSwitching(true);
+    const ministries = selectedRole === "MINISTRY_HEAD" ? selectedMinistries : [];
+    await supabase
+      .from("user_roles")
+      .update({ role: selectedRole, ministries })
+      .eq("email", user.email);
+    router.refresh();
+    setSwitching(false);
+    setShowRoleSwitcher(false);
   }
 
   const visibleSections = NAV_SECTIONS.map(s => ({
@@ -110,12 +144,69 @@ export function Sidebar({ user }: { user: UserProfile }) {
       </nav>
 
       {/* User footer */}
-      <div className="p-4 border-t border-stone-100">
+      <div className="p-4 border-t border-stone-100 space-y-2">
         <div className="text-sm font-medium text-stone-700 truncate">{user.full_name}</div>
         <div className="text-xs text-stone-400 truncate">{user.email}</div>
+        <div className="text-xs text-[#4a6da7] font-medium">
+          {TEST_ROLES.find(r => r.value === user.role)?.label ?? user.role}
+        </div>
+
+        {/* ── Test Role Switcher ──────────────────────────────── */}
+        <button
+          onClick={() => setShowRoleSwitcher(s => !s)}
+          className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 transition-colors"
+        >
+          <FlaskConical size={12} />
+          {showRoleSwitcher ? "Hide role switcher" : "Switch role (test)"}
+        </button>
+
+        {showRoleSwitcher && (
+          <div className="space-y-2 pt-1 border-t border-amber-100">
+            <select
+              className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#4a6da7] bg-white"
+              value={selectedRole}
+              onChange={e => { setSelectedRole(e.target.value); setSelectedMinistries([]); }}
+            >
+              {TEST_ROLES.map(r => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+
+            {selectedRole === "MINISTRY_HEAD" && (
+              <div className="space-y-1">
+                <div className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">Ministries</div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                  {availableMinistries.map(m => (
+                    <label key={m} className="flex items-center gap-1 text-xs cursor-pointer text-stone-600">
+                      <input
+                        type="checkbox"
+                        className="accent-[#4a6da7]"
+                        checked={selectedMinistries.includes(m)}
+                        onChange={e => setSelectedMinistries(prev =>
+                          e.target.checked ? [...prev, m] : prev.filter(x => x !== m)
+                        )}
+                      />
+                      {m}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={switchRole}
+              disabled={switching}
+              className="w-full py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition-colors disabled:opacity-50"
+            >
+              {switching ? "Switching…" : "Apply Role"}
+            </button>
+          </div>
+        )}
+        {/* ─────────────────────────────────────────────────────── */}
+
         <button
           onClick={signOut}
-          className="mt-2.5 flex items-center gap-2 text-xs text-stone-500 hover:text-red-600 transition-colors"
+          className="flex items-center gap-2 text-xs text-stone-500 hover:text-red-600 transition-colors"
         >
           <LogOut size={13} /> Sign out
         </button>
