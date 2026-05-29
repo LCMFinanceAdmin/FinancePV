@@ -75,7 +75,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
   const supabase = createClient();
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [selectedRole, setSelectedRole] = useState(user.role);
+  const [selectedRole, setSelectedRole] = useState<string>(user.role);
   const [selectedMinistries, setSelectedMinistries] = useState<string[]>(user.ministries ?? []);
   const availableMinistries = ministryList?.length ? ministryList : TEST_MINISTRIES;
 
