@@ -47,8 +47,14 @@ const NAV_SECTIONS = [
   {
     label: "Approvals",
     items: [
-      { href: "/signatory", label: "Signatory Queue", icon: <Users size={16} />,    show: (u: UserProfile) => u.isSignatory },
-      { href: "/ministry",  label: "EXCO Queue",      icon: <Building2 size={16} />,show: (u: UserProfile) => u.isMinistryHead },
+      { href: "/signatory",   label: "Signatory Queue", icon: <Users size={16} />,        show: (u: UserProfile) => u.isSignatory },
+      { href: "/ministry",    label: "EXCO Queue",      icon: <Building2 size={16} />,    show: (u: UserProfile) => u.isMinistryHead },
+    ],
+  },
+  {
+    label: "Testing",
+    items: [
+      { href: "/switch-role", label: "Switch Role",     icon: <FlaskConical size={16} />, show: () => true },
     ],
   },
 ] satisfies { label: string | null; items: NavItem[] }[];
