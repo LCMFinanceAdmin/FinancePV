@@ -28,7 +28,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
   const router = useRouter();
   const supabase = createClient();
   const [showSwitcher, setShowSwitcher] = useState(false);
-  const [selectedRole, setSelectedRole] = useState(user.role);
+  const [selectedRole, setSelectedRole] = useState<string>(user.role);
   const [selectedMinistries, setSelectedMinistries] = useState<string[]>(user.ministries ?? []);
   const [switching, setSwitching] = useState(false);
   const availableMinistries = ministryList?.length ? ministryList : TEST_MINISTRIES;
