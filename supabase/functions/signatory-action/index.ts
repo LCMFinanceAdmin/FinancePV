@@ -66,8 +66,10 @@ Deno.serve(async (req) => {
     if (!allowedStatuses.includes(pv.status)) return json({ error: `Cannot act on PV with status ${pv.status}` }, 400);
 
     const approvals = [...(pv.approvals || [])];
-    const alreadySigned = approvals.some((a: { role: string }) => a.role === profile.role);
-    if (alreadySigned) return json({ error: "You have already acted on this PV" }, 400);
+    // ── TESTING MODE: duplicate-signing allowed ──────────────────────
+    // const alreadySigned = approvals.some((a: { role: string }) => a.role === profile.role);
+    // if (alreadySigned) return json({ error: "You have already acted on this PV" }, 400);
+    // ────────────────────────────────────────────────────────────────
 
     approvals.push({
       role: profile.role,

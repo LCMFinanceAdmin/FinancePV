@@ -35,16 +35,21 @@ async function getUserProfile(): Promise<UserProfile | null> {
 }
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await getUserProfile();
+  const supabase = await createClient();
+  const [user, { data: ministriesData }] = await Promise.all([
+    getUserProfile(),
+    supabase.from("ministries").select("name").order("name"),
+  ]);
   if (!user) redirect("/login");
+  const ministryList = (ministriesData ?? []).map((m: { name: string }) => m.name);
 
   return (
     <div className="flex h-full">
-      <Sidebar user={user} />
+      <Sidebar user={user} ministryList={ministryList} />
       <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         {children}
       </main>
-      <MobileNav user={user} />
+      <MobileNav user={user} ministryList={ministryList} />
     </div>
   );
 }

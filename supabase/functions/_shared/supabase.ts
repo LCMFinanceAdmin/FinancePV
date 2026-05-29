@@ -29,7 +29,12 @@ export function isSignatoryApprovalFinal(approvals: { role: string; action: stri
     (a) => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
   );
   if (loa.required === 1) return officerApprovals.some((a) => a.role === "TREASURER");
+  // ── TESTING MODE: count total approvals (not distinct roles) ────────
+  // In production, change officerApprovals.length to use distinct roles:
+  // const distinctRoles = new Set(officerApprovals.map(a => a.role)).size;
+  // return distinctRoles >= 2;
   return officerApprovals.length >= 2;
+  // ───────────────────────────────────────────────────────────────────
 }
 
 export async function nextPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
