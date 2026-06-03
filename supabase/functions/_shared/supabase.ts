@@ -37,6 +37,22 @@ export function isSignatoryApprovalFinal(approvals: { role: string; action: stri
   // ───────────────────────────────────────────────────────────────────
 }
 
+export async function nextPrNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `PR-${year}-`;
+  const { data } = await db
+    .from("purchase_requests")
+    .select("request_no")
+    .like("request_no", `${prefix}%`)
+    .order("request_no", { ascending: false })
+    .limit(1);
+  const lastSeq = data?.[0]?.request_no
+    ? parseInt(data[0].request_no.replace(prefix, ""), 10)
+    : 0;
+  const seq = String(lastSeq + 1).padStart(3, "0");
+  return `${prefix}${seq}`;
+}
+
 export async function nextPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `LCM-${year}-`;

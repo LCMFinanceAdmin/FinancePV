@@ -6,6 +6,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid,
   RefreshCw, Users, Building2, Settings, LogOut,
   ChevronRight, Activity, ClipboardCheck, PiggyBank, FlaskConical,
+  ShoppingCart, ClipboardList, CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -49,12 +50,20 @@ const NAV_SECTIONS = [
     items: [
       { href: "/signatory",   label: "Signatory Queue", icon: <Users size={16} />,        show: (u: UserProfile) => u.isSignatory },
       { href: "/ministry",    label: "EXCO Queue",      icon: <Building2 size={16} />,    show: (u: UserProfile) => u.isMinistryHead },
+      { href: "/pr-queue",    label: "PR Queue",        icon: <ClipboardList size={16} />, show: (u: UserProfile) => u.isSignatory || u.isGeneralManager },
+    ],
+  },
+  {
+    label: "Requests & Payments",
+    items: [
+      { href: "/purchase-requests", label: "Purchase Requests", icon: <ShoppingCart size={16} />, show: () => true },
+      { href: "/payments",          label: "Payments",          icon: <CreditCard size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin },
     ],
   },
   {
     label: "Testing",
     items: [
-      { href: "/switch-role", label: "Switch Role",     icon: <FlaskConical size={16} />, show: () => true },
+      { href: "/switch-role", label: "Switch Role", icon: <FlaskConical size={16} />, show: () => true },
     ],
   },
 ] satisfies { label: string | null; items: NavItem[] }[];

@@ -1,12 +1,14 @@
 "use client";
 import { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardBody } from "@/components/ui/card";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import type { PurchaseRequest } from "@/lib/types";
 import {
   ShieldCheck, Upload, CheckCircle, XCircle,
   AlertCircle, ImagePlus, Trash2, Eye, X as XIcon,
-  UserCircle2,
+  UserCircle2, ShoppingCart, FileText,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -58,12 +60,15 @@ export default function ControlCenterPage() {
 
 function ControlCenterInner() {
   const supabase = createClient();
+  const router = useRouter();
 
   const [signatories, setSignatories] = useState<Signatory[]>([]);
   const [ministryHeads, setMinistryHeads] = useState<MinistryHead[]>([]);
   const [stats, setStats] = useState<Stats>({ pending_review: 0, pending_signatory: 0, approved_month: 0, paid_month: 0, paid_amount: 0 });
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState({ msg: "", ok: true });
+  const [prs, setPrs] = useState<PurchaseRequest[]>([]);
+  const [prTab, setPrTab] = useState<"submitted" | "approved">("submitted");
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -93,6 +98,14 @@ function ControlCenterInner() {
       paid_month: (paidMonth.data ?? []).length,
       paid_amount: paidAmt,
     });
+    // Load purchase requests
+    const { data: prData } = await supabase
+      .from("purchase_requests")
+      .select("*")
+      .in("status", ["SUBMITTED", "APPROVED"])
+      .order("submitted_at", { ascending: false });
+    setPrs((prData ?? []) as PurchaseRequest[]);
+
     setLoading(false);
   }
 
@@ -228,6 +241,68 @@ function ControlCenterInner() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Purchase Requests */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-stone-700 flex items-center gap-2">
+            <ShoppingCart size={16} className="text-[#4a6da7]" /> Purchase Requests
+          </h2>
+          <a href="/purchase-requests" className="text-xs text-[#4a6da7] hover:underline font-medium">View all →</a>
+        </div>
+        <div className="flex gap-1 bg-stone-100 rounded-xl p-1 w-fit mb-3">
+          {(["submitted", "approved"] as const).map(t => {
+            const count = prs.filter(p => p.status === t.toUpperCase()).length;
+            return (
+              <button key={t} onClick={() => setPrTab(t)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${prTab === t ? "bg-white text-stone-800 shadow-sm" : "text-stone-500"}`}>
+                {t === "submitted" ? "Awaiting Approval" : "Approved — Raise PV"}
+                {count > 0 && <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${t === "submitted" ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"}`}>{count}</span>}
+              </button>
+            );
+          })}
+        </div>
+        {(() => {
+          const filtered = prs.filter(p => p.status === (prTab === "submitted" ? "SUBMITTED" : "APPROVED"));
+          if (filtered.length === 0) return (
+            <div className="text-sm text-stone-400 py-6 text-center bg-white border border-stone-200 rounded-xl">
+              {prTab === "submitted" ? "No purchase requests awaiting GM/Signatory approval" : "No approved requests ready to raise a PV"}
+            </div>
+          );
+          return (
+            <div className="space-y-2">
+              {filtered.map(pr => (
+                <div key={pr.id} className="bg-white border border-stone-200 rounded-xl px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-xs font-semibold text-stone-500">{pr.request_no}</span>
+                        <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium">{pr.ministry}</span>
+                      </div>
+                      <div className="text-sm font-semibold text-stone-800">{pr.title}</div>
+                      <div className="text-xs text-stone-500">by {pr.submitted_by_name || pr.submitted_by_email} · {formatDate(pr.submitted_at)}</div>
+                      {pr.vendor_name && <div className="text-xs text-stone-400">Vendor: {pr.vendor_name}</div>}
+                    </div>
+                    <div className="text-right shrink-0 space-y-1">
+                      <div className="text-sm font-bold text-stone-800">{formatCurrency(pr.estimated_amount)}</div>
+                      {prTab === "approved" && (
+                        <button
+                          onClick={() => router.push(`/submit?pr_id=${pr.id}`)}
+                          className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-[#4a6da7] hover:bg-[#3d5d8f] text-white font-medium transition-colors">
+                          <FileText size={12} /> Raise PV
+                        </button>
+                      )}
+                      {prTab === "submitted" && (
+                        <span className="text-xs text-amber-600 font-medium">Awaiting GM/Sig</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Quick links */}

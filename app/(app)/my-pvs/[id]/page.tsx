@@ -286,6 +286,26 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── PAID Stamp ────────────────────────────────────────────── */}
+      {pv.status === "PAID" && (
+        <div className="print:hidden max-w-4xl mx-auto mt-4 px-4">
+          <div className="flex items-center gap-3 p-4 bg-emerald-50 border-2 border-emerald-500 rounded-xl">
+            <div className="shrink-0 border-4 border-emerald-600 rounded-lg px-4 py-2 rotate-[-8deg]">
+              <div className="text-2xl font-black text-emerald-600 tracking-widest leading-none">PAID</div>
+            </div>
+            <div>
+              <div className="text-sm font-bold text-emerald-800">Payment Completed</div>
+              <div className="text-xs text-emerald-700 mt-0.5">
+                {pv.payment_method && <span>{pv.payment_method} · </span>}
+                {pv.payment_ref && <span>Ref: {pv.payment_ref} · </span>}
+                {pv.paid_at && <span>{formatDateTime(pv.paid_at)}</span>}
+              </div>
+              {pv.paid_by && <div className="text-xs text-emerald-600 mt-0.5">Marked paid by {pv.paid_by}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Finance Admin Action Panel ─────────────────────────────── */}
       {user?.isFinanceAdmin && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">

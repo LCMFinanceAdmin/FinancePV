@@ -128,6 +128,29 @@ export interface Payee {
   phone: string;
 }
 
+export type PRStatus = "SUBMITTED" | "APPROVED" | "REJECTED" | "PV_RAISED";
+
+export interface PurchaseRequest {
+  id: string;
+  request_no: string;
+  title: string;
+  ministry: string;
+  project: string | null;
+  submitted_by_email: string;
+  submitted_by_name: string | null;
+  purpose: string | null;
+  estimated_amount: number;
+  vendor_name: string | null;
+  line_items: { description: string; amount: number; vendor?: string }[];
+  attachments: string[];
+  status: PRStatus;
+  approvals: PVApproval[];
+  admin_comment: string | null;
+  pv_id: string | null;
+  submitted_at: string;
+  updated_at: string | null;
+}
+
 export type LOATier = {
   required: 1 | 2;
   roles: string[];
