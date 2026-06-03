@@ -135,6 +135,7 @@ export default function SubmitPVPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -150,6 +151,26 @@ export default function SubmitPVPage() {
         }));
       });
     });
+
+    // Pre-fill from purchase request if pr_id in query
+    const params = new URLSearchParams(window.location.search);
+    const prId = params.get("pr_id");
+    if (prId) {
+      supabase.from("purchase_requests").select("*").eq("id", prId).single().then(({ data: pr }) => {
+        if (!pr) return;
+        setPrBanner({ id: pr.id, request_no: pr.request_no, title: pr.title });
+        setForm(f => ({
+          ...f,
+          ministry: pr.ministry ?? f.ministry,
+          project:  pr.project  ?? f.project,
+          purpose:  pr.title    ?? f.purpose,
+          payee_name: pr.vendor_name ?? f.payee_name,
+          line_items: pr.line_items?.length
+            ? pr.line_items.map((l: { description: string; amount: number }) => ({ description: l.description, amount: l.amount, date: "" }))
+            : f.line_items,
+        }));
+      });
+    }
   }, []);
 
   // Load projects when ministry changes
@@ -227,8 +248,15 @@ export default function SubmitPVPage() {
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Submission failed");
+      // If raised from a PR, mark the PR as PV_RAISED
+      if (prBanner?.id && result.pv_id) {
+        await supabase.from("purchase_requests").update({
+          status: "PV_RAISED", pv_id: result.pv_id, updated_at: new Date().toISOString(),
+        }).eq("id", prBanner.id);
+      }
       setSuccess(`PV ${result.pv_no} submitted successfully!`);
       setForm(EMPTY_FORM);
+      setPrBanner(null);
       setTimeout(() => router.push("/my-pvs"), 1500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -248,6 +276,15 @@ export default function SubmitPVPage() {
         <h1 className="text-xl font-bold text-stone-800">Submit Payment Voucher</h1>
         <p className="text-xs text-stone-400 mt-0.5">Fill in all required fields and submit for Finance review</p>
       </div>
+
+      {/* PR pre-fill banner */}
+      {prBanner && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
+          <span className="text-blue-600 font-semibold shrink-0">📋 {prBanner.request_no}</span>
+          <span className="text-blue-800 flex-1">Raising PV for: <strong>{prBanner.title}</strong></span>
+          <button type="button" onClick={() => setPrBanner(null)} className="text-blue-400 hover:text-blue-600 text-xs">Clear</button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         {/* ── DOCUMENT PAPER ─────────────────────────────────────────── */}
