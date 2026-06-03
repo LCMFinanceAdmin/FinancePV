@@ -53,6 +53,7 @@ export default function SignatoryActivityPage() {
   // Action modals
   const [pinModal, setPinModal] = useState<{ pvIds: string[]; action: "APPROVED" } | null>(null);
   const [revertPinModal, setRevertPinModal] = useState<{ pvId: string } | null>(null);
+  const [adminReverting, setAdminReverting] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [rejectModal, setRejectModal] = useState<{ pvIds: string[] } | null>(null);
   const [rejectRemarks, setRejectRemarks] = useState("");
@@ -208,6 +209,26 @@ export default function SignatoryActivityPage() {
     }
   }
 
+  async function adminRevert(pvId: string) {
+    setAdminReverting(pvId);
+    const { data: { session } } = await supabase.auth.getSession();
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pvId, action: "UNREVIEW" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Revert failed");
+      setPendingPvs(pvs => pvs.filter(p => p.id !== pvId));
+      showMsg("PV reverted — back in Finance queue for editing");
+    } catch (e) {
+      showMsg((e as Error).message, false);
+    } finally {
+      setAdminReverting(null);
+    }
+  }
+
   // Group by bulk run
   const { bulkGroups, standalones } = useMemo(() => {
     const q = search.toLowerCase();
@@ -299,7 +320,19 @@ export default function SignatoryActivityPage() {
             </div>
           )}
           {isFinanceAdmin && !isSignatory && (
-            <Link href={`/my-pvs/${pv.id}`} className="text-[11px] text-[#4a6da7] hover:underline mt-1 block">View →</Link>
+            <div className="flex items-center gap-1.5 mt-1.5 justify-end">
+              <Link href={`/my-pvs/${pv.id}`}
+                className="text-[11px] text-[#4a6da7] hover:underline font-medium">
+                View →
+              </Link>
+              <button
+                onClick={() => adminRevert(pv.id)}
+                disabled={adminReverting === pv.id}
+                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+              >
+                <RotateCcw size={10} /> {adminReverting === pv.id ? "Reverting…" : "Revert"}
+              </button>
+            </div>
           )}
         </div>
       </div>
