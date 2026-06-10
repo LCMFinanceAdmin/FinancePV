@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2, FlaskConical, X } from "lucide-react";
+import { LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2, FlaskConical, X, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
@@ -46,12 +46,16 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
   }
 
   const items = [
-    { href: "/dashboard",      label: "Home",    icon: <LayoutDashboard size={20} />, show: true },
-    { href: "/submit",         label: "Submit",  icon: <FilePlus size={20} />,        show: true },
-    { href: "/my-pvs",         label: "My PVs",  icon: <FileText size={20} />,        show: true },
+    // Finance/Staff items — hidden for signatories
+    { href: "/dashboard",      label: "Home",    icon: <LayoutDashboard size={20} />, show: !user.isSignatory },
+    { href: "/submit",         label: "Submit",  icon: <FilePlus size={20} />,        show: !user.isSignatory },
+    { href: "/my-pvs",         label: "My PVs",  icon: <FileText size={20} />,        show: !user.isSignatory },
     { href: "/control-center", label: "Admin",   icon: <LayoutGrid size={20} />,      show: user.isFinanceAdmin },
-    { href: "/signatory",      label: "Sign",    icon: <Users size={20} />,           show: user.isSignatory },
-    { href: "/ministry",       label: "EXCO",    icon: <Building2 size={20} />,       show: user.isMinistryHead },
+    { href: "/ministry",       label: "EXCO",    icon: <Building2 size={20} />,       show: user.isMinistryHead && !user.isSignatory },
+    // Signatory items — shown instead for signatory roles
+    { href: "/signatory",      label: "Sign Q",  icon: <Users size={20} />,           show: user.isSignatory },
+    { href: "/pr-queue",       label: "PR Q",    icon: <ClipboardList size={20} />,   show: user.isSignatory || user.isGeneralManager },
+    { href: "/budget",         label: "Budget",  icon: <LayoutGrid size={20} />,      show: user.isSignatory },
   ].filter(i => i.show).slice(0, 4);
 
   return (
