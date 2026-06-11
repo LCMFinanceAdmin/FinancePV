@@ -61,6 +61,27 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    const isGM = profile.role === "GENERAL_MANAGER";
+
+    // ── REVERT: no PIN required — just remove this role's approval ──
+    if (action === "REVERT") {
+      const { data: pvForRevert } = await db.from("pvs").select("*").eq("id", pv_id).single();
+      if (!pvForRevert) return json({ error: "PV not found" }, 404);
+      if (["PAID", "CANCELLED"].includes(pvForRevert.status)) return json({ error: "Cannot revert a finalised PV" }, 400);
+      const existingApprovals: { role: string; action: string }[] = pvForRevert.approvals ?? [];
+      const hadEntry = existingApprovals.some(a => a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action));
+      if (!hadEntry) return json({ error: "No action found to revert for your role" }, 400);
+      const newApprovals = existingApprovals.filter(a => !(a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action)));
+      let revertedStatus = pvForRevert.status;
+      if (isGM && ["REVIEWED", "PENDING_SIGNATORY"].includes(pvForRevert.status)) {
+        revertedStatus = "PENDING";
+      } else if (["APPROVED", "REJECTED"].includes(pvForRevert.status)) {
+        revertedStatus = "PENDING_SIGNATORY";
+      }
+      await db.from("pvs").update({ approvals: newApprovals, status: revertedStatus, updated_at: new Date().toISOString() }).eq("id", pv_id);
+      return json({ ok: true, status: revertedStatus });
+    }
+
     // PIN verification (required for church officer signatories)
     const requiresPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(profile.role);
     if (requiresPin) {
@@ -73,29 +94,6 @@ Deno.serve(async (req) => {
 
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
-
-    const isGM = profile.role === "GENERAL_MANAGER";
-
-    // ── REVERT: remove this signatory's approval entry ──────────────
-    if (action === "REVERT") {
-      const existingApprovals: { role: string }[] = pv.approvals ?? [];
-      const hadEntry = existingApprovals.some(a => a.role === profile.role);
-      if (!hadEntry) return json({ error: "No action found to revert for your role" }, 400);
-      if (["PAID", "CANCELLED"].includes(pv.status)) return json({ error: "Cannot revert a finalised PV" }, 400);
-
-      const newApprovals = existingApprovals.filter(a => a.role !== profile.role);
-      // Determine status after removal
-      let revertedStatus = pv.status;
-      if (isGM && pv.status === "REVIEWED") {
-        // GM approval is what set it to REVIEWED → revert to PENDING
-        revertedStatus = "PENDING";
-      } else if (["APPROVED", "REJECTED"].includes(pv.status)) {
-        revertedStatus = "PENDING_SIGNATORY";
-      }
-      // If still PENDING_SIGNATORY just keep it (other signatories still pending)
-      await db.from("pvs").update({ approvals: newApprovals, status: revertedStatus, updated_at: new Date().toISOString() }).eq("id", pv_id);
-      return json({ ok: true, status: revertedStatus });
-    }
 
     const allowedStatuses = isGM
       ? ["PENDING", "REVIEWED", "PENDING_SIGNATORY", "MINISTRY_VERIFIED"]

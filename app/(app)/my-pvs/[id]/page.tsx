@@ -96,23 +96,25 @@ function SigBlock({ title, role, approval, pending, onClickSpace }: {
   approval?: (PVApproval & { signature_data?: string }) | null; pending?: boolean;
   onClickSpace?: () => void;
 }) {
-  const isEmpty = !approval?.signature_data;
+  const hasSig = !!approval?.signature_data;
   return (
     <div className="flex flex-col" style={{ minHeight: 130 }}>
       <div className="text-[12px] font-bold mb-0.5">{title}</div>
       <div className="text-[13px] text-stone-800 mb-1">({role})</div>
-      {/* Signature space — shows image if available, else blank / clickable */}
+      {/* Signature space — always clickable when onClickSpace provided */}
       <div
-        className={`flex-1 border-b border-black mb-1 min-h-[48px] relative ${onClickSpace && isEmpty ? "cursor-pointer group hover:bg-indigo-50/60 transition-colors rounded-t" : ""}`}
-        onClick={onClickSpace && isEmpty ? onClickSpace : undefined}
+        className={`flex-1 border-b border-black mb-1 min-h-[48px] relative ${onClickSpace ? "cursor-pointer group hover:bg-indigo-50/60 transition-colors rounded-t" : ""}`}
+        onClick={onClickSpace ?? undefined}
       >
         {approval?.signature_data && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={approval.signature_data} alt="signature" className="h-10 object-contain absolute bottom-1 left-0" />
         )}
-        {onClickSpace && isEmpty && (
+        {onClickSpace && (
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
-            <span className="text-[11px] text-indigo-500 flex items-center gap-1"><PenLine size={10} /> Click to sign</span>
+            <span className="text-[11px] text-indigo-500 flex items-center gap-1">
+              <PenLine size={10} /> {hasSig ? "Click to update" : "Click to sign"}
+            </span>
           </div>
         )}
       </div>
@@ -187,6 +189,10 @@ export default function PVDetailPage() {
   const [commentText, setCommentText]           = useState("");
   const [commentLoading, setCommentLoading]     = useState(false);
   const [editingComment, setEditingComment]     = useState(false); // true = editing existing
+
+  // Revert
+  const [showRevertConfirm, setShowRevertConfirm] = useState(false);
+  const [revertLoading, setRevertLoading]         = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -369,15 +375,44 @@ export default function PVDetailPage() {
     }
   }
 
+  async function submitRevert() {
+    if (!pv || !user) return;
+    setRevertLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pv.id, action: "REVERT" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Revert failed");
+      setShowRevertConfirm(false);
+      setActionToast({ msg: "Approval reverted", ok: true });
+      const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
+      if (fresh) setPv(fresh as PV);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+    } finally {
+      setRevertLoading(false);
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    }
+  }
+
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
   if (!pv) return <div className="p-8 text-center text-stone-400 text-sm">PV not found</div>;
 
   const loa = getLOATier(pv.amount, pv.payment_type);
   const approvals: PVApproval[] = pv.approvals ?? [];
-  const sigApprovals = approvals.filter(a =>
-    ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
-  );
-  const gmApproval   = approvals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED") ?? null;
+  // Most-recent APPROVED per role (for display — handles re-sign after revert)
+  const sigApprovals = ["BISHOP", "TREASURER", "SECRETARY"].map(role =>
+    [...approvals].reverse().find(a => a.role === role && a.action === "APPROVED") ?? null
+  ).filter(Boolean) as PVApproval[];
+  const gmApproval = [...approvals].reverse().find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED") ?? null;
+  // Whether the current signatory has already approved or rejected
+  const userHasActed = !!(user?.isSignatory && approvals.some(
+    a => a.role === user.role && ["APPROVED", "REJECTED"].includes(a.action)
+  ));
   const headApproval = approvals.find(a =>
     ["MINISTRY_HEAD", "DEPT_HEAD"].includes(a.role) && a.action === "APPROVED"
   ) ?? null;
@@ -541,21 +576,59 @@ export default function PVDetailPage() {
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-indigo-600" />
               <span className="text-sm font-semibold text-indigo-800">Signatory Actions</span>
+              {userHasActed && (
+                <span className="ml-1 text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">
+                  Action recorded
+                </span>
+              )}
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 transition-colors">
+            <div className="flex gap-2 flex-wrap items-center">
+              <button
+                onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }}
+                disabled={userHasActed}
+                title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
+                className={`flex items-center gap-1.5 px-4 py-2 text-white text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-green-600/40 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"}`}>
                 <CheckCircle size={14} /> Approve
               </button>
-              <button onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setShowSignModal(true); }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
+              <button
+                onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setShowSignModal(true); }}
+                disabled={userHasActed}
+                title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
+                className={`flex items-center gap-1.5 px-4 py-2 text-white text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-red-600/40 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"}`}>
                 <XCircle size={14} /> Reject
               </button>
-              <button onClick={() => { setCommentText(""); setShowCommentModal(true); }}
+              <button onClick={() => { setCommentText(""); setEditingComment(false); setShowCommentModal(true); }}
                 className="flex items-center gap-1.5 px-4 py-2 bg-white border border-indigo-300 text-indigo-700 text-sm rounded-lg font-medium hover:bg-indigo-50 transition-colors">
                 <MessageSquare size={14} /> Add Comment
               </button>
+
+              {/* Revert — only shown after an action has been recorded */}
+              {userHasActed && (
+                showRevertConfirm ? (
+                  <div className="flex items-center gap-2 ml-1">
+                    <span className="text-xs text-amber-700 font-medium">Revert your approval?</span>
+                    <button onClick={submitRevert} disabled={revertLoading}
+                      className="px-3 py-1.5 bg-amber-600 text-white text-xs rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                      {revertLoading ? "Reverting…" : "Yes, revert"}
+                    </button>
+                    <button onClick={() => setShowRevertConfirm(false)}
+                      className="px-3 py-1.5 border border-stone-300 text-stone-600 text-xs rounded-lg font-medium hover:bg-stone-100 transition-colors">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowRevertConfirm(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-amber-50 border border-amber-300 text-amber-700 text-sm rounded-lg font-medium hover:bg-amber-100 transition-colors">
+                    <RotateCcw size={14} /> Revert
+                  </button>
+                )
+              )}
             </div>
+            {actionToast.msg && (
+              <div className={`mt-2 text-sm font-medium ${actionToast.ok ? "text-green-700" : "text-red-600"}`}>
+                {actionToast.msg}
+              </div>
+            )}
           </div>
         </div>
       )}
