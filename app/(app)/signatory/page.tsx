@@ -434,6 +434,10 @@ export default function SignatoryPage() {
                     {/* Amount + bulk actions */}
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-sm font-bold text-stone-800">{formatCurrency(groupTotal)}</span>
+                      <Link href={`/bulk-pvs/${group.runId}`}
+                        className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
+                        <ExternalLink size={11} /> View Batch
+                      </Link>
                       <button onClick={() => openPin(groupIds, "APPROVED")}
                         className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors">
                         <CheckCircle size={11} /> Approve All
