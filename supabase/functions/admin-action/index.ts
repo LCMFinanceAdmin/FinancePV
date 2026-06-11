@@ -168,6 +168,30 @@ Deno.serve(async (req) => {
       return json({ ok: true, status: "PENDING" });
     }
 
+    if (action === "FINANCE_SIGN") {
+      const now = new Date().toISOString();
+      const existingApprovals: Record<string, unknown>[] = pv.approvals ?? [];
+      // Remove any prior FINANCE_ADMIN entry, then prepend the new one
+      const filtered = existingApprovals.filter((a: Record<string, unknown>) => a.role !== "FINANCE_ADMIN");
+      const entry: Record<string, unknown> = {
+        role: "FINANCE_ADMIN",
+        email: user.email,
+        name: profile?.full_name || user.email,
+        action: "APPROVED",
+        timestamp: now,
+        remarks: "",
+      };
+      if (body.signature_data) entry.signature_data = body.signature_data;
+      const newApprovals = [entry, ...filtered];
+      await db.from("pvs").update({
+        approvals: newApprovals,
+        finance_verified_by: profile?.full_name || user.email,
+        finance_verified_at: now,
+        updated_at: now,
+      }).eq("id", pv_id);
+      return json({ ok: true });
+    }
+
     if (action === "REJECT") {
       if (!body.remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
       await db.from("pvs").update({
