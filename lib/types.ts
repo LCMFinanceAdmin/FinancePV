@@ -99,7 +99,7 @@ export interface PVApproval {
   role: string;
   email: string;
   name: string;
-  action: "APPROVED" | "REJECTED" | "COMMENT" | "EDIT_COMMENT";
+  action: "APPROVED" | "REJECTED" | "COMMENT" | "EDIT_COMMENT" | "REVERT";
   timestamp: string;
   remarks: string;
   signature_data?: string;

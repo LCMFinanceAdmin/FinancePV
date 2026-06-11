@@ -587,14 +587,14 @@ export default function PVDetailPage() {
                 onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
-                className={`flex items-center gap-1.5 px-4 py-2 text-white text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-green-600/40 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"}`}>
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"}`}>
                 <CheckCircle size={14} /> Approve
               </button>
               <button
                 onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
-                className={`flex items-center gap-1.5 px-4 py-2 text-white text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-red-600/40 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"}`}>
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"}`}>
                 <XCircle size={14} /> Reject
               </button>
               <button onClick={() => { setCommentText(""); setEditingComment(false); setShowCommentModal(true); }}
@@ -1085,7 +1085,7 @@ export default function PVDetailPage() {
               )}
             </div>
 
-            <div className="px-5 py-4 border-t border-stone-200 flex gap-2">
+            <div className="px-5 py-4 border-t border-stone-200 flex gap-2 flex-wrap">
               <button onClick={submitSignatoryAction}
                 disabled={sigLoading ||
                   (signAction === "REJECTED" && !sigRemarks.trim()) ||
@@ -1093,6 +1093,13 @@ export default function PVDetailPage() {
                 className={`flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-colors disabled:opacity-40 ${signAction === "APPROVED" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}>
                 {sigLoading ? "Processing…" : signAction === "APPROVED" ? "Confirm Approval" : "Confirm Rejection"}
               </button>
+              {userHasActed && (
+                <button onClick={async () => { setShowSignModal(false); await submitRevert(); }}
+                  disabled={revertLoading}
+                  className="px-4 py-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium hover:bg-amber-100 transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                  <RotateCcw size={13} /> Remove &amp; Revert
+                </button>
+              )}
               <button onClick={() => setShowSignModal(false)}
                 className="px-5 py-3 rounded-xl border border-stone-200 text-stone-600 text-sm hover:bg-stone-50 transition-colors">
                 Cancel
@@ -1466,32 +1473,39 @@ export default function PVDetailPage() {
             ) : (
               <div className="relative space-y-3">
                 <div className="absolute left-3.5 top-0 bottom-0 w-0.5 bg-stone-200" />
-                {approvals.map((a, i) => (
-                  <div key={i} className="flex gap-3 items-start">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 z-10 ${
-                      a.action === "APPROVED" ? "bg-green-100" : "bg-red-100"
-                    }`}>
-                      {a.action === "APPROVED"
-                        ? <CheckCircle2 size={14} className="text-green-600" />
-                        : <XCircle size={14} className="text-red-500" />}
-                    </div>
-                    <div className="flex-1 pb-1">
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-stone-800">{a.name || a.email}</span>
-                        <span className="text-xs text-stone-400">({a.role})</span>
-                        <span className={`text-xs font-semibold ml-auto ${a.action === "APPROVED" ? "text-green-600" : "text-red-500"}`}>
-                          {a.action}
-                        </span>
+                {approvals.map((a, i) => {
+                  const isApproved  = a.action === "APPROVED";
+                  const isRejected  = a.action === "REJECTED";
+                  const isRevert    = a.action === "REVERT";
+                  const isComment   = a.action === "COMMENT" || a.action === "EDIT_COMMENT";
+                  const iconBg      = isApproved ? "bg-green-100" : isRejected ? "bg-red-100" : isRevert ? "bg-amber-100" : "bg-purple-100";
+                  const labelColor  = isApproved ? "text-green-600" : isRejected ? "text-red-500" : isRevert ? "text-amber-600" : "text-purple-600";
+                  const icon        = isApproved  ? <CheckCircle2 size={14} className="text-green-600" />
+                                    : isRejected  ? <XCircle size={14} className="text-red-500" />
+                                    : isRevert    ? <RotateCcw size={14} className="text-amber-600" />
+                                    : <MessageSquare size={14} className="text-purple-600" />;
+                  const label       = isComment ? (a.action === "EDIT_COMMENT" ? "EDITED COMMENT" : "COMMENT") : a.action;
+                  return (
+                    <div key={i} className="flex gap-3 items-start">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 z-10 ${iconBg}`}>
+                        {icon}
                       </div>
-                      {a.remarks && (
-                        <div className="mt-0.5 text-xs text-stone-500 italic bg-stone-50 border border-stone-200 rounded px-2 py-1">
-                          "{a.remarks}"
+                      <div className="flex-1 pb-1">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-stone-800">{a.name || a.email}</span>
+                          <span className="text-xs text-stone-400">({a.role})</span>
+                          <span className={`text-xs font-semibold ml-auto ${labelColor}`}>{label}</span>
                         </div>
-                      )}
-                      <div className="text-xs text-stone-400 mt-0.5">{formatDateTime(a.timestamp)}</div>
+                        {a.remarks && (
+                          <div className={`mt-0.5 text-xs italic rounded px-2 py-1 ${isComment ? "bg-purple-50 border border-purple-200 text-purple-800" : "bg-stone-50 border border-stone-200 text-stone-500"}`}>
+                            &ldquo;{a.remarks}&rdquo;
+                          </div>
+                        )}
+                        <div className="text-xs text-stone-400 mt-0.5">{formatDateTime(a.timestamp)}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

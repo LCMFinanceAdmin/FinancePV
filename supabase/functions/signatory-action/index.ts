@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
 
     const isGM = profile.role === "GENERAL_MANAGER";
 
-    // ── REVERT: no PIN required — just remove this role's approval ──
+    // ── REVERT: no PIN required — remove approval entries + add audit record ──
     if (action === "REVERT") {
       const { data: pvForRevert } = await db.from("pvs").select("*").eq("id", pv_id).single();
       if (!pvForRevert) return json({ error: "PV not found" }, 404);
@@ -71,7 +71,13 @@ Deno.serve(async (req) => {
       const existingApprovals: { role: string; action: string }[] = pvForRevert.approvals ?? [];
       const hadEntry = existingApprovals.some(a => a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action));
       if (!hadEntry) return json({ error: "No action found to revert for your role" }, 400);
-      const newApprovals = existingApprovals.filter(a => !(a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action)));
+      // Remove APPROVED/REJECTED entries for this role, keep COMMENTs; append REVERT audit record
+      const filtered = existingApprovals.filter(a => !(a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action)));
+      const newApprovals = [
+        ...filtered,
+        { role: profile.role, email: user.email, name: profile.full_name || user.email,
+          action: "REVERT", timestamp: new Date().toISOString(), remarks: "" },
+      ];
       let revertedStatus = pvForRevert.status;
       if (isGM && ["REVIEWED", "PENDING_SIGNATORY"].includes(pvForRevert.status)) {
         revertedStatus = "PENDING";
