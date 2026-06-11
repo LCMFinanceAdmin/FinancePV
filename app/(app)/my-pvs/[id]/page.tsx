@@ -402,11 +402,13 @@ export default function PVDetailPage() {
   // Finance signatory: we show up to loa.required boxes
   const sigSlots = Array.from({ length: loa.required }, (_, i) => sigApprovals[i] ?? null);
 
-  // ── Finance "prepared by" comes from finance_verified_by field ──
-  const financeApproval: PVApproval | null = pv.finance_verified_by
-    ? { role: "Finance Executive", email: "", name: pv.finance_verified_by,
-        action: "APPROVED", timestamp: pv.finance_verified_at, remarks: "" }
-    : null;
+  // ── Finance "prepared by" — prefer approvals entry (has signature_data), fall back to field ──
+  const financeApproval: PVApproval | null =
+    approvals.find(a => a.role === "FINANCE_ADMIN") ??
+    (pv.finance_verified_by
+      ? { role: "Finance Executive", email: "", name: pv.finance_verified_by,
+          action: "APPROVED", timestamp: pv.finance_verified_at, remarks: "" }
+      : null);
 
   return (
     <div className="min-h-screen bg-stone-100 print:bg-white">
