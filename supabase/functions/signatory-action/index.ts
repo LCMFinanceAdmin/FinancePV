@@ -22,9 +22,25 @@ Deno.serve(async (req) => {
     const signatoryRoles = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
     if (!signatoryRoles.includes(profile?.role)) return json({ error: "Not a signatory" }, 403);
 
-    const { pv_id, action, remarks, pin } = await req.json();
-    if (!["APPROVED", "REJECTED", "REVERT"].includes(action)) return json({ error: "Invalid action" }, 400);
+    const { pv_id, action, remarks, pin, signature_data } = await req.json();
+    if (!["APPROVED", "REJECTED", "REVERT", "COMMENT"].includes(action)) return json({ error: "Invalid action" }, 400);
     if (action === "REJECTED" && !remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
+
+    // ── COMMENT: no PIN required, just append a comment entry ───────────
+    if (action === "COMMENT") {
+      if (!remarks?.trim()) return json({ error: "Comment text is required" }, 400);
+      const { data: pv } = await db.from("pvs").select("approvals").eq("id", pv_id).single();
+      if (!pv) return json({ error: "PV not found" }, 404);
+      const approvals = [...(pv.approvals || [])];
+      approvals.push({
+        role: profile.role, email: user.email,
+        name: profile.full_name || user.email,
+        action: "COMMENT", timestamp: new Date().toISOString(),
+        remarks: remarks.trim(),
+      });
+      await db.from("pvs").update({ approvals, updated_at: new Date().toISOString() }).eq("id", pv_id);
+      return json({ ok: true });
+    }
 
     // PIN verification (required for church officer signatories)
     const requiresPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(profile.role);
@@ -71,14 +87,14 @@ Deno.serve(async (req) => {
     // if (alreadySigned) return json({ error: "You have already acted on this PV" }, 400);
     // ────────────────────────────────────────────────────────────────
 
-    approvals.push({
-      role: profile.role,
-      email: user.email,
+    const entry: Record<string, unknown> = {
+      role: profile.role, email: user.email,
       name: profile.full_name || user.email,
-      action,
-      timestamp: new Date().toISOString(),
+      action, timestamp: new Date().toISOString(),
       remarks: remarks || "",
-    });
+    };
+    if (signature_data) entry.signature_data = signature_data;
+    approvals.push(entry);
 
     let newStatus = pv.status;
 

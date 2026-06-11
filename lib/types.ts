@@ -99,9 +99,10 @@ export interface PVApproval {
   role: string;
   email: string;
   name: string;
-  action: "APPROVED" | "REJECTED";
+  action: "APPROVED" | "REJECTED" | "COMMENT";
   timestamp: string;
   remarks: string;
+  signature_data?: string;
 }
 
 export interface Lookup {

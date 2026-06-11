@@ -9,7 +9,9 @@ import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
   AlertTriangle, Banknote, FileText, User, Calendar,
   ShieldCheck, Send, CreditCard, Trash2, Pencil, Plus, X as XIcon, RotateCcw,
+  MessageSquare, PenLine, Upload, CheckCircle,
 } from "lucide-react";
+import { useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 
 const PVPdfDownload = dynamic(() => import("@/components/pv/pv-pdf-download"), { ssr: false });
@@ -91,14 +93,19 @@ const ei = "w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-
 // ── Signature block ────────────────────────────────────────────────────
 function SigBlock({ title, role, approval, pending }: {
   title: string; role: string;
-  approval?: PVApproval | null; pending?: boolean;
+  approval?: (PVApproval & { signature_data?: string }) | null; pending?: boolean;
 }) {
   return (
-    <div className="flex flex-col" style={{ minHeight: 110 }}>
+    <div className="flex flex-col" style={{ minHeight: 130 }}>
       <div className="text-[12px] font-bold mb-0.5">{title}</div>
-      <div className="text-[13px] text-stone-800 mb-2">({role})</div>
-      {/* Signature space */}
-      <div className="flex-1 border-b border-black mb-1" />
+      <div className="text-[13px] text-stone-800 mb-1">({role})</div>
+      {/* Signature space — shows image if available, else blank */}
+      <div className="flex-1 border-b border-black mb-1 min-h-[48px] relative">
+        {approval?.signature_data && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={approval.signature_data} alt="signature" className="h-10 object-contain absolute bottom-1 left-0" />
+        )}
+      </div>
       {/* Name line */}
       <div className="text-[13px] flex items-end gap-1 mb-0.5">
         <span className="font-semibold whitespace-nowrap">Name 姓名:</span>
@@ -151,6 +158,25 @@ export default function PVDetailPage() {
   const [editForm, setEditForm] = useState<Record<string, unknown>>({});
   const [showHardDeleteModal, setShowHardDeleteModal] = useState(false);
 
+  // Signatory actions
+  const [showSignModal, setShowSignModal]     = useState(false);
+  const [signAction, setSignAction]           = useState<"APPROVED" | "REJECTED">("APPROVED");
+  const [sigPin, setSigPin]                   = useState("");
+  const [sigRemarks, setSigRemarks]           = useState("");
+  const [sigLoading, setSigLoading]           = useState(false);
+  const [sigToast, setSigToast]               = useState({ msg: "", ok: true });
+  const [signatureData, setSignatureData]     = useState(""); // base64 from canvas
+  const [savedSig, setSavedSig]               = useState("");  // user's stored signature
+  const [saveSigForNext, setSaveSigForNext]   = useState(false);
+  const [sigMode, setSigMode]                 = useState<"draw" | "upload">("draw");
+  const canvasRef                             = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef                          = useRef(false);
+
+  // Comment
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [commentText, setCommentText]           = useState("");
+  const [commentLoading, setCommentLoading]     = useState(false);
+
   useEffect(() => {
     async function load() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -159,6 +185,7 @@ export default function PVDetailPage() {
         supabase.from("pvs").select("*").eq("id", id).single(),
         supabase.from("user_roles").select("*").eq("email", authUser.email).single(),
       ]);
+      if (profile?.saved_signature) setSavedSig(profile.saved_signature);
       if (pvData) setPv(pvData as PV);
       const role = profile?.role ?? "STAFF";
       setUser({
@@ -205,6 +232,127 @@ export default function PVDetailPage() {
       setShowRejectModal(false);
       setShowPayModal(false);
       setShowCancelModal(false);
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    }
+  }
+
+  // ── Canvas drawing helpers ──────────────────────────────────────────
+  const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    isDrawingRef.current = true;
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    ctx.beginPath(); ctx.moveTo(x, y);
+  }, []);
+
+  const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawingRef.current) return;
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
+    ctx.lineTo(x, y); ctx.stroke();
+    setSignatureData(canvas.toDataURL("image/png"));
+  }, []);
+
+  const stopDraw = useCallback(() => { isDrawingRef.current = false; }, []);
+
+  function clearCanvas() {
+    const canvas = canvasRef.current; if (!canvas) return;
+    canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    setSignatureData("");
+  }
+
+  function useSavedSig() {
+    setSignatureData(savedSig);
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const img = new Image(); img.src = savedSig;
+    img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
+  }
+
+  function handleSigUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const data = ev.target?.result as string;
+      setSignatureData(data);
+      const canvas = canvasRef.current; if (!canvas) return;
+      const ctx = canvas.getContext("2d"); if (!ctx) return;
+      const img = new Image(); img.src = data;
+      img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function submitSignatoryAction() {
+    if (!pv || !user) return;
+    if (signAction === "REJECTED" && !sigRemarks.trim()) {
+      setSigToast({ msg: "Remarks required for rejection", ok: false }); return;
+    }
+    const requiresPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(user.role);
+    if (requiresPin && sigPin.length < 6) {
+      setSigToast({ msg: "Enter your 6-digit PIN", ok: false }); return;
+    }
+    setSigLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const body: Record<string, unknown> = {
+        pv_id: pv.id, action: signAction,
+        remarks: sigRemarks || "",
+        ...(requiresPin ? { pin: sigPin } : {}),
+        ...(signatureData ? { signature_data: signatureData } : {}),
+      };
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Action failed");
+
+      // Optionally save signature for next time
+      if (signatureData && saveSigForNext) {
+        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
+        setSavedSig(signatureData);
+      }
+
+      setShowSignModal(false);
+      setActionToast({ msg: signAction === "APPROVED" ? "PV approved ✓" : "PV rejected", ok: signAction === "APPROVED" });
+      const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
+      if (fresh) setPv(fresh as PV);
+    } catch (e: unknown) {
+      setSigToast({ msg: (e as Error).message, ok: false });
+    } finally {
+      setSigLoading(false);
+      setTimeout(() => setSigToast({ msg: "", ok: true }), 4000);
+    }
+  }
+
+  async function submitComment() {
+    if (!pv || !user || !commentText.trim()) return;
+    setCommentLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pv.id, action: "COMMENT", remarks: commentText.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setShowCommentModal(false); setCommentText("");
+      setActionToast({ msg: "Comment added", ok: true });
+      const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
+      if (fresh) setPv(fresh as PV);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+    } finally {
+      setCommentLoading(false);
       setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
     }
   }
@@ -372,8 +520,34 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── Signatory Action Panel ────────────────────────────────── */}
+      {user?.isSignatory && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck size={16} className="text-indigo-600" />
+              <span className="text-sm font-semibold text-indigo-800">Signatory Actions</span>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 transition-colors">
+                <CheckCircle size={14} /> Approve
+              </button>
+              <button onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setShowSignModal(true); }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
+                <XCircle size={14} /> Reject
+              </button>
+              <button onClick={() => { setCommentText(""); setShowCommentModal(true); }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-indigo-300 text-indigo-700 text-sm rounded-lg font-medium hover:bg-indigo-50 transition-colors">
+                <MessageSquare size={14} /> Add Comment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Admin / Submitter actions ─────────────────────────────── */}
-      {(user?.isFinanceAdmin || user?.email === pv.submitted_by_email) &&
+      {(user?.isFinanceAdmin || (user?.email === pv.submitted_by_email && !user?.isSignatory)) &&
         !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-3 flex items-center gap-2 flex-wrap">
           {/* Edit — Finance Admin only */}
@@ -694,6 +868,151 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── Comment Modal ─────────────────────────────────────────── */}
+      {showCommentModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare size={18} className="text-indigo-600" />
+              <h2 className="text-base font-bold text-stone-800">Add Comment</h2>
+            </div>
+            <p className="text-xs text-stone-400 mb-3">
+              Your comment will appear in the Particulars table as:<br />
+              <span className="font-semibold text-stone-600 text-[11px]">Comment from [{user?.role?.replace(/_/g, " ")}]: …</span>
+            </p>
+            <textarea
+              value={commentText}
+              onChange={e => setCommentText(e.target.value)}
+              placeholder="Type your comment here…"
+              autoFocus
+              className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-indigo-400 min-h-[100px] resize-none"
+            />
+            <div className="flex gap-2 mt-4">
+              <button onClick={submitComment} disabled={!commentText.trim() || commentLoading}
+                className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                <Send size={13} /> {commentLoading ? "Sending…" : "Send Comment"}
+              </button>
+              <button onClick={() => setShowCommentModal(false)}
+                className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Signatory Approval Modal (sign + PIN) ─────────────────── */}
+      {showSignModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+              <div>
+                <div className={`text-base font-bold ${signAction === "APPROVED" ? "text-green-700" : "text-red-600"}`}>
+                  {signAction === "APPROVED" ? "✓ Approve PV" : "✕ Reject PV"}
+                </div>
+                <div className="text-xs text-stone-400 mt-0.5">{pv.pv_no} — {pv.payee_name} — {formatCurrency(pv.amount)}</div>
+              </div>
+              <button onClick={() => setShowSignModal(false)} className="text-stone-400 hover:text-stone-600"><XIcon size={18} /></button>
+            </div>
+
+            <div className="overflow-y-auto px-5 py-4 space-y-4 flex-1">
+              {/* Signature section */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5"><PenLine size={12} /> Signature (optional)</label>
+                  <div className="flex gap-1">
+                    <button onClick={() => setSigMode("draw")}
+                      className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "draw" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                      Draw
+                    </button>
+                    <button onClick={() => setSigMode("upload")}
+                      className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "upload" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                      Upload
+                    </button>
+                  </div>
+                </div>
+
+                {sigMode === "draw" ? (
+                  <div className="space-y-2">
+                    <div className="border-2 border-dashed border-stone-300 rounded-xl overflow-hidden bg-stone-50" style={{ touchAction: "none" }}>
+                      <canvas ref={canvasRef} width={380} height={100} className="w-full cursor-crosshair"
+                        onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                        onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={clearCanvas} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
+                      {savedSig && (
+                        <button onClick={useSavedSig} className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1">
+                          <CheckCircle size={11} /> Use saved signature
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-300 rounded-xl p-6 bg-stone-50 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+                    <Upload size={20} className="text-stone-400 mb-1" />
+                    <span className="text-xs text-stone-500">Click to upload signature image</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
+                  </label>
+                )}
+
+                {signatureData && (
+                  <div className="mt-2 flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={signatureData} alt="sig preview" className="h-8 object-contain" />
+                    <span className="text-xs text-green-700 flex-1">Signature captured</span>
+                    <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer shrink-0">
+                      <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="accent-indigo-600" />
+                      Save for next time
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="text-xs text-stone-500 block mb-1">
+                  Remarks {signAction === "REJECTED" ? <span className="text-red-400">* required</span> : "(optional)"}
+                </label>
+                <textarea className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none h-16"
+                  placeholder={signAction === "REJECTED" ? "Reason for rejection…" : "Optional remarks…"}
+                  value={sigRemarks} onChange={e => setSigRemarks(e.target.value)} />
+              </div>
+
+              {/* PIN */}
+              {["BISHOP", "TREASURER", "SECRETARY"].includes(user?.role ?? "") && (
+                <div>
+                  <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5 mb-1">
+                    <ShieldCheck size={12} /> Approval PIN <span className="text-red-400">*</span>
+                  </label>
+                  <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-indigo-400 font-mono"
+                    type="password" maxLength={6} placeholder="••••••" value={sigPin}
+                    onChange={e => setSigPin(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+                </div>
+              )}
+
+              {sigToast.msg && (
+                <div className={`text-sm font-medium ${sigToast.ok ? "text-green-700" : "text-red-600"}`}>{sigToast.msg}</div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-stone-200 flex gap-2">
+              <button onClick={submitSignatoryAction}
+                disabled={sigLoading ||
+                  (signAction === "REJECTED" && !sigRemarks.trim()) ||
+                  (["BISHOP", "TREASURER", "SECRETARY"].includes(user?.role ?? "") && sigPin.length < 6)}
+                className={`flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-colors disabled:opacity-40 ${signAction === "APPROVED" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}>
+                {sigLoading ? "Processing…" : signAction === "APPROVED" ? "Confirm Approval" : "Confirm Rejection"}
+              </button>
+              <button onClick={() => setShowSignModal(false)}
+                className="px-5 py-3 rounded-xl border border-stone-200 text-stone-600 text-sm hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── THE VOUCHER ─────────────────────────────────────────────── */}
       <div className="max-w-4xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
         <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
@@ -858,6 +1177,24 @@ export default function PVDetailPage() {
                     <td className="border border-black px-2 py-3"></td>
                   </tr>
                 ))}
+                {/* Signatory comment rows */}
+                {(pv.approvals ?? []).filter(a => a.action === "COMMENT").map((a, i) => {
+                  const roleLabel = a.role === "GENERAL_MANAGER" ? "GM"
+                    : a.role === "BISHOP" ? "Bishop"
+                    : a.role === "TREASURER" ? "Treasurer"
+                    : a.role === "SECRETARY" ? "Secretary"
+                    : a.role;
+                  return (
+                    <tr key={`comment-${i}`} className="bg-indigo-50/40">
+                      <td className="border border-black px-1 py-2 text-center text-stone-400 text-[11px]">—</td>
+                      <td className="border border-black px-2 py-2 text-[11px] text-stone-400">{fmtDate(a.timestamp)}</td>
+                      <td className="border border-black px-2 py-2 text-[12px] italic text-indigo-800">
+                        <span className="font-semibold not-italic">Comment from [{roleLabel}]:</span> {a.remarks}
+                      </td>
+                      <td className="border border-black px-2 py-2 text-right text-stone-400">—</td>
+                    </tr>
+                  );
+                })}
                 {/* Total row */}
                 <tr>
                   <td className="border border-black px-2 py-1.5 text-right font-bold" colSpan={3}>
@@ -938,7 +1275,7 @@ export default function PVDetailPage() {
                 Particulars of CLAIM Checked
               </div>
 
-              {/* 3-column sig blocks */}
+              {/* 3-column sig blocks — equal width */}
               <div className="grid grid-cols-3 divide-x divide-black px-0">
                 {/* Prepared by — Finance Executive */}
                 <div className="px-4 py-3">
@@ -962,55 +1299,44 @@ export default function PVDetailPage() {
 
                 {/* Approved by — Signatory(ies) */}
                 <div className="px-4 py-3">
-                  <div className="text-[12px] font-bold mb-0.5">Approved by:</div>
-                  <div className="text-[13px] text-stone-800 mb-1">
-                    (Bishop / Secretary / Treasurer)
-                  </div>
                   {loa.required === 1 ? (
-                    <div className="mt-1">
-                      <div className="border-b border-black h-8 mb-1">
-                        {sigSlots[0] && (
-                          <div className="flex items-center gap-1 h-full text-[13px] text-green-700">
-                            <CheckCircle2 size={9} />{sigSlots[0].name}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 text-[13px]">
-                        <span className="font-bold whitespace-nowrap">Name:</span>
-                        <span className="flex-1 border-b border-black">{sigSlots[0]?.name ?? ""}</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-[13px] mt-0.5">
-                        <span className="font-bold whitespace-nowrap">Date:</span>
-                        <span className="flex-1 border-b border-black">{fmtDate(sigSlots[0]?.timestamp)}</span>
-                      </div>
-                    </div>
+                    <SigBlock
+                      title="Approved by:"
+                      role="Bishop / Secretary / Treasurer"
+                      approval={sigSlots[0]}
+                      pending={!sigSlots[0]}
+                    />
                   ) : (
-                    <div className="grid grid-cols-2 gap-2 mt-1">
-                      {sigSlots.map((appr, i) => (
-                        <div key={i}>
-                          <div className="border-b border-black h-8 mb-1">
-                            {appr && (
-                              <div className="flex items-center gap-0.5 h-full text-[13px] text-green-700">
-                                <CheckCircle2 size={8} />{appr.name}
-                              </div>
-                            )}
+                    <div className="flex flex-col" style={{ minHeight: 130 }}>
+                      <div className="text-[12px] font-bold mb-0.5">Approved by:</div>
+                      <div className="text-[13px] text-stone-800 mb-1">(Bishop / Secretary / Treasurer)</div>
+                      <div className="grid grid-cols-2 gap-2 flex-1">
+                        {sigSlots.map((appr, i) => (
+                          <div key={i} className="flex flex-col">
+                            <div className="border-b border-black min-h-[40px] mb-1 relative">
+                              {appr?.signature_data && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={appr.signature_data} alt="sig" className="h-8 object-contain absolute bottom-0.5 left-0" />
+                              )}
+                              {appr && !appr.signature_data && (
+                                <div className="flex items-center gap-0.5 h-full text-[12px] text-green-700 absolute bottom-0.5">
+                                  <CheckCircle2 size={8} />{appr.name}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-0.5 text-[12px]">
+                              <span className="font-bold">Name:</span>
+                              <span className="flex-1 border-b border-black">{appr?.name ?? ""}</span>
+                            </div>
+                            <div className="flex items-center gap-0.5 text-[12px] mt-0.5">
+                              <span className="font-bold">Date:</span>
+                              <span className="flex-1 border-b border-black">{fmtDate(appr?.timestamp)}</span>
+                            </div>
+                            {appr && <div className="text-[11px] text-stone-500 mt-0.5">{appr.role}</div>}
+                            {!appr && <div className="text-[12px] text-stone-400 flex items-center gap-0.5 mt-0.5"><Clock size={8} /> Awaiting</div>}
                           </div>
-                          <div className="flex items-center gap-0.5 text-[13px]">
-                            <span className="font-bold">Name:</span>
-                            <span className="flex-1 border-b border-black text-[12px]">{appr?.name ?? ""}</span>
-                          </div>
-                          <div className="flex items-center gap-0.5 text-[13px] mt-0.5">
-                            <span className="font-bold">Date:</span>
-                            <span className="flex-1 border-b border-black text-[12px]">{fmtDate(appr?.timestamp)}</span>
-                          </div>
-                          {appr && <div className="text-[12px] text-stone-700 mt-0.5">{appr.role}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {!sigSlots[0] && (
-                    <div className="text-[13px] text-stone-600 flex items-center gap-0.5 mt-1">
-                      <Clock size={8} /> Awaiting {loa.required} signature{loa.required > 1 ? "s" : ""}
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
