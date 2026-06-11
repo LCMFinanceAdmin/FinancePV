@@ -367,9 +367,11 @@ export default function PVDetailPage() {
   async function submitFinanceSign() {
     if (!pv || !user) return;
     setFinSignLoading(true);
+    // Signing on a PENDING PV = mark as Reviewed; on any other status = just update the signature
+    const action = pv.status === "PENDING" ? "REVIEW" : "FINANCE_SIGN";
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const body: Record<string, unknown> = { pv_id: pv.id, action: "FINANCE_SIGN" };
+      const body: Record<string, unknown> = { pv_id: pv.id, action };
       if (signatureData) body.signature_data = signatureData;
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
         method: "POST",
@@ -385,7 +387,8 @@ export default function PVDetailPage() {
       setShowFinanceSignModal(false);
       setSignatureData("");
       setCanvasActive(false);
-      setActionToast({ msg: "Signature saved ✓", ok: true });
+      const msg = action === "REVIEW" ? "Signed — PV marked as Reviewed ✓" : "Signature updated ✓";
+      setActionToast({ msg, ok: true });
       const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
       if (fresh) setPv(fresh as PV);
     } catch (e: unknown) {
@@ -559,51 +562,59 @@ export default function PVDetailPage() {
               <span className="ml-auto text-xs text-stone-500">PV is <strong>{pv.status.replace(/_/g, " ")}</strong></span>
             </div>
 
-            {pv.status === "PENDING" && (
-              <div className="flex gap-2 flex-wrap">
-                <button onClick={() => callAdminAction("REVIEW")} disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-[#4a6da7] text-white text-sm rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
-                  <CheckCircle2 size={14} /> Mark as Reviewed
+            {/* ── Row 1: Review decision — always visible, active only when PENDING ── */}
+            <div className="flex gap-2 flex-wrap items-center">
+              <button
+                onClick={() => callAdminAction("REVIEW", savedSig ? { signature_data: savedSig } : {})}
+                disabled={actionLoading || pv.status !== "PENDING"}
+                title={pv.status !== "PENDING" ? "Already reviewed — revert first to re-review" : ""}
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
+                  pv.status === "PENDING"
+                    ? "bg-[#4a6da7] text-white hover:bg-[#3d5a8e] disabled:opacity-50"
+                    : "bg-stone-200 text-stone-400 cursor-not-allowed"
+                }`}>
+                <CheckCircle2 size={14} /> Mark as Reviewed
+              </button>
+              <button
+                onClick={() => setShowRejectModal(true)}
+                disabled={actionLoading || pv.status !== "PENDING"}
+                title={pv.status !== "PENDING" ? "Already reviewed — revert first to reject" : ""}
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
+                  pv.status === "PENDING"
+                    ? "bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                    : "bg-stone-200 text-stone-400 cursor-not-allowed"
+                }`}>
+                <XCircle size={14} /> Reject
+              </button>
+              {["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(pv.status) && (
+                <button onClick={() => callAdminAction("UNREVIEW")} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 border border-amber-300 text-amber-700 bg-amber-50 text-sm rounded-lg font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors">
+                  <RotateCcw size={14} /> Revert Review
                 </button>
-                <button onClick={() => setShowRejectModal(true)} disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
-                  <XCircle size={14} /> Reject
-                </button>
-              </div>
-            )}
+              )}
+            </div>
 
+            {/* ── Row 2: Send to Signatory ── */}
             {["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap mt-2">
                 <button onClick={() => callAdminAction("SEND_TO_SIGNATORY")} disabled={actionLoading}
                   className="flex items-center gap-1.5 px-4 py-2 bg-[#4a6da7] text-white text-sm rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
                   <Send size={14} /> Send to Signatory
-                </button>
-                <button onClick={() => setShowRejectModal(true)} disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
-                  <XCircle size={14} /> Reject
-                </button>
-                <button onClick={() => callAdminAction("UNREVIEW")} disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 border border-amber-300 text-amber-700 bg-amber-50 text-sm rounded-lg font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors">
-                  <RotateCcw size={14} /> Unreview
                 </button>
               </div>
             )}
 
             {pv.status === "PENDING_SIGNATORY" && (
-              <div className="flex gap-2 flex-wrap items-center">
-                <p className="text-sm text-stone-600">Awaiting signatory signature — no action needed from Finance at this stage.</p>
-                <button onClick={() => callAdminAction("UNREVIEW")} disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 text-sm rounded-lg font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors shrink-0">
-                  <RotateCcw size={13} /> Unreview (revert to Pending)
-                </button>
-              </div>
+              <p className="text-sm text-stone-500 mt-2">Awaiting signatory signatures.</p>
             )}
 
             {pv.status === "APPROVED" && (
-              <button onClick={() => setShowPayModal(true)} disabled={actionLoading}
-                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors">
-                <CreditCard size={14} /> Mark as Paid
-              </button>
+              <div className="mt-2">
+                <button onClick={() => setShowPayModal(true)} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors">
+                  <CreditCard size={14} /> Mark as Paid
+                </button>
+              </div>
             )}
 
             {actionToast.msg && (
