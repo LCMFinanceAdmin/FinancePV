@@ -183,6 +183,7 @@ export default function PVDetailPage() {
   const [sigMode, setSigMode]                 = useState<"draw" | "upload">("draw");
   const canvasRef                             = useRef<HTMLCanvasElement>(null);
   const isDrawingRef                          = useRef(false);
+  const [canvasActive, setCanvasActive]       = useState(false);
 
   // Comment
   const [showCommentModal, setShowCommentModal] = useState(false);
@@ -255,6 +256,7 @@ export default function PVDetailPage() {
 
   // ── Canvas drawing helpers ──────────────────────────────────────────
   const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!canvasActive) return;
     isDrawingRef.current = true;
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext("2d"); if (!ctx) return;
@@ -285,6 +287,7 @@ export default function PVDetailPage() {
   }
 
   function useSavedSig() {
+    setCanvasActive(true);
     setSignatureData(savedSig);
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext("2d"); if (!ctx) return;
@@ -584,14 +587,14 @@ export default function PVDetailPage() {
             </div>
             <div className="flex gap-2 flex-wrap items-center">
               <button
-                onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }}
+                onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"}`}>
                 <CheckCircle size={14} /> Approve
               </button>
               <button
-                onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setShowSignModal(true); }}
+                onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setCanvasActive(false); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"}`}>
@@ -1023,13 +1026,25 @@ export default function PVDetailPage() {
 
                 {sigMode === "draw" ? (
                   <div className="space-y-2">
-                    <div className="border-2 border-dashed border-stone-300 rounded-xl overflow-hidden bg-stone-50" style={{ touchAction: "none" }}>
-                      <canvas ref={canvasRef} width={380} height={100} className="w-full cursor-crosshair"
-                        onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
-                        onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                    <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
+                      <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? "border-indigo-400 bg-white" : "border-dashed border-stone-300 bg-stone-50"}`}>
+                        <canvas ref={canvasRef} width={380} height={100}
+                          className={`w-full ${canvasActive ? "cursor-crosshair" : "cursor-pointer"}`}
+                          onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                          onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                      </div>
+                      {!canvasActive && (
+                        <div
+                          className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer rounded-xl hover:bg-indigo-50/60 transition-colors"
+                          onClick={() => setCanvasActive(true)}
+                        >
+                          <PenLine size={20} className="text-stone-400 mb-1" />
+                          <span className="text-xs text-stone-500 font-medium">Click to start signing</span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={clearCanvas} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
+                      <button onClick={() => { clearCanvas(); setCanvasActive(false); }} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
                       {savedSig && (
                         <button onClick={useSavedSig} className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1">
                           <CheckCircle size={11} /> Use saved signature
