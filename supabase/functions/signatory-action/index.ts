@@ -97,7 +97,9 @@ Deno.serve(async (req) => {
       return json({ ok: true, status: revertedStatus });
     }
 
-    const allowedStatuses = isGM ? ["PENDING", "REVIEWED"] : ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"];
+    const allowedStatuses = isGM
+      ? ["PENDING", "REVIEWED", "PENDING_SIGNATORY", "MINISTRY_VERIFIED"]
+      : ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"];
     if (!allowedStatuses.includes(pv.status)) return json({ error: `Cannot act on PV with status ${pv.status}` }, 400);
 
     const approvals = [...(pv.approvals || [])];
