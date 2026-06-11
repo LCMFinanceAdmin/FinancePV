@@ -264,7 +264,7 @@ export default function PVDetailPage() {
     const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
     const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
     ctx.beginPath(); ctx.moveTo(x, y);
-  }, []);
+  }, [canvasActive]);
 
   const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawingRef.current) return;
