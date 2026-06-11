@@ -23,8 +23,27 @@ Deno.serve(async (req) => {
     if (!signatoryRoles.includes(profile?.role)) return json({ error: "Not a signatory" }, 403);
 
     const { pv_id, action, remarks, pin, signature_data } = await req.json();
-    if (!["APPROVED", "REJECTED", "REVERT", "COMMENT"].includes(action)) return json({ error: "Invalid action" }, 400);
+    if (!["APPROVED", "REJECTED", "REVERT", "COMMENT", "EDIT_COMMENT"].includes(action)) return json({ error: "Invalid action" }, 400);
     if (action === "REJECTED" && !remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
+
+    // ── EDIT_COMMENT: update the most recent comment by this role ───────
+    if (action === "EDIT_COMMENT") {
+      if (!remarks?.trim()) return json({ error: "Comment text is required" }, 400);
+      const { data: pv } = await db.from("pvs").select("approvals").eq("id", pv_id).single();
+      if (!pv) return json({ error: "PV not found" }, 404);
+      const approvals: Record<string, unknown>[] = [...(pv.approvals || [])];
+      // Find last COMMENT by this role
+      let found = false;
+      for (let i = approvals.length - 1; i >= 0; i--) {
+        if (approvals[i].role === profile.role && approvals[i].action === "COMMENT") {
+          approvals[i] = { ...approvals[i], remarks: remarks.trim(), timestamp: new Date().toISOString() };
+          found = true; break;
+        }
+      }
+      if (!found) return json({ error: "No comment found to edit" }, 404);
+      await db.from("pvs").update({ approvals, updated_at: new Date().toISOString() }).eq("id", pv_id);
+      return json({ ok: true });
+    }
 
     // ── COMMENT: no PIN required, just append a comment entry ───────────
     if (action === "COMMENT") {

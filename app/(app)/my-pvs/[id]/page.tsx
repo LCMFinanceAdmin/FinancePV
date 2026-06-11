@@ -91,19 +91,29 @@ function EField({ label, children }: { label: string; children: React.ReactNode 
 const ei = "w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white";
 
 // ── Signature block ────────────────────────────────────────────────────
-function SigBlock({ title, role, approval, pending }: {
+function SigBlock({ title, role, approval, pending, onClickSpace }: {
   title: string; role: string;
   approval?: (PVApproval & { signature_data?: string }) | null; pending?: boolean;
+  onClickSpace?: () => void;
 }) {
+  const isEmpty = !approval?.signature_data;
   return (
     <div className="flex flex-col" style={{ minHeight: 130 }}>
       <div className="text-[12px] font-bold mb-0.5">{title}</div>
       <div className="text-[13px] text-stone-800 mb-1">({role})</div>
-      {/* Signature space — shows image if available, else blank */}
-      <div className="flex-1 border-b border-black mb-1 min-h-[48px] relative">
+      {/* Signature space — shows image if available, else blank / clickable */}
+      <div
+        className={`flex-1 border-b border-black mb-1 min-h-[48px] relative ${onClickSpace && isEmpty ? "cursor-pointer group hover:bg-indigo-50/60 transition-colors rounded-t" : ""}`}
+        onClick={onClickSpace && isEmpty ? onClickSpace : undefined}
+      >
         {approval?.signature_data && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={approval.signature_data} alt="signature" className="h-10 object-contain absolute bottom-1 left-0" />
+        )}
+        {onClickSpace && isEmpty && (
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
+            <span className="text-[11px] text-indigo-500 flex items-center gap-1"><PenLine size={10} /> Click to sign</span>
+          </div>
         )}
       </div>
       {/* Name line */}
@@ -176,6 +186,7 @@ export default function PVDetailPage() {
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [commentText, setCommentText]           = useState("");
   const [commentLoading, setCommentLoading]     = useState(false);
+  const [editingComment, setEditingComment]     = useState(false); // true = editing existing
 
   useEffect(() => {
     async function load() {
@@ -338,15 +349,16 @@ export default function PVDetailPage() {
     setCommentLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const action = editingComment ? "EDIT_COMMENT" : "COMMENT";
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ pv_id: pv.id, action: "COMMENT", remarks: commentText.trim() }),
+        body: JSON.stringify({ pv_id: pv.id, action, remarks: commentText.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
-      setShowCommentModal(false); setCommentText("");
-      setActionToast({ msg: "Comment added", ok: true });
+      setShowCommentModal(false); setCommentText(""); setEditingComment(false);
+      setActionToast({ msg: editingComment ? "Comment updated" : "Comment added", ok: true });
       const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
       if (fresh) setPv(fresh as PV);
     } catch (e: unknown) {
@@ -874,12 +886,14 @@ export default function PVDetailPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
             <div className="flex items-center gap-2 mb-3">
               <MessageSquare size={18} className="text-indigo-600" />
-              <h2 className="text-base font-bold text-stone-800">Add Comment</h2>
+              <h2 className="text-base font-bold text-stone-800">{editingComment ? "Edit Comment" : "Add Comment"}</h2>
             </div>
-            <p className="text-xs text-stone-400 mb-3">
-              Your comment will appear in the Particulars table as:<br />
-              <span className="font-semibold text-stone-600 text-[11px]">Comment from [{user?.role?.replace(/_/g, " ")}]: …</span>
-            </p>
+            {!editingComment && (
+              <p className="text-xs text-stone-400 mb-3">
+                Your comment will appear in the Particulars table as:<br />
+                <span className="font-semibold text-stone-600 text-[11px]">Comment from [{user?.role?.replace(/_/g, " ")}]: …</span>
+              </p>
+            )}
             <textarea
               value={commentText}
               onChange={e => setCommentText(e.target.value)}
@@ -890,9 +904,9 @@ export default function PVDetailPage() {
             <div className="flex gap-2 mt-4">
               <button onClick={submitComment} disabled={!commentText.trim() || commentLoading}
                 className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
-                <Send size={13} /> {commentLoading ? "Sending…" : "Send Comment"}
+                <Send size={13} /> {commentLoading ? "Saving…" : editingComment ? "Update Comment" : "Send Comment"}
               </button>
-              <button onClick={() => setShowCommentModal(false)}
+              <button onClick={() => { setShowCommentModal(false); setEditingComment(false); }}
                 className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
                 Cancel
               </button>
@@ -1190,6 +1204,14 @@ export default function PVDetailPage() {
                       <td className="border border-black px-2 py-2 text-[11px] text-stone-400">{fmtDate(a.timestamp)}</td>
                       <td className="border border-black px-2 py-2 text-[12px] italic text-indigo-800">
                         <span className="font-semibold not-italic">Comment from [{roleLabel}]:</span> {a.remarks}
+                        {a.role === user?.role && user?.isSignatory && (
+                          <button
+                            onClick={() => { setCommentText(a.remarks); setEditingComment(true); setShowCommentModal(true); }}
+                            className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-indigo-400 hover:text-indigo-700 not-italic print:hidden align-middle"
+                          >
+                            <Pencil size={10} /> edit
+                          </button>
+                        )}
                       </td>
                       <td className="border border-black px-2 py-2 text-right text-stone-400">—</td>
                     </tr>
@@ -1294,6 +1316,9 @@ export default function PVDetailPage() {
                     role="General Manager"
                     approval={gmApproval}
                     pending={!gmApproval}
+                    onClickSpace={user?.isGeneralManager && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status)
+                      ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }
+                      : undefined}
                   />
                 </div>
 
@@ -1305,6 +1330,9 @@ export default function PVDetailPage() {
                       role="Bishop / Secretary / Treasurer"
                       approval={sigSlots[0]}
                       pending={!sigSlots[0]}
+                      onClickSpace={["BISHOP", "TREASURER", "SECRETARY"].includes(user?.role ?? "") && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status)
+                        ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }
+                        : undefined}
                     />
                   ) : (
                     <div className="flex flex-col" style={{ minHeight: 130 }}>
