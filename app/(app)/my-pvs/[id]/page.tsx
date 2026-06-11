@@ -1547,7 +1547,7 @@ export default function PVDetailPage() {
                     approval={financeApproval}
                     pending={!financeApproval}
                     onClickSpace={user?.isFinanceAdmin ? () => {
-                      setSignatureData(""); setCanvasActive(false); setIsErasing(false);
+                      setSignatureData(""); setCanvasActive(true); setIsErasing(false);
                       setSigMode("draw"); setSaveSigForNext(false);
                       setShowFinanceSignModal(true);
                     } : undefined}
