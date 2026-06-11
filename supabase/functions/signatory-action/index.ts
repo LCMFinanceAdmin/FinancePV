@@ -78,12 +78,12 @@ Deno.serve(async (req) => {
         { role: profile.role, email: user.email, name: profile.full_name || user.email,
           action: "REVERT", timestamp: new Date().toISOString(), remarks: "" },
       ];
+      // Revert only undoes the signatory's own action — never push back past PENDING_SIGNATORY
       let revertedStatus = pvForRevert.status;
-      if (isGM && ["REVIEWED", "PENDING_SIGNATORY"].includes(pvForRevert.status)) {
-        revertedStatus = "PENDING";
-      } else if (["APPROVED", "REJECTED"].includes(pvForRevert.status)) {
+      if (["APPROVED", "REJECTED", "REVIEWED"].includes(pvForRevert.status)) {
         revertedStatus = "PENDING_SIGNATORY";
       }
+      // If already PENDING_SIGNATORY the status stays unchanged — signatory just clears their record
       await db.from("pvs").update({ approvals: newApprovals, status: revertedStatus, updated_at: new Date().toISOString() }).eq("id", pv_id);
       return json({ ok: true, status: revertedStatus });
     }
