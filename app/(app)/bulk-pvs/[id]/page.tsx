@@ -210,28 +210,20 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
         </tbody>
       </table>
 
-      {/* Applicant + Ministry Head signatures */}
-      <div className="mt-5 grid grid-cols-3 gap-6 text-[13px]">
-        <div>
-          <div className="font-bold mb-1">Applicant{"'"}s Signature <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>申请者签名</span>:</div>
-          <div className="h-8 border-b border-black mb-1" />
-          <div className="flex items-center gap-1"><span className="font-bold text-[12px] whitespace-nowrap">Name:</span><span className="flex-1 border-b border-black text-[12px]">{pv.applicant_name}</span></div>
-          <div className="flex items-center gap-1 mt-0.5"><span className="font-bold text-[12px] whitespace-nowrap">Date:</span><span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.submitted_at)}</span></div>
-        </div>
-        {pv.head_verified !== "N/A" && (
-          <div className="col-span-2">
-            <div className="font-bold mb-1">Verified by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>审核者签名</span>:</div>
-            <div className="h-8 border-b border-black mb-1">
-              {ministryVerified && <div className="flex items-center gap-1 h-full text-[12px] text-green-700"><CheckCircle2 size={11} /><span>{pv.ministry_verified_by ?? headApproval?.name}</span></div>}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center gap-1"><span className="font-bold text-[12px]">Name:</span><span className="flex-1 border-b border-black text-[12px]">{pv.ministry_verified_by ?? headApproval?.name ?? ""}</span></div>
-              <div className="flex items-center gap-1"><span className="font-bold text-[12px]">Date:</span><span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.ministry_verified_at ?? headApproval?.timestamp)}</span></div>
-            </div>
-            <div className="text-[11px] text-stone-700 mt-0.5">(Chairperson/Treasurer/Person in Charge)</div>
+      {/* Ministry Head signature (if applicable) */}
+      {pv.head_verified !== "N/A" && (
+        <div className="mt-5 text-[13px]">
+          <div className="font-bold mb-1">Verified by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>审核者签名</span>:</div>
+          <div className="h-8 border-b border-black mb-1">
+            {ministryVerified && <div className="flex items-center gap-1 h-full text-[12px] text-green-700"><CheckCircle2 size={11} /><span>{pv.ministry_verified_by ?? headApproval?.name}</span></div>}
           </div>
-        )}
-      </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-1"><span className="font-bold text-[12px]">Name:</span><span className="flex-1 border-b border-black text-[12px]">{pv.ministry_verified_by ?? headApproval?.name ?? ""}</span></div>
+            <div className="flex items-center gap-1"><span className="font-bold text-[12px]">Date:</span><span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.ministry_verified_at ?? headApproval?.timestamp)}</span></div>
+          </div>
+          <div className="text-[11px] text-stone-700 mt-0.5">(Chairperson/Treasurer/Person in Charge)</div>
+        </div>
+      )}
 
       {/* Finance section */}
       <div className="mt-5 border-t-2 border-t-black border-b-2 border-b-black border-l border-r border-black">
@@ -946,22 +938,14 @@ export default function BulkPVPage() {
               </table>
             </div>
 
-            {/* Prepared by + Received by */}
-            <div className="mt-6 grid grid-cols-2 gap-10 text-[13px]">
-              <div>
-                <div className="font-bold mb-1">Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者签名</span>:</div>
-                <div className="h-10 border-b border-black mb-1 flex items-end">
-                  {finSigData && <img src={finSigData} alt="Finance signature" className="h-10 object-contain" />}
-                </div>
-                <div className="flex items-center gap-1 text-[12px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black ml-1">{run.run_by}</span></div>
-                <div className="flex items-center gap-1 text-[12px] mt-1"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black ml-1">{fmtDate(run.run_date)}</span></div>
+            {/* Prepared by */}
+            <div className="mt-6 text-[13px] max-w-xs">
+              <div className="font-bold mb-1">Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者签名</span>:</div>
+              <div className="h-10 border-b border-black mb-1 flex items-end">
+                {finSigData && <img src={finSigData} alt="Finance signature" className="h-10 object-contain" />}
               </div>
-              <div>
-                <div className="font-bold mb-1">Received / Checked by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收到/审核</span>:</div>
-                <div className="h-10 border-b border-black mb-1" />
-                <div className="flex items-center gap-1 text-[12px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black ml-1" /></div>
-                <div className="flex items-center gap-1 text-[12px] mt-1"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black ml-1" /></div>
-              </div>
+              <div className="flex items-center gap-1 text-[12px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black ml-1">{run.run_by}</span></div>
+              <div className="flex items-center gap-1 text-[12px] mt-1"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black ml-1">{fmtDate(run.run_date)}</span></div>
             </div>
 
             {batchStatus === "PAID" && (
