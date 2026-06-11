@@ -9,7 +9,7 @@ import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
   AlertTriangle, Banknote, FileText, User, Calendar,
   ShieldCheck, Send, CreditCard, Trash2, Pencil, Plus, X as XIcon, RotateCcw,
-  MessageSquare, PenLine, Upload, CheckCircle,
+  MessageSquare, PenLine, Upload, CheckCircle, Eraser,
 } from "lucide-react";
 import { useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
@@ -184,6 +184,7 @@ export default function PVDetailPage() {
   const canvasRef                             = useRef<HTMLCanvasElement>(null);
   const isDrawingRef                          = useRef(false);
   const [canvasActive, setCanvasActive]       = useState(false);
+  const [isErasing, setIsErasing]             = useState(false);
 
   // Comment
   const [showCommentModal, setShowCommentModal] = useState(false);
@@ -273,10 +274,16 @@ export default function PVDetailPage() {
     const rect = canvas.getBoundingClientRect();
     const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
     const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
-    ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
+    if (isErasing) {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.lineWidth = 18; ctx.lineCap = "round"; ctx.strokeStyle = "rgba(0,0,0,1)";
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
+    }
     ctx.lineTo(x, y); ctx.stroke();
     setSignatureData(canvas.toDataURL("image/png"));
-  }, []);
+  }, [isErasing]);
 
   const stopDraw = useCallback(() => { isDrawingRef.current = false; }, []);
 
@@ -587,14 +594,14 @@ export default function PVDetailPage() {
             </div>
             <div className="flex gap-2 flex-wrap items-center">
               <button
-                onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setShowSignModal(true); }}
+                onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"}`}>
                 <CheckCircle size={14} /> Approve
               </button>
               <button
-                onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setCanvasActive(false); setShowSignModal(true); }}
+                onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"}`}>
@@ -1027,9 +1034,9 @@ export default function PVDetailPage() {
                 {sigMode === "draw" ? (
                   <div className="space-y-2">
                     <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
-                      <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? "border-indigo-400 bg-white" : "border-dashed border-stone-300 bg-stone-50"}`}>
+                      <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-indigo-400 bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}>
                         <canvas ref={canvasRef} width={380} height={100}
-                          className={`w-full ${canvasActive ? "cursor-crosshair" : "cursor-pointer"}`}
+                          className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
                           onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
                           onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
                       </div>
@@ -1045,6 +1052,10 @@ export default function PVDetailPage() {
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => { clearCanvas(); setCanvasActive(false); }} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
+                      <button type="button" onClick={() => setIsErasing(e => !e)}
+                        className={`text-xs border px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${isErasing ? "bg-orange-100 border-orange-300 text-orange-700" : "text-stone-500 hover:text-stone-700 border-stone-200 hover:bg-stone-50"}`}>
+                        <Eraser size={11} /> {isErasing ? "Erasing" : "Erase"}
+                      </button>
                       {savedSig && (
                         <button onClick={useSavedSig} className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1">
                           <CheckCircle size={11} /> Use saved signature
