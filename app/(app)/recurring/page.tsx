@@ -29,7 +29,7 @@ interface RecurringPV {
   final_payment_note: string; current_pv_no: string | null; current_pv_status: string | null;
   current_pv_id: string | null;
   created_by: string; created_at: string; group_name: string;
-  commenced_date: string | null;
+  commenced_date: string | null; current_period: string | null;
 }
 
 const BLANK_FORM = {
@@ -346,8 +346,9 @@ export default function RecurringPage() {
           if (!res.ok) throw new Error(result.error ?? "Failed");
           const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
           const newPvId = pvRow?.id ?? null;
-          await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId }).eq("id", item.id);
-          setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId } : i));
+          const period = defaultPeriodLabel(item.frequency);
+          await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period }).eq("id", item.id);
+          setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period } : i));
           if (newPvId) created.push({ id: newPvId, pv_no: result.pv_no, amount: item.amount });
         } catch (e) { showMsg(`${item.name}: ${(e as Error).message}`, false); }
         setBatchProgress(p => p ? { ...p, done: p.done + 1, errors: p.errors } : null);
@@ -508,6 +509,18 @@ export default function RecurringPage() {
     return d.toISOString().slice(0, 10);
   }
 
+  function defaultPeriodLabel(freq: string) {
+    // Default to next month for monthly/quarterly/etc — Finance Admin usually
+    // prepares PVs in advance for the upcoming period
+    const d = new Date();
+    if (freq === "WEEKLY")      d.setDate(d.getDate() + 7);
+    else if (freq === "MONTHLY")     d.setMonth(d.getMonth() + 1);
+    else if (freq === "QUARTERLY")   d.setMonth(d.getMonth() + 3);
+    else if (freq === "HALF_YEARLY") d.setMonth(d.getMonth() + 6);
+    else if (freq === "ANNUAL")      d.setFullYear(d.getFullYear() + 1);
+    return d.toLocaleDateString("en-MY", { month: "short", year: "numeric" });
+  }
+
   // --- Batch run ---
   async function runBatch() {
     const allSelected = items.filter(i => selected.has(i.id));
@@ -553,8 +566,9 @@ export default function RecurringPage() {
         if (!res.ok) throw new Error(result.error ?? "Failed");
         const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
         const newPvId = pvRow?.id ?? null;
-        await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId }).eq("id", item.id);
-        setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId } : i));
+        const period = defaultPeriodLabel(item.frequency);
+        await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period }).eq("id", item.id);
+        setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period } : i));
         if (newPvId) created.push({ id: newPvId, pv_no: result.pv_no, amount: item.amount, group: item.group_name || "General", ministry: item.ministry || "" });
       } catch (e) { errors.push(`${item.name}: ${(e as Error).message}`); }
       setBatchProgress(p => p ? { ...p, done: p.done + 1, errors } : null);
@@ -1083,9 +1097,29 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdi
   onHistory: () => void; onDelete: () => void; onReset: () => void;
   showHistory: boolean; batchRunning: boolean;
 }) {
+  const supabase = createClient();
   const isExpired = !!(item.term_type === "FIXED" && item.term_end_date && item.next_due && new Date(item.next_due) > new Date(item.term_end_date));
   const isOverdue = !isExpired && item.active && !!item.next_due && new Date(item.next_due) < new Date();
   const alreadyRan = isAlreadyRunThisPeriod(item);
+
+  // Period badge editing state
+  const [editingPeriod, setEditingPeriod] = useState(false);
+  const [periodInput, setPeriodInput] = useState(item.current_period ?? "");
+  const [displayPeriod, setDisplayPeriod] = useState(
+    item.current_period ?? (item.last_run ? new Date(item.last_run).toLocaleDateString("en-MY", { month: "short", year: "numeric" }) : "")
+  );
+
+  const thisMonth = new Date().toLocaleDateString("en-MY", { month: "short", year: "numeric" });
+  const nextMonthDate = new Date(); nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+  const nextMonth = nextMonthDate.toLocaleDateString("en-MY", { month: "short", year: "numeric" });
+
+  async function savePeriod() {
+    const val = periodInput.trim();
+    if (!val) { setEditingPeriod(false); return; }
+    await supabase.from("recurring_pvs").update({ current_period: val }).eq("id", item.id);
+    setDisplayPeriod(val);
+    setEditingPeriod(false);
+  }
 
   function durationLabel() {
     const freq = FREQ_LABELS[item.frequency] ?? item.frequency;
@@ -1124,10 +1158,34 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdi
         <td className="py-2.5 pr-4 min-w-[140px]">
           <div className="font-medium text-stone-800 text-sm leading-tight">{item.name}</div>
           <div className="flex gap-1 flex-wrap mt-0.5">
-            {alreadyRan && item.last_run && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
-                ✓ {new Date(item.last_run).toLocaleDateString("en-MY", { month: "short", year: "numeric" })}
-              </span>
+            {alreadyRan && (
+              editingPeriod ? (
+                <div className="flex flex-col gap-1 mt-0.5">
+                  <div className="flex gap-1">
+                    {[thisMonth, nextMonth].map(m => (
+                      <button key={m} type="button" onClick={() => setPeriodInput(m)}
+                        className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${periodInput === m ? "bg-green-100 border-green-400 text-green-700 font-semibold" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input autoFocus value={periodInput} onChange={e => setPeriodInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") savePeriod(); if (e.key === "Escape") setEditingPeriod(false); }}
+                      placeholder="e.g. Jun-Jul 2026"
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-green-300 bg-white w-24 outline-none" />
+                    <button type="button" onClick={savePeriod} className="text-[10px] font-bold text-green-700 hover:text-green-900">✓</button>
+                    <button type="button" onClick={() => setEditingPeriod(false)} className="text-[10px] text-stone-400 hover:text-stone-600">✕</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button"
+                  onClick={() => { setPeriodInput(displayPeriod); setEditingPeriod(true); }}
+                  title="Click to change period"
+                  className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium hover:bg-green-200 transition-colors">
+                  ✓ {displayPeriod}
+                </button>
+              )
             )}
             {isOverdue && !alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Overdue</span>}
             {!item.active && !isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Paused</span>}
