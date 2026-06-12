@@ -660,20 +660,6 @@ export default function RecurringPage() {
       )}
 
 
-      {/* Selected action bar */}
-      {selected.size > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-[#4a6da7] rounded-xl text-white">
-          <span className="flex-1 text-sm font-medium">{selected.size} item{selected.size > 1 ? "s" : ""} selected</span>
-          <button onClick={() => setSelected(new Set())} className="text-xs text-blue-200 hover:text-white">Clear</button>
-          <button onClick={resetSelected}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-400 text-amber-900 hover:bg-amber-300 transition-colors whitespace-nowrap">
-            <RotateCcw size={12} /> Undo Cycle
-          </button>
-          <Button size="sm" onClick={runBatch} loading={batchRunning} className="bg-white text-[#4a6da7] hover:bg-blue-50 border-0">
-            <Play size={12} /> Run Selected ({selected.size})
-          </Button>
-        </div>
-      )}
 
       {/* Batch progress */}
       {batchProgress && (batchRunning || batchProgress.errors.length > 0) && (
@@ -1138,7 +1124,11 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdi
         <td className="py-2.5 pr-4 min-w-[140px]">
           <div className="font-medium text-stone-800 text-sm leading-tight">{item.name}</div>
           <div className="flex gap-1 flex-wrap mt-0.5">
-            {alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">✓ This cycle</span>}
+            {alreadyRan && item.last_run && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+                ✓ {new Date(item.last_run).toLocaleDateString("en-MY", { month: "short", year: "numeric" })}
+              </span>
+            )}
             {isOverdue && !alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Overdue</span>}
             {!item.active && !isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Paused</span>}
             {isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Expired</span>}

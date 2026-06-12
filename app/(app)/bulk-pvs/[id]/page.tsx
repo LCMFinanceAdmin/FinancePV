@@ -310,6 +310,7 @@ export default function BulkPVPage() {
   const [run, setRun]                     = useState<BulkRun | null>(null);
   const [pvs, setPvs]                     = useState<PV[]>([]);
   const [user, setUser]                   = useState<UserProfile | null>(null);
+  const [runByName, setRunByName]         = useState("");
   const [loading, setLoading]             = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionToast, setActionToast]     = useState({ msg: "", ok: true });
@@ -317,6 +318,8 @@ export default function BulkPVPage() {
   const [payForm, setPayForm]             = useState({ ref: "", date: "", method: "Bank Transfer" });
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectRemarks, setRejectRemarks] = useState("");
+  const [showFinSignModal, setShowFinSignModal] = useState(false);
+  const [finSignLoading, setFinSignLoading]     = useState(false);
 
   // Signing state
   const [showSignModal, setShowSignModal]   = useState(false);
@@ -363,13 +366,15 @@ export default function BulkPVPage() {
       });
       // Load saved signature for current user
       if (profile?.saved_signature) setSavedSig(profile.saved_signature);
-      // Load the Finance Admin's (run_by's) saved signature for display
+      // Load the Finance Admin's (run_by's) saved signature + full name for display
       if (!isFinanceAdmin || !profile?.saved_signature) {
         const { data: runByProfile } = await supabase.from("user_roles")
-          .select("saved_signature").eq("email", runData.run_by).single();
+          .select("saved_signature,full_name").eq("email", runData.run_by).single();
         setFinSigData(runByProfile?.saved_signature ?? "");
+        setRunByName(runByProfile?.full_name || runData.run_by);
       } else {
         setFinSigData(profile.saved_signature ?? "");
+        setRunByName(profile.full_name || runData.run_by);
       }
       setLoading(false);
     }
@@ -521,6 +526,33 @@ export default function BulkPVPage() {
       setActionToast({ msg: (e as Error).message, ok: false });
     } finally {
       setSignLoading(false);
+    }
+  }
+
+  async function submitFinanceBulkSign() {
+    if (!user) return;
+    setFinSignLoading(true);
+    try {
+      for (const pv of pvs) {
+        const extras: Record<string, string> = {};
+        if (signatureData) extras.signature_data = signatureData;
+        await callAdminAction(pv.id, "FINANCE_SIGN", extras);
+      }
+      if (signatureData && saveSigForNext) {
+        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
+        setSavedSig(signatureData);
+      }
+      if (signatureData) setFinSigData(signatureData);
+      setShowFinSignModal(false);
+      setSignatureData(""); setCanvasActive(false);
+      if (run) await refreshPvs(run);
+      setActionToast({ msg: `Signature applied to all ${pvs.length} PVs ✓`, ok: true });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } finally {
+      setFinSignLoading(false);
     }
   }
 
@@ -785,6 +817,81 @@ export default function BulkPVPage() {
         </div>
       )}
 
+      {/* ── Finance Admin Bulk Sign Modal ─────────────────────────────── */}
+      {showFinSignModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+              <div>
+                <h2 className="text-base font-bold text-stone-800">Sign — Prepared by</h2>
+                <p className="text-xs text-stone-500 mt-0.5">Signature will be applied to all {pvs.length} PVs in this batch</p>
+              </div>
+              <button onClick={() => { setShowFinSignModal(false); setSignatureData(""); setCanvasActive(false); }}
+                className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400"><XIcon size={16} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {savedSig && (
+                <div>
+                  <p className="text-xs font-semibold text-stone-500 mb-2">Saved signature</p>
+                  <button onClick={() => {
+                    setSignatureData(savedSig);
+                    const canvas = canvasRef.current;
+                    if (canvas) {
+                      const ctx = canvas.getContext("2d")!;
+                      ctx.clearRect(0, 0, canvas.width, canvas.height);
+                      const img = new Image();
+                      img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                      img.src = savedSig;
+                      setCanvasActive(true);
+                    }
+                  }}
+                    className="border border-stone-200 rounded-xl p-2 w-full hover:bg-stone-50 transition-colors text-left">
+                    <img src={savedSig} alt="saved sig" className="h-10 object-contain mx-auto" />
+                    <p className="text-[10px] text-center text-stone-400 mt-1">Click to use this signature</p>
+                  </button>
+                </div>
+              )}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5"><PenLine size={12} /> Draw signature</label>
+                <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-[#4a6da7] bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}
+                  style={{ position: "relative", touchAction: "none" }}>
+                  <canvas ref={canvasRef} width={380} height={100}
+                    className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
+                    onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                    onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                  {!canvasActive && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="text-stone-400 text-xs">Click to start signing</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { clearCanvas(); setCanvasActive(false); }} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
+                  <button type="button" onClick={() => setIsErasing(e => !e)}
+                    className={`text-xs border px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${isErasing ? "bg-orange-100 border-orange-300 text-orange-700" : "text-stone-500 hover:text-stone-700 border-stone-200 hover:bg-stone-50"}`}>
+                    <Eraser size={11} /> {isErasing ? "Erasing" : "Erase"}
+                  </button>
+                </div>
+              </div>
+              {signatureData && (
+                <label className="flex items-center gap-2 text-xs text-stone-600 cursor-pointer">
+                  <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="rounded" />
+                  Save as my signature for future use
+                </label>
+              )}
+            </div>
+            <div className="px-5 pb-5 flex gap-2">
+              <button onClick={() => { setShowFinSignModal(false); setSignatureData(""); setCanvasActive(false); }}
+                className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium">Cancel</button>
+              <button onClick={submitFinanceBulkSign} disabled={finSignLoading || !signatureData}
+                className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5">
+                {finSignLoading ? "Signing…" : <><CheckCircle size={14} /> Apply to All {pvs.length} PVs</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ PAGE 1: INDEX ══════════════════════════════════════════════════ */}
       <div className="max-w-6xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
         <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
@@ -940,11 +1047,25 @@ export default function BulkPVPage() {
 
             {/* Prepared by */}
             <div className="mt-6 text-[13px] max-w-xs">
-              <div className="font-bold mb-1">Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者签名</span>:</div>
-              <div className="h-10 border-b border-black mb-1 flex items-end">
-                {finSigData && <img src={finSigData} alt="Finance signature" className="h-10 object-contain" />}
+              <div className="font-bold mb-1 flex items-center gap-2">
+                Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者签名</span>:
+                {user?.isFinanceAdmin && (
+                  <button onClick={() => { setSignatureData(""); setCanvasActive(true); setIsErasing(false); setSaveSigForNext(false); setShowFinSignModal(true); }}
+                    className="print:hidden text-[10px] px-2 py-0.5 rounded-lg border border-[#4a6da7] text-[#4a6da7] hover:bg-blue-50 transition-colors font-normal">
+                    {finSigData ? "Re-sign all" : "Sign all PVs"}
+                  </button>
+                )}
               </div>
-              <div className="flex items-center gap-1 text-[12px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black ml-1">{run.run_by}</span></div>
+              <div
+                className={`h-10 border-b mb-1 flex items-end transition-colors ${user?.isFinanceAdmin ? "border-dashed border-[#4a6da7] cursor-pointer hover:bg-blue-50/40 group" : "border-black"}`}
+                onClick={user?.isFinanceAdmin ? () => { setSignatureData(""); setCanvasActive(true); setIsErasing(false); setSaveSigForNext(false); setShowFinSignModal(true); } : undefined}>
+                {finSigData
+                  ? <img src={finSigData} alt="Finance signature" className="h-10 object-contain" />
+                  : user?.isFinanceAdmin
+                    ? <span className="text-[10px] text-[#4a6da7] opacity-0 group-hover:opacity-100 transition-opacity pb-1">Click to sign</span>
+                    : null}
+              </div>
+              <div className="flex items-center gap-1 text-[12px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black ml-1">{runByName}</span></div>
               <div className="flex items-center gap-1 text-[12px] mt-1"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black ml-1">{fmtDate(run.run_date)}</span></div>
             </div>
 
