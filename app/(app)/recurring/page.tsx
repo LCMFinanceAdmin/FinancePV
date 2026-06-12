@@ -29,6 +29,7 @@ interface RecurringPV {
   final_payment_note: string; current_pv_no: string | null; current_pv_status: string | null;
   current_pv_id: string | null;
   created_by: string; created_at: string; group_name: string;
+  commenced_date: string | null;
 }
 
 const BLANK_FORM = {
@@ -38,7 +39,7 @@ const BLANK_FORM = {
   ministry: "", dept: "", project: "", purpose: "", pv_label: "",
   payment_type: "GENERAL", line_items: [] as LineItem[],
   term_type: "INFINITE", term_end_date: "", final_payment_note: "",
-  group_name: "General",
+  group_name: "General", commenced_date: "",
 };
 type FormState = typeof BLANK_FORM & { id?: string };
 
@@ -424,6 +425,7 @@ export default function RecurringPage() {
   function setField(k: string, v: unknown) { setForm(f => ({ ...f, [k]: v })); }
 
   function openNew() { setForm({ ...BLANK_FORM }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function openNewInGroup(groupName: string) { setForm({ ...BLANK_FORM, group_name: groupName }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
   function openEdit(item: RecurringPV) {
     setForm({
@@ -436,6 +438,7 @@ export default function RecurringPage() {
       payment_type: item.payment_type, line_items: item.line_items ?? [],
       term_type: item.term_type ?? "INFINITE", term_end_date: item.term_end_date ?? "",
       final_payment_note: item.final_payment_note ?? "", group_name: item.group_name || "General",
+      commenced_date: item.commenced_date ?? "",
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -463,6 +466,7 @@ export default function RecurringPage() {
       payment_type: form.payment_type, line_items: form.line_items,
       term_type: form.term_type, term_end_date: form.term_end_date || null,
       final_payment_note: form.final_payment_note, group_name: form.group_name || "General",
+      commenced_date: form.commenced_date || null,
     };
     let error;
     if (form.id) {
@@ -723,11 +727,17 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          {form.term_type === "FIXED" && (
-            <Field label="Term End Date">
-              <input className={inp} type="date" value={form.term_end_date ?? ""} onChange={e => setField("term_end_date", e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Commenced (Month / Year)">
+              <input className={inp} type="month" value={form.commenced_date ? form.commenced_date.slice(0, 7) : ""} onChange={e => setField("commenced_date", e.target.value ? e.target.value + "-01" : "")} />
             </Field>
-          )}
+            {form.term_type === "FIXED" && (
+              <Field label="Term End Date">
+                <input className={inp} type="date" value={form.term_end_date ?? ""} onChange={e => setField("term_end_date", e.target.value)} />
+              </Field>
+            )}
+          </div>
+
           {form.term_type === "FIXED" && (
             <Field label="Final Payment Note">
               <input className={inp} value={form.final_payment_note} onChange={e => setField("final_payment_note", e.target.value)} placeholder="e.g. Final instalment as per agreement" />
@@ -901,22 +911,22 @@ export default function RecurringPage() {
 
                 {/* Table view */}
                 {!collapsed && (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto rounded-xl border border-stone-200">
                     <table className="w-full text-sm border-collapse">
                       <thead>
-                        <tr className="text-[11px] text-stone-400 uppercase tracking-wide border-b border-stone-100">
-                          <th className="pb-2 w-8 text-left"></th>
-                          <th className="pb-2 w-8 text-left font-medium">No</th>
-                          <th className="pb-2 text-left font-medium">Description</th>
-                          <th className="pb-2 text-left font-medium">Payable To</th>
-                          <th className="pb-2 text-left font-medium">Duration</th>
-                          <th className="pb-2 text-left font-medium">Last Created PV</th>
-                          <th className="pb-2 text-left font-medium">Last Paid PV</th>
-                          <th className="pb-2 text-right font-medium pr-4">Amount</th>
-                          <th className="pb-2 w-40"></th>
+                        <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                          <th className="py-2.5 pl-3 w-8 text-left"></th>
+                          <th className="py-2.5 w-8 text-left">No</th>
+                          <th className="py-2.5 text-left">Description</th>
+                          <th className="py-2.5 text-left">Payable To</th>
+                          <th className="py-2.5 text-left">Duration</th>
+                          <th className="py-2.5 text-left">Last Created PV</th>
+                          <th className="py-2.5 text-left">Last Paid PV</th>
+                          <th className="py-2.5 text-right pr-4">Amount</th>
+                          <th className="py-2.5 w-40"></th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-stone-100">
                         {groupItems.map((item, idx) => (
                           <RecurringRow
                             key={item.id} item={item} rowNo={idx + 1}
@@ -936,6 +946,12 @@ export default function RecurringPage() {
                         ))}
                       </tbody>
                     </table>
+                    <div className="border-t border-stone-200 px-4 py-2.5 bg-stone-50/50">
+                      <button onClick={() => openNewInGroup(groupName)}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5a8e] transition-colors">
+                        <Plus size={13} /> Add Expense
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1087,16 +1103,22 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdi
 
   function durationLabel() {
     const freq = FREQ_LABELS[item.frequency] ?? item.frequency;
+    let term = "Ongoing";
     if (item.term_type === "FIXED" && item.term_end_date) {
       const end = new Date(item.term_end_date);
       const now = new Date();
       const months = (end.getFullYear() - now.getFullYear()) * 12 + (end.getMonth() - now.getMonth());
-      if (months <= 0) return `${freq} · Expired`;
-      if (months < 12) return `${freq} · ${months}mo left`;
-      const y = Math.floor(months / 12), m = months % 12;
-      return `${freq} · ${y}y${m > 0 ? ` ${m}mo` : ""} left`;
+      if (months <= 0) term = "Expired";
+      else if (months < 12) term = `${months}mo left`;
+      else { const y = Math.floor(months / 12), m = months % 12; term = `${y}y${m > 0 ? ` ${m}mo` : ""} left`; }
     }
-    return `${freq} · Ongoing`;
+    return `${freq} · ${term}`;
+  }
+
+  function commencedLabel() {
+    if (!item.commenced_date) return null;
+    const d = new Date(item.commenced_date);
+    return "Since " + d.toLocaleDateString("en-MY", { month: "short", year: "numeric" });
   }
 
   return (
@@ -1107,7 +1129,7 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdi
         : isExpired ? "opacity-50"
         : "hover:bg-stone-50/70"
       }`}>
-        <td className="py-2.5 pl-1 pr-2">
+        <td className="py-2.5 pl-3 pr-2">
           <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
             disabled={isExpired || batchRunning}
             className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer" />
@@ -1124,7 +1146,10 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdi
           </div>
         </td>
         <td className="py-2.5 pr-4 text-sm text-stone-600 whitespace-nowrap min-w-[120px]">{item.payee_name}</td>
-        <td className="py-2.5 pr-4 text-xs text-stone-500 whitespace-nowrap">{durationLabel()}</td>
+        <td className="py-2.5 pr-4 whitespace-nowrap">
+          <div className="text-xs text-stone-500">{durationLabel()}</div>
+          {commencedLabel() && <div className="text-[10px] text-stone-400 mt-0.5">{commencedLabel()}</div>}
+        </td>
         <td className="py-2.5 pr-4 min-w-[110px]">
           {item.current_pv_no && item.last_run ? (
             <div>
