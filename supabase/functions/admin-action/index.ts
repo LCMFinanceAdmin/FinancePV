@@ -195,13 +195,17 @@ Deno.serve(async (req) => {
       if (body.signature_data) entry.signature_data = body.signature_data;
       else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
       const newApprovals = [entry, ...filtered];
-      await db.from("pvs").update({
+      // If the PV is still PENDING, signing counts as reviewing it
+      const wasPending = pv.status === "PENDING";
+      const updateData: Record<string, unknown> = {
         approvals: newApprovals,
         finance_verified_by: profile?.full_name || user.email,
         finance_verified_at: now,
         updated_at: now,
-      }).eq("id", pv_id);
-      return json({ ok: true });
+      };
+      if (wasPending) updateData.status = "REVIEWED";
+      await db.from("pvs").update(updateData).eq("id", pv_id);
+      return json({ ok: true, reviewed: wasPending });
     }
 
     if (action === "REJECT") {

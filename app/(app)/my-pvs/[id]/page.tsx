@@ -312,7 +312,11 @@ export default function PVDetailPage() {
       const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
       if (fresh) setPv(fresh as PV);
     } catch (e: unknown) {
-      setActionToast({ msg: (e as Error).message, ok: false });
+      const errMsg = (e as Error).message;
+      const displayMsg = errMsg === "Finance Admin only"
+        ? "Role mismatch — use 'Switch Role' in the menu to restore Finance Admin role, then try again."
+        : errMsg;
+      setActionToast({ msg: displayMsg, ok: false });
     } finally {
       setActionLoading(false);
       setShowRejectModal(false);
@@ -473,7 +477,8 @@ export default function PVDetailPage() {
       setShowFinanceSignModal(false);
       setSignatureData("");
       setCanvasActive(false);
-      const msg = action === "REVIEW" ? "Signed — PV marked as Reviewed ✓" : "Signature updated ✓";
+      const wasReviewed = action === "REVIEW" || json.reviewed;
+      const msg = wasReviewed ? "Signed & reviewed ✓ — PV moved to Reviewed" : "Signature updated ✓";
       setActionToast({ msg, ok: true });
       const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
       if (fresh) setPv(fresh as PV);
@@ -1153,8 +1158,12 @@ export default function PVDetailPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[95vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
               <div>
-                <div className="text-base font-bold text-[#4a6da7]">Finance Admin — Sign Voucher</div>
-                <div className="text-xs text-stone-500 mt-0.5">{pv?.pv_no} · Prepared by signature</div>
+                <div className="text-base font-bold text-[#4a6da7]">
+                  {pv?.status === "PENDING" ? "Review & Sign Voucher" : "Update Signature"}
+                </div>
+                <div className="text-xs text-stone-500 mt-0.5">
+                  {pv?.pv_no} · {pv?.status === "PENDING" ? "Signing will mark this PV as Reviewed" : "Prepared by signature"}
+                </div>
               </div>
               <button onClick={() => setShowFinanceSignModal(false)} className="text-stone-400 hover:text-stone-600"><XIcon size={18} /></button>
             </div>
@@ -1244,7 +1253,7 @@ export default function PVDetailPage() {
                 </button>
                 <button onClick={submitFinanceSign} disabled={finSignLoading}
                   className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5 hover:bg-[#3d5a8e] transition-colors">
-                  {finSignLoading ? "Saving…" : <><CheckCircle size={14} /> Save Signature</>}
+                  {finSignLoading ? "Saving…" : <><CheckCircle size={14} /> {pv?.status === "PENDING" ? "Sign & Review PV" : "Save Signature"}</>}
                 </button>
               </div>
             </div>
