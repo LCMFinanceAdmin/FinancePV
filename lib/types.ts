@@ -53,6 +53,7 @@ export interface PV {
   attachments: string[];
   submitted_by: string;
   submitted_by_email: string;
+  submitted_by_role: string | null;
   submitted_at: string;
   date: string;
   applicant_name: string;
