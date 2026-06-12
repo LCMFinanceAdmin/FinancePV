@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { data: profile } = await db.from("user_roles").select("role,full_name").eq("email", user.email).single();
+    const { data: profile } = await db.from("user_roles").select("role,full_name,saved_signature").eq("email", user.email).single();
     const adminRoles = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
     if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Admin only" }, 403);
 
@@ -54,10 +54,21 @@ Deno.serve(async (req) => {
     if (action === "REVIEW") {
       if (pv.status !== "PENDING") return json({ error: "PV is not in PENDING status" }, 400);
       const now = new Date().toISOString();
+      // Build approvals: prepend FINANCE_ADMIN entry (with optional signature)
+      const existingApprovals: Record<string, unknown>[] = pv.approvals ?? [];
+      const filtered = existingApprovals.filter((a: Record<string, unknown>) => a.role !== "FINANCE_ADMIN");
+      const entry: Record<string, unknown> = {
+        role: "FINANCE_ADMIN", email: user.email,
+        name: profile?.full_name || user.email,
+        action: "APPROVED", timestamp: now, remarks: "",
+      };
+      if (body.signature_data) entry.signature_data = body.signature_data;
+      else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
       await db.from("pvs").update({
         status: "REVIEWED",
-        finance_verified_by: profile.full_name || user.email,
+        finance_verified_by: profile?.full_name || user.email,
         finance_verified_at: now,
+        approvals: [entry, ...filtered],
         updated_at: now,
       }).eq("id", pv_id);
       return json({ ok: true, status: "REVIEWED" });
@@ -182,6 +193,7 @@ Deno.serve(async (req) => {
         remarks: "",
       };
       if (body.signature_data) entry.signature_data = body.signature_data;
+      else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
       const newApprovals = [entry, ...filtered];
       await db.from("pvs").update({
         approvals: newApprovals,

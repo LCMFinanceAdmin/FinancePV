@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { data: profile } = await db.from("user_roles").select("role,full_name").eq("email", user.email).single();
+    const { data: profile } = await db.from("user_roles").select("role,full_name,saved_signature").eq("email", user.email).single();
     const signatoryRoles = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
     if (!signatoryRoles.includes(profile?.role)) return json({ error: "Not a signatory" }, 403);
 
@@ -119,6 +119,7 @@ Deno.serve(async (req) => {
       remarks: remarks || "",
     };
     if (signature_data) entry.signature_data = signature_data;
+    else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
     approvals.push(entry);
 
     let newStatus = pv.status;

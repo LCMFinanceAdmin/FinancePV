@@ -91,12 +91,14 @@ function EField({ label, children }: { label: string; children: React.ReactNode 
 const ei = "w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white";
 
 // ── Signature block ────────────────────────────────────────────────────
-function SigBlock({ title, role, approval, pending, onClickSpace }: {
+function SigBlock({ title, role, approval, pending, onClickSpace, savedSigFallback }: {
   title: string; role: string;
   approval?: (PVApproval & { signature_data?: string }) | null; pending?: boolean;
   onClickSpace?: () => void;
+  savedSigFallback?: string; // current saved_signature from user_roles for this approver
 }) {
-  const hasSig = !!approval?.signature_data;
+  const displaySig = approval?.signature_data || savedSigFallback;
+  const hasSig = !!displaySig;
   return (
     <div className="flex flex-col" style={{ minHeight: 130 }}>
       <div className="text-[12px] font-bold mb-0.5">{title}</div>
@@ -106,9 +108,9 @@ function SigBlock({ title, role, approval, pending, onClickSpace }: {
         className={`flex-1 border-b border-black mb-1 min-h-[56px] relative ${onClickSpace ? "cursor-pointer group hover:bg-indigo-50/60 active:bg-indigo-100 transition-colors rounded-t" : ""}`}
         onClick={onClickSpace ?? undefined}
       >
-        {approval?.signature_data && (
+        {displaySig && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={approval.signature_data} alt="signature" className="h-10 object-contain absolute bottom-1 left-0" />
+          <img src={displaySig} alt="signature" className="h-10 object-contain absolute bottom-1 left-0" />
         )}
         {onClickSpace && !approval && (
           <div className="absolute inset-0 flex items-center justify-center print:hidden">
@@ -207,6 +209,9 @@ export default function PVDetailPage() {
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
   const [revertLoading, setRevertLoading]         = useState(false);
 
+  // Approver saved signatures (email → saved_signature) for display fallback
+  const [approverSigs, setApproverSigs] = useState<Record<string, string>>({});
+
   // Voucher zoom / scale-to-fit
   const VOUCHER_NATURAL_WIDTH = 680;
   const [autoScale, setAutoScale]       = useState(1);
@@ -252,6 +257,20 @@ export default function PVDetailPage() {
       ]);
       if (profile?.saved_signature) setSavedSig(profile.saved_signature);
       if (pvData) setPv(pvData as PV);
+
+      // Load saved signatures for all approvers so they show on the voucher as fallback
+      const pvApprovals: { email?: string }[] = pvData?.approvals ?? [];
+      const approverEmails = [...new Set(pvApprovals.map(a => a.email).filter(Boolean))] as string[];
+      if (approverEmails.length > 0) {
+        const { data: approverProfiles } = await supabase
+          .from("user_roles").select("email,saved_signature").in("email", approverEmails);
+        const sigsMap: Record<string, string> = {};
+        (approverProfiles ?? []).forEach((p: { email: string; saved_signature?: string }) => {
+          if (p.saved_signature) sigsMap[p.email] = p.saved_signature;
+        });
+        setApproverSigs(sigsMap);
+      }
+
       const role = profile?.role ?? "STAFF";
       setUser({
         id: authUser.id, email: authUser.email!,
@@ -1629,6 +1648,7 @@ export default function PVDetailPage() {
                     role="Finance Executive"
                     approval={financeApproval}
                     pending={!financeApproval}
+                    savedSigFallback={financeApproval?.email ? approverSigs[financeApproval.email] : undefined}
                     onClickSpace={user?.isFinanceAdmin ? () => {
                       setSignatureData(""); setCanvasActive(true); setIsErasing(false);
                       setSigMode("draw"); setSaveSigForNext(false);
@@ -1644,6 +1664,7 @@ export default function PVDetailPage() {
                     role="General Manager"
                     approval={gmApproval}
                     pending={!gmApproval}
+                    savedSigFallback={gmApproval?.email ? approverSigs[gmApproval.email] : undefined}
                     onClickSpace={user?.isGeneralManager && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status)
                       ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }
                       : undefined}
@@ -1658,6 +1679,7 @@ export default function PVDetailPage() {
                       role="Bishop / Secretary / Treasurer"
                       approval={sigSlots[0]}
                       pending={!sigSlots[0]}
+                      savedSigFallback={sigSlots[0]?.email ? approverSigs[sigSlots[0].email] : undefined}
                       onClickSpace={["BISHOP", "TREASURER", "SECRETARY"].includes(user?.role ?? "") && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status)
                         ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }
                         : undefined}
@@ -1670,11 +1692,11 @@ export default function PVDetailPage() {
                         {sigSlots.map((appr, i) => (
                           <div key={i} className="flex flex-col">
                             <div className="border-b border-black min-h-[40px] mb-1 relative">
-                              {appr?.signature_data && (
+                              {(appr?.signature_data || (appr?.email && approverSigs[appr.email])) && (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img src={appr.signature_data} alt="sig" className="h-8 object-contain absolute bottom-0.5 left-0" />
+                                <img src={appr.signature_data || approverSigs[appr.email!]} alt="sig" className="h-8 object-contain absolute bottom-0.5 left-0" />
                               )}
-                              {appr && !appr.signature_data && (
+                              {appr && !appr.signature_data && !approverSigs[appr.email ?? ''] && (
                                 <div className="flex items-center gap-0.5 h-full text-[12px] text-green-700 absolute bottom-0.5">
                                   <CheckCircle2 size={8} />{appr.name}
                                 </div>

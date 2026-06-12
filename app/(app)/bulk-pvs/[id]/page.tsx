@@ -81,8 +81,8 @@ function InteractiveSigCell({ approval, label, canSign, onSign }: {
 }
 
 // ── Individual PV Voucher ─────────────────────────────────────────────────
-function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, onSignSig }: {
-  pv: PV; idx: number; finSigData?: string;
+function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSig, onSignGM, onSignSig }: {
+  pv: PV; idx: number; finSigData?: string; approverSigs?: Record<string, string>;
   canSignAsGM?: boolean; canSignAsSig?: boolean;
   onSignGM?: () => void; onSignSig?: () => void;
 }) {
@@ -263,8 +263,8 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
             </div>
             <div className="text-[11px] text-stone-800 mb-1">(General Manager)</div>
             <div className={`h-8 border-b mb-1 flex items-end ${gmClickable ? "border-indigo-300 border-dashed" : "border-black"}`}>
-              {gmApproval?.signature_data
-                ? <img src={gmApproval.signature_data} alt="gm sig" className="h-8 object-contain" />
+              {(gmApproval?.signature_data || (gmApproval?.email && approverSigs?.[gmApproval.email]))
+                ? <img src={gmApproval.signature_data || approverSigs![gmApproval.email!]} alt="gm sig" className="h-8 object-contain" />
                 : gmApproval ? <div className="flex items-center gap-1 h-full text-[11px] text-green-700"><CheckCircle2 size={10} /><span>{gmApproval.name}</span></div>
                 : null}
             </div>
@@ -282,8 +282,8 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
             </div>
             <div className="text-[11px] text-stone-800 mb-1">(Bishop / Secretary / Treasurer)</div>
             <div className={`h-8 border-b mb-1 flex items-end ${sigClickable ? "border-purple-300 border-dashed" : "border-black"}`}>
-              {sigApprovals[0]?.signature_data
-                ? <img src={sigApprovals[0].signature_data} alt="sig" className="h-8 object-contain" />
+              {(sigApprovals[0]?.signature_data || (sigApprovals[0]?.email && approverSigs?.[sigApprovals[0].email]))
+                ? <img src={sigApprovals[0].signature_data || approverSigs![sigApprovals[0].email!]} alt="sig" className="h-8 object-contain" />
                 : sigApprovals[0] ? <div className="flex items-center gap-1 h-full text-[11px] text-green-700"><CheckCircle2 size={10} /><span>{sigApprovals[0].name}</span></div>
                 : null}
             </div>
@@ -331,6 +331,7 @@ export default function BulkPVPage() {
   const [signatureData, setSignatureData]   = useState("");
   const [savedSig, setSavedSig]             = useState("");
   const [finSigData, setFinSigData]         = useState(""); // Finance Admin's sig for display
+  const [approverSigs, setApproverSigs]     = useState<Record<string, string>>({}); // email → saved_signature
   const [sigMode, setSigMode]               = useState<"draw" | "upload">("draw");
   const [pin, setPin]                       = useState("");
   const [pinError, setPinError]             = useState("");
@@ -356,6 +357,18 @@ export default function BulkPVPage() {
         const { data: pvData } = await supabase.from("pvs").select("*").in("id", pv_ids);
         const ordered = pv_ids.map(pid => pvData?.find((p: PV) => p.id === pid)).filter(Boolean) as PV[];
         setPvs(ordered);
+        // Load saved signatures for all approvers across all PVs
+        const allApprovals = ordered.flatMap(p => (p.approvals ?? []) as { email?: string }[]);
+        const emails = [...new Set(allApprovals.map(a => a.email).filter(Boolean))] as string[];
+        if (emails.length > 0) {
+          const { data: approverProfiles } = await supabase
+            .from("user_roles").select("email,saved_signature").in("email", emails);
+          const sigsMap: Record<string, string> = {};
+          (approverProfiles ?? []).forEach((p: { email: string; saved_signature?: string }) => {
+            if (p.saved_signature) sigsMap[p.email] = p.saved_signature;
+          });
+          setApproverSigs(sigsMap);
+        }
       }
       const role = profile?.role ?? "STAFF";
       const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role);
@@ -1095,6 +1108,7 @@ export default function BulkPVPage() {
               <PVVoucher
                 pv={pv} idx={i}
                 finSigData={finSigData}
+                approverSigs={approverSigs}
                 canSignAsGM={isGM && !gmSigned}
                 canSignAsSig={isSig && !sigSigned}
                 onSignGM={() => openSignModal(pv.id)}
