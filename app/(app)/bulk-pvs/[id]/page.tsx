@@ -104,7 +104,7 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
   const sigClickable = canSignAsSig && !sigSigned;
 
   return (
-    <div style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}
+    <div style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111", minWidth: 560 }}
       className="px-3 sm:px-10 py-4 sm:py-8 print:px-8 print:py-6">
 
       <div className="text-[11px] text-stone-500 mb-2 font-semibold">

@@ -103,17 +103,24 @@ function SigBlock({ title, role, approval, pending, onClickSpace }: {
       <div className="text-[13px] text-stone-800 mb-1">({role})</div>
       {/* Signature space — always clickable when onClickSpace provided */}
       <div
-        className={`flex-1 border-b border-black mb-1 min-h-[48px] relative ${onClickSpace ? "cursor-pointer group hover:bg-indigo-50/60 transition-colors rounded-t" : ""}`}
+        className={`flex-1 border-b border-black mb-1 min-h-[56px] relative ${onClickSpace ? "cursor-pointer group hover:bg-indigo-50/60 active:bg-indigo-100 transition-colors rounded-t" : ""}`}
         onClick={onClickSpace ?? undefined}
       >
         {approval?.signature_data && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={approval.signature_data} alt="signature" className="h-10 object-contain absolute bottom-1 left-0" />
         )}
-        {onClickSpace && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
-            <span className="text-[11px] text-indigo-500 flex items-center gap-1">
-              <PenLine size={10} /> {hasSig ? "Click to update" : "Click to sign"}
+        {onClickSpace && !approval && (
+          <div className="absolute inset-0 flex items-center justify-center print:hidden">
+            <span className="text-[11px] text-indigo-500 flex items-center gap-1 border border-indigo-300 bg-indigo-50 px-2 py-0.5 rounded-full sm:border-transparent sm:bg-transparent">
+              <PenLine size={10} /> {hasSig ? "Tap to update" : "Tap to sign"}
+            </span>
+          </div>
+        )}
+        {onClickSpace && approval && (
+          <div className="absolute inset-0 flex items-center justify-end pr-1 pb-0.5 opacity-0 group-hover:opacity-100 transition-opacity print:hidden pointer-events-none">
+            <span className="text-[10px] text-indigo-400 flex items-center gap-0.5">
+              <PenLine size={9} /> update
             </span>
           </div>
         )}
@@ -1282,7 +1289,7 @@ export default function PVDetailPage() {
       <div className="max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-6 print:p-0 print:max-w-none">
         <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none overflow-x-auto">
           {/* voucher body */}
-          <div className="px-3 sm:px-10 py-4 sm:py-8 print:px-8 print:py-6" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111", minWidth: 340 }}>
+          <div className="px-3 sm:px-10 py-4 sm:py-8 print:px-8 print:py-6" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111", minWidth: 560 }}>
 
             {/* ══ ROW 1–3: header row (logo left, office-use box right) ══ */}
             <div className="flex items-start gap-4 mb-1">
