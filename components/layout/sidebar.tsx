@@ -102,9 +102,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
   async function switchRole() {
     setSwitching(true);
     const ministries = selectedRole === "MINISTRY_HEAD" ? selectedMinistries : [];
-    await supabase
-      .from("user_roles")
-      .upsert({ email: user.email, role: selectedRole, ministries }, { onConflict: "email" });
+    await supabase.rpc("switch_own_role", { new_role: selectedRole, new_ministries: ministries });
     router.refresh();
     setSwitching(false);
     setShowRoleSwitcher(false);
