@@ -92,6 +92,7 @@ export default function RecurringPage() {
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [groupBulkRuns, setGroupBulkRuns] = useState<Record<string, string>>({}); // group_name → bulk_run_id
+  const [lastPaidMap, setLastPaidMap] = useState<Record<string, { id: string; pv_no: string; paid_at: string }>>({});
   const [confirmModal, setConfirmModal] = useState<{
     title?: string;
     msg: string;
@@ -127,6 +128,24 @@ export default function RecurringPage() {
         if (!latestByGroup[br.group_name]) latestByGroup[br.group_name] = br.id;
       }
       setGroupBulkRuns(latestByGroup);
+    }
+
+    // Load last paid PV per recurring item
+    const recurringIds = (rec ?? []).map((r: RecurringPV) => r.id);
+    if (recurringIds.length > 0) {
+      const { data: paidPvs } = await supabase
+        .from("pvs")
+        .select("id,pv_no,paid_at,recurring_id")
+        .in("recurring_id", recurringIds)
+        .eq("status", "PAID")
+        .order("paid_at", { ascending: false });
+      if (paidPvs) {
+        const map: Record<string, { id: string; pv_no: string; paid_at: string }> = {};
+        for (const pv of paidPvs as { id: string; pv_no: string; paid_at: string; recurring_id: string }[]) {
+          if (!map[pv.recurring_id]) map[pv.recurring_id] = { id: pv.id, pv_no: pv.pv_no, paid_at: pv.paid_at };
+        }
+        setLastPaidMap(map);
+      }
     }
 
     setLoading(false);
@@ -636,14 +655,6 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Overdue banner */}
-      {overdue.length > 0 && !search && (
-        <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-          <RefreshCw size={15} className="shrink-0" />
-          <span className="flex-1"><strong>{overdue.length} payment{overdue.length > 1 ? "s" : ""} overdue</strong></span>
-          <button onClick={selectAllOverdue} className="text-xs font-medium underline whitespace-nowrap">Select all overdue</button>
-        </div>
-      )}
 
       {/* Selected action bar */}
       {selected.size > 0 && (
@@ -712,16 +723,11 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="First / Next Due Date">
-              <input className={inp} type="date" value={form.next_due ?? ""} onChange={e => setField("next_due", e.target.value)} />
+          {form.term_type === "FIXED" && (
+            <Field label="Term End Date">
+              <input className={inp} type="date" value={form.term_end_date ?? ""} onChange={e => setField("term_end_date", e.target.value)} />
             </Field>
-            {form.term_type === "FIXED" && (
-              <Field label="Term End Date">
-                <input className={inp} type="date" value={form.term_end_date ?? ""} onChange={e => setField("term_end_date", e.target.value)} />
-              </Field>
-            )}
-          </div>
+          )}
           {form.term_type === "FIXED" && (
             <Field label="Final Payment Note">
               <input className={inp} value={form.final_payment_note} onChange={e => setField("final_payment_note", e.target.value)} placeholder="e.g. Final instalment as per agreement" />
@@ -821,8 +827,6 @@ export default function RecurringPage() {
             const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
             const allGroupSel = eligible.length > 0 && eligible.every(i => selected.has(i.id));
             const someGroupSel = eligible.some(i => selected.has(i.id));
-            const groupTotal = groupItems.reduce((s, i) => s + i.amount, 0);
-
             return (
               <div key={groupName}>
                 {/* Group header */}
@@ -856,9 +860,6 @@ export default function RecurringPage() {
                   <span className="text-xs text-stone-400 font-normal">({groupItems.length})</span>
 
                   <div className="ml-auto flex items-center gap-3">
-                    <span className="text-xs text-stone-400 font-medium hidden sm:block">
-                      {formatCurrency(groupTotal)}/cycle
-                    </span>
                     {!collapsed && (
                       <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
                         <GroupCheckbox groupItems={groupItems} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
@@ -898,25 +899,43 @@ export default function RecurringPage() {
                   </div>
                 </div>
 
-                {/* Cards grid */}
+                {/* Table view */}
                 {!collapsed && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {groupItems.map(item => (
-                      <RecurringCard
-                        key={item.id} item={item}
-                        isSelected={selected.has(item.id)}
-                        onToggleSelect={() => {
-                          setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
-                        }}
-                        onEdit={() => openEdit(item)}
-                        onToggleActive={() => toggleActive(item)}
-                        onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
-                        onDelete={() => deleteItem(item.id)}
-                        onReset={() => resetItem(item.id)}
-                        showHistory={historyId === item.id}
-                        batchRunning={batchRunning}
-                      />
-                    ))}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="text-[11px] text-stone-400 uppercase tracking-wide border-b border-stone-100">
+                          <th className="pb-2 w-8 text-left"></th>
+                          <th className="pb-2 w-8 text-left font-medium">No</th>
+                          <th className="pb-2 text-left font-medium">Description</th>
+                          <th className="pb-2 text-left font-medium">Payable To</th>
+                          <th className="pb-2 text-left font-medium">Duration</th>
+                          <th className="pb-2 text-left font-medium">Last Created PV</th>
+                          <th className="pb-2 text-left font-medium">Last Paid PV</th>
+                          <th className="pb-2 text-right font-medium pr-4">Amount</th>
+                          <th className="pb-2 w-40"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupItems.map((item, idx) => (
+                          <RecurringRow
+                            key={item.id} item={item} rowNo={idx + 1}
+                            isSelected={selected.has(item.id)}
+                            lastPaid={lastPaidMap[item.id] ?? null}
+                            onToggleSelect={() => {
+                              setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
+                            }}
+                            onEdit={() => openEdit(item)}
+                            onToggleActive={() => toggleActive(item)}
+                            onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
+                            onDelete={() => deleteItem(item.id)}
+                            onReset={() => resetItem(item.id)}
+                            showHistory={historyId === item.id}
+                            batchRunning={batchRunning}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
@@ -1051,6 +1070,118 @@ function RecurringCard({ item, isSelected, onToggleSelect, onEdit, onToggleActiv
         </div>
       )}
     </div>
+  );
+}
+
+// --- Recurring Row (table view) ---
+function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
+  item: RecurringPV; rowNo: number; isSelected: boolean;
+  lastPaid: { id: string; pv_no: string; paid_at: string } | null;
+  onToggleSelect: () => void; onEdit: () => void; onToggleActive: () => void;
+  onHistory: () => void; onDelete: () => void; onReset: () => void;
+  showHistory: boolean; batchRunning: boolean;
+}) {
+  const isExpired = !!(item.term_type === "FIXED" && item.term_end_date && item.next_due && new Date(item.next_due) > new Date(item.term_end_date));
+  const isOverdue = !isExpired && item.active && !!item.next_due && new Date(item.next_due) < new Date();
+  const alreadyRan = isAlreadyRunThisPeriod(item);
+
+  function durationLabel() {
+    const freq = FREQ_LABELS[item.frequency] ?? item.frequency;
+    if (item.term_type === "FIXED" && item.term_end_date) {
+      const end = new Date(item.term_end_date);
+      const now = new Date();
+      const months = (end.getFullYear() - now.getFullYear()) * 12 + (end.getMonth() - now.getMonth());
+      if (months <= 0) return `${freq} · Expired`;
+      if (months < 12) return `${freq} · ${months}mo left`;
+      const y = Math.floor(months / 12), m = months % 12;
+      return `${freq} · ${y}y${m > 0 ? ` ${m}mo` : ""} left`;
+    }
+    return `${freq} · Ongoing`;
+  }
+
+  return (
+    <>
+      <tr className={`border-b border-stone-50 transition-colors ${
+        isSelected ? "bg-blue-50/60"
+        : alreadyRan ? "bg-green-50/30"
+        : isExpired ? "opacity-50"
+        : "hover:bg-stone-50/70"
+      }`}>
+        <td className="py-2.5 pl-1 pr-2">
+          <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
+            disabled={isExpired || batchRunning}
+            className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer" />
+        </td>
+        <td className="py-2.5 pr-3 text-xs text-stone-400 font-medium">{rowNo}</td>
+        <td className="py-2.5 pr-4 min-w-[140px]">
+          <div className="font-medium text-stone-800 text-sm leading-tight">{item.name}</div>
+          <div className="flex gap-1 flex-wrap mt-0.5">
+            {alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">✓ This cycle</span>}
+            {isOverdue && !alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Overdue</span>}
+            {!item.active && !isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Paused</span>}
+            {isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Expired</span>}
+            {item.pv_label && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">{item.pv_label}</span>}
+          </div>
+        </td>
+        <td className="py-2.5 pr-4 text-sm text-stone-600 whitespace-nowrap min-w-[120px]">{item.payee_name}</td>
+        <td className="py-2.5 pr-4 text-xs text-stone-500 whitespace-nowrap">{durationLabel()}</td>
+        <td className="py-2.5 pr-4 min-w-[110px]">
+          {item.current_pv_no && item.last_run ? (
+            <div>
+              <a href={item.current_pv_id ? `/my-pvs/${item.current_pv_id}` : "#"}
+                className="text-xs text-[#4a6da7] hover:underline font-medium">{item.current_pv_no}</a>
+              <div className="text-[10px] text-stone-400 mt-0.5">{formatDate(item.last_run)}</div>
+            </div>
+          ) : <span className="text-xs text-stone-300">—</span>}
+        </td>
+        <td className="py-2.5 pr-4 min-w-[110px]">
+          {lastPaid ? (
+            <div>
+              <a href={`/my-pvs/${lastPaid.id}`}
+                className="text-xs text-green-700 hover:underline font-medium">{lastPaid.pv_no}</a>
+              <div className="text-[10px] text-stone-400 mt-0.5">{formatDate(lastPaid.paid_at)}</div>
+            </div>
+          ) : <span className="text-xs text-stone-300">—</span>}
+        </td>
+        <td className="py-2.5 pr-4 text-sm font-bold text-[#4a6da7] text-right whitespace-nowrap">{formatCurrency(item.amount)}</td>
+        <td className="py-2.5">
+          <div className="flex items-center gap-0.5 justify-end">
+            {!isExpired && alreadyRan && item.current_pv_id && (
+              <a href={`/my-pvs/${item.current_pv_id}`}
+                className="text-[10px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg px-2 py-1 transition-colors border border-green-200 mr-1 whitespace-nowrap">
+                View PV
+              </a>
+            )}
+            <button onClick={onEdit} title="Edit" className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
+              <Pencil size={13} />
+            </button>
+            {!isExpired && (
+              <button onClick={onToggleActive} title={item.active ? "Pause" : "Resume"} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
+                {item.active ? <Pause size={13} /> : <Play size={13} />}
+              </button>
+            )}
+            <button onClick={onHistory} title="History" className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
+              <History size={13} />
+            </button>
+            {alreadyRan && (
+              <button onClick={onReset} title="Undo this cycle" className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-400 hover:text-amber-600 transition-colors">
+                <RotateCcw size={13} />
+              </button>
+            )}
+            <button onClick={onDelete} title="Delete" className="p-1.5 rounded-lg hover:bg-stone-100 text-red-400 hover:text-red-600 transition-colors">
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </td>
+      </tr>
+      {showHistory && (
+        <tr>
+          <td colSpan={9} className="px-4 pb-3 pt-1 bg-stone-50/50">
+            <HistoryPanel recurringId={item.id} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
