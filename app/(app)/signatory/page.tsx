@@ -210,11 +210,13 @@ export default function SignatoryPage() {
 
   function PVCard({ pv, compact = false }: { pv: PVWithBulk; compact?: boolean }) {
     const loa = getLOATier(pv.amount ?? 0, pv.payment_type);
+    const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
     const approvals: { role: string; action: string; email?: string; name?: string }[] = pv.approvals ?? [];
     const signatoryApprovals = approvals.filter(
       a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
     );
     const isChecked = checkedIds.has(pv.id!);
+    const isSignatoryUser = currentUser ? SIGNATORY_ROLES.includes(currentUser.role) : false;
     const userApproval = currentUser
       ? approvals.find(a =>
           ["APPROVED", "REJECTED"].includes(a.action) &&
@@ -259,7 +261,7 @@ export default function SignatoryPage() {
               </div>
             </div>
             </Link>
-            {userHasActed ? (
+            {isSignatoryUser && (userHasActed ? (
               <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
                 <div className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
                   {userApproval!.action === "APPROVED" ? <CheckCircle size={12} /> : <XCircle size={12} />}
@@ -281,7 +283,7 @@ export default function SignatoryPage() {
                   <XCircle size={13} /> Reject
                 </button>
               </div>
-            )}
+            ))}
           </div>
         </div>
       </div>
@@ -494,18 +496,20 @@ export default function SignatoryPage() {
                         className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
                         <ExternalLink size={11} /> View Batch
                       </Link>
-                      <button onClick={() => openPin(groupIds, "APPROVED")}
-                        disabled={!!allGroupActed}
-                        title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
-                        className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>
-                        <CheckCircle size={11} /> Approve All
-                      </button>
-                      <button onClick={() => openPin(groupIds, "REJECTED")}
-                        disabled={!!allGroupActed}
-                        title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
-                        className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600 text-white"}`}>
-                        <XCircle size={11} /> Reject All
-                      </button>
+                      {currentUser && ["BISHOP","TREASURER","SECRETARY","GENERAL_MANAGER"].includes(currentUser.role) && (<>
+                        <button onClick={() => openPin(groupIds, "APPROVED")}
+                          disabled={!!allGroupActed}
+                          title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
+                          className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>
+                          <CheckCircle size={11} /> Approve All
+                        </button>
+                        <button onClick={() => openPin(groupIds, "REJECTED")}
+                          disabled={!!allGroupActed}
+                          title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
+                          className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600 text-white"}`}>
+                          <XCircle size={11} /> Reject All
+                        </button>
+                      </>)}
                     </div>
                   </div>
 
