@@ -341,6 +341,7 @@ export default function BulkPVPage() {
   const [isErasing, setIsErasing]           = useState(false);
   const canvasRef                           = useRef<HTMLCanvasElement>(null);
   const isDrawingRef                        = useRef(false);
+  const lastPointRef                        = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -435,42 +436,58 @@ export default function BulkPVPage() {
   // ── Canvas draw handlers ────────────────────────────────────────────────
   const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!canvasActive) { setCanvasActive(true); return; }
+    e.preventDefault();
     isDrawingRef.current = true;
     const canvas = canvasRef.current; if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const x = (clientX - rect.left) * sx;
+    const y = (clientY - rect.top) * sy;
+    lastPointRef.current = { x, y };
     const ctx = canvas.getContext("2d")!;
-    ctx.beginPath();
-    ctx.moveTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
+    ctx.beginPath(); ctx.moveTo(x, y);
   }, [canvasActive]);
 
   const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawingRef.current) return;
+    e.preventDefault();
     const canvas = canvasRef.current; if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const x = (clientX - rect.left) * sx;
+    const y = (clientY - rect.top) * sy;
+    const last = lastPointRef.current;
     const ctx = canvas.getContext("2d")!;
     if (isErasing) {
       ctx.globalCompositeOperation = "destination-out";
-      ctx.lineWidth = 18; ctx.lineCap = "round"; ctx.strokeStyle = "rgba(0,0,0,1)";
+      ctx.lineWidth = 20 * sx; ctx.lineCap = "round"; ctx.strokeStyle = "rgba(0,0,0,1)";
+      ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y);
     } else {
       ctx.globalCompositeOperation = "source-over";
-      ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
+      ctx.lineWidth = 2.5 * sx; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#1a1a2e";
+      if (last) {
+        const midX = (last.x + x) / 2;
+        const midY = (last.y + y) / 2;
+        ctx.quadraticCurveTo(last.x, last.y, midX, midY);
+        ctx.stroke(); ctx.beginPath(); ctx.moveTo(midX, midY);
+      } else {
+        ctx.lineTo(x, y); ctx.stroke();
+      }
     }
-    ctx.lineTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
+    lastPointRef.current = { x, y };
     setSignatureData(canvas.toDataURL("image/png"));
   }, [isErasing]);
 
-  const stopDraw = useCallback(() => { isDrawingRef.current = false; }, []);
+  const stopDraw = useCallback(() => {
+    isDrawingRef.current = false;
+    lastPointRef.current = null;
+  }, []);
 
   function clearCanvas() {
     const canvas = canvasRef.current; if (!canvas) return;
@@ -759,7 +776,7 @@ export default function BulkPVPage() {
                   <div className="space-y-2">
                     <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
                       <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-indigo-400 bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}>
-                        <canvas ref={canvasRef} width={380} height={100}
+                        <canvas ref={canvasRef} width={760} height={200}
                           className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
                           onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
                           onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
@@ -872,7 +889,7 @@ export default function BulkPVPage() {
                 <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5"><PenLine size={12} /> Draw signature</label>
                 <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-[#4a6da7] bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}
                   style={{ position: "relative", touchAction: "none" }}>
-                  <canvas ref={canvasRef} width={380} height={100}
+                  <canvas ref={canvasRef} width={760} height={200}
                     className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
                     onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
                     onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />

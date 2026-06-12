@@ -192,8 +192,10 @@ export default function PVDetailPage() {
   const [sigMode, setSigMode]                 = useState<"draw" | "upload">("draw");
   const canvasRef                             = useRef<HTMLCanvasElement>(null);
   const isDrawingRef                          = useRef(false);
+  const lastPointRef                          = useRef<{ x: number; y: number } | null>(null);
   const [canvasActive, setCanvasActive]       = useState(false);
   const [isErasing, setIsErasing]             = useState(false);
+  const [finSignError, setFinSignError]       = useState("");
 
   // Finance Admin sign
   const [showFinanceSignModal, setShowFinanceSignModal] = useState(false);
@@ -323,34 +325,56 @@ export default function PVDetailPage() {
   // ── Canvas drawing helpers ──────────────────────────────────────────
   const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!canvasActive) return;
+    e.preventDefault();
     isDrawingRef.current = true;
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext("2d"); if (!ctx) return;
     const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    const cx = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const cy = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    const x = cx * sx; const y = cy * sy;
+    lastPointRef.current = { x, y };
     ctx.beginPath(); ctx.moveTo(x, y);
   }, [canvasActive]);
 
   const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawingRef.current) return;
+    e.preventDefault();
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext("2d"); if (!ctx) return;
     const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    const cx = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const cy = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    const x = cx * sx; const y = cy * sy;
+    const last = lastPointRef.current;
     if (isErasing) {
       ctx.globalCompositeOperation = "destination-out";
-      ctx.lineWidth = 18; ctx.lineCap = "round"; ctx.strokeStyle = "rgba(0,0,0,1)";
+      ctx.lineWidth = 20 * sx; ctx.lineCap = "round"; ctx.strokeStyle = "rgba(0,0,0,1)";
+      ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y);
     } else {
       ctx.globalCompositeOperation = "source-over";
-      ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
+      ctx.lineWidth = 2.5 * sx; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#1a1a2e";
+      if (last) {
+        const midX = (last.x + x) / 2;
+        const midY = (last.y + y) / 2;
+        ctx.quadraticCurveTo(last.x, last.y, midX, midY);
+        ctx.stroke(); ctx.beginPath(); ctx.moveTo(midX, midY);
+      } else {
+        ctx.lineTo(x, y); ctx.stroke();
+      }
     }
-    ctx.lineTo(x, y); ctx.stroke();
+    lastPointRef.current = { x, y };
     setSignatureData(canvas.toDataURL("image/png"));
   }, [isErasing]);
 
-  const stopDraw = useCallback(() => { isDrawingRef.current = false; }, []);
+  const stopDraw = useCallback(() => {
+    isDrawingRef.current = false;
+    lastPointRef.current = null;
+  }, []);
 
   function clearCanvas() {
     const canvas = canvasRef.current; if (!canvas) return;
@@ -428,6 +452,7 @@ export default function PVDetailPage() {
   async function submitFinanceSign() {
     if (!pv || !user) return;
     setFinSignLoading(true);
+    setFinSignError("");
     // Signing on a PENDING PV = mark as Reviewed; on any other status = just update the signature
     const action = pv.status === "PENDING" ? "REVIEW" : "FINANCE_SIGN";
     try {
@@ -453,10 +478,9 @@ export default function PVDetailPage() {
       const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
       if (fresh) setPv(fresh as PV);
     } catch (e: unknown) {
-      setActionToast({ msg: (e as Error).message, ok: false });
+      setFinSignError((e as Error).message);
     } finally {
       setFinSignLoading(false);
-      setTimeout(() => setActionToast({ msg: "", ok: true }), 3000);
     }
   }
 
@@ -1161,12 +1185,12 @@ export default function PVDetailPage() {
                   <div className="space-y-2">
                     <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
                       <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-indigo-400 bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}>
-                        <canvas ref={canvasRef} width={380} height={100}
+                        <canvas ref={canvasRef} width={760} height={200}
                           className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
                           onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
                           onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
                         {!canvasActive && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="absolute inset-0 flex items-center justify-center cursor-pointer" onClick={() => setCanvasActive(true)}>
                             <span className="text-stone-400 text-xs">Click to start signing</span>
                           </div>
                         )}
@@ -1205,15 +1229,24 @@ export default function PVDetailPage() {
               )}
             </div>
 
-            <div className="px-5 py-4 border-t border-stone-200 flex gap-2">
-              <button onClick={() => setShowFinanceSignModal(false)}
-                className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm hover:bg-stone-50 transition-colors">
-                Cancel
-              </button>
-              <button onClick={submitFinanceSign} disabled={finSignLoading}
-                className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5 hover:bg-[#3d5a8e] transition-colors">
-                {finSignLoading ? "Saving…" : <><CheckCircle size={14} /> Save Signature</>}
-              </button>
+            <div className="px-5 pb-4 border-t border-stone-200 pt-4 space-y-2">
+              {finSignError && (
+                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {finSignError === "Finance Admin only"
+                    ? "Your current role is not Finance Admin. Switch your role back to Finance Admin from the menu and try again."
+                    : finSignError}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => { setShowFinanceSignModal(false); setFinSignError(""); }}
+                  className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm hover:bg-stone-50 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={submitFinanceSign} disabled={finSignLoading}
+                  className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5 hover:bg-[#3d5a8e] transition-colors">
+                  {finSignLoading ? "Saving…" : <><CheckCircle size={14} /> Save Signature</>}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1254,7 +1287,7 @@ export default function PVDetailPage() {
                   <div className="space-y-2">
                     <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
                       <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-indigo-400 bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}>
-                        <canvas ref={canvasRef} width={380} height={100}
+                        <canvas ref={canvasRef} width={760} height={200}
                           className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
                           onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
                           onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
