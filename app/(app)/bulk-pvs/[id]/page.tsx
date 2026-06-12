@@ -354,9 +354,10 @@ export default function BulkPVPage() {
       if (!runData) { setLoading(false); return; }
       setRun(runData as BulkRun);
       const pv_ids: string[] = runData.pv_ids ?? [];
+      let ordered: PV[] = [];
       if (pv_ids.length > 0) {
         const { data: pvData } = await supabase.from("pvs").select("*").in("id", pv_ids);
-        const ordered = pv_ids.map(pid => pvData?.find((p: PV) => p.id === pid)).filter(Boolean) as PV[];
+        ordered = pv_ids.map(pid => pvData?.find((p: PV) => p.id === pid)).filter(Boolean) as PV[];
         setPvs(ordered);
         // Load saved signatures for all approvers across all PVs
         const allApprovals = ordered.flatMap(p => (p.approvals ?? []) as { email?: string }[]);
