@@ -860,7 +860,7 @@ export default function PVDetailPage() {
                 <EField label="Payee Name">
                   <input className={ei} value={String(editForm.payee_name ?? "")} onChange={e => setEditForm(f => ({ ...f, payee_name: e.target.value }))} />
                 </EField>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <EField label="Bank Name">
                     <input className={ei} value={String(editForm.payee_bank_name ?? "")} onChange={e => setEditForm(f => ({ ...f, payee_bank_name: e.target.value }))} />
                   </EField>
@@ -872,7 +872,7 @@ export default function PVDetailPage() {
               {/* Payment */}
               <fieldset className="space-y-3">
                 <legend className="text-xs font-bold text-stone-500 uppercase tracking-wide">Payment</legend>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <EField label="Payment Method">
                     <select className={ei} value={String(editForm.payment_method ?? "")} onChange={e => setEditForm(f => ({ ...f, payment_method: e.target.value }))}>
                       {["Bank transfer","JomPAY","Online Transfer","Cheque","Cash","Auto Debit","Other"].map(m => <option key={m}>{m}</option>)}
@@ -921,7 +921,7 @@ export default function PVDetailPage() {
               {/* Ministry / Project */}
               <fieldset className="space-y-3">
                 <legend className="text-xs font-bold text-stone-500 uppercase tracking-wide">Ministry / Project</legend>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <EField label="Ministry">
                     <input className={ei} value={String(editForm.ministry ?? "")} onChange={e => setEditForm(f => ({ ...f, ministry: e.target.value }))} />
                   </EField>
@@ -943,7 +943,7 @@ export default function PVDetailPage() {
               {/* Misc */}
               <fieldset className="space-y-3">
                 <legend className="text-xs font-bold text-stone-500 uppercase tracking-wide">Other</legend>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <EField label="Applicant Name">
                     <input className={ei} value={String(editForm.applicant_name ?? "")} onChange={e => setEditForm(f => ({ ...f, applicant_name: e.target.value }))} />
                   </EField>
@@ -954,7 +954,7 @@ export default function PVDetailPage() {
                     </select>
                   </EField>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <EField label="EXCO Resolution Ref">
                     <input className={ei} value={String(editForm.exco_resolution_ref ?? "")} onChange={e => setEditForm(f => ({ ...f, exco_resolution_ref: e.target.value }))} />
                   </EField>
@@ -1279,10 +1279,10 @@ export default function PVDetailPage() {
       )}
 
       {/* ── THE VOUCHER ─────────────────────────────────────────────── */}
-      <div className="max-w-4xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
-        <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
+      <div className="max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-6 print:p-0 print:max-w-none">
+        <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none overflow-x-auto">
           {/* voucher body */}
-          <div className="px-10 py-8 print:px-8 print:py-6" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}>
+          <div className="px-3 sm:px-10 py-4 sm:py-8 print:px-8 print:py-6" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111", minWidth: 340 }}>
 
             {/* ══ ROW 1–3: header row (logo left, office-use box right) ══ */}
             <div className="flex items-start gap-4 mb-1">
@@ -1487,7 +1487,7 @@ export default function PVDetailPage() {
             {/* ══ ROWS 26–29: Applicant + Approver signatures ══ */}
             <div className="mt-5 space-y-4">
               {/* Row 26: Applicant signature */}
-              <div className="grid grid-cols-3 gap-6 text-[13px]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6 text-[13px]">
                 <div className="col-span-1">
                   <div className="font-bold mb-1">
                     Applicant{"'"}s Signature <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>申请者签名</span>:
@@ -1517,7 +1517,7 @@ export default function PVDetailPage() {
                         </div>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
                       <div className="flex items-center gap-1">
                         <span className="font-bold whitespace-nowrap text-[12px]">Name <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>姓名</span>：</span>
                         <span className="flex-1 border-b border-black text-[12px]">{pv.ministry_verified_by ?? headApproval?.name ?? ""}</span>
@@ -1549,7 +1549,7 @@ export default function PVDetailPage() {
               </div>
 
               {/* 3-column sig blocks — equal width */}
-              <div className="grid grid-cols-3 divide-x divide-black px-0">
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black px-0">
                 {/* Prepared by — Finance Executive */}
                 <div className="px-4 py-3">
                   <SigBlock
@@ -1640,7 +1640,7 @@ export default function PVDetailPage() {
           </div>
 
           {/* ── Approval activity (below voucher, hidden on print) ── */}
-          <div className="print:hidden border-t border-stone-200 px-8 py-5">
+          <div className="print:hidden border-t border-stone-200 px-4 sm:px-8 py-5">
             <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3">Approval Activity</h3>
             {approvals.length === 0 ? (
               <p className="text-sm text-stone-400">No approvals recorded yet.</p>

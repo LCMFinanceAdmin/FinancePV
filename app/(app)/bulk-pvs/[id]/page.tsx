@@ -105,7 +105,7 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
 
   return (
     <div style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}
-      className="px-10 py-8 print:px-8 print:py-6">
+      className="px-3 sm:px-10 py-4 sm:py-8 print:px-8 print:py-6">
 
       <div className="text-[11px] text-stone-500 mb-2 font-semibold">
         Attachment {idx + 1} — {pv.pv_no}
@@ -137,7 +137,8 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
         </div>
       </div>
 
-      <table className="w-full border-collapse text-[13px] mt-3" style={{ tableLayout: "fixed" }}>
+      <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-[13px] mt-3" style={{ tableLayout: "fixed", minWidth: 340 }}>
         <colgroup><col style={{ width: "22%" }} /><col style={{ width: "43%" }} /><col style={{ width: "10%" }} /><col style={{ width: "25%" }} /></colgroup>
         <tbody>
           <tr>
@@ -164,13 +165,15 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
           </tr>
         </tbody>
       </table>
+      </div>
 
       <div className="font-bold text-[12px] mt-3 mb-0">
         Particulars of Claim/Payment (Please attach relevant Receipts/Invoices/Bills){" "}
         <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>费用报销/付款详情（请附上有关收据/单据）</span>
       </div>
 
-      <table className="w-full border-collapse border border-black text-[13px]" style={{ tableLayout: "fixed" }}>
+      <div className="overflow-x-auto">
+      <table className="w-full border-collapse border border-black text-[13px]" style={{ tableLayout: "fixed", minWidth: 340 }}>
         <colgroup><col style={{ width: "5%" }} /><col style={{ width: "14%" }} /><col style={{ width: "66%" }} /><col style={{ width: "15%" }} /></colgroup>
         <thead>
           <tr className="bg-gray-100">
@@ -209,6 +212,7 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
           </tr>
         </tbody>
       </table>
+      </div>
 
       {/* Ministry Head signature (if applicable) */}
       {pv.head_verified !== "N/A" && (
@@ -231,7 +235,7 @@ function PVVoucher({ pv, idx, finSigData, canSignAsGM, canSignAsSig, onSignGM, o
           For LCM Finance Office Use Only &emsp;
           <span style={{ fontFamily: "KaiTi, STKaiti, serif", fontWeight: "normal" }}>LCM财务处专用</span>
         </div>
-        <div className="grid grid-cols-3 divide-x divide-black">
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black">
           {/* Prepared by — Finance Admin auto-sig */}
           <div className="px-4 py-3">
             <div className="text-[12px] font-bold mb-0.5">Prepared by:</div>

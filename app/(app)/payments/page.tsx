@@ -290,7 +290,7 @@ export default function PaymentsPage() {
 
           {/* Summary */}
           {paid.length > 0 && (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {[
                 { label: "PVs Paid", value: paid.length.toString() },
                 { label: "Total Paid Out", value: formatCurrency(paid.reduce((s, p) => s + (p.amount ?? 0), 0)) },

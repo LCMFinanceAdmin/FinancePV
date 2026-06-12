@@ -186,7 +186,7 @@ export default function PurchaseRequestsPage() {
             <button onClick={() => setShowForm(false)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="text-xs text-stone-500 mb-1 block">Request Title <span className="text-red-400">*</span></label>
               <input className={inp} placeholder="e.g. PA System Purchase for Worship Hall" value={title} onChange={e => setTitle(e.target.value)} />

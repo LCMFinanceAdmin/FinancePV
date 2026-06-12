@@ -85,8 +85,8 @@ function InlineSelect({ value, onChange, children, className = "" }: {
 
 function Row({ label, sublabel, children }: { label: string; sublabel?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-end gap-3 py-1.5 border-b border-stone-100 last:border-0">
-      <div className="shrink-0 min-w-[200px]">
+    <div className="flex flex-col sm:flex-row sm:items-end gap-1 sm:gap-3 py-1.5 border-b border-stone-100 last:border-0">
+      <div className="shrink-0 sm:min-w-[200px]">
         <span className="text-sm font-semibold text-stone-700">{label}</span>
         {sublabel && <div className="text-xs text-stone-400">{sublabel}</div>}
       </div>
@@ -401,7 +401,7 @@ export default function SubmitPVPage() {
           </div>
 
           {/* ── MAIN FORM FIELDS ──────────────────────────────────────── */}
-          <div className="px-6 py-4 space-y-0">
+          <div className="px-3 sm:px-6 py-4 space-y-0">
 
             <Row label="Applicant 申请者" sublabel="Full name of submitter">
               <input className={uline} value={form.applicant_name}
@@ -506,12 +506,13 @@ export default function SubmitPVPage() {
           </div>
 
           {/* ── PARTICULARS TABLE ──────────────────────────────────────── */}
-          <div className="px-6 pb-2">
+          <div className="px-3 sm:px-6 pb-2">
             <p className="text-xs font-semibold text-stone-500 mb-2 mt-1">
               Particulars of Claim / Payment
               <span className="text-stone-400 font-normal ml-1">(Please attach relevant Receipts / Invoices / Bills)</span>
             </p>
-            <table className="w-full border-collapse border border-stone-800 text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 420 }}>
               <thead>
                 <tr className="bg-stone-50">
                   <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
@@ -577,6 +578,7 @@ export default function SubmitPVPage() {
               </tfoot>
             </table>
 
+            </div>{/* end overflow-x-auto */}
             <button type="button" onClick={addLineItem}
               className="mt-2 flex items-center gap-1 text-xs text-[#4a6da7] hover:underline print:hidden">
               <Plus size={11} /> Add line item
@@ -597,7 +599,7 @@ export default function SubmitPVPage() {
           )}
 
           {/* ── DECLARATION ───────────────────────────────────────────── */}
-          <div className="px-6 py-4 border-t-2 border-stone-800 space-y-3 print:hidden">
+          <div className="px-3 sm:px-6 py-4 border-t-2 border-stone-800 space-y-3 print:hidden">
             <p className="text-xs text-stone-500 leading-relaxed">
               I hereby declare that the information provided is true and accurate, and that this payment is for legitimate
               church-related expenses in accordance with LCM&apos;s financial policies.
@@ -620,7 +622,7 @@ export default function SubmitPVPage() {
 
           {/* ── FINANCE ADMIN E-SIGNATURE ─────────────────────────────── */}
           {isFinanceAdmin && (
-            <div className="px-6 py-4 border-t border-stone-200">
+            <div className="px-3 sm:px-6 py-4 border-t border-stone-200">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-1.5">
                   <PenLine size={14} className="text-[#4a6da7]" />

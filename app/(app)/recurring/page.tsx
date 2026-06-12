@@ -610,7 +610,7 @@ export default function RecurringPage() {
   const filteredProjects = projects.filter(p => !form.ministry || p.ministry === form.ministry);
 
   return (
-    <div className="p-5 max-w-6xl mx-auto space-y-4">
+    <div className="p-3 sm:p-5 max-w-6xl mx-auto space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
@@ -703,7 +703,7 @@ export default function RecurringPage() {
         <div className="bg-white border border-stone-200 rounded-2xl p-5 space-y-4">
           <p className="text-sm font-semibold text-stone-700">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Template Name *">
               <input className={inp} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="e.g. Office Rental" />
             </Field>
@@ -713,7 +713,7 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Frequency">
               <select className={inp} value={form.frequency} onChange={e => setField("frequency", e.target.value)}>
                 {FREQ_OPTIONS.map(f => <option key={f} value={f}>{FREQ_LABELS[f]}</option>)}
@@ -727,7 +727,7 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Commenced (Month / Year)">
               <input className={inp} type="month" value={form.commenced_date ? form.commenced_date.slice(0, 7) : ""} onChange={e => setField("commenced_date", e.target.value ? e.target.value + "-01" : "")} />
             </Field>
@@ -744,7 +744,7 @@ export default function RecurringPage() {
             </Field>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Payee Name *">
               <input className={inp} value={form.payee_name} onChange={e => setField("payee_name", e.target.value)} />
             </Field>
@@ -754,7 +754,7 @@ export default function RecurringPage() {
               </select>
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Bank Name">
               <input className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)} />
             </Field>
@@ -763,7 +763,7 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="Ministry">
               <select className={inp} value={form.ministry} onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
                 <option value="">— None —</option>
@@ -781,7 +781,7 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Purpose *">
               <textarea className={`${inp} h-16 resize-none`} value={form.purpose} onChange={e => setField("purpose", e.target.value)} />
             </Field>
@@ -869,7 +869,7 @@ export default function RecurringPage() {
                   )}
                   <span className="text-xs text-stone-400 font-normal">({groupItems.length})</span>
 
-                  <div className="ml-auto flex items-center gap-3">
+                  <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
                     {!collapsed && (
                       <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
                         <GroupCheckbox groupItems={groupItems} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />

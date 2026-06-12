@@ -107,7 +107,7 @@ export default function SignatoriesPage() {
         {users.map((u) => (
           <Card key={u.id}>
             <CardBody className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-stone-400">Full Name</label>
                   <input className={inp} value={u.full_name} placeholder="Full name"
@@ -120,7 +120,7 @@ export default function SignatoriesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-stone-400">Role</label>
                   <select className={inp} value={u.role}
