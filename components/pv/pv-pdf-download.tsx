@@ -161,8 +161,8 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
   const isExcoPV = pv.submitted_by_role === "MINISTRY_HEAD";
   // Staff/general stakeholders sign the applicant section; Finance Exec & EXCO Members do not
   const showApplicantSig = !isFinanceExecPV && !isExcoPV;
-  // EXCO verification section is hidden only for Finance Executive PVs (they go straight to Finance section)
-  const showExcoSection = !isFinanceExecPV;
+  // EXCO verification section is always shown — Finance Exec PVs need it for EXCO physical signing
+  const showExcoSection = true;
 
   return (
     <Document title={`PV ${pv.pv_no}`}>

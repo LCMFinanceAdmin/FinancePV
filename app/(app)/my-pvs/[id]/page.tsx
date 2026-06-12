@@ -446,6 +446,9 @@ export default function PVDetailPage() {
     if (signAction === "REJECTED" && !sigRemarks.trim()) {
       setSigToast({ msg: "Remarks required for rejection", ok: false }); return;
     }
+    if (signAction === "APPROVED" && !signatureData) {
+      setSigToast({ msg: "Signature required — draw, upload, or use your saved signature", ok: false }); return;
+    }
     const requiresPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(user.role);
     if (requiresPin && sigPin.length < 6) {
       setSigToast({ msg: "Enter your 6-digit PIN", ok: false }); return;
@@ -616,6 +619,16 @@ export default function PVDetailPage() {
           action: "APPROVED", timestamp: pv.finance_verified_at, remarks: "" }
       : null);
 
+  // Submitter role — determines which sections to show on the voucher
+  const financeRoles = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+  const isFinanceExecPV = financeRoles.includes(pv.submitted_by_role ?? "")
+    || (pv.submitted_by_role == null && financeApproval != null && financeApproval.email === pv.submitted_by_email);
+  const isExcoPV = pv.submitted_by_role === "MINISTRY_HEAD";
+  // Staff/general stakeholders sign the applicant section; Finance Exec & EXCO Members do not
+  const showApplicantSig = !isFinanceExecPV && !isExcoPV;
+  // EXCO verification section shown for all PVs — Finance Exec PVs show it so EXCO can sign
+  const showExcoSectionApp = isFinanceExecPV || isExcoPV || pv.head_verified !== "N/A";
+
   return (
     <div className="min-h-screen bg-stone-100 print:bg-white">
       <style>{`@media print { .voucher-inner { width: auto !important; transform: none !important; } .voucher-clip { height: auto !important; overflow: visible !important; } }`}</style>
@@ -708,7 +721,12 @@ export default function PVDetailPage() {
             {/* ── Row 1: Review decision — always visible, active only when PENDING ── */}
             <div className="flex gap-2 flex-wrap items-center">
               <button
-                onClick={() => callAdminAction("REVIEW", savedSig ? { signature_data: savedSig } : {})}
+                onClick={() => {
+                  setSignatureData(savedSig || "");
+                  setCanvasActive(!!savedSig); setIsErasing(false);
+                  setSigMode("draw"); setSaveSigForNext(false); setFinSignError("");
+                  setShowFinanceSignModal(true);
+                }}
                 disabled={actionLoading || pv.status !== "PENDING"}
                 title={pv.status !== "PENDING" ? "Already reviewed — revert first to re-review" : ""}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
@@ -716,7 +734,7 @@ export default function PVDetailPage() {
                     ? "bg-[#4a6da7] text-white hover:bg-[#3d5a8e] disabled:opacity-50"
                     : "bg-stone-200 text-stone-400 cursor-not-allowed"
                 }`}>
-                <CheckCircle2 size={14} /> Mark as Reviewed
+                <CheckCircle2 size={14} /> Review & Sign
               </button>
               <button
                 onClick={() => setShowRejectModal(true)}
@@ -784,7 +802,7 @@ export default function PVDetailPage() {
             </div>
             <div className="flex gap-2 flex-wrap items-center">
               <button
-                onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}
+                onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"}`}>
@@ -1331,7 +1349,12 @@ export default function PVDetailPage() {
               {/* Signature section */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5"><PenLine size={12} /> Signature (optional)</label>
+                  <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5">
+                    <PenLine size={12} /> Signature
+                    {signAction === "APPROVED"
+                      ? <span className="text-red-400 font-normal">* required</span>
+                      : <span className="text-stone-400 font-normal">(optional)</span>}
+                  </label>
                   <div className="flex gap-1">
                     <button onClick={() => setSigMode("draw")}
                       className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "draw" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
@@ -1667,28 +1690,30 @@ export default function PVDetailPage() {
 
             {/* ══ ROWS 26–29: Applicant + Approver signatures ══ */}
             <div className="mt-5 space-y-4">
-              {/* Row 26: Applicant signature */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6 text-[13px]">
-                <div className="col-span-1">
-                  <div className="font-bold mb-1">
-                    Applicant{"'"}s Signature <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>申请者签名</span>:
-                  </div>
-                  <div className="h-8 border-b border-black mb-1" />
-                  <div className="flex items-center gap-1">
-                    <span className="font-bold whitespace-nowrap text-[12px]">Name <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>姓名</span>：</span>
-                    <span className="flex-1 border-b border-black text-[12px]">{pv.sig_applicant_name || pv.applicant_name}</span>
-                  </div>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <span className="font-bold whitespace-nowrap text-[12px]">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</span>
-                    <span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.submitted_at)}</span>
-                  </div>
-                </div>
-
-                {/* Row 28: Ministry/Dept Head */}
-                {pv.head_verified !== "N/A" && (
-                  <div className="col-span-2">
+                {/* Row 26: Applicant signature — hidden for Finance Executive and EXCO-member PVs */}
+                {showApplicantSig && (
+                  <div className="col-span-1">
                     <div className="font-bold mb-1">
-                      Verified/Approved by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>审核/批准者签名</span>：
+                      Applicant{"'"}s Signature <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>申请者签名</span>:
+                    </div>
+                    <div className="h-8 border-b border-black mb-1" />
+                    <div className="flex items-center gap-1">
+                      <span className="font-bold whitespace-nowrap text-[12px]">Name <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>姓名</span>：</span>
+                      <span className="flex-1 border-b border-black text-[12px]">{pv.sig_applicant_name || pv.applicant_name}</span>
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="font-bold whitespace-nowrap text-[12px]">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</span>
+                      <span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.submitted_at)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* EXCO / Ministry Head verification — shown for all PV types */}
+                {showExcoSectionApp && (
+                  <div className={showApplicantSig ? "col-span-2" : "col-span-3"}>
+                    <div className="font-bold mb-1">
+                      Verified by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>审核者签名</span>：
                     </div>
                     <div className="h-8 border-b border-black mb-1">
                       {ministryVerified && (
@@ -1709,8 +1734,8 @@ export default function PVDetailPage() {
                       </div>
                     </div>
                     <div className="text-[13px] text-stone-800 mt-0.5">
-                      (By Chairperson/Treasurer/Person in Charge of the Project{" "}
-                      <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>主席/财政/事工负责人</span>)
+                      (By EXCO Member / Dept Head in Charge{" "}
+                      <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>事工主席/负责人</span>)
                     </div>
                   </div>
                 )}
