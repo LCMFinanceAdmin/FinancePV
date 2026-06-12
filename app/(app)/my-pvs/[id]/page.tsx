@@ -207,6 +207,41 @@ export default function PVDetailPage() {
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
   const [revertLoading, setRevertLoading]         = useState(false);
 
+  // Voucher zoom / scale-to-fit
+  const VOUCHER_NATURAL_WIDTH = 680;
+  const [autoScale, setAutoScale]       = useState(1);
+  const [userZoom, setUserZoom]         = useState(0);   // steps: each step = +/- 0.15
+  const [naturalHeight, setNaturalHeight] = useState(0);
+  const voucherOuterRef = useRef<HTMLDivElement>(null);
+  const voucherInnerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function measure() {
+      const outer = voucherOuterRef.current;
+      const inner = voucherInnerRef.current;
+      if (!outer || !inner) return;
+      const s = Math.min(1, outer.offsetWidth / VOUCHER_NATURAL_WIDTH);
+      setAutoScale(s);
+      setNaturalHeight(inner.offsetHeight);
+    }
+    const ro = new ResizeObserver(measure);
+    if (voucherOuterRef.current) ro.observe(voucherOuterRef.current);
+    measure();
+    return () => ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Re-measure height after PV content loads
+    if (!pv) return;
+    const inner = voucherInnerRef.current;
+    if (inner && inner.offsetHeight > 0) setNaturalHeight(inner.offsetHeight);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pv?.id]);
+
+  const effectiveScale = Math.max(0.25, Math.min(2, autoScale + userZoom * 0.15));
+  const voucherDisplayHeight = naturalHeight > 0 ? naturalHeight * effectiveScale : undefined;
+
   useEffect(() => {
     async function load() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -503,6 +538,7 @@ export default function PVDetailPage() {
 
   return (
     <div className="min-h-screen bg-stone-100 print:bg-white">
+      <style>{`@media print { .voucher-inner { width: auto !important; transform: none !important; } .voucher-clip { height: auto !important; overflow: visible !important; } }`}</style>
 
       {/* ── Sticky top bar ─────────────────────────────────────────── */}
       <div className="print:hidden sticky top-0 z-20 bg-white border-b border-stone-200 px-5 py-3">
@@ -517,6 +553,20 @@ export default function PVDetailPage() {
               {pv.payment_type === "ASSET_PURCHASE" && (
                 <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">Asset Purchase</span>
               )}
+            </div>
+            {/* Zoom controls */}
+            <div className="flex items-center gap-0.5 print:hidden">
+              <button
+                onClick={() => setUserZoom(z => Math.max(-4, z - 1))}
+                className="w-7 h-7 rounded-l-lg border border-stone-200 text-stone-500 flex items-center justify-center hover:bg-stone-50 font-bold text-base leading-none"
+              >−</button>
+              <span className="text-[11px] text-stone-400 w-9 text-center tabular-nums border-y border-stone-200 h-7 flex items-center justify-center">
+                {Math.round(effectiveScale * 100)}%
+              </span>
+              <button
+                onClick={() => setUserZoom(z => Math.min(5, z + 1))}
+                className="w-7 h-7 rounded-r-lg border border-stone-200 text-stone-500 flex items-center justify-center hover:bg-stone-50 font-bold text-base leading-none"
+              >+</button>
             </div>
             <PVPdfDownload pv={pv} />
           </div>
@@ -1287,9 +1337,24 @@ export default function PVDetailPage() {
 
       {/* ── THE VOUCHER ─────────────────────────────────────────────── */}
       <div className="max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-6 print:p-0 print:max-w-none">
-        <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none overflow-x-auto">
-          {/* voucher body */}
-          <div className="px-3 sm:px-10 py-4 sm:py-8 print:px-8 print:py-6" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111", minWidth: 560 }}>
+        <div ref={voucherOuterRef} className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
+          {/* Scaled voucher document */}
+          <div
+            className="voucher-clip overflow-hidden"
+            style={{ height: voucherDisplayHeight ?? "auto" }}
+          >
+          <div
+            ref={voucherInnerRef}
+            className="voucher-inner px-6 py-6 print:px-8 print:py-6"
+            style={{
+              fontFamily: "Calibri, Arial, sans-serif",
+              fontSize: 13,
+              color: "#111",
+              width: VOUCHER_NATURAL_WIDTH,
+              transform: `scale(${effectiveScale})`,
+              transformOrigin: "top left",
+            }}
+          >
 
             {/* ══ ROW 1–3: header row (logo left, office-use box right) ══ */}
             <div className="flex items-start gap-4 mb-1">
@@ -1645,6 +1710,7 @@ export default function PVDetailPage() {
               </div>
             )}
           </div>
+          </div>{/* end scale clip */}
 
           {/* ── Approval activity (below voucher, hidden on print) ── */}
           <div className="print:hidden border-t border-stone-200 px-4 sm:px-8 py-5">
