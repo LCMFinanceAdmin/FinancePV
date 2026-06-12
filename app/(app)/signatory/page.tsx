@@ -24,11 +24,29 @@ interface BulkRun { id: string; group_name: string; pv_ids: string[]; total_amou
 
 type PVWithBulk = Partial<PV> & { bulk_run_id?: string; bulk_group?: string };
 
+const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
+
+function Btn({ label, icon, color, loading, onClick }: {
+  label: string; icon?: React.ReactNode; color: "green" | "red" | "gray";
+  loading?: boolean; onClick: () => void;
+}) {
+  const cls = {
+    green: "bg-green-600 hover:bg-green-700 text-white",
+    red:   "bg-red-500   hover:bg-red-600   text-white",
+    gray:  "bg-stone-200 hover:bg-stone-300  text-stone-700",
+  }[color];
+  return (
+    <button onClick={onClick} disabled={loading}
+      className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg ${cls} disabled:opacity-50 transition-colors whitespace-nowrap`}>
+      {icon}{label}
+    </button>
+  );
+}
+
 export default function SignatoryPage() {
   const supabase = createClient();
   const [pvs, setPvs] = useState<PVWithBulk[]>([]);
   const [loading, setLoading] = useState(true);
-  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [expandedBulk, setExpandedBulk] = useState<Set<string>>(new Set());
   const [pinModal, setPinModal] = useState<PinModal | null>(null);
   const [pin, setPin] = useState("");
@@ -61,7 +79,6 @@ export default function SignatoryPage() {
         setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF" });
       }
 
-      // Build bulk map: pv_id → run info
       const bulkMap: Record<string, BulkRun> = {};
       for (const run of (bulkData ?? []) as BulkRun[]) {
         for (const pvId of run.pv_ids) bulkMap[pvId] = run;
@@ -74,7 +91,6 @@ export default function SignatoryPage() {
       }));
 
       setPvs(withBulk);
-      setCheckedIds(new Set());
     } finally {
       setLoading(false);
     }
@@ -169,7 +185,6 @@ export default function SignatoryPage() {
     } finally { setBudgetLoading(false); }
   }
 
-  // Group into bulk runs and standalones
   const { bulkGroups, standalones } = useMemo(() => {
     const groups: Record<string, { runId: string; groupName: string; pvs: PVWithBulk[] }> = {};
     const standalones: PVWithBulk[] = [];
@@ -182,41 +197,19 @@ export default function SignatoryPage() {
     return { bulkGroups: Object.values(groups), standalones };
   }, [pvs]);
 
-  const allIds = pvs.map(p => p.id!).filter(Boolean);
-  const allChecked = allIds.length > 0 && allIds.every(id => checkedIds.has(id));
-  const anyChecked = checkedIds.size > 0;
-
-  function toggleAll() {
-    setCheckedIds(allChecked ? new Set() : new Set(allIds));
-  }
-  function toggleOne(id: string) {
-    setCheckedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  }
-  function toggleBulkGroup(runId: string, pvIds: string[]) {
-    setExpandedBulk(prev => { const n = new Set(prev); n.has(runId) ? n.delete(runId) : n.add(runId); return n; });
-    // Select all PVs in this group
-    setCheckedIds(prev => {
-      const n = new Set(prev);
-      const allIn = pvIds.every(id => n.has(id));
-      if (allIn) pvIds.forEach(id => n.delete(id)); // deselect
-      return n;
-    });
-  }
-
   const totalBudget = budgetRows.reduce((s, r) => s + r.estimated_income, 0);
   const totalSpent  = budgetRows.reduce((s, r) => s + r.spent, 0);
   const currentBalance = totalBudget - totalSpent;
   const afterBalance = currentBalance - (ministryPopup?.pvAmount ?? 0);
 
+  const isSignatoryUser = currentUser ? SIGNATORY_ROLES.includes(currentUser.role) : false;
+
   function PVCard({ pv, compact = false }: { pv: PVWithBulk; compact?: boolean }) {
     const loa = getLOATier(pv.amount ?? 0, pv.payment_type);
-    const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
     const approvals: { role: string; action: string; email?: string; name?: string }[] = pv.approvals ?? [];
     const signatoryApprovals = approvals.filter(
       a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
     );
-    const isChecked = checkedIds.has(pv.id!);
-    const isSignatoryUser = currentUser ? SIGNATORY_ROLES.includes(currentUser.role) : false;
     const userApproval = currentUser
       ? approvals.find(a =>
           ["APPROVED", "REJECTED"].includes(a.action) &&
@@ -226,66 +219,59 @@ export default function SignatoryPage() {
     const userHasActed = !!userApproval;
 
     return (
-      <div className={`flex items-start gap-3 ${compact ? "px-4 py-3 border-t border-stone-100" : ""}`}>
-        <div className={compact ? "pt-1" : "pt-4"}>
-          <input type="checkbox" className="accent-[#4a6da7] w-4 h-4 cursor-pointer"
-            checked={isChecked} onChange={() => toggleOne(pv.id!)} />
-        </div>
-
-        <div className={`flex-1 bg-white rounded-xl overflow-hidden ${compact ? "border border-stone-100" : "border border-stone-200 shadow-sm"} ${isChecked ? "border-[#4a6da7]/50 bg-[#4a6da7]/5" : ""}`}>
-          <div className="px-4 py-3 space-y-2">
-            <Link href={`/my-pvs/${pv.id}`} className="block hover:opacity-90 transition-opacity">
+      <div className={compact ? "border-t border-stone-100" : ""}>
+        <Link href={`/my-pvs/${pv.id}`}>
+          <div className={`bg-white px-4 py-3.5 hover:bg-stone-50 transition-colors ${compact ? "" : "border border-stone-200 rounded-xl shadow-sm hover:border-[#4a6da7]/40 hover:shadow-sm"}`}>
             <div className="flex items-start justify-between gap-3">
+              {/* Left: info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
                   <StatusBadge status={pv.status!} />
                   {pv.ministry && (
-                    <button onClick={e => { e.preventDefault(); openMinistryPopup(pv.ministry!, pv.amount ?? 0); }}
+                    <button
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); openMinistryPopup(pv.ministry!, pv.amount ?? 0); }}
                       className="flex items-center gap-1 text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium hover:bg-[#4a6da7]/20 transition-colors">
                       <Wallet size={10} /> {pv.ministry}
                     </button>
                   )}
                 </div>
-                <div className="text-sm font-semibold text-stone-800">{pv.payee_name}</div>
-                <div className="text-xs text-stone-500 mt-0.5">{pv.purpose}</div>
-                <div className="text-xs text-stone-400">Submitted {formatDate(pv.submitted_at!)} by {pv.submitted_by_email}</div>
+                <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
+                <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.purpose}</div>
+                <div className="text-xs text-stone-400 mt-0.5">Submitted {formatDate(pv.submitted_at!)} by {pv.submitted_by_email}</div>
               </div>
-              <div className="text-right shrink-0">
-                <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
-                <div className="text-xs text-stone-400 mt-0.5">{loa.label}</div>
+
+              {/* Right: amount + LOA + actions */}
+              <div className="flex flex-col items-end gap-1.5 shrink-0" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+                <div className="text-sm font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
+                <div className="text-xs text-stone-400">{loa.label}</div>
                 <div className="text-xs text-[#4a6da7] font-medium">{signatoryApprovals.length}/{loa.required} signed</div>
-                <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-stone-400">
+                <div className="flex items-center gap-1 text-[10px] text-stone-400">
                   <ExternalLink size={10} /> View details
                 </div>
+                {isSignatoryUser && (
+                  userHasActed ? (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
+                        {userApproval!.action === "APPROVED" ? "✓ Approved" : "✕ Rejected"}
+                      </span>
+                      <Btn color="gray" icon={<RotateCcw size={9} />} label="Revert"
+                        loading={reverting === pv.id}
+                        onClick={() => revertPv(pv.id!)} />
+                    </div>
+                  ) : (
+                    <div className="flex gap-1 mt-0.5">
+                      <Btn color="green" icon={<CheckCircle size={10} />} label="Approve"
+                        onClick={() => openPin([pv.id!], "APPROVED")} />
+                      <Btn color="red" icon={<XCircle size={10} />} label="Reject"
+                        onClick={() => openPin([pv.id!], "REJECTED")} />
+                    </div>
+                  )
+                )}
               </div>
             </div>
-            </Link>
-            {isSignatoryUser && (userHasActed ? (
-              <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
-                <div className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
-                  {userApproval!.action === "APPROVED" ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                  {userApproval!.action === "APPROVED" ? "You approved this" : "You rejected this"}
-                </div>
-                <button onClick={() => revertPv(pv.id!)} disabled={reverting === pv.id}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-700 text-xs font-medium hover:bg-amber-100 transition-colors disabled:opacity-50">
-                  <RotateCcw size={11} /> Revert
-                </button>
-              </div>
-            ) : (
-              <div className="flex gap-2 pt-1 border-t border-stone-100">
-                <button onClick={() => openPin([pv.id!], "APPROVED")}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
-                  <CheckCircle size={13} /> Approve
-                </button>
-                <button onClick={() => openPin([pv.id!], "REJECTED")}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors">
-                  <XCircle size={13} /> Reject
-                </button>
-              </div>
-            ))}
           </div>
-        </div>
+        </Link>
       </div>
     );
   }
@@ -294,23 +280,9 @@ export default function SignatoryPage() {
     <div className="p-5 max-w-3xl mx-auto space-y-4">
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-stone-800">Signatory Queue</h1>
-          <p className="text-sm text-stone-400">Payment vouchers awaiting your approval</p>
-        </div>
-        {anyChecked && (
-          <div className="flex gap-2 flex-wrap justify-end">
-            <button onClick={() => openPin([...checkedIds], "APPROVED")}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
-              <CheckCircle size={14} /> Bulk Approve ({checkedIds.size})
-            </button>
-            <button onClick={() => openPin([...checkedIds], "REJECTED")}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors">
-              <XCircle size={14} /> Bulk Reject ({checkedIds.size})
-            </button>
-          </div>
-        )}
+      <div>
+        <h1 className="text-xl font-bold text-stone-800">Signatory Queue</h1>
+        <p className="text-sm text-stone-400">Payment vouchers awaiting your approval</p>
       </div>
 
       {/* Toast */}
@@ -438,99 +410,74 @@ export default function SignatoryPage() {
           No PVs awaiting your signature
         </div>
       ) : (
-        <>
-          {/* Select all */}
-          <div className="flex items-center gap-2 px-1">
-            <input type="checkbox" className="accent-[#4a6da7] w-4 h-4 cursor-pointer"
-              checked={allChecked} onChange={toggleAll} />
-            <span className="text-xs text-stone-500">{allChecked ? "Deselect all" : `Select all (${allIds.length})`}</span>
-          </div>
+        <div className="space-y-3">
+          {/* ── Bulk groups ── */}
+          {bulkGroups.map(group => {
+            const isExpanded = expandedBulk.has(group.runId);
+            const groupTotal = group.pvs.reduce((s, p) => s + (p.amount ?? 0), 0);
+            const groupIds = group.pvs.map(p => p.id!);
+            const allGroupActed = currentUser && group.pvs.every(pv =>
+              (pv.approvals ?? []).some((a: { email?: string; role?: string; action: string }) =>
+                ["APPROVED", "REJECTED"].includes(a.action) &&
+                (a.email === currentUser.email || a.role === currentUser.role)
+              )
+            );
 
-          <div className="space-y-3">
-            {/* ── Bulk groups ── */}
-            {bulkGroups.map(group => {
-              const isExpanded = expandedBulk.has(group.runId);
-              const groupTotal = group.pvs.reduce((s, p) => s + (p.amount ?? 0), 0);
-              const groupIds = group.pvs.map(p => p.id!);
-              const allGroupChecked = groupIds.every(id => checkedIds.has(id));
-              const allGroupActed = currentUser && group.pvs.every(pv =>
-                (pv.approvals ?? []).some((a: { email?: string; role?: string; action: string }) =>
-                  ["APPROVED", "REJECTED"].includes(a.action) &&
-                  (a.email === currentUser.email || a.role === currentUser.role)
-                )
-              );
+            return (
+              <div key={group.runId} className="border border-stone-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+                {/* Bulk header */}
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <button
+                    onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
+                    className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity">
+                    {isExpanded ? <ChevronDown size={15} className="text-stone-400 shrink-0" /> : <ChevronRight size={15} className="text-stone-400 shrink-0" />}
+                    <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full shrink-0">
+                      <Layers size={10} /> BULK
+                    </span>
+                    <span className="font-semibold text-stone-800 text-sm truncate">{group.groupName}</span>
+                    <span className="text-xs text-stone-400 shrink-0">{group.pvs.length} PVs</span>
+                  </button>
 
-              return (
-                <div key={group.runId} className="border border-stone-200 rounded-2xl overflow-hidden bg-white shadow-sm">
-                  {/* Bulk header */}
-                  <div className="flex items-center gap-3 px-4 py-3">
-                    {/* Group checkbox */}
-                    <input type="checkbox" className="accent-[#4a6da7] w-4 h-4 cursor-pointer shrink-0"
-                      checked={allGroupChecked}
-                      onChange={() => {
-                        setCheckedIds(prev => {
-                          const n = new Set(prev);
-                          if (allGroupChecked) groupIds.forEach(id => n.delete(id));
-                          else groupIds.forEach(id => n.add(id));
-                          return n;
-                        });
-                      }} />
-
-                    {/* Expand toggle */}
-                    <button
-                      onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
-                      className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
-                    >
-                      {isExpanded ? <ChevronDown size={15} className="text-stone-400 shrink-0" /> : <ChevronRight size={15} className="text-stone-400 shrink-0" />}
-                      <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full shrink-0">
-                        <Layers size={10} /> BULK
-                      </span>
-                      <span className="font-semibold text-stone-800 text-sm truncate">{group.groupName}</span>
-                      <span className="text-xs text-stone-400 shrink-0">{group.pvs.length} PVs</span>
-                    </button>
-
-                    {/* Amount + bulk actions */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-bold text-stone-800">{formatCurrency(groupTotal)}</span>
-                      <Link href={`/bulk-pvs/${group.runId}`}
-                        className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
-                        <ExternalLink size={11} /> View Batch
-                      </Link>
-                      {currentUser && ["BISHOP","TREASURER","SECRETARY","GENERAL_MANAGER"].includes(currentUser.role) && (<>
-                        <button onClick={() => openPin(groupIds, "APPROVED")}
-                          disabled={!!allGroupActed}
-                          title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
-                          className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>
-                          <CheckCircle size={11} /> Approve All
-                        </button>
-                        <button onClick={() => openPin(groupIds, "REJECTED")}
-                          disabled={!!allGroupActed}
-                          title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
-                          className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600 text-white"}`}>
-                          <XCircle size={11} /> Reject All
-                        </button>
-                      </>)}
-                    </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-sm font-bold text-stone-800">{formatCurrency(groupTotal)}</span>
+                    <Link href={`/bulk-pvs/${group.runId}`}
+                      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
+                      <ExternalLink size={11} /> View Batch
+                    </Link>
+                    {isSignatoryUser && (<>
+                      <button onClick={() => openPin(groupIds, "APPROVED")}
+                        disabled={!!allGroupActed}
+                        title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
+                        className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>
+                        <CheckCircle size={11} /> Approve All
+                      </button>
+                      <button onClick={() => openPin(groupIds, "REJECTED")}
+                        disabled={!!allGroupActed}
+                        title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
+                        className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600 text-white"}`}>
+                        <XCircle size={11} /> Reject All
+                      </button>
+                    </>)}
                   </div>
-
-                  {/* Individual PVs — shown when expanded */}
-                  {isExpanded && (
-                    <div className="bg-stone-50/60 space-y-0">
-                      {group.pvs.map(pv => (
-                        <PVCard key={pv.id} pv={pv} compact />
-                      ))}
-                    </div>
-                  )}
                 </div>
-              );
-            })}
 
-            {/* ── Standalone PVs ── */}
-            {standalones.map(pv => (
-              <PVCard key={pv.id} pv={pv} />
-            ))}
-          </div>
-        </>
+                {/* Individual PVs — shown when expanded */}
+                {isExpanded && (
+                  <div className="bg-stone-50/60 divide-y divide-stone-100">
+                    {group.pvs.map(pv => (
+                      <PVCard key={pv.id} pv={pv} compact />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* ── Standalone PVs ── */}
+          {standalones.map(pv => (
+            <PVCard key={pv.id} pv={pv} />
+          ))}
+        </div>
       )}
     </div>
   );
