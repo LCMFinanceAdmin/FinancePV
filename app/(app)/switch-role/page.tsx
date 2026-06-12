@@ -74,8 +74,7 @@ export default function SwitchRolePage() {
       const mins = selectedRole === "MINISTRY_HEAD" ? selectedMinistries : [];
       await supabase
         .from("user_roles")
-        .update({ role: selectedRole, ministries: mins })
-        .eq("email", email);
+        .upsert({ email, role: selectedRole, ministries: mins }, { onConflict: "email" });
 
       setCurrentRole(selectedRole);
       showToast(`Switched to ${ROLES.find(r => r.value === selectedRole)?.label}`);

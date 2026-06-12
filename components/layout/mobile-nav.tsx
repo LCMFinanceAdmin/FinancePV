@@ -48,8 +48,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     const ministries = selectedRole === "MINISTRY_HEAD" ? selectedMinistries : [];
     await supabase
       .from("user_roles")
-      .update({ role: selectedRole, ministries })
-      .eq("email", user.email);
+      .upsert({ email: user.email, role: selectedRole, ministries }, { onConflict: "email" });
     router.refresh();
     setSwitching(false);
     setShowSwitcher(false);
