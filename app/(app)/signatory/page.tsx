@@ -6,7 +6,7 @@ import { formatCurrency, formatDate, getLOATier } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
-  Layers, ChevronDown, ChevronRight, ExternalLink,
+  Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -39,6 +39,8 @@ export default function SignatoryPage() {
   const [ministryPopup, setMinistryPopup] = useState<MinistryPopup | null>(null);
   const [budgetRows, setBudgetRows] = useState<BudgetSummary[]>([]);
   const [budgetLoading, setBudgetLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ email: string; role: string } | null>(null);
+  const [reverting, setReverting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -72,6 +74,37 @@ export default function SignatoryPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+      const { data: profile } = await supabase.from("user_roles").select("role").eq("email", authUser.email).single();
+      setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF" });
+    }
+    loadUser();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function revertPv(pvId: string) {
+    setReverting(pvId);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pvId, action: "REVERT" }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || "Revert failed", false); return; }
+      showToast("Approval reverted");
+      await load();
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Revert failed", false);
+    } finally {
+      setReverting(null);
+    }
+  }
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
@@ -180,11 +213,15 @@ export default function SignatoryPage() {
 
   function PVCard({ pv, compact = false }: { pv: PVWithBulk; compact?: boolean }) {
     const loa = getLOATier(pv.amount ?? 0, pv.payment_type);
-    const approvals: { role: string; action: string }[] = pv.approvals ?? [];
+    const approvals: { role: string; action: string; email?: string; name?: string }[] = pv.approvals ?? [];
     const signatoryApprovals = approvals.filter(
       a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
     );
     const isChecked = checkedIds.has(pv.id!);
+    const userApproval = currentUser
+      ? approvals.find(a => a.email === currentUser.email && ["APPROVED", "REJECTED"].includes(a.action))
+      : undefined;
+    const userHasActed = !!userApproval;
 
     return (
       <div className={`flex items-start gap-3 ${compact ? "px-4 py-3 border-t border-stone-100" : ""}`}>
@@ -222,16 +259,29 @@ export default function SignatoryPage() {
               </div>
             </div>
             </Link>
-            <div className="flex gap-2 pt-1 border-t border-stone-100">
-              <button onClick={() => openPin([pv.id!], "APPROVED")}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
-                <CheckCircle size={13} /> Approve
-              </button>
-              <button onClick={() => openPin([pv.id!], "REJECTED")}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors">
-                <XCircle size={13} /> Reject
-              </button>
-            </div>
+            {userHasActed ? (
+              <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
+                <div className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
+                  {userApproval!.action === "APPROVED" ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                  {userApproval!.action === "APPROVED" ? "You approved this" : "You rejected this"}
+                </div>
+                <button onClick={() => revertPv(pv.id!)} disabled={reverting === pv.id}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-700 text-xs font-medium hover:bg-amber-100 transition-colors disabled:opacity-50">
+                  <RotateCcw size={11} /> Revert
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2 pt-1 border-t border-stone-100">
+                <button onClick={() => openPin([pv.id!], "APPROVED")}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
+                  <CheckCircle size={13} /> Approve
+                </button>
+                <button onClick={() => openPin([pv.id!], "REJECTED")}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors">
+                  <XCircle size={13} /> Reject
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -401,6 +451,11 @@ export default function SignatoryPage() {
               const groupTotal = group.pvs.reduce((s, p) => s + (p.amount ?? 0), 0);
               const groupIds = group.pvs.map(p => p.id!);
               const allGroupChecked = groupIds.every(id => checkedIds.has(id));
+              const allGroupActed = currentUser && group.pvs.every(pv =>
+                (pv.approvals ?? []).some((a: { email?: string; action: string }) =>
+                  a.email === currentUser.email && ["APPROVED", "REJECTED"].includes(a.action)
+                )
+              );
 
               return (
                 <div key={group.runId} className="border border-stone-200 rounded-2xl overflow-hidden bg-white shadow-sm">
@@ -439,11 +494,15 @@ export default function SignatoryPage() {
                         <ExternalLink size={11} /> View Batch
                       </Link>
                       <button onClick={() => openPin(groupIds, "APPROVED")}
-                        className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors">
+                        disabled={!!allGroupActed}
+                        title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
+                        className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>
                         <CheckCircle size={11} /> Approve All
                       </button>
                       <button onClick={() => openPin(groupIds, "REJECTED")}
-                        className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors">
+                        disabled={!!allGroupActed}
+                        title={allGroupActed ? "You have already acted on all PVs in this group" : undefined}
+                        className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600 text-white"}`}>
                         <XCircle size={11} /> Reject All
                       </button>
                     </div>
