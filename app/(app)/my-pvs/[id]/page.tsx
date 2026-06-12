@@ -173,6 +173,8 @@ export default function PVDetailPage() {
   const [rejectRemarks, setRejectRemarks] = useState("");
   const [showPayModal, setShowPayModal] = useState(false);
   const [payForm, setPayForm] = useState({ ref: "", date: "", method: "Bank Transfer" });
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptUploading, setReceiptUploading] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelRemarks, setCancelRemarks] = useState("");
   const [showEditModal, setShowEditModal] = useState(false);
@@ -287,6 +289,36 @@ export default function PVDetailPage() {
     }
     load();
   }, [id]);
+
+  async function confirmPaid() {
+    if (!pv) return;
+    setReceiptUploading(true);
+    let receiptUrl = "";
+    try {
+      if (receiptFile) {
+        const ext = receiptFile.name.split(".").pop() ?? "pdf";
+        const path = `${pv.id}/receipt.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from("payment-receipts")
+          .upload(path, receiptFile, { upsert: true });
+        if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+        const { data: urlData } = supabase.storage.from("payment-receipts").getPublicUrl(path);
+        receiptUrl = urlData.publicUrl;
+      }
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setReceiptUploading(false);
+      return;
+    }
+    setReceiptUploading(false);
+    const extras: Record<string, string> = {
+      payment_ref: payForm.ref,
+      payment_date: payForm.date,
+      payment_method: payForm.method,
+    };
+    if (receiptUrl) extras.payment_receipt_url = receiptUrl;
+    await callAdminAction("MARK_PAID", extras);
+  }
 
   async function callAdminAction(action: string, extras?: Record<string, string>) {
     if (!pv) return;
@@ -653,6 +685,12 @@ export default function PVDetailPage() {
               </div>
               {pv.paid_by && <div className="text-xs text-emerald-600 mt-0.5">Marked paid by {pv.paid_by}</div>}
             </div>
+            {pv.payment_receipt_url && (
+              <a href={pv.payment_receipt_url} target="_blank" rel="noopener noreferrer"
+                className="ml-auto shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-semibold rounded-lg transition-colors">
+                📎 View Receipt
+              </a>
+            )}
           </div>
         </div>
       )}
@@ -893,14 +931,28 @@ export default function PVDetailPage() {
                   <option>JomPay</option>
                 </select>
               </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-600 block mb-1">
+                  Bank Slip / Receipt <span className="text-stone-400 font-normal">(optional — PDF, JPG, PNG)</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={e => setReceiptFile(e.target.files?.[0] ?? null)}
+                  className="w-full border border-stone-300 rounded-lg p-2 text-sm text-stone-600 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#4a6da7] file:text-white hover:file:bg-[#3a5d97] cursor-pointer"
+                />
+                {receiptFile && (
+                  <p className="text-xs text-green-700 mt-1">✓ {receiptFile.name}</p>
+                )}
+              </div>
             </div>
             <div className="flex gap-2 mt-5">
-              <button onClick={() => callAdminAction("MARK_PAID", { payment_ref: payForm.ref, payment_date: payForm.date, payment_method: payForm.method })}
-                disabled={actionLoading}
+              <button onClick={confirmPaid}
+                disabled={actionLoading || receiptUploading}
                 className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors">
-                {actionLoading ? "Processing…" : "✓ Confirm Paid"}
+                {receiptUploading ? "Uploading…" : actionLoading ? "Processing…" : "✓ Confirm Paid"}
               </button>
-              <button onClick={() => setShowPayModal(false)}
+              <button onClick={() => { setShowPayModal(false); setReceiptFile(null); }}
                 className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-lg text-sm font-medium hover:bg-stone-50 transition-colors">
                 Cancel
               </button>

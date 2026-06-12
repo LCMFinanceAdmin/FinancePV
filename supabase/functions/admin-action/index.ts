@@ -111,6 +111,7 @@ Deno.serve(async (req) => {
         payment_date: body.payment_date || null,
         payment_method: body.payment_method || "",
         paid_payer_bank: body.paid_payer_bank || "",
+        payment_receipt_url: body.payment_receipt_url || null,
         updated_at: new Date().toISOString(),
       }).eq("id", pv_id);
 
