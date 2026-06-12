@@ -14,7 +14,7 @@ export default function SettingsPage() {
     <div className="p-5 max-w-xl mx-auto space-y-4">
       <div>
         <h1 className="text-xl font-bold text-stone-800">Settings</h1>
-        <p className="text-sm text-stone-400">Finance Admin controls</p>
+        <p className="text-sm text-stone-400">Finance Executive controls</p>
       </div>
       <div className="space-y-2">
         {SECTIONS.map((s) => (

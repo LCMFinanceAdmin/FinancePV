@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, roleLabel } from "@/lib/utils";
 import type { PurchaseRequest } from "@/lib/types";
 import { Plus, Trash2, Upload, X, FileText, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -340,7 +340,7 @@ export default function PurchaseRequestsPage() {
                   )}
                   {pr.status === "APPROVED" && (
                     <div className="mt-2 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
-                      ✓ Approved — Finance Admin will raise a PV shortly
+                      ✓ Approved — Finance Executive will raise a PV shortly
                     </div>
                   )}
 
@@ -406,7 +406,7 @@ export default function PurchaseRequestsPage() {
                         <div className="text-xs font-medium text-stone-500 mb-1">Approvals</div>
                         {pr.approvals.map((a, i) => (
                           <div key={i} className="text-xs text-stone-600">
-                            {a.action === "APPROVED" ? "✓" : "✕"} {a.name} ({a.role}) — {formatDate(a.timestamp)}
+                            {a.action === "APPROVED" ? "✓" : "✕"} {a.name} ({roleLabel(a.role)}) — {formatDate(a.timestamp)}
                             {a.remarks && <span className="text-stone-400"> · {a.remarks}</span>}
                           </div>
                         ))}

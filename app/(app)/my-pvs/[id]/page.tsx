@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate, formatDateTime, getLOATier } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateTime, getLOATier, roleLabel } from "@/lib/utils";
 import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
@@ -197,7 +197,7 @@ export default function PVDetailPage() {
   const [isErasing, setIsErasing]             = useState(false);
   const [finSignError, setFinSignError]       = useState("");
 
-  // Finance Admin sign
+  // Finance Executive sign
   const [showFinanceSignModal, setShowFinanceSignModal] = useState(false);
   const [finSignLoading, setFinSignLoading]             = useState(false);
 
@@ -313,8 +313,8 @@ export default function PVDetailPage() {
       if (fresh) setPv(fresh as PV);
     } catch (e: unknown) {
       const errMsg = (e as Error).message;
-      const displayMsg = errMsg === "Finance Admin only"
-        ? "Role mismatch — use 'Switch Role' in the menu to restore Finance Admin role, then try again."
+      const displayMsg = errMsg === "Finance Executive only"
+        ? "Role mismatch — use 'Switch Role' in the menu to restore Finance Executive role, then try again."
         : errMsg;
       setActionToast({ msg: displayMsg, ok: false });
     } finally {
@@ -630,7 +630,7 @@ export default function PVDetailPage() {
             <div>
               <strong>PV {pv.status === "REJECTED_HEAD" ? "Rejected by EXCO Member" : "Rejected"}</strong>
               {approvals.filter(a => a.action === "REJECTED").map((a, i) => (
-                <div key={i} className="text-xs mt-1">{a.role} ({a.name}): {a.remarks || "No remarks"}</div>
+                <div key={i} className="text-xs mt-1">{roleLabel(a.role)} ({a.name}): {a.remarks || "No remarks"}</div>
               ))}
             </div>
           </div>
@@ -657,13 +657,13 @@ export default function PVDetailPage() {
         </div>
       )}
 
-      {/* ── Finance Admin Action Panel ─────────────────────────────── */}
+      {/* ── Finance Executive Action Panel ─────────────────────────────── */}
       {user?.isFinanceAdmin && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-blue-600" />
-              <span className="text-sm font-semibold text-blue-800">Finance Admin Actions</span>
+              <span className="text-sm font-semibold text-blue-800">Finance Executive Actions</span>
               <span className="ml-auto text-xs text-stone-500">PV is <strong>{pv.status.replace(/_/g, " ")}</strong></span>
             </div>
 
@@ -799,7 +799,7 @@ export default function PVDetailPage() {
       {(user?.isFinanceAdmin || (user?.email === pv.submitted_by_email && !user?.isSignatory)) &&
         !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-3 flex items-center gap-2 flex-wrap">
-          {/* Edit — Finance Admin only */}
+          {/* Edit — Finance Executive only */}
           {user?.isFinanceAdmin && (
             <button onClick={() => {
               setEditForm({
@@ -828,7 +828,7 @@ export default function PVDetailPage() {
             <XIcon size={13} />
             {user?.email === pv.submitted_by_email && !user?.isFinanceAdmin ? "Withdraw PV" : "Cancel PV"}
           </button>
-          {/* Hard Delete — Finance Admin only */}
+          {/* Hard Delete — Finance Executive only */}
           {user?.isFinanceAdmin && (
             <button onClick={() => setShowHardDeleteModal(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 transition-colors">
@@ -1128,7 +1128,7 @@ export default function PVDetailPage() {
             {!editingComment && (
               <p className="text-xs text-stone-400 mb-3">
                 Your comment will appear in the Particulars table as:<br />
-                <span className="font-semibold text-stone-600 text-[11px]">Comment from [{user?.role?.replace(/_/g, " ")}]: …</span>
+                <span className="font-semibold text-stone-600 text-[11px]">Comment from [{roleLabel(user?.role)}]: …</span>
               </p>
             )}
             <textarea
@@ -1152,7 +1152,7 @@ export default function PVDetailPage() {
         </div>
       )}
 
-      {/* ── Finance Admin Sign Modal ───────────────────────────────── */}
+      {/* ── Finance Executive Sign Modal ───────────────────────────────── */}
       {showFinanceSignModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[95vh] flex flex-col">
@@ -1241,8 +1241,8 @@ export default function PVDetailPage() {
             <div className="px-5 pb-4 border-t border-stone-200 pt-4 space-y-2">
               {finSignError && (
                 <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  {finSignError === "Finance Admin only"
-                    ? "Your current role is not Finance Admin. Switch your role back to Finance Admin from the menu and try again."
+                  {finSignError === "Finance Executive only"
+                    ? "Your current role is not Finance Executive. Switch your role back to Finance Executive from the menu and try again."
                     : finSignError}
                 </div>
               )}
@@ -1577,17 +1577,13 @@ export default function PVDetailPage() {
                 ))}
                 {/* Signatory comment rows */}
                 {(pv.approvals ?? []).filter(a => a.action === "COMMENT").map((a, i) => {
-                  const roleLabel = a.role === "GENERAL_MANAGER" ? "GM"
-                    : a.role === "BISHOP" ? "Bishop"
-                    : a.role === "TREASURER" ? "Treasurer"
-                    : a.role === "SECRETARY" ? "Secretary"
-                    : a.role;
+                  const commentRole = a.role === "GENERAL_MANAGER" ? "GM" : roleLabel(a.role);
                   return (
                     <tr key={`comment-${i}`} className="bg-indigo-50/40">
                       <td className="border border-black px-1 py-2 text-center text-stone-400 text-[11px]">—</td>
                       <td className="border border-black px-2 py-2 text-[11px] text-stone-400">{fmtDate(a.timestamp)}</td>
                       <td className="border border-black px-2 py-2 text-[12px] italic text-indigo-800">
-                        <span className="font-semibold not-italic">Comment from [{roleLabel}]:</span> {a.remarks}
+                        <span className="font-semibold not-italic">Comment from [{commentRole}]:</span> {a.remarks}
                         {a.role === user?.role && user?.isSignatory && (
                           <button
                             onClick={() => { setCommentText(a.remarks); setEditingComment(true); setShowCommentModal(true); }}
@@ -1752,7 +1748,7 @@ export default function PVDetailPage() {
                               <span className="font-bold">Date:</span>
                               <span className="flex-1 border-b border-black">{fmtDate(appr?.timestamp)}</span>
                             </div>
-                            {appr && <div className="text-[11px] text-stone-500 mt-0.5">{appr.role}</div>}
+                            {appr && <div className="text-[11px] text-stone-500 mt-0.5">{roleLabel(appr.role)}</div>}
                             {!appr && <div className="text-[12px] text-stone-400 flex items-center gap-0.5 mt-0.5"><Clock size={8} /> Awaiting</div>}
                           </div>
                         ))}
@@ -1804,7 +1800,7 @@ export default function PVDetailPage() {
                       <div className="flex-1 pb-1">
                         <div className="flex items-baseline gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-stone-800">{a.name || a.email}</span>
-                          <span className="text-xs text-stone-400">({a.role})</span>
+                          <span className="text-xs text-stone-400">({roleLabel(a.role)})</span>
                           <span className={`text-xs font-semibold ml-auto ${labelColor}`}>{label}</span>
                         </div>
                         {a.remarks && (
@@ -1823,7 +1819,7 @@ export default function PVDetailPage() {
             {pv.admin_comment && (
               <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
                 <div className="text-xs font-semibold text-amber-800 mb-1 flex items-center gap-1.5">
-                  <FileText size={12} /> Finance Admin Note
+                  <FileText size={12} /> Finance Executive Note
                 </div>
                 <p className="text-sm text-amber-900">{pv.admin_comment}</p>
               </div>

@@ -79,7 +79,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
       ],
     },
     {
-      label: "Finance Admin",
+      label: "Finance Executive",
       items: [
         { href: "/control-center",     label: "Control Center",     icon: <LayoutGrid size={16} />,     show: user.isFinanceAdmin },
         { href: "/recurring",          label: "Recurring Expenses", icon: <RefreshCw size={16} />,      show: user.isFinanceAdmin },

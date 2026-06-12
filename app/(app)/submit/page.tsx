@@ -137,7 +137,7 @@ export default function SubmitPVPage() {
   const [success, setSuccess] = useState("");
   const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
 
-  // Finance Admin e-signature
+  // Finance Executive e-signature
   const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
   const [finSigData, setFinSigData]         = useState(""); // base64
   const [savedSig, setSavedSig]             = useState("");
@@ -200,7 +200,7 @@ export default function SubmitPVPage() {
   const totalFromItems = form.line_items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const displayAmount = totalFromItems;
   const loa = getLOATier(displayAmount, "GENERAL");
-  // Finance Admin / senior roles can always manage; Ministry Heads only for their assigned ministry
+  // Finance Executive / senior roles can always manage; Ministry Heads only for their assigned ministry
   const DIRECT_MANAGER_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "GENERAL_MANAGER", "TREASURER", "BISHOP", "SECRETARY"];
   const canManageProjects =
     DIRECT_MANAGER_ROLES.includes(userRole) ||
@@ -228,7 +228,7 @@ export default function SubmitPVPage() {
     setForm(f => ({ ...f, line_items: items.length ? items : [{ description: "", amount: 0, date: "" }] }));
   }
 
-  // ── Canvas helpers for Finance Admin signature ──────────────────────
+  // ── Canvas helpers for Finance Executive signature ──────────────────────
   const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     isDrawingRef.current = true;
     const canvas = canvasRef.current; if (!canvas) return;
@@ -620,13 +620,13 @@ export default function SubmitPVPage() {
             </label>
           </div>
 
-          {/* ── FINANCE ADMIN E-SIGNATURE ─────────────────────────────── */}
+          {/* ── FINANCE EXECUTIVE E-SIGNATURE ─────────────────────────── */}
           {isFinanceAdmin && (
             <div className="px-3 sm:px-6 py-4 border-t border-stone-200">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-1.5">
                   <PenLine size={14} className="text-[#4a6da7]" />
-                  <span className="text-sm font-semibold text-stone-700">Finance Admin E-Signature</span>
+                  <span className="text-sm font-semibold text-stone-700">Finance Executive E-Signature</span>
                   {finSigData && <span className="text-[11px] text-green-600 font-medium">(captured)</span>}
                 </div>
                 <div className="flex gap-1">

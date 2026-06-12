@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -11,9 +11,9 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { data: profile } = await db.from("user_roles").select("role,full_name,saved_signature").eq("email", user.email).single();
+    const profile = await getProfileByEmail(db, user.email!);
     const adminRoles = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
-    if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Admin only" }, 403);
+    if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Executive only" }, 403);
 
     const body = await req.json();
     const { pv_id, action } = body;
@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
 
-    // CANCEL is allowed for the PV submitter OR any Finance Admin
+    // CANCEL is allowed for the PV submitter OR any Finance Executive
     if (action === "CANCEL") {
       const isSubmitter = pv.submitted_by_email === user.email;
       if (!adminRoles.includes(profile?.role) && !isSubmitter) {
@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
       if (pv.status === "PAID") return json({ error: "Cannot cancel a paid PV" }, 400);
       await db.from("pvs").update({
         status: "CANCELLED",
-        admin_comment: body.remarks?.trim() || (isSubmitter ? "Withdrawn by submitter" : "Cancelled by Finance Admin"),
+        admin_comment: body.remarks?.trim() || (isSubmitter ? "Withdrawn by submitter" : "Cancelled by Finance Executive"),
         updated_at: new Date().toISOString(),
       }).eq("id", pv_id);
       // Notify submitter if cancelled by admin (not self)
@@ -48,8 +48,8 @@ Deno.serve(async (req) => {
       return json({ ok: true, status: "CANCELLED" });
     }
 
-    // All other actions require Finance Admin
-    if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Admin only" }, 403);
+    // All other actions require Finance Executive
+    if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Executive only" }, 403);
 
     if (action === "REVIEW") {
       if (pv.status !== "PENDING") return json({ error: "PV is not in PENDING status" }, 400);
@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
         type: "PV_REJECTED",
         pv_no: pv.pv_no,
         pv_id,
-        message: `Your PV ${pv.pv_no} was rejected by Finance Admin: ${body.remarks}`,
+        message: `Your PV ${pv.pv_no} was rejected by Finance Executive: ${body.remarks}`,
         read: false,
         created_at: new Date().toISOString(),
       });

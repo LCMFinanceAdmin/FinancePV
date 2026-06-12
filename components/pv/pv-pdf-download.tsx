@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import type { PV, PVApproval } from "@/lib/types";
-import { getLOATier } from "@/lib/utils";
+import { getLOATier, roleLabel } from "@/lib/utils";
 import {
   pdf, Document, Page, Text, View, StyleSheet, Image, Font,
 } from "@react-pdf/renderer";
@@ -214,7 +214,7 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
         <View style={{ marginTop: 8 }}>
           <View style={s.finHeader}><Text>For LCM Finance Office Use Only （供LCM财政部使用）</Text></View>
           <View style={[s.row, s.border, { borderTop: "none" }]}>
-            {/* Finance Admin */}
+            {/* Finance Executive */}
             <View style={[{ flex: 1, padding: "6pt 8pt", borderRight: "1pt solid #000" }]}>
               <Text style={[s.bold, s.tiny, { borderBottom: "1pt solid #000", paddingBottom: 2, marginBottom: 4 }]}>Checked &amp; Verified by:</Text>
               <View style={{ height: 40 }} />
@@ -257,7 +257,7 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
                         {appr ? (
                           <>
                             <Text style={[s.bold, s.tiny]}>{appr.name || appr.email}</Text>
-                            <Text style={s.tiny}>{appr.role}</Text>
+                            <Text style={s.tiny}>{roleLabel(appr.role)}</Text>
                             <Text style={s.tiny}>Date: {fmtDate(appr.timestamp)}</Text>
                           </>
                         ) : (
@@ -277,7 +277,7 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
           <View style={{ marginTop: 6 }}>
             <Text style={[s.bold, s.tiny, { marginBottom: 2 }]}>Remarks:</Text>
             {approvals.filter(a => a.remarks).map((a, i) => (
-              <Text key={i} style={s.tiny}>{a.role} ({a.name}): {a.remarks}</Text>
+              <Text key={i} style={s.tiny}>{roleLabel(a.role)} ({a.name}): {a.remarks}</Text>
             ))}
           </View>
         )}

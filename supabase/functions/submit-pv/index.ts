@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, getLOATier, nextPvNo } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getLOATier, nextPvNo, getProfileByEmail } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { data: profile } = await db.from("user_roles").select("*").eq("email", user.email).single();
+    const profile = await getProfileByEmail(db, user.email!, "*");
 
     const d = await req.json();
 
@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
     const amount = Number(d.amount) || 0;
     const loa = getLOATier(amount, d.payment_type);
 
-    // Finance Admin e-signature entry
+    // Finance Executive e-signature entry
     const now = new Date().toISOString();
     const financeApprovalEntry = d.finance_signature_data
       ? [{

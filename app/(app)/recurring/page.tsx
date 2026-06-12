@@ -510,7 +510,7 @@ export default function RecurringPage() {
   }
 
   function defaultPeriodLabel(freq: string) {
-    // Default to next month for monthly/quarterly/etc — Finance Admin usually
+    // Default to next month for monthly/quarterly/etc — Finance Executive usually
     // prepares PVs in advance for the upcoming period
     const d = new Date();
     if (freq === "WEEKLY")      d.setDate(d.getDate() + 7);

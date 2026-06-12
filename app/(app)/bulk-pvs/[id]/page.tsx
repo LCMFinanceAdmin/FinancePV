@@ -236,7 +236,7 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
           <span style={{ fontFamily: "KaiTi, STKaiti, serif", fontWeight: "normal" }}>LCM财务处专用</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black">
-          {/* Prepared by — Finance Admin auto-sig */}
+          {/* Prepared by — Finance Executive auto-sig */}
           <div className="px-4 py-3">
             <div className="text-[12px] font-bold mb-0.5">Prepared by:</div>
             <div className="text-[11px] text-stone-800 mb-1">(Finance Executive)</div>
@@ -330,7 +330,7 @@ export default function BulkPVPage() {
   const [signingPvId, setSigningPvId]       = useState<string | null>(null);
   const [signatureData, setSignatureData]   = useState("");
   const [savedSig, setSavedSig]             = useState("");
-  const [finSigData, setFinSigData]         = useState(""); // Finance Admin's sig for display
+  const [finSigData, setFinSigData]         = useState(""); // Finance Executive's sig for display
   const [approverSigs, setApproverSigs]     = useState<Record<string, string>>({}); // email → saved_signature
   const [sigMode, setSigMode]               = useState<"draw" | "upload">("draw");
   const [pin, setPin]                       = useState("");
@@ -384,7 +384,7 @@ export default function BulkPVPage() {
       });
       // Load saved signature for current user
       if (profile?.saved_signature) setSavedSig(profile.saved_signature);
-      // Load the Finance Admin's (run_by's) saved signature + full name for display
+      // Load the Finance Executive's (run_by's) saved signature + full name for display
       if (!isFinanceAdmin || !profile?.saved_signature) {
         const { data: runByProfile } = await supabase.from("user_roles")
           .select("saved_signature,full_name").eq("email", runData.run_by).single();
@@ -637,13 +637,13 @@ export default function BulkPVPage() {
         </div>
       </div>
 
-      {/* Finance Admin Actions */}
+      {/* Finance Executive Actions */}
       {user?.isFinanceAdmin && (pendingPvs.length > 0 || reviewedPvs.length > 0 || approvedPvs.length > 0) && (
         <div className="print:hidden max-w-6xl mx-auto px-4 mt-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-blue-600" />
-              <span className="text-sm font-semibold text-blue-800">Finance Admin Actions</span>
+              <span className="text-sm font-semibold text-blue-800">Finance Executive Actions</span>
             </div>
             <div className="space-y-2">
               {pendingPvs.length > 0 && (
@@ -851,7 +851,7 @@ export default function BulkPVPage() {
         </div>
       )}
 
-      {/* ── Finance Admin Bulk Sign Modal ─────────────────────────────── */}
+      {/* ── Finance Executive Bulk Sign Modal ─────────────────────────────── */}
       {showFinSignModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">

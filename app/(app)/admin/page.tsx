@@ -72,7 +72,7 @@ export default function AdminPage() {
   return (
     <div className="p-5 max-w-4xl mx-auto space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-stone-800">Finance Admin</h1>
+        <h1 className="text-xl font-bold text-stone-800">Finance Executive</h1>
         <p className="text-sm text-stone-400">Review and process all payment vouchers</p>
       </div>
 

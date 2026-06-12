@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { data: profile } = await db.from("user_roles").select("role,full_name,ministries").eq("email", user.email).single();
+    const profile = await getProfileByEmail(db, user.email!, "role,full_name,ministries");
     if (!profile?.ministries?.length) return json({ error: "Not a ministry head" }, 403);
 
     const { pv_id, action, remarks } = await req.json();
@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
       created_at: new Date().toISOString(),
     });
 
-    // Notify finance admin if approved
+    // Notify finance executive if approved
     if (action === "APPROVED") {
       const { data: admins } = await db.from("user_roles").select("email").in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
       if (admins?.length) {

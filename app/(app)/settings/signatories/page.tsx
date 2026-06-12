@@ -13,7 +13,7 @@ const ROLES = [
 
 const ROLE_LABELS: Record<string, string> = {
   FINANCE_ADMIN: "Finance Executive", FINANCE_ADMIN_2: "Accounts Executive",
-  FINANCE_ADMIN_3: "Finance Admin 3", GENERAL_MANAGER: "General Manager",
+  FINANCE_ADMIN_3: "Finance Executive 3", GENERAL_MANAGER: "General Manager",
   BISHOP: "Bishop", TREASURER: "Treasurer", SECRETARY: "Secretary",
   MINISTRY_HEAD: "EXCO Member", STAFF: "Staff",
 };

@@ -30,7 +30,7 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: "Finance Admin",
+    label: "Finance Executive",
     items: [
       { href: "/control-center",      label: "Control Center",    icon: <LayoutGrid size={16} />,     show: (u: UserProfile) => u.isFinanceAdmin },
       { href: "/recurring",           label: "Recurring Expenses",icon: <RefreshCw size={16} />,      show: (u: UserProfile) => u.isFinanceAdmin },

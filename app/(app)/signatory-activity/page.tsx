@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { formatCurrency, formatDateTime, roleLabel } from "@/lib/utils";
 import {
   CheckCircle2, XCircle, Clock, Search, ChevronDown, ChevronRight,
   Layers, CheckSquare, RotateCcw,
@@ -11,10 +11,6 @@ import Link from "next/link";
 import type { PV, PVApproval } from "@/lib/types";
 
 const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
-const ROLE_LABELS: Record<string, string> = {
-  BISHOP: "Bishop", TREASURER: "Treasurer",
-  SECRETARY: "Secretary", GENERAL_MANAGER: "General Manager",
-};
 
 function getRequiredSigs(loaRequired: number): string[] {
   return loaRequired >= 2 ? ["BISHOP", "SECRETARY", "TREASURER"] : ["TREASURER"];
@@ -264,7 +260,7 @@ export default function SignatoryActivityPage() {
               done ? "bg-green-100 text-green-700" : rejected ? "bg-red-100 text-red-600" : "bg-stone-100 text-stone-500"
             }`}>
               {done ? <CheckCircle2 size={9} /> : rejected ? <XCircle size={9} /> : <Clock size={9} />}
-              {ROLE_LABELS[role] ?? role}
+              {roleLabel(role)}
             </span>
           );
         })}
@@ -506,7 +502,7 @@ export default function SignatoryActivityPage() {
                         <td className="px-4 py-3 text-right font-medium text-stone-700 text-sm">{formatCurrency(r.amount)}</td>
                         <td className="px-4 py-3">
                           <div className="text-sm text-stone-700">{r.signatoryName}</div>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">{ROLE_LABELS[r.role] ?? r.role}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">{roleLabel(r.role)}</span>
                         </td>
                         <td className="px-4 py-3">
                           {r.action === "APPROVED"
