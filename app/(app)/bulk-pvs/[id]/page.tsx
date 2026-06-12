@@ -401,9 +401,9 @@ export default function BulkPVPage() {
       if (!finSig) {
         for (const pv of ordered) {
           const fa = (pv.approvals ?? []).find(
-            (a: Record<string, unknown>) => a.role === "FINANCE_ADMIN" && a.action === "APPROVED" && a.signature_data
+            a => a.role === "FINANCE_ADMIN" && a.action === "APPROVED" && a.signature_data
           );
-          if (fa?.signature_data) { finSig = fa.signature_data as string; break; }
+          if (fa?.signature_data) { finSig = fa.signature_data; break; }
         }
       }
       setFinSigData(finSig);
