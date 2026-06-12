@@ -45,7 +45,8 @@ export default function SignatoryPage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const [{ data: pvData }, { data: bulkData }] = await Promise.all([
+      const [{ data: { user: authUser } }, { data: pvData }, { data: bulkData }] = await Promise.all([
+        supabase.auth.getUser(),
         supabase
           .from("pvs")
           .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name")
@@ -53,6 +54,12 @@ export default function SignatoryPage() {
           .order("submitted_at", { ascending: true }),
         supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount"),
       ]);
+
+      if (authUser) {
+        const { data: profile } = await supabase.from("user_roles")
+          .select("role").eq("email", authUser.email!).single();
+        setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF" });
+      }
 
       // Build bulk map: pv_id → run info
       const bulkMap: Record<string, BulkRun> = {};
@@ -71,20 +78,10 @@ export default function SignatoryPage() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    async function loadUser() {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return;
-      const { data: profile } = await supabase.from("user_roles").select("role").eq("email", authUser.email).single();
-      setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF" });
-    }
-    loadUser();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function revertPv(pvId: string) {
     setReverting(pvId);
@@ -219,7 +216,10 @@ export default function SignatoryPage() {
     );
     const isChecked = checkedIds.has(pv.id!);
     const userApproval = currentUser
-      ? approvals.find(a => a.email === currentUser.email && ["APPROVED", "REJECTED"].includes(a.action))
+      ? approvals.find(a =>
+          ["APPROVED", "REJECTED"].includes(a.action) &&
+          (a.email === currentUser.email || a.role === currentUser.role)
+        )
       : undefined;
     const userHasActed = !!userApproval;
 
@@ -452,8 +452,9 @@ export default function SignatoryPage() {
               const groupIds = group.pvs.map(p => p.id!);
               const allGroupChecked = groupIds.every(id => checkedIds.has(id));
               const allGroupActed = currentUser && group.pvs.every(pv =>
-                (pv.approvals ?? []).some((a: { email?: string; action: string }) =>
-                  a.email === currentUser.email && ["APPROVED", "REJECTED"].includes(a.action)
+                (pv.approvals ?? []).some((a: { email?: string; role?: string; action: string }) =>
+                  ["APPROVED", "REJECTED"].includes(a.action) &&
+                  (a.email === currentUser.email || a.role === currentUser.role)
                 )
               );
 
