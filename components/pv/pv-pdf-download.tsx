@@ -114,16 +114,45 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
   const sigApprovals    = approvals.filter(a =>
     ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
   );
+  const excoApproval    = approvals.find(a => a.role === "MINISTRY_HEAD" && a.action === "APPROVED");
 
   const ministryVerified =
     String(pv.ministry_verified ?? "").toUpperCase() === "YES" ||
-    String(pv.head_verified ?? "").toUpperCase() === "YES";
+    String(pv.head_verified ?? "").toUpperCase() === "YES" ||
+    !!excoApproval;
 
   const isPaid = pv.status === "PAID";
 
   return (
     <Document title={`PV ${pv.pv_no}`}>
       <Page size="A4" style={s.page}>
+
+        {/* ── PAID banner — shown at the TOP when the PV is paid ─────── */}
+        {isPaid && (
+          <View style={{
+            flexDirection: "row", alignItems: "center", gap: 12,
+            border: "2pt solid #16a34a", borderRadius: 6,
+            backgroundColor: "#f0fdf4", padding: "6pt 10pt", marginBottom: 8,
+          }}>
+            <View style={{
+              border: "3pt solid #16a34a", borderRadius: 4,
+              padding: "4pt 10pt", transform: "rotate(-8deg)",
+            }}>
+              <Text style={{ fontSize: 16, fontFamily: "Helvetica-Bold", color: "#16a34a", letterSpacing: 3 }}>PAID</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#166534" }}>Payment Completed</Text>
+              <Text style={{ fontSize: 8, color: "#15803d", marginTop: 2 }}>
+                {[
+                  pv.payment_method,
+                  pv.payment_ref && `Ref: ${pv.payment_ref}`,
+                  pv.paid_at && fmtDate(pv.paid_at),
+                ].filter(Boolean).join("  ·  ")}
+              </Text>
+              {pv.paid_by ? <Text style={{ fontSize: 8, color: "#15803d", marginTop: 1 }}>Marked paid by {pv.paid_by}</Text> : null}
+            </View>
+          </View>
+        )}
 
         {/* Row 1: Logo + Office Use */}
         <View style={[s.row, { marginBottom: 6 }]}>
@@ -217,21 +246,30 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
           </View>
         </View>
 
-        {/* Ministry/Dept Head verification */}
+        {/* EXCO / Ministry Head verification — always show as a signing box */}
         <View style={[s.border, { marginTop: 6, padding: "6pt 8pt" }]}>
-          <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified/Approved by 审核/批准者签名:</Text>
-          <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By Chairperson/Person in Charge 事工执行主席/主管)</Text>
-          {ministryVerified ? (
-            <>
-              <View style={{ height: 40 }} />
-              <View style={[s.borderT, { paddingTop: 3 }]}>
-                <Text style={[s.bold, s.tiny]}>{pv.ministry_verified_by ?? "EXCO Member"}</Text>
-                <Text style={s.tiny}>{pv.ministry}  Date: {fmtDate(pv.ministry_verified_at ?? pv.head_verified_at)}</Text>
-              </View>
-            </>
+          <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by 审核者签名:</Text>
+          <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By EXCO Member / Dept Head in Charge  事工主席/负责人)</Text>
+          {excoApproval?.signature_data ? (
+            <Image src={excoApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
           ) : (
-            <Text style={[s.tiny, { color: "#999", height: 40 }]}>Pending</Text>
+            <View style={{ height: 40 }} />
           )}
+          <View style={[s.borderT, { paddingTop: 3 }]}>
+            {ministryVerified ? (
+              <>
+                <Text style={[s.bold, s.tiny]}>
+                  {excoApproval?.name ?? pv.ministry_verified_by ?? pv.dept_head_name ?? "EXCO Member"}
+                </Text>
+                <Text style={s.tiny}>
+                  {pv.ministry}{"  "}Date:{" "}
+                  {fmtDate(excoApproval?.timestamp ?? pv.ministry_verified_at ?? pv.head_verified_at)}
+                </Text>
+              </>
+            ) : (
+              <Text style={s.tiny}>Name 姓名: _______________________________{"     "}Date 日期: ___________</Text>
+            )}
+          </View>
         </View>
 
         {/* Finance section — with signature images */}
@@ -291,36 +329,6 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
             </View>
           </View>
         </View>
-
-        {/* PAID stamp — shown when PV is paid */}
-        {isPaid && (
-          <View style={{ marginTop: 12, alignItems: "center" }}>
-            <View style={{
-              border: "3pt solid #16a34a",
-              borderRadius: 6,
-              padding: "8pt 20pt",
-              alignItems: "center",
-              transform: "rotate(-8deg)",
-            }}>
-              <Text style={{ fontSize: 28, fontFamily: "Helvetica-Bold", color: "#16a34a", letterSpacing: 4 }}>PAID</Text>
-              {pv.paid_at ? (
-                <Text style={{ fontSize: 9, color: "#15803d", marginTop: 2 }}>{fmtDate(pv.paid_at)}</Text>
-              ) : null}
-              {pv.payment_ref ? (
-                <Text style={{ fontSize: 9, color: "#15803d" }}>Ref: {pv.payment_ref}</Text>
-              ) : null}
-            </View>
-          </View>
-        )}
-
-        {/* Payment details footer when paid */}
-        {isPaid && (pv.payment_method || pv.paid_by) && (
-          <View style={{ marginTop: 6, padding: "4pt 6pt", backgroundColor: "#f0fdf4", border: "1pt solid #bbf7d0", borderRadius: 3 }}>
-            <Text style={[s.tiny, { color: "#166534" }]}>
-              Payment: {[pv.payment_method, pv.payment_ref && `Ref: ${pv.payment_ref}`, pv.paid_by && `by ${pv.paid_by}`].filter(Boolean).join("  ·  ")}
-            </Text>
-          </View>
-        )}
 
         {/* Remarks */}
         {approvals.filter(a => a.remarks).length > 0 && (
