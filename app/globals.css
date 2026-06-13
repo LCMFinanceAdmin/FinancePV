@@ -10,6 +10,10 @@
 
 html, body { height: 100%; }
 
+@media print {
+  html, body { height: auto !important; }
+}
+
 input, textarea, select {
   outline: none;
 }
