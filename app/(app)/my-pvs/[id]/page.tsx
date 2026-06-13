@@ -216,6 +216,10 @@ export default function PVDetailPage() {
   // Approver saved signatures (email → saved_signature) for display fallback
   const [approverSigs, setApproverSigs] = useState<Record<string, string>>({});
 
+  // Attachment management
+  const [attachLoading, setAttachLoading] = useState(false);
+  const attachInputRef = useRef<HTMLInputElement>(null);
+
   // Voucher zoom / scale-to-fit
   const VOUCHER_NATURAL_WIDTH = 680;
   const [autoScale, setAutoScale]       = useState(1);
@@ -573,6 +577,81 @@ export default function PVDetailPage() {
     }
   }
 
+  async function saveAttachmentData(attachments: string[], receiptUrl: string | null | undefined) {
+    if (!pv) return;
+    setAttachLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const body: Record<string, unknown> = { pv_id: pv.id, action: "UPDATE_ATTACHMENTS", attachments };
+      if (receiptUrl !== undefined) body.payment_receipt_url = receiptUrl;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update attachments");
+      const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
+      if (fresh) setPv(fresh as PV);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } finally {
+      setAttachLoading(false);
+    }
+  }
+
+  async function handleAddAttachments(files: FileList) {
+    if (!pv || files.length === 0) return;
+    setAttachLoading(true);
+    try {
+      const uploaded: string[] = [];
+      for (const file of Array.from(files)) {
+        const ext = file.name.split(".").pop() ?? "bin";
+        const path = `${pv.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const { error: upErr } = await supabase.storage.from("pv-attachments").upload(path, file, { upsert: false });
+        if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+        const { data: urlData } = supabase.storage.from("pv-attachments").getPublicUrl(path);
+        uploaded.push(urlData.publicUrl);
+      }
+      const newAttachments = [...(pv.attachments ?? []), ...uploaded];
+      await saveAttachmentData(newAttachments, undefined);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+      setAttachLoading(false);
+    }
+    if (attachInputRef.current) attachInputRef.current.value = "";
+  }
+
+  async function handleRemoveAttachment(url: string) {
+    if (!pv) return;
+    const newAttachments = (pv.attachments ?? []).filter(a => a !== url);
+    await saveAttachmentData(newAttachments, undefined);
+  }
+
+  async function handleRemoveReceipt() {
+    if (!pv) return;
+    await saveAttachmentData(pv.attachments ?? [], null);
+  }
+
+  async function handleReplaceReceipt(file: File) {
+    if (!pv) return;
+    setAttachLoading(true);
+    try {
+      const ext = file.name.split(".").pop() ?? "pdf";
+      const path = `${pv.id}/receipt.${ext}`;
+      const { error: upErr } = await supabase.storage.from("payment-receipts").upload(path, file, { upsert: true });
+      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+      const { data: urlData } = supabase.storage.from("payment-receipts").getPublicUrl(path);
+      await saveAttachmentData(pv.attachments ?? [], urlData.publicUrl);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+      setAttachLoading(false);
+    }
+  }
+
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
   if (!pv) return <div className="p-8 text-center text-stone-400 text-sm">PV not found</div>;
 
@@ -891,6 +970,95 @@ export default function PVDetailPage() {
               <Trash2 size={13} /> Delete Permanently
             </button>
           )}
+        </div>
+      )}
+
+      {/* ── Attachments Panel ─────────────────────────────────────── */}
+      {(user?.isFinanceAdmin || (pv.attachments ?? []).length > 0 || pv.payment_receipt_url) && (
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
+          <div className="bg-white border border-stone-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <FileText size={15} className="text-stone-500" />
+              <span className="text-sm font-semibold text-stone-700">Supporting Documents</span>
+              {attachLoading && <span className="text-xs text-stone-400 ml-1">Saving…</span>}
+            </div>
+
+            {/* Existing supporting docs */}
+            {(pv.attachments ?? []).length === 0 && !pv.payment_receipt_url && (
+              <p className="text-xs text-stone-400 mb-3">No documents attached yet.</p>
+            )}
+            <div className="space-y-2 mb-3">
+              {(pv.attachments ?? []).map((url, i) => {
+                const filename = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? `Document ${i + 1}`);
+                const isImg = /\.(jpg|jpeg|png|webp)$/i.test(filename);
+                return (
+                  <div key={url} className="flex items-center gap-2 p-2 bg-stone-50 border border-stone-200 rounded-lg">
+                    <span className="text-base shrink-0">{isImg ? "🖼️" : "📄"}</span>
+                    <a href={url} target="_blank" rel="noopener noreferrer"
+                      className="flex-1 text-xs text-[#4a6da7] hover:underline truncate min-w-0">
+                      {filename}
+                    </a>
+                    {user?.isFinanceAdmin && (
+                      <button
+                        onClick={() => handleRemoveAttachment(url)}
+                        disabled={attachLoading}
+                        title="Remove"
+                        className="shrink-0 p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                        <XIcon size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Payment receipt */}
+              {pv.payment_receipt_url && (
+                <div className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <span className="text-base shrink-0">🧾</span>
+                  <a href={pv.payment_receipt_url} target="_blank" rel="noopener noreferrer"
+                    className="flex-1 text-xs text-emerald-700 hover:underline truncate min-w-0">
+                    Bank Payment Receipt
+                  </a>
+                  {user?.isFinanceAdmin && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <label
+                        title="Replace"
+                        className="p-1 rounded hover:bg-emerald-100 text-emerald-600 transition-colors cursor-pointer disabled:opacity-40">
+                        <Upload size={14} />
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) handleReplaceReceipt(f); e.target.value = ""; }} />
+                      </label>
+                      <button
+                        onClick={handleRemoveReceipt}
+                        disabled={attachLoading}
+                        title="Remove"
+                        className="p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                        <XIcon size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Finance Exec: add more documents */}
+            {user?.isFinanceAdmin && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#4a6da7] text-[#4a6da7] hover:bg-blue-50 transition-colors cursor-pointer ${attachLoading ? "opacity-50 pointer-events-none" : ""}`}>
+                  <Plus size={13} /> Add Documents
+                  <input
+                    ref={attachInputRef}
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.webp"
+                    multiple
+                    className="hidden"
+                    onChange={e => { if (e.target.files?.length) handleAddAttachments(e.target.files); }}
+                  />
+                </label>
+                <span className="text-xs text-stone-400">PDF, JPG, PNG — up to 20 MB each</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

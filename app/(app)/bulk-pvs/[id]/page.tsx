@@ -8,6 +8,7 @@ import {
   ArrowLeft, CheckCircle2, XCircle,
   Printer, ShieldCheck, Send, CreditCard,
   PenLine, Eraser, Upload, X as XIcon, CheckCircle,
+  FileText, Plus,
 } from "lucide-react";
 
 interface BulkRun {
@@ -301,6 +302,29 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
           </div>
         </div>
       )}
+
+      {/* Attached receipts / supporting documents */}
+      {((pv.attachments ?? []).length > 0 || pv.payment_receipt_url) && (
+        <div className="mt-6 space-y-4">
+          <div className="font-bold text-[12px] border-t border-black pt-3">
+            Attached Documents <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>附件</span>
+          </div>
+          {(pv.attachments ?? []).map((url, i) => (
+            <div key={i} className="print:break-before-page">
+              <div className="text-[11px] text-stone-500 mb-1 font-semibold">Supporting Document {i + 1} — {pv.pv_no}</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt={`Attachment ${i + 1}`} className="max-w-full border border-stone-200 rounded" />
+            </div>
+          ))}
+          {pv.payment_receipt_url && (
+            <div className="print:break-before-page">
+              <div className="text-[11px] text-stone-500 mb-1 font-semibold">Bank Payment Receipt — {pv.pv_no}</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={pv.payment_receipt_url} alt="Payment receipt" className="max-w-full border border-stone-200 rounded" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -342,6 +366,10 @@ export default function BulkPVPage() {
   const canvasRef                           = useRef<HTMLCanvasElement>(null);
   const isDrawingRef                        = useRef(false);
   const lastPointRef                        = useRef<{ x: number; y: number } | null>(null);
+
+  // Attachment management
+  const [attachLoadingId, setAttachLoadingId] = useState<string | null>(null);
+  const attachInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     async function load() {
@@ -604,6 +632,68 @@ export default function BulkPVPage() {
     }
   }
 
+  async function savePvAttachments(pvId: string, attachments: string[], receiptUrl: string | null | undefined) {
+    setAttachLoadingId(pvId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const body: Record<string, unknown> = { pv_id: pvId, action: "UPDATE_ATTACHMENTS", attachments };
+      if (receiptUrl !== undefined) body.payment_receipt_url = receiptUrl;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update attachments");
+      const { data: updatedPv } = await supabase.from("pvs").select("*").eq("id", pvId).single();
+      if (updatedPv) setPvs(prev => prev.map(p => p.id === pvId ? updatedPv as PV : p));
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } finally {
+      setAttachLoadingId(null);
+    }
+  }
+
+  async function handleAddPvAttachments(pv: PV, files: FileList) {
+    if (files.length === 0) return;
+    setAttachLoadingId(pv.id);
+    try {
+      const uploaded: string[] = [];
+      for (const file of Array.from(files)) {
+        const path = `${pv.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const { error: upErr } = await supabase.storage.from("pv-attachments").upload(path, file, { upsert: false });
+        if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+        const { data: urlData } = supabase.storage.from("pv-attachments").getPublicUrl(path);
+        uploaded.push(urlData.publicUrl);
+      }
+      const newAttachments = [...(pv.attachments ?? []), ...uploaded];
+      await savePvAttachments(pv.id, newAttachments, undefined);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+      setAttachLoadingId(null);
+    }
+    const ref = attachInputRefs.current[pv.id];
+    if (ref) ref.value = "";
+  }
+
+  async function handleReplacePvReceipt(pv: PV, file: File) {
+    setAttachLoadingId(pv.id);
+    try {
+      const ext = file.name.split(".").pop() ?? "pdf";
+      const path = `${pv.id}/receipt.${ext}`;
+      const { error: upErr } = await supabase.storage.from("payment-receipts").upload(path, file, { upsert: true });
+      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+      const { data: urlData } = supabase.storage.from("payment-receipts").getPublicUrl(path);
+      await savePvAttachments(pv.id, pv.attachments ?? [], urlData.publicUrl);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+      setAttachLoadingId(null);
+    }
+  }
+
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
   if (!run) return <div className="p-8 text-center text-stone-400 text-sm">Bulk PV not found</div>;
 
@@ -619,8 +709,22 @@ export default function BulkPVPage() {
   const signingPv = pvs.find(p => p.id === signingPvId);
 
   return (
-    <div className="min-h-screen bg-stone-100 print:bg-white">
-      <style>{`@media print { @page { size: A4 landscape; margin: 12mm; } }`}</style>
+    <div className="min-h-screen bg-stone-100 print:bg-white print:min-h-0">
+      <style>{`
+        @media print {
+          @page { size: A4 landscape; margin: 10mm; }
+          .bulk-summary-page { display: block; }
+          .bulk-pv-voucher {
+            display: block;
+            page-break-before: always;
+            break-before: page;
+          }
+          .bulk-summary-page + .bulk-pv-voucher {
+            page-break-before: always;
+            break-before: page;
+          }
+        }
+      `}</style>
 
       {/* Sticky top bar */}
       <div className="print:hidden sticky top-0 z-20 bg-white border-b border-stone-200 px-5 py-3">
@@ -670,15 +774,6 @@ export default function BulkPVPage() {
                   <button onClick={() => setShowRejectModal(true)} disabled={actionLoading}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg font-medium disabled:opacity-50">
                     <XCircle size={12} /> Reject All
-                  </button>
-                </div>
-              )}
-              {reviewedPvs.length > 0 && (
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-xs text-stone-600 w-36">{reviewedPvs.length} reviewed:</span>
-                  <button onClick={() => handleBulkAction("SEND_TO_SIGNATORY", reviewedPvs)} disabled={actionLoading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4a6da7] text-white text-xs rounded-lg font-medium disabled:opacity-50">
-                    <Send size={12} /> Send All to Signatory ({reviewedPvs.length})
                   </button>
                 </div>
               )}
@@ -941,7 +1036,7 @@ export default function BulkPVPage() {
       )}
 
       {/* ══ PAGE 1: INDEX ══════════════════════════════════════════════════ */}
-      <div className="max-w-6xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
+      <div className="bulk-summary-page max-w-6xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
         <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
           <div className="px-10 py-8 print:px-6 print:py-5" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}>
 
@@ -1062,6 +1157,13 @@ export default function BulkPVPage() {
                         <td className="border border-black px-2 py-2">{acctStr(pv)}</td>
                         <td className="border border-black px-2 py-2 text-right tabular-nums font-medium">
                           {Number(pv.amount ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                          {pv.status === "PAID" && (
+                            <div className="mt-1 flex justify-end">
+                              <span className="inline-block border-2 border-green-600 text-green-700 font-black text-[9px] px-1.5 py-0.5 rounded tracking-widest uppercase -rotate-2">
+                                PAID{pv.paid_at ? ` · ${fmtDate(pv.paid_at)}` : ""}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <InteractiveSigCell
                           approval={gmApproval}
@@ -1134,7 +1236,7 @@ export default function BulkPVPage() {
         const gmSigned  = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
         const sigSigned = approvals.some(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED");
         return (
-          <div key={pv.id} className="print:break-before-page max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0">
+          <div key={pv.id} className="bulk-pv-voucher max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0" style={{ pageBreakBefore: "always", breakBefore: "page" } as React.CSSProperties}>
             <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
               <PVVoucher
                 pv={pv} idx={i}
@@ -1146,6 +1248,74 @@ export default function BulkPVPage() {
                 onSignSig={() => openSignModal(pv.id)}
               />
             </div>
+
+            {/* Attachment management panel — print hidden */}
+            {(user?.isFinanceAdmin || (pv.attachments ?? []).length > 0 || pv.payment_receipt_url) && (
+              <div className="print:hidden bg-white border border-stone-200 rounded-xl p-4 mt-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText size={14} className="text-stone-500" />
+                  <span className="text-xs font-semibold text-stone-600">Supporting Documents — {pv.pv_no}</span>
+                  {attachLoadingId === pv.id && <span className="text-xs text-stone-400">Saving…</span>}
+                </div>
+                {(pv.attachments ?? []).length === 0 && !pv.payment_receipt_url && (
+                  <p className="text-xs text-stone-400 mb-3">No documents attached.</p>
+                )}
+                <div className="space-y-1.5 mb-3">
+                  {(pv.attachments ?? []).map((url, ai) => {
+                    const filename = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? `Document ${ai + 1}`);
+                    const isImg = /\.(jpg|jpeg|png|webp)$/i.test(filename);
+                    return (
+                      <div key={url} className="flex items-center gap-2 p-2 bg-stone-50 border border-stone-200 rounded-lg">
+                        <span className="text-sm shrink-0">{isImg ? "🖼️" : "📄"}</span>
+                        <a href={url} target="_blank" rel="noopener noreferrer"
+                          className="flex-1 text-xs text-[#4a6da7] hover:underline truncate min-w-0">{filename}</a>
+                        {user?.isFinanceAdmin && (
+                          <button onClick={() => savePvAttachments(pv.id, (pv.attachments ?? []).filter(a => a !== url), undefined)}
+                            disabled={attachLoadingId === pv.id}
+                            className="shrink-0 p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                            <XIcon size={13} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {pv.payment_receipt_url && (
+                    <div className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                      <span className="text-sm shrink-0">🧾</span>
+                      <a href={pv.payment_receipt_url} target="_blank" rel="noopener noreferrer"
+                        className="flex-1 text-xs text-emerald-700 hover:underline truncate min-w-0">Bank Payment Receipt</a>
+                      {user?.isFinanceAdmin && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <label className="p-1 rounded hover:bg-emerald-100 text-emerald-600 transition-colors cursor-pointer">
+                            <Upload size={13} />
+                            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                              onChange={e => { const f = e.target.files?.[0]; if (f) handleReplacePvReceipt(pv, f); if (e.target) e.target.value = ""; }} />
+                          </label>
+                          <button onClick={() => savePvAttachments(pv.id, pv.attachments ?? [], null)}
+                            disabled={attachLoadingId === pv.id}
+                            className="p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                            <XIcon size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {user?.isFinanceAdmin && (
+                  <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#4a6da7] text-[#4a6da7] hover:bg-blue-50 transition-colors cursor-pointer ${attachLoadingId === pv.id ? "opacity-50 pointer-events-none" : ""}`}>
+                    <Plus size={12} /> Add Documents
+                    <input
+                      ref={el => { attachInputRefs.current[pv.id] = el; }}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                      multiple
+                      className="hidden"
+                      onChange={e => { if (e.target.files?.length) handleAddPvAttachments(pv, e.target.files); }}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
