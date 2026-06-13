@@ -46,7 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex h-full">
       <Sidebar user={user} ministryList={ministryList} />
-      <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
+      <main className="flex-1 overflow-y-auto pb-20 md:pb-0 print:overflow-visible print:flex-none print:h-auto">
         {children}
       </main>
       <MobileNav user={user} ministryList={ministryList} />
