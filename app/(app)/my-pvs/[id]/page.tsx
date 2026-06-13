@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatDateTime, getLOATier, roleLabel } from "@/lib/utils";
-import type { PV, UserProfile, PVApproval } from "@/lib/types";
+import type { PV, UserProfile, PVApproval, PVStatus } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
   AlertTriangle, Banknote, FileText, User, Calendar,
@@ -31,6 +31,18 @@ const BANK_ABBR: Record<string, string> = {
 };
 function getBankAbbr(name: string) {
   return BANK_ABBR[(name || "").toLowerCase().trim()] ?? name;
+}
+
+const FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+function computedBadgeStatus(pv: { status?: string; approvals?: unknown[] }): PVStatus {
+  const s = pv.status ?? "";
+  if (["APPROVED", "PAID", "REJECTED", "CANCELLED", "REJECTED_HEAD", "PENDING_HEAD"].includes(s)) return s as PVStatus;
+  const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
+  const hasFinance = approvals.some(a => FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
+  const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
+  if (!hasFinance) return "PENDING";
+  if (!hasGM)      return "REVIEWED";
+  return "PENDING_SIGNATORY";
 }
 
 // ── Workflow progress bar ──────────────────────────────────────────────
@@ -642,7 +654,7 @@ export default function PVDetailPage() {
             </button>
             <div className="flex items-center gap-2 flex-1 flex-wrap min-w-0">
               <span className="font-bold text-stone-800">{pv.pv_no}</span>
-              <StatusBadge status={pv.status} />
+              <StatusBadge status={computedBadgeStatus(pv)} />
               {pv.payment_type === "ASSET_PURCHASE" && (
                 <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">Asset Purchase</span>
               )}
