@@ -103,9 +103,12 @@ export default function SignatoryPage() {
 
       if (authUser) {
         const { data: profile } = await supabase.from("user_roles")
-          .select("role,saved_signature").eq("email", authUser.email!).single();
-        setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF" });
-        if (profile?.saved_signature) setSavedSig(profile.saved_signature);
+          .select("role,saved_signature,saved_signatures").eq("email", authUser.email!).single();
+        const role = profile?.role ?? "STAFF";
+        setCurrentUser({ email: authUser.email!, role });
+        const sigs = profile?.saved_signatures as Record<string, string> | null;
+        const roleSig = sigs?.[role] ?? profile?.saved_signature ?? "";
+        if (roleSig) setSavedSig(roleSig);
       }
 
       const bulkMap: Record<string, BulkRun> = {};
@@ -214,8 +217,11 @@ export default function SignatoryPage() {
     setSavingSig(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from("user_roles").update({ saved_signature: capturedSig }).eq("email", user.email!);
+      if (user && currentUser) {
+        const { data: profile } = await supabase.from("user_roles")
+          .select("saved_signatures").eq("email", user.email!).single();
+        const sigs = { ...(profile?.saved_signatures as Record<string, string> || {}), [currentUser.role]: capturedSig };
+        await supabase.from("user_roles").update({ saved_signatures: sigs }).eq("email", user.email!);
         setSavedSig(capturedSig);
       }
     } finally {

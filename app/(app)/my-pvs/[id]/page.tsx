@@ -259,7 +259,10 @@ export default function PVDetailPage() {
         supabase.from("pvs").select("*").eq("id", id).single(),
         supabase.from("user_roles").select("*").eq("email", authUser.email).single(),
       ]);
-      if (profile?.saved_signature) setSavedSig(profile.saved_signature);
+      const role = profile?.role ?? "STAFF";
+      const sigs = profile?.saved_signatures as Record<string, string> | null;
+      const roleSig = sigs?.[role] ?? profile?.saved_signature ?? "";
+      if (roleSig) setSavedSig(roleSig);
       if (pvData) setPv(pvData as PV);
 
       // Load saved signatures for all approvers so they show on the voucher as fallback
@@ -275,7 +278,6 @@ export default function PVDetailPage() {
         setApproverSigs(sigsMap);
       }
 
-      const role = profile?.role ?? "STAFF";
       setUser({
         id: authUser.id, email: authUser.email!,
         full_name: profile?.full_name ?? authUser.email!,
@@ -470,9 +472,8 @@ export default function PVDetailPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Action failed");
 
-      // Auto-save if a new (different) signature was drawn
+      // Auto-save new signature per role (edge fn already persists; this keeps UI in sync)
       if (signatureData && signatureData !== savedSig) {
-        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
         setSavedSig(signatureData);
       }
 
@@ -506,7 +507,6 @@ export default function PVDetailPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Sign failed");
       if (signatureData && saveSigForNext) {
-        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
         setSavedSig(signatureData);
       }
       setShowFinanceSignModal(false);

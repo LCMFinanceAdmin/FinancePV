@@ -62,11 +62,13 @@ Deno.serve(async (req) => {
         name: profile?.full_name || user.email,
         action: "APPROVED", timestamp: now, remarks: "",
       };
+      const roleSigReview = (profile?.saved_signatures as Record<string, string> | null)?.[profile.role] ?? profile?.saved_signature ?? null;
       if (body.signature_data) {
         entry.signature_data = body.signature_data;
-        await db.from("user_roles").update({ saved_signature: body.signature_data }).eq("email", user.email!);
-      } else if (profile?.saved_signature) {
-        entry.signature_data = profile.saved_signature;
+        const sigsReview = { ...(profile?.saved_signatures as Record<string, string> || {}), [profile.role]: body.signature_data };
+        await db.from("user_roles").update({ saved_signatures: sigsReview }).eq("email", user.email!);
+      } else if (roleSigReview) {
+        entry.signature_data = roleSigReview;
       }
       await db.from("pvs").update({
         status: "REVIEWED",
@@ -201,11 +203,13 @@ Deno.serve(async (req) => {
         timestamp: now,
         remarks: "",
       };
+      const roleSigFSign = (profile?.saved_signatures as Record<string, string> | null)?.[profile.role] ?? profile?.saved_signature ?? null;
       if (body.signature_data) {
         entry.signature_data = body.signature_data;
-        await db.from("user_roles").update({ saved_signature: body.signature_data }).eq("email", user.email!);
-      } else if (profile?.saved_signature) {
-        entry.signature_data = profile.saved_signature;
+        const sigsFSign = { ...(profile?.saved_signatures as Record<string, string> || {}), [profile.role]: body.signature_data };
+        await db.from("user_roles").update({ saved_signatures: sigsFSign }).eq("email", user.email!);
+      } else if (roleSigFSign) {
+        entry.signature_data = roleSigFSign;
       }
       const newApprovals = [entry, ...filtered];
       // If the PV is still PENDING, signing counts as reviewing it

@@ -20,7 +20,7 @@ export function getUserClient(jwt: string) {
 export async function getProfileByEmail(
   db: ReturnType<typeof getServiceClient>,
   email: string,
-  columns = "role,full_name,saved_signature",
+  columns = "role,full_name,saved_signature,saved_signatures",
 ) {
   const { data } = await db.from("user_roles").select(columns).eq("email", email).limit(1);
   return data?.[0] ?? null;
