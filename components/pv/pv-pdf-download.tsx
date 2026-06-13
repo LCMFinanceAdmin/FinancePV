@@ -5,7 +5,7 @@ import { Download } from "lucide-react";
 import type { PV, PVApproval } from "@/lib/types";
 import { getLOATier, roleLabel } from "@/lib/utils";
 import {
-  pdf, Document, Page, Text, View, StyleSheet, Image, Font,
+  pdf, Document, Page, Text, View, StyleSheet, Image,
 } from "@react-pdf/renderer";
 import { PDFDocument } from "pdf-lib";
 
@@ -23,14 +23,6 @@ async function svgToPngDataUri(svgPath: string, size = 200): Promise<string> {
     img.src = svgPath;
   });
 }
-
-Font.register({
-  family: "Arial",
-  fonts: [
-    { src: "https://fonts.gstatic.com/s/opensans/v34/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0C24.woff2", fontWeight: 400 },
-    { src: "https://fonts.gstatic.com/s/opensans/v34/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B24.woff2", fontWeight: 700 },
-  ],
-});
 
 const BANK_ABBR: Record<string, string> = {
   "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",
@@ -423,6 +415,7 @@ async function mergeAttachments(basePdfBytes: ArrayBuffer, attachmentUrls: strin
 
 export default function PVPdfDownload({ pv }: { pv: PV }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [logoDataUri, setLogoDataUri] = useState("");
 
   useEffect(() => {
@@ -431,6 +424,7 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
 
   async function download() {
     setLoading(true);
+    setError(null);
     try {
       const logo = logoDataUri || await svgToPngDataUri("/lcm-logo.svg", 200);
       const baseBlob = await pdf(<PVDocument pv={pv} logoDataUri={logo} />).toBlob();
@@ -449,20 +443,28 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
         finalBytes = new Uint8Array(await baseBlob.arrayBuffer());
       }
 
-      const url = URL.createObjectURL(new Blob([finalBytes.buffer as ArrayBuffer], { type: "application/pdf" }));
+      // Pass Uint8Array directly — avoids potential oversized .buffer when pdf-lib
+      // returns a view into a larger ArrayBuffer.
+      const url = URL.createObjectURL(new Blob([finalBytes], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = url;
       a.download = `${pv.pv_no}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PDF download failed:", err);
+      setError("Failed to generate PDF. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Button variant="secondary" size="sm" onClick={download} loading={loading}>
-      <Download size={14} /> PDF
-    </Button>
+    <div className="inline-flex flex-col items-start gap-1">
+      <Button variant="secondary" size="sm" onClick={download} loading={loading}>
+        <Download size={14} /> PDF
+      </Button>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
   );
 }
