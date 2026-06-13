@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import type { PV } from "@/lib/types";
+import type { PV, PVStatus } from "@/lib/types";
 import {
   Search, Layers, FileText, Trash2,
   CheckCircle2, XCircle, RotateCcw, ShieldCheck,
@@ -13,6 +13,18 @@ import {
 import Link from "next/link";
 
 type FilterStatus = "ALL" | "IN_PROGRESS" | "APPROVED" | "PAID" | "REJECTED";
+
+const FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+function computedBadgeStatus(pv: Partial<PV>): PVStatus {
+  const s = pv.status ?? "";
+  if (["APPROVED", "PAID", "REJECTED", "CANCELLED", "REJECTED_HEAD", "PENDING_HEAD"].includes(s)) return s as PVStatus;
+  const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
+  const hasFinance = approvals.some(a => FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
+  const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
+  if (!hasFinance) return "PENDING";
+  if (!hasGM)      return "REVIEWED";
+  return "PENDING_SIGNATORY";
+}
 
 const FILTER_OPTIONS: { label: string; value: FilterStatus }[] = [
   { label: "All",         value: "ALL"         },
@@ -90,7 +102,7 @@ export default function MyPVsPage() {
           (() => {
             let q = supabase
               .from("pvs")
-              .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type")
+              .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type,approvals")
               .eq("submitted_by_email", user.email)
               .order("submitted_at", { ascending: false });
             if (filter !== "ALL") q = q.in("status", STATUS_MAP[filter]);
@@ -481,7 +493,7 @@ export default function MyPVsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                            <StatusBadge status={pv.status!} />
+                            <StatusBadge status={computedBadgeStatus(pv)} />
                             {pv.ministry && (
                               <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-1.5 py-0.5 rounded-full font-medium">{pv.ministry}</span>
                             )}
@@ -571,7 +583,7 @@ export default function MyPVsPage() {
                                   onClick={e => e.stopPropagation()}>
                                   {pv.pv_no}
                                 </Link>
-                                <StatusBadge status={pv.status!} />
+                                <StatusBadge status={computedBadgeStatus(pv)} />
                                 {pv.ministry && (
                                   <span className="text-xs bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full">
                                     {pv.ministry}
