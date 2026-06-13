@@ -287,10 +287,24 @@ export default function SignatoryPage() {
 
   const isGM = currentUser?.role === "GENERAL_MANAGER";
 
-  // GM Pending = REVIEWED + MINISTRY_VERIFIED (GM must verify these to advance to PENDING_SIGNATORY)
-  const pendingPvsAll          = useMemo(() => pvs.filter(pv => ["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "")), [pvs]);
-  // Pending Signatory Approval = PENDING_SIGNATORY (GM already verified; now Treasurer/Bishop/Secretary sign)
-  const pendingSignatoryPvsAll = useMemo(() => pvs.filter(pv => pv.status === "PENDING_SIGNATORY"), [pvs]);
+  const gmHasApproved = useCallback((pv: { approvals: { role: string; action: string }[] }) =>
+    pv.approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED")
+  , []);
+
+  // GM Pending = REVIEWED/MINISTRY_VERIFIED where GM has NOT yet acted
+  const pendingPvsAll = useMemo(() => pvs.filter(pv =>
+    ["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "") && !(isGM && gmHasApproved(pv))
+  ), [pvs, isGM, gmHasApproved]);
+
+  // Pending Signatory Approval:
+  //   - PENDING_SIGNATORY status (backend set it after GM verified)
+  //   - For GM: also includes REVIEWED/MINISTRY_VERIFIED where GM already approved but backend hasn't updated status yet
+  const pendingSignatoryPvsAll = useMemo(() =>
+    pvs.filter(pv =>
+      pv.status === "PENDING_SIGNATORY" ||
+      (isGM && ["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "") && gmHasApproved(pv))
+    )
+  , [pvs, isGM, gmHasApproved]);
   const approvedPvsAll         = useMemo(() => pvs.filter(pv => pv.status === "APPROVED"), [pvs]);
   const paidPvsAll             = useMemo(() => pvs.filter(pv => pv.status === "PAID"), [pvs]);
 
