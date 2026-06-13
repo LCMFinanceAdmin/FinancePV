@@ -81,7 +81,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
         { href: "/control-center",     label: "Control Center",     icon: <LayoutGrid size={16} />,     show: user.isFinanceAdmin },
         { href: "/recurring",          label: "Recurring Expenses", icon: <RefreshCw size={16} />,      show: user.isFinanceAdmin },
         { href: "/signatory-activity", label: "Signatory Activity", icon: <Activity size={16} />,       show: user.isFinanceAdmin },
-        { href: "/hod-activity",       label: "EXCO Activity",      icon: <ClipboardCheck size={16} />, show: user.isFinanceAdmin || user.isMinistryHead || user.isSignatory },
+        { href: "/hod-activity",       label: "Finance Activity",   icon: <ClipboardCheck size={16} />, show: user.isFinanceAdmin || user.isMinistryHead || user.isSignatory },
         { href: "/settings",           label: "Settings",           icon: <Settings size={16} />,       show: user.isFinanceAdmin },
       ],
     },
