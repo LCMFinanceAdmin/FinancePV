@@ -32,7 +32,7 @@ const TAB_CONFIG: {
   icon: React.ReactNode;
 }[] = [
   { key: "pending",          label: "Pending",          icon: <Hourglass size={11} />,   activeColor: "bg-amber-500 text-white border-transparent",  inactiveDot: "bg-amber-100 text-amber-700" },
-  { key: "verified",         label: "Verified",         icon: <BadgeCheck size={11} />,  activeColor: "bg-violet-600 text-white border-transparent",  inactiveDot: "bg-violet-100 text-violet-700" },
+  { key: "verified",         label: "Pending Verification", icon: <BadgeCheck size={11} />,  activeColor: "bg-violet-600 text-white border-transparent",  inactiveDot: "bg-violet-100 text-violet-700" },
   { key: "pending_approval", label: "Pending Approval", icon: <Clock size={11} />,       activeColor: "bg-orange-500 text-white border-transparent",  inactiveDot: "bg-orange-100 text-orange-700" },
   { key: "approved",         label: "Approved",         icon: <CheckCircle2 size={11} />,activeColor: "bg-green-600 text-white border-transparent",   inactiveDot: "bg-green-100 text-green-700" },
   { key: "paid",             label: "Paid",             icon: <Banknote size={11} />,    activeColor: "bg-[#4a6da7] text-white border-transparent",   inactiveDot: "bg-blue-100 text-blue-700" },

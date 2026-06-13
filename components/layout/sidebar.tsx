@@ -35,7 +35,7 @@ const NAV_SECTIONS = [
       { href: "/control-center",      label: "Control Center",    icon: <LayoutGrid size={16} />,     show: (u: UserProfile) => u.isFinanceAdmin },
       { href: "/recurring",           label: "Recurring Expenses",icon: <RefreshCw size={16} />,      show: (u: UserProfile) => u.isFinanceAdmin },
       { href: "/signatory-activity",  label: "Signatory Activity",icon: <Activity size={16} />,       show: (u: UserProfile) => u.isFinanceAdmin },
-      { href: "/hod-activity",        label: "Finance Activity",  icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory },
+      { href: "/hod-activity",        label: "Finance Activity",  icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isMinistryHead || u.isSignatory },
       { href: "/settings",            label: "Settings",          icon: <Settings size={16} />,       show: (u: UserProfile) => u.isFinanceAdmin },
     ],
   },
