@@ -31,7 +31,7 @@ const BANKS = [
 
 const MILEAGE_RATE = 0.70;
 const LCM_LOCATIONS = [
-  "Cameron Highlands", "Ipoh", "Kuala Lumpur", "Lumut", "Penang",
+  "Cameron Highlands", "Ipoh", "Kuala Lumpur", "Luther Centre", "Lumut", "Penang",
   "Sitiawan", "Taiping", "Tapah", "Teluk Intan", "Tanjung Malim",
 ];
 const TRAVEL_TYPES = [
@@ -558,8 +558,8 @@ export default function SubmitPVPage() {
               <button type="button" onClick={() => setIsTravelClaim(t => !t)}
                 className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors shrink-0 ml-3 ${
                   isTravelClaim
-                    ? "bg-[#4a6da7] text-white border-transparent"
-                    : "border-stone-300 text-stone-500 hover:border-[#4a6da7] hover:text-[#4a6da7]"
+                    ? "bg-[#7C4A0A] text-white border-transparent"
+                    : "border-[#7C4A0A] text-[#7C4A0A] hover:bg-amber-50"
                 }`}>
                 <Car size={11} /> Travel Claim
               </button>
@@ -659,11 +659,11 @@ export default function SubmitPVPage() {
                     </tr>
                   ))}
                   {Array.from({ length: Math.max(0, 5 - travelItems.length) }).map((_, i) => (
-                    <tr key={`pad-${i}`} className="h-8">
+                    <tr key={`pad-${i}`} className="h-8 cursor-pointer hover:bg-amber-50/40 group/pad" onClick={addTravelItem}>
                       <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-300">{travelItems.length + i + 1}</td>
                       <td className="border border-stone-800" />
                       <td className="border border-stone-800" />
-                      <td className="border border-stone-800" />
+                      <td className="border border-stone-800 px-2 text-xs text-stone-300 italic group-hover/pad:text-stone-400">{i === 0 ? "Click to add item…" : ""}</td>
                       <td className="border border-stone-800" />
                       <td className="border border-stone-800 print:hidden" />
                     </tr>
