@@ -127,13 +127,34 @@ Deno.serve(async (req) => {
     if (action === "REJECTED") {
       newStatus = "REJECTED";
     } else if (isGM) {
-      newStatus = "REVIEWED";
+      // GM approval gates the flow to signatories
+      newStatus = "PENDING_SIGNATORY";
     } else {
       const isFinal = isSignatoryApprovalFinal(approvals, pv.amount, pv.payment_type);
       newStatus = isFinal ? "APPROVED" : "PENDING_SIGNATORY";
     }
 
     await db.from("pvs").update({ approvals, status: newStatus, updated_at: new Date().toISOString() }).eq("id", pv_id);
+
+    // Notify signatories when GM approves (gates the flow to them)
+    if (isGM && action === "APPROVED") {
+      const loa = pv.loa_required ?? 1;
+      const signatoryRolesToNotify = loa === 1 ? ["TREASURER"] : ["BISHOP", "SECRETARY", "TREASURER"];
+      const { data: sigUsers } = await db.from("user_roles").select("email").in("role", signatoryRolesToNotify);
+      if (sigUsers?.length) {
+        await db.from("notifications").insert(
+          sigUsers.map((u: { email: string }) => ({
+            recipient_email: u.email,
+            type: "SIGNATORY_REVIEW",
+            pv_no: pv.pv_no,
+            pv_id,
+            message: `PV ${pv.pv_no} has been approved by the General Manager and requires your signature`,
+            read: false,
+            created_at: new Date().toISOString(),
+          }))
+        );
+      }
+    }
 
     // Notify applicant on final decision
     if (newStatus === "APPROVED" || newStatus === "REJECTED") {

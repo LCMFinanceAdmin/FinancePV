@@ -235,13 +235,27 @@ export default function SignatoryPage() {
     const signatoryApprovals = approvals.filter(
       a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
     );
+    // Match by role only — never by email — to avoid false positives when the same
+    // person switches between Finance Executive and GM via the test role switcher.
     const userApproval = currentUser
       ? approvals.find(a =>
-          ["APPROVED", "REJECTED"].includes(a.action) &&
-          (a.email === currentUser.email || a.role === currentUser.role)
+          ["APPROVED", "REJECTED"].includes(a.action) && a.role === currentUser.role
         )
       : undefined;
     const userHasActed = !!userApproval;
+
+    // GM can only revert if no Bishop/Treasurer/Secretary has approved yet.
+    const canRevert = userHasActed && (
+      currentUser?.role !== "GENERAL_MANAGER" ||
+      signatoryApprovals.length === 0
+    );
+
+    // Non-GM signatories only act on PENDING_SIGNATORY (GM already approved).
+    // GM acts on REVIEWED (Finance Executive reviewed, awaiting GM).
+    const isRelevantForRole =
+      currentUser?.role === "GENERAL_MANAGER"
+        ? pv.status === "REVIEWED" || pv.status === "PENDING_SIGNATORY" || pv.status === "MINISTRY_VERIFIED"
+        : pv.status === "PENDING_SIGNATORY" || pv.status === "MINISTRY_VERIFIED";
 
     return (
       <div className={`bg-white ${compact ? "border-t border-stone-100" : "border border-stone-200 rounded-xl shadow-sm"} hover:border-[#4a6da7]/40 hover:shadow-sm transition-all`}>
@@ -269,15 +283,21 @@ export default function SignatoryPage() {
             <div className="flex flex-col items-end gap-2 shrink-0" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
               <div className="text-sm font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
 
-              {isSignatoryUser && (
+              {isSignatoryUser && isRelevantForRole && (
                 userHasActed ? (
                   <div className="flex items-center gap-1.5">
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
                       {userApproval!.action === "APPROVED" ? "✓ Approved" : "✕ Rejected"}
                     </span>
-                    <ActionBtn color="gray" icon={<RotateCcw size={11} />} label="Revert"
-                      loading={reverting === pv.id}
-                      onClick={() => revertPv(pv.id!)} />
+                    {canRevert ? (
+                      <ActionBtn color="gray" icon={<RotateCcw size={11} />} label="Revert"
+                        loading={reverting === pv.id}
+                        onClick={() => revertPv(pv.id!)} />
+                    ) : (
+                      <span className="text-[10px] text-stone-400 italic">
+                        {currentUser?.role === "GENERAL_MANAGER" ? "Signatories signed" : "Locked"}
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <div className="flex gap-1.5">

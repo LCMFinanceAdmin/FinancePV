@@ -219,7 +219,7 @@ export default function ExcoActivityPage() {
       <div className="p-10 text-center space-y-2">
         <div className="text-stone-400 text-4xl mb-4">🔒</div>
         <h2 className="font-bold text-stone-700">Access Restricted</h2>
-        <p className="text-sm text-stone-400">You do not have permission to view EXCO Activity.</p>
+        <p className="text-sm text-stone-400">You do not have permission to view Finance Activity.</p>
       </div>
     );
   }
@@ -228,7 +228,7 @@ export default function ExcoActivityPage() {
     <div className="p-5 max-w-4xl mx-auto space-y-4">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-stone-800">EXCO Activity</h1>
+        <h1 className="text-xl font-bold text-stone-800">Finance Activity</h1>
         <p className="text-sm text-stone-400">
           {isFinanceAdmin || isSeniorRole
             ? "All submitted PVs with supporting documents and approval status"
