@@ -1339,75 +1339,95 @@ export default function PVDetailPage() {
             <div className="overflow-y-auto px-5 py-4 space-y-4 flex-1">
               {/* Signature section */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5">
-                    <PenLine size={12} /> Signature
-                    {signAction === "APPROVED"
-                      ? <span className="text-red-400 font-normal">* required</span>
-                      : <span className="text-stone-400 font-normal">(optional)</span>}
-                  </label>
-                  <div className="flex gap-1">
-                    <button onClick={() => setSigMode("draw")}
-                      className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "draw" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
-                      Draw
-                    </button>
-                    <button onClick={() => setSigMode("upload")}
-                      className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "upload" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
-                      Upload
-                    </button>
-                  </div>
-                </div>
+                <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5 mb-2">
+                  <PenLine size={12} /> Signature
+                  {signAction === "APPROVED"
+                    ? <span className="text-red-400 font-normal">* required</span>
+                    : <span className="text-stone-400 font-normal">(optional)</span>}
+                </label>
 
-                {sigMode === "draw" ? (
-                  <div className="space-y-2">
-                    <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
-                      <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-indigo-400 bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}>
-                        <canvas ref={canvasRef} width={760} height={200}
-                          className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
-                          onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
-                          onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
-                      </div>
-                      {!canvasActive && (
-                        <div
-                          className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer rounded-xl hover:bg-indigo-50/60 transition-colors"
-                          onClick={() => setCanvasActive(true)}
-                        >
-                          <PenLine size={20} className="text-stone-400 mb-1" />
-                          <span className="text-xs text-stone-500 font-medium">Click to start signing</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => { clearCanvas(); setCanvasActive(false); }} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
-                      <button type="button" onClick={() => setIsErasing(e => !e)}
-                        className={`text-xs border px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${isErasing ? "bg-orange-100 border-orange-300 text-orange-700" : "text-stone-500 hover:text-stone-700 border-stone-200 hover:bg-stone-50"}`}>
-                        <Eraser size={11} /> {isErasing ? "Erasing" : "Erase"}
+                {/* Saved signature view — shown when a stored sig is loaded */}
+                {savedSig && signatureData === savedSig ? (
+                  <div className="border border-green-200 bg-green-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-green-700 flex items-center gap-1">
+                        <CheckCircle size={11} /> Using saved signature
+                      </span>
+                      <button
+                        onClick={() => { setSignatureData(""); clearCanvas(); setCanvasActive(false); setSigMode("draw"); }}
+                        className="text-xs text-indigo-600 hover:underline">
+                        Draw new
                       </button>
-                      {savedSig && (
-                        <button onClick={useSavedSig} className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1">
-                          <CheckCircle size={11} /> Use saved signature
-                        </button>
-                      )}
                     </div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={savedSig} alt="saved signature" className="h-12 object-contain" />
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-300 rounded-xl p-6 bg-stone-50 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
-                    <Upload size={20} className="text-stone-400 mb-1" />
-                    <span className="text-xs text-stone-500">Click to upload signature image</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
-                  </label>
-                )}
+                  /* Draw / Upload interface — shown when no saved sig or user wants to draw new */
+                  <>
+                    <div className="flex gap-1 mb-2">
+                      <button onClick={() => setSigMode("draw")}
+                        className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "draw" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                        Draw
+                      </button>
+                      <button onClick={() => setSigMode("upload")}
+                        className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "upload" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                        Upload
+                      </button>
+                    </div>
 
-                {signatureData && (
-                  <div className="mt-2 flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={signatureData} alt="sig preview" className="h-8 object-contain" />
-                    <span className="text-xs text-green-700 flex-1">Signature captured</span>
-                    <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer shrink-0">
-                      <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="accent-indigo-600" />
-                      Save for next time
-                    </label>
-                  </div>
+                    {sigMode === "draw" ? (
+                      <div className="space-y-2">
+                        <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
+                          <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-indigo-400 bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}>
+                            <canvas ref={canvasRef} width={760} height={200}
+                              className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
+                              onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                              onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                          </div>
+                          {!canvasActive && (
+                            <div
+                              className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer rounded-xl hover:bg-indigo-50/60 transition-colors"
+                              onClick={() => setCanvasActive(true)}
+                            >
+                              <PenLine size={20} className="text-stone-400 mb-1" />
+                              <span className="text-xs text-stone-500 font-medium">Click to start signing</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          <button onClick={() => { clearCanvas(); setCanvasActive(false); }} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
+                          <button type="button" onClick={() => setIsErasing(e => !e)}
+                            className={`text-xs border px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${isErasing ? "bg-orange-100 border-orange-300 text-orange-700" : "text-stone-500 hover:text-stone-700 border-stone-200 hover:bg-stone-50"}`}>
+                            <Eraser size={11} /> {isErasing ? "Erasing" : "Erase"}
+                          </button>
+                          {savedSig && (
+                            <button onClick={useSavedSig} className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1">
+                              <CheckCircle size={11} /> Use saved signature
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-300 rounded-xl p-6 bg-stone-50 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+                        <Upload size={20} className="text-stone-400 mb-1" />
+                        <span className="text-xs text-stone-500">Click to upload signature image</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
+                      </label>
+                    )}
+
+                    {signatureData && (
+                      <div className="mt-2 flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={signatureData} alt="sig preview" className="h-8 object-contain" />
+                        <span className="text-xs text-green-700 flex-1">Signature captured</span>
+                        <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer shrink-0">
+                          <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="accent-indigo-600" />
+                          Save for next time
+                        </label>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
