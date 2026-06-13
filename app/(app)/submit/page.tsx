@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
-import { Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle, X as XIcon } from "lucide-react";
+import { Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle, X as XIcon, Car } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import type { PVLineItem } from "@/lib/types";
 
@@ -28,6 +28,24 @@ const BANKS = [
   "AmBank", "Bank Islam", "Bank Rakyat", "OCBC", "Standard Chartered",
   "Affin Bank", "Alliance Bank", "UOB", "BSN",
 ];
+
+const MILEAGE_RATE = 0.70;
+const LCM_LOCATIONS = [
+  "Cameron Highlands", "Ipoh", "Kuala Lumpur", "Lumut", "Penang",
+  "Sitiawan", "Taiping", "Tapah", "Teluk Intan", "Tanjung Malim",
+];
+const TRAVEL_TYPES = [
+  { value: "petrol",  label: "Petrol" },
+  { value: "train",   label: "Train Ticket" },
+  { value: "airfare", label: "Airfare" },
+  { value: "mileage", label: "Mileage (RM0.70/km)" },
+] as const;
+type TravelType = typeof TRAVEL_TYPES[number]["value"];
+interface TravelItem {
+  date: string; travel_type: TravelType | ""; description: string;
+  from: string; to: string; km: number; amount: number;
+}
+const EMPTY_TRAVEL_ITEM: TravelItem = { date: "", travel_type: "", description: "", from: "", to: "", km: 0, amount: 0 };
 
 // Roles that can manage projects
 const PROJECT_MANAGER_ROLES = [
@@ -136,6 +154,8 @@ export default function SubmitPVPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
+  const [isTravelClaim, setIsTravelClaim] = useState(false);
+  const [travelItems, setTravelItems] = useState<TravelItem[]>([{ ...EMPTY_TRAVEL_ITEM }]);
 
   // Finance Executive e-signature
   const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
@@ -197,7 +217,9 @@ export default function SubmitPVPage() {
       .then((projectNames) => setProjects(projectNames));
   }, [form.ministry]);
 
-  const totalFromItems = form.line_items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const totalFromItems = isTravelClaim
+    ? travelItems.reduce((s, i) => s + (Number(i.amount) || 0), 0)
+    : form.line_items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const displayAmount = totalFromItems;
   const loa = getLOATier(displayAmount, "GENERAL");
   // Finance Executive / senior roles can always manage; Ministry Heads only for their assigned ministry
@@ -226,6 +248,19 @@ export default function SubmitPVPage() {
   function removeLineItem(idx: number) {
     const items = form.line_items.filter((_, i) => i !== idx);
     setForm(f => ({ ...f, line_items: items.length ? items : [{ description: "", amount: 0, date: "" }] }));
+  }
+
+  function updateTravelItem(idx: number, patch: Partial<TravelItem>) {
+    setTravelItems(items => items.map((item, i) => {
+      if (i !== idx) return item;
+      const merged = { ...item, ...patch };
+      if (merged.travel_type === "mileage") merged.amount = Math.round(merged.km * MILEAGE_RATE * 100) / 100;
+      return merged;
+    }));
+  }
+  function addTravelItem() { setTravelItems(items => [...items, { ...EMPTY_TRAVEL_ITEM }]); }
+  function removeTravelItem(idx: number) {
+    setTravelItems(items => items.length > 1 ? items.filter((_, i) => i !== idx) : [{ ...EMPTY_TRAVEL_ITEM }]);
   }
 
   // ── Canvas helpers for Finance Executive signature ──────────────────────
@@ -303,8 +338,16 @@ export default function SubmitPVPage() {
           ref_no: form.ref_no,
           purpose: form.purpose,
           amount: displayAmount,
-          line_items: form.line_items.filter(i => i.description || i.amount),
-          payment_type: "GENERAL",
+          line_items: isTravelClaim
+            ? travelItems.filter(i => i.travel_type).map(i => ({
+                date: i.date || form.pvDate,
+                description: i.travel_type === "mileage"
+                  ? `Mileage: ${i.from} → ${i.to} (${i.km}km × RM${MILEAGE_RATE.toFixed(2)}/km)`
+                  : `${TRAVEL_TYPES.find(t => t.value === i.travel_type)?.label ?? ""}: ${i.description}`,
+                amount: Number(i.amount),
+              }))
+            : form.line_items.filter(i => i.description || i.amount),
+          payment_type: isTravelClaim ? "TRAVEL_CLAIM" : "GENERAL",
           sig_applicant_name: form.sig_applicant_name,
           sig_applicant_confirm: form.sig_applicant_confirm,
           ...(isFinanceAdmin && finSigData ? { finance_signature_data: finSigData } : {}),
@@ -507,82 +550,215 @@ export default function SubmitPVPage() {
 
           {/* ── PARTICULARS TABLE ──────────────────────────────────────── */}
           <div className="px-3 sm:px-6 pb-2">
-            <p className="text-xs font-semibold text-stone-500 mb-2 mt-1">
-              Particulars of Claim / Payment
-              <span className="text-stone-400 font-normal ml-1">(Please attach relevant Receipts / Invoices / Bills)</span>
-            </p>
+            <div className="flex items-center justify-between mb-2 mt-1">
+              <p className="text-xs font-semibold text-stone-500">
+                Particulars of Claim / Payment
+                <span className="text-stone-400 font-normal ml-1">(Please attach relevant Receipts / Invoices / Bills)</span>
+              </p>
+              <button type="button" onClick={() => setIsTravelClaim(t => !t)}
+                className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors shrink-0 ml-3 ${
+                  isTravelClaim
+                    ? "bg-[#4a6da7] text-white border-transparent"
+                    : "border-stone-300 text-stone-500 hover:border-[#4a6da7] hover:text-[#4a6da7]"
+                }`}>
+                <Car size={11} /> Travel Claim
+              </button>
+            </div>
+
+            <datalist id="lcm-locations">
+              {LCM_LOCATIONS.map(l => <option key={l} value={l} />)}
+            </datalist>
+
             <div className="overflow-x-auto">
-            <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 420 }}>
-              <thead>
-                <tr className="bg-stone-50">
-                  <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
-                  <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-28">Date 日期</th>
-                  <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold">PARTICULARS 事项</th>
-                  <th className="border border-stone-800 px-2 py-1.5 text-right text-xs font-bold w-28">Amount 数目 (RM)</th>
-                  <th className="border border-stone-800 w-8 print:hidden" />
-                </tr>
-              </thead>
-              <tbody>
-                {form.line_items.map((item, idx) => (
-                  <tr key={idx} className="group">
-                    <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-500">{idx + 1}</td>
-                    <td className="border border-stone-800 px-1 py-0.5">
-                      <input type="date"
-                        className="w-full outline-none text-xs text-stone-600 bg-transparent border-0 py-0.5"
-                        value={item.date || form.pvDate}
-                        onChange={e => updateLineItem(idx, "date", e.target.value)} />
-                    </td>
-                    <td className="border border-stone-800 px-1 py-0.5">
-                      <input className="w-full outline-none text-sm bg-transparent border-0 py-0.5 placeholder:text-stone-300"
-                        placeholder="Description of item / service"
-                        value={item.description}
-                        onChange={e => updateLineItem(idx, "description", e.target.value)} />
-                    </td>
-                    <td className="border border-stone-800 px-1 py-0.5">
-                      <input type="number" min="0" step="0.01"
-                        className="w-full outline-none text-sm text-right bg-transparent border-0 py-0.5 placeholder:text-stone-300"
-                        placeholder="0.00"
-                        value={item.amount || ""}
-                        onChange={e => updateLineItem(idx, "amount", e.target.value)} />
-                    </td>
-                    <td className="border border-stone-800 px-1 py-0.5 text-center print:hidden">
-                      {form.line_items.length > 1 && (
-                        <button type="button" onClick={() => removeLineItem(idx)}
-                          className="text-stone-300 hover:text-red-400 transition-colors p-0.5">
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </td>
+            {isTravelClaim ? (
+              <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 540 }}>
+                <thead>
+                  <tr className="bg-stone-50">
+                    <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
+                    <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-24">Date 日期</th>
+                    <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold w-32">Type 类型</th>
+                    <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold">Route / Particulars 路线 / 事项</th>
+                    <th className="border border-stone-800 px-2 py-1.5 text-right text-xs font-bold w-28">Amount 数目 (RM)</th>
+                    <th className="border border-stone-800 w-8 print:hidden" />
                   </tr>
-                ))}
-                {Array.from({ length: Math.max(0, 5 - form.line_items.length) }).map((_, i) => (
-                  <tr key={`pad-${i}`} className="h-8">
-                    <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-300">{form.line_items.length + i + 1}</td>
-                    <td className="border border-stone-800" />
-                    <td className="border border-stone-800" />
-                    <td className="border border-stone-800" />
+                </thead>
+                <tbody>
+                  {travelItems.map((item, idx) => (
+                    <tr key={idx} className="group">
+                      <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-500">{idx + 1}</td>
+                      <td className="border border-stone-800 px-1 py-0.5">
+                        <input type="date"
+                          className="w-full outline-none text-xs text-stone-600 bg-transparent border-0 py-0.5"
+                          value={item.date || form.pvDate}
+                          onChange={e => updateTravelItem(idx, { date: e.target.value })} />
+                      </td>
+                      <td className="border border-stone-800 px-1 py-0.5">
+                        <select
+                          value={item.travel_type}
+                          onChange={e => updateTravelItem(idx, { travel_type: e.target.value as TravelType | "", description: "", from: "", to: "", km: 0, amount: 0 })}
+                          className="w-full outline-none text-xs bg-transparent border-0 py-0.5 cursor-pointer">
+                          <option value="">— Select —</option>
+                          {TRAVEL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="border border-stone-800 px-1 py-0.5">
+                        {item.travel_type === "mileage" ? (
+                          <div className="flex items-center gap-1 flex-wrap py-0.5">
+                            <input list="lcm-locations"
+                              className="outline-none text-xs bg-transparent border-b border-stone-300 w-24 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300"
+                              placeholder="From"
+                              value={item.from}
+                              onChange={e => updateTravelItem(idx, { from: e.target.value })} />
+                            <span className="text-stone-400 text-xs shrink-0">→</span>
+                            <input list="lcm-locations"
+                              className="outline-none text-xs bg-transparent border-b border-stone-300 w-24 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300"
+                              placeholder="To"
+                              value={item.to}
+                              onChange={e => updateTravelItem(idx, { to: e.target.value })} />
+                            <span className="text-stone-400 text-[10px] shrink-0 ml-1">KM:</span>
+                            <input type="number" min="0" step="0.1"
+                              className="outline-none text-xs bg-transparent border-b border-stone-300 w-14 text-right focus:border-[#4a6da7] placeholder:text-stone-300"
+                              placeholder="0"
+                              value={item.km || ""}
+                              onChange={e => updateTravelItem(idx, { km: Number(e.target.value) })} />
+                          </div>
+                        ) : (
+                          <input
+                            className="w-full outline-none text-xs bg-transparent border-0 py-0.5 placeholder:text-stone-300"
+                            placeholder={
+                              item.travel_type === "petrol"  ? "e.g. Petrol — Tapah to Cameron Highlands"
+                              : item.travel_type === "train"   ? "e.g. KL Sentral → Ipoh (KTM)"
+                              : item.travel_type === "airfare" ? "e.g. KL → Kota Kinabalu (AirAsia)"
+                              : "Description of travel expense"
+                            }
+                            value={item.description}
+                            onChange={e => updateTravelItem(idx, { description: e.target.value })} />
+                        )}
+                      </td>
+                      <td className="border border-stone-800 px-1 py-0.5">
+                        {item.travel_type === "mileage" ? (
+                          <div className="text-right text-sm text-stone-600 bg-stone-50 py-0.5 px-1 tabular-nums font-medium select-none">
+                            {item.km > 0 ? (item.km * MILEAGE_RATE).toFixed(2) : "—"}
+                          </div>
+                        ) : (
+                          <input type="number" min="0" step="0.01"
+                            className="w-full outline-none text-sm text-right bg-transparent border-0 py-0.5 placeholder:text-stone-300"
+                            placeholder="0.00"
+                            value={item.amount || ""}
+                            onChange={e => updateTravelItem(idx, { amount: Number(e.target.value) })} />
+                        )}
+                      </td>
+                      <td className="border border-stone-800 px-1 py-0.5 text-center print:hidden">
+                        {travelItems.length > 1 && (
+                          <button type="button" onClick={() => removeTravelItem(idx)}
+                            className="text-stone-300 hover:text-red-400 transition-colors p-0.5">
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {Array.from({ length: Math.max(0, 5 - travelItems.length) }).map((_, i) => (
+                    <tr key={`pad-${i}`} className="h-8">
+                      <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-300">{travelItems.length + i + 1}</td>
+                      <td className="border border-stone-800" />
+                      <td className="border border-stone-800" />
+                      <td className="border border-stone-800" />
+                      <td className="border border-stone-800" />
+                      <td className="border border-stone-800 print:hidden" />
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-stone-50">
+                    <td colSpan={4} className="border border-stone-800 px-3 py-1.5 text-right text-sm font-bold">
+                      TOTAL AMOUNT 总数额
+                    </td>
+                    <td className="border border-stone-800 px-2 py-1.5 text-right text-sm font-bold text-stone-800">
+                      {displayAmount > 0 ? displayAmount.toFixed(2) : "—"}
+                    </td>
                     <td className="border border-stone-800 print:hidden" />
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-stone-50">
-                  <td colSpan={3} className="border border-stone-800 px-3 py-1.5 text-right text-sm font-bold">
-                    TOTAL AMOUNT 总数额
-                  </td>
-                  <td className="border border-stone-800 px-2 py-1.5 text-right text-sm font-bold text-stone-800">
-                    {displayAmount > 0 ? displayAmount.toFixed(2) : "—"}
-                  </td>
-                  <td className="border border-stone-800 print:hidden" />
-                </tr>
-              </tfoot>
-            </table>
+                </tfoot>
+              </table>
+            ) : (
+              <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 420 }}>
+                <thead>
+                  <tr className="bg-stone-50">
+                    <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
+                    <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-28">Date 日期</th>
+                    <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold">PARTICULARS 事项</th>
+                    <th className="border border-stone-800 px-2 py-1.5 text-right text-xs font-bold w-28">Amount 数目 (RM)</th>
+                    <th className="border border-stone-800 w-8 print:hidden" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.line_items.map((item, idx) => (
+                    <tr key={idx} className="group">
+                      <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-500">{idx + 1}</td>
+                      <td className="border border-stone-800 px-1 py-0.5">
+                        <input type="date"
+                          className="w-full outline-none text-xs text-stone-600 bg-transparent border-0 py-0.5"
+                          value={item.date || form.pvDate}
+                          onChange={e => updateLineItem(idx, "date", e.target.value)} />
+                      </td>
+                      <td className="border border-stone-800 px-1 py-0.5">
+                        <input className="w-full outline-none text-sm bg-transparent border-0 py-0.5 placeholder:text-stone-300"
+                          placeholder="Description of item / service"
+                          value={item.description}
+                          onChange={e => updateLineItem(idx, "description", e.target.value)} />
+                      </td>
+                      <td className="border border-stone-800 px-1 py-0.5">
+                        <input type="number" min="0" step="0.01"
+                          className="w-full outline-none text-sm text-right bg-transparent border-0 py-0.5 placeholder:text-stone-300"
+                          placeholder="0.00"
+                          value={item.amount || ""}
+                          onChange={e => updateLineItem(idx, "amount", e.target.value)} />
+                      </td>
+                      <td className="border border-stone-800 px-1 py-0.5 text-center print:hidden">
+                        {form.line_items.length > 1 && (
+                          <button type="button" onClick={() => removeLineItem(idx)}
+                            className="text-stone-300 hover:text-red-400 transition-colors p-0.5">
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {Array.from({ length: Math.max(0, 5 - form.line_items.length) }).map((_, i) => (
+                    <tr key={`pad-${i}`} className="h-8">
+                      <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-300">{form.line_items.length + i + 1}</td>
+                      <td className="border border-stone-800" />
+                      <td className="border border-stone-800" />
+                      <td className="border border-stone-800" />
+                      <td className="border border-stone-800 print:hidden" />
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-stone-50">
+                    <td colSpan={3} className="border border-stone-800 px-3 py-1.5 text-right text-sm font-bold">
+                      TOTAL AMOUNT 总数额
+                    </td>
+                    <td className="border border-stone-800 px-2 py-1.5 text-right text-sm font-bold text-stone-800">
+                      {displayAmount > 0 ? displayAmount.toFixed(2) : "—"}
+                    </td>
+                    <td className="border border-stone-800 print:hidden" />
+                  </tr>
+                </tfoot>
+              </table>
+            )}
 
             </div>{/* end overflow-x-auto */}
-            <button type="button" onClick={addLineItem}
-              className="mt-2 flex items-center gap-1 text-xs text-[#4a6da7] hover:underline print:hidden">
-              <Plus size={11} /> Add line item
-            </button>
+            <div className="flex items-center justify-between mt-2 print:hidden">
+              <button type="button" onClick={isTravelClaim ? addTravelItem : addLineItem}
+                className="flex items-center gap-1 text-xs text-[#4a6da7] hover:underline">
+                <Plus size={11} /> {isTravelClaim ? "Add travel item" : "Add line item"}
+              </button>
+              {isTravelClaim && (
+                <span className="text-[10px] text-stone-400">Mileage: RM{MILEAGE_RATE.toFixed(2)}/km (auto-calculated)</span>
+              )}
+            </div>
           </div>
 
           {/* ── LOA INDICATOR ─────────────────────────────────────────── */}
