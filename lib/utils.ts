@@ -76,14 +76,16 @@ export const STATUS_COLORS: Record<PVStatus, string> = {
 const _FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
 export function computedBadgeStatus(pv: { status?: string; approvals?: unknown[] }): PVStatus {
   const s = pv.status ?? "";
-  // Use DB status directly for stages that don't need approval-based inference
+  // Trust DB status for terminal and late-stage statuses (GM has already signed off for these)
   if (["APPROVED", "PAID", "REJECTED", "CANCELLED", "REJECTED_HEAD", "PENDING_HEAD",
        "PENDING_SIGNATORY", "MINISTRY_VERIFIED"].includes(s)) return s as PVStatus;
-  // For PENDING / REVIEWED, infer from approvals so badge stays accurate mid-flow
+  // For PENDING / REVIEWED DB statuses, infer badge from approvals
   const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
   const hasFinance = approvals.some(a => _FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
+  const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER"    && a.action === "APPROVED");
   if (!hasFinance) return "PENDING";
-  return "REVIEWED";
+  if (!hasGM)      return "REVIEWED";
+  return "PENDING_SIGNATORY";
 }
 
 export function getLOATier(amount: number, paymentType = "GENERAL"): LOATier {
