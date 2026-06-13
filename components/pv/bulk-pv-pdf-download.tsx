@@ -323,7 +323,7 @@ export default function BulkPVPdfDownload({
           const isPdf  = file.contentType.includes("pdf")  || url.toLowerCase().endsWith(".pdf");
           const isPng  = file.contentType.includes("png")  || url.toLowerCase().endsWith(".png");
           if (isPdf) {
-            const attDoc = await PDFDocument.load(file.bytes);
+            const attDoc = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
             const pages  = await finalDoc.copyPages(attDoc, attDoc.getPageIndices());
             pages.forEach(p => finalDoc.addPage(p));
           } else {

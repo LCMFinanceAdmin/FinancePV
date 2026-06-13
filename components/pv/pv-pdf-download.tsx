@@ -392,7 +392,7 @@ async function mergeAttachments(basePdfBytes: ArrayBuffer, attachmentUrls: strin
     const isPng  = file.contentType.includes("png") || url.toLowerCase().endsWith(".png");
 
     if (isPdf) {
-      const attachDoc = await PDFDocument.load(file.bytes);
+      const attachDoc = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
       const pages = await merged.copyPages(attachDoc, attachDoc.getPageIndices());
       pages.forEach(p => merged.addPage(p));
     } else if (isPng || isJpeg) {
