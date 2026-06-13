@@ -94,6 +94,38 @@ function SigBox({ approval, label, subtitle }: { approval?: PVApproval; label: s
   );
 }
 
+function PaidBanner({ pv }: { pv: PV }) {
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 12,
+      border: "2pt solid #16a34a", borderRadius: 6,
+      backgroundColor: "#f0fdf4", padding: "6pt 10pt",
+    }}>
+      <View style={{
+        border: "3pt solid #16a34a", borderRadius: 4,
+        padding: "4pt 10pt", transform: "rotate(-8deg)",
+      }}>
+        <Text style={{ fontSize: 16, fontFamily: "Helvetica-Bold", color: "#16a34a", letterSpacing: 3 }}>PAID</Text>
+      </View>
+      <View>
+        <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#166534" }}>Payment Completed</Text>
+        <Text style={{ fontSize: 8, color: "#15803d", marginTop: 2 }}>
+          {[
+            pv.payment_method,
+            pv.payment_ref && `Ref: ${pv.payment_ref}`,
+            pv.paid_at && fmtDate(pv.paid_at),
+          ].filter(Boolean).join("  ·  ")}
+        </Text>
+        {pv.paid_by ? (
+          <Text style={{ fontSize: 8, color: "#15803d", marginTop: 1 }}>
+            Marked paid by {pv.paid_by} (Finance Executive)
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
   const items = pv.line_items ?? [];
   const approvals: PVApproval[] = pv.approvals ?? [];
@@ -123,36 +155,21 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
 
   const isPaid = pv.status === "PAID";
 
+  // Determine submitter role to conditionally show sections
+  const financeRoles = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+  const isFinanceExecPV = financeRoles.includes(pv.submitted_by_role ?? "");
+  const isExcoPV = pv.submitted_by_role === "MINISTRY_HEAD";
+  // Staff/general stakeholders sign the applicant section; Finance Exec & EXCO Members do not
+  const showApplicantSig = !isFinanceExecPV && !isExcoPV;
+  // EXCO verification section is always shown — Finance Exec PVs need it for EXCO physical signing
+  const showExcoSection = true;
+
   return (
     <Document title={`PV ${pv.pv_no}`}>
       <Page size="A4" style={s.page}>
 
-        {/* ── PAID banner — shown at the TOP when the PV is paid ─────── */}
-        {isPaid && (
-          <View style={{
-            flexDirection: "row", alignItems: "center", gap: 12,
-            border: "2pt solid #16a34a", borderRadius: 6,
-            backgroundColor: "#f0fdf4", padding: "6pt 10pt", marginBottom: 8,
-          }}>
-            <View style={{
-              border: "3pt solid #16a34a", borderRadius: 4,
-              padding: "4pt 10pt", transform: "rotate(-8deg)",
-            }}>
-              <Text style={{ fontSize: 16, fontFamily: "Helvetica-Bold", color: "#16a34a", letterSpacing: 3 }}>PAID</Text>
-            </View>
-            <View>
-              <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#166534" }}>Payment Completed</Text>
-              <Text style={{ fontSize: 8, color: "#15803d", marginTop: 2 }}>
-                {[
-                  pv.payment_method,
-                  pv.payment_ref && `Ref: ${pv.payment_ref}`,
-                  pv.paid_at && fmtDate(pv.paid_at),
-                ].filter(Boolean).join("  ·  ")}
-              </Text>
-              {pv.paid_by ? <Text style={{ fontSize: 8, color: "#15803d", marginTop: 1 }}>Marked paid by {pv.paid_by}</Text> : null}
-            </View>
-          </View>
-        )}
+        {/* ── PAID banner at TOP ──────────────────────────────────────── */}
+        {isPaid && <View style={{ marginBottom: 8 }}><PaidBanner pv={pv} /></View>}
 
         {/* Row 1: Logo + Office Use */}
         <View style={[s.row, { marginBottom: 6 }]}>
@@ -237,40 +254,44 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
           </View>
         </View>
 
-        {/* Applicant signature */}
-        <View style={[s.border, { marginTop: 8, padding: "6pt 8pt" }]}>
-          <Text style={[s.bold, s.tiny, { marginBottom: 3 }]}>Applicant{"'"}s Signature 申请者签名:</Text>
-          <View style={{ height: 40 }} />
-          <View style={[s.borderT, { paddingTop: 3 }]}>
-            <Text style={s.tiny}>Name: <Text style={s.bold}>{pv.sig_applicant_name || pv.applicant_name}</Text>    Date: {fmtDate(pv.submitted_at)}</Text>
-          </View>
-        </View>
-
-        {/* EXCO / Ministry Head verification — always show as a signing box */}
-        <View style={[s.border, { marginTop: 6, padding: "6pt 8pt" }]}>
-          <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by 审核者签名:</Text>
-          <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By EXCO Member / Dept Head in Charge  事工主席/负责人)</Text>
-          {excoApproval?.signature_data ? (
-            <Image src={excoApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
-          ) : (
+        {/* Applicant signature — hidden for Finance Executive and EXCO-member PVs */}
+        {showApplicantSig && (
+          <View style={[s.border, { marginTop: 8, padding: "6pt 8pt" }]}>
+            <Text style={[s.bold, s.tiny, { marginBottom: 3 }]}>Applicant{"'"}s Signature 申请者签名:</Text>
             <View style={{ height: 40 }} />
-          )}
-          <View style={[s.borderT, { paddingTop: 3 }]}>
-            {ministryVerified ? (
-              <>
-                <Text style={[s.bold, s.tiny]}>
-                  {excoApproval?.name ?? pv.ministry_verified_by ?? pv.dept_head_name ?? "EXCO Member"}
-                </Text>
-                <Text style={s.tiny}>
-                  {pv.ministry}{"  "}Date:{" "}
-                  {fmtDate(excoApproval?.timestamp ?? pv.ministry_verified_at ?? pv.head_verified_at)}
-                </Text>
-              </>
-            ) : (
-              <Text style={s.tiny}>Name 姓名: _______________________________{"     "}Date 日期: ___________</Text>
-            )}
+            <View style={[s.borderT, { paddingTop: 3 }]}>
+              <Text style={s.tiny}>Name: <Text style={s.bold}>{pv.sig_applicant_name || pv.applicant_name}</Text>    Date: {fmtDate(pv.submitted_at)}</Text>
+            </View>
           </View>
-        </View>
+        )}
+
+        {/* EXCO / Ministry Head verification — hidden for Finance Executive PVs */}
+        {showExcoSection && (
+          <View style={[s.border, { marginTop: 6, padding: "6pt 8pt" }]}>
+            <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by 审核者签名:</Text>
+            <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By EXCO Member / Dept Head in Charge  事工主席/负责人)</Text>
+            {excoApproval?.signature_data ? (
+              <Image src={excoApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
+            ) : (
+              <View style={{ height: 40 }} />
+            )}
+            <View style={[s.borderT, { paddingTop: 3 }]}>
+              {ministryVerified ? (
+                <>
+                  <Text style={[s.bold, s.tiny]}>
+                    {excoApproval?.name ?? pv.ministry_verified_by ?? pv.dept_head_name ?? "EXCO Member"}
+                  </Text>
+                  <Text style={s.tiny}>
+                    {pv.ministry}{"  "}Date:{" "}
+                    {fmtDate(excoApproval?.timestamp ?? pv.ministry_verified_at ?? pv.head_verified_at)}
+                  </Text>
+                </>
+              ) : (
+                <Text style={s.tiny}>Name 姓名: _______________________________{"     "}Date 日期: ___________</Text>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Finance section — with signature images */}
         <View style={{ marginTop: 8 }}>
@@ -339,6 +360,9 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
             ))}
           </View>
         )}
+
+        {/* ── PAID banner at BOTTOM ──────────────────────────────────── */}
+        {isPaid && <View style={{ marginTop: 10 }}><PaidBanner pv={pv} /></View>}
 
       </Page>
     </Document>

@@ -52,6 +52,7 @@ Deno.serve(async (req) => {
       applicant_email:       applicantEmail,
       submitted_by_email:    user.email,
       submitted_by:          profile?.full_name || user.email,
+      submitted_by_role:     profile?.role || "STAFF",
       submitted_at:          now,
       dept:                  d.dept || "",
       ministry,

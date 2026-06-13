@@ -354,9 +354,10 @@ export default function BulkPVPage() {
       if (!runData) { setLoading(false); return; }
       setRun(runData as BulkRun);
       const pv_ids: string[] = runData.pv_ids ?? [];
+      let ordered: PV[] = [];
       if (pv_ids.length > 0) {
         const { data: pvData } = await supabase.from("pvs").select("*").in("id", pv_ids);
-        const ordered = pv_ids.map(pid => pvData?.find((p: PV) => p.id === pid)).filter(Boolean) as PV[];
+        ordered = pv_ids.map(pid => pvData?.find((p: PV) => p.id === pid)).filter(Boolean) as PV[];
         setPvs(ordered);
         // Load saved signatures for all approvers across all PVs
         const allApprovals = ordered.flatMap(p => (p.approvals ?? []) as { email?: string }[]);
@@ -385,15 +386,28 @@ export default function BulkPVPage() {
       // Load saved signature for current user
       if (profile?.saved_signature) setSavedSig(profile.saved_signature);
       // Load the Finance Executive's (run_by's) saved signature + full name for display
+      let finSig = "";
+      let finName = runData.run_by;
       if (!isFinanceAdmin || !profile?.saved_signature) {
         const { data: runByProfile } = await supabase.from("user_roles")
           .select("saved_signature,full_name").eq("email", runData.run_by).single();
-        setFinSigData(runByProfile?.saved_signature ?? "");
-        setRunByName(runByProfile?.full_name || runData.run_by);
+        finSig = runByProfile?.saved_signature ?? "";
+        finName = runByProfile?.full_name || runData.run_by;
       } else {
-        setFinSigData(profile.saved_signature ?? "");
-        setRunByName(profile.full_name || runData.run_by);
+        finSig = profile.saved_signature ?? "";
+        finName = profile.full_name || runData.run_by;
       }
+      // Fallback: if no profile signature, pull Finance Exec signature from the PV approvals
+      if (!finSig) {
+        for (const pv of ordered) {
+          const fa = (pv.approvals ?? []).find(
+            a => a.role === "FINANCE_ADMIN" && a.action === "APPROVED" && a.signature_data
+          );
+          if (fa?.signature_data) { finSig = fa.signature_data; break; }
+        }
+      }
+      setFinSigData(finSig);
+      setRunByName(finName);
       setLoading(false);
     }
     load();
