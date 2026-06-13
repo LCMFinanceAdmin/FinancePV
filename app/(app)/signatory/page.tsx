@@ -287,8 +287,8 @@ export default function SignatoryPage() {
 
   const isGM = currentUser?.role === "GENERAL_MANAGER";
 
-  const gmHasApproved = useCallback((pv: { approvals: { role: string; action: string }[] }) =>
-    pv.approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED")
+  const gmHasApproved = useCallback((pv: { approvals?: { role: string; action: string }[] }) =>
+    (pv.approvals ?? []).some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED")
   , []);
 
   // GM Pending = REVIEWED/MINISTRY_VERIFIED where GM has NOT yet acted
