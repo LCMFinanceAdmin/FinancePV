@@ -159,3 +159,16 @@ export type LOATier = {
   roles: string[];
   label: string;
 };
+
+export interface BulkRun {
+  id: string;
+  group_name: string;
+  run_by: string;
+  run_date: string;
+  pv_ids: string[];
+  pv_nos: string[];
+  total_amount: number;
+  pv_count: number;
+  ministry: string;
+  created_at: string;
+}

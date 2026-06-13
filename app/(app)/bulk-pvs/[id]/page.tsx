@@ -2,22 +2,18 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { formatDateTime } from "@/lib/utils";
-import type { PV, UserProfile, PVApproval } from "@/lib/types";
+import { formatDateTime, roleLabel } from "@/lib/utils";
+import type { PV, UserProfile, PVApproval, BulkRun } from "@/lib/types";
 import dynamic from "next/dynamic";
-const PVPdfDownload = dynamic(() => import("@/components/pv/pv-pdf-download"), { ssr: false });
+const PVPdfDownload     = dynamic(() => import("@/components/pv/pv-pdf-download"),      { ssr: false });
+const BulkPVPdfDownload = dynamic(() => import("@/components/pv/bulk-pv-pdf-download"), { ssr: false });
 import {
   ArrowLeft, CheckCircle2, XCircle,
-  Printer, ShieldCheck, Send, CreditCard,
+  ShieldCheck, Send, CreditCard,
   PenLine, Eraser, Upload, X as XIcon, CheckCircle,
   FileText, Plus,
 } from "lucide-react";
 
-interface BulkRun {
-  id: string; group_name: string; run_by: string; run_date: string;
-  pv_ids: string[]; pv_nos: string[]; total_amount: number;
-  pv_count: number; ministry: string; created_at: string;
-}
 
 const BANK_ABBR: Record<string, string> = {
   "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",
@@ -312,14 +308,14 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
             Attached Documents <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>附件</span>
           </div>
           {(pv.attachments ?? []).map((url, i) => (
-            <div key={i} className="print:break-before-page">
+            <div key={i} className="bulk-attachment-page">
               <div className="text-[11px] text-stone-500 mb-1 font-semibold">Supporting Document {i + 1} — {pv.pv_no}</div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={url} alt={`Attachment ${i + 1}`} className="max-w-full border border-stone-200 rounded" />
             </div>
           ))}
           {pv.payment_receipt_url && (
-            <div className="print:break-before-page">
+            <div className="bulk-attachment-page">
               <div className="text-[11px] text-stone-500 mb-1 font-semibold">Bank Payment Receipt — {pv.pv_no}</div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={pv.payment_receipt_url} alt="Payment receipt" className="max-w-full border border-stone-200 rounded" />
@@ -714,16 +710,43 @@ export default function BulkPVPage() {
     <div className="min-h-screen bg-stone-100 print:bg-white print:min-h-0">
       <style>{`
         @media print {
-          @page { size: A4 landscape; margin: 10mm; }
-          .bulk-summary-page { display: block; }
-          .bulk-pv-voucher {
-            display: block;
-            page-break-before: always;
-            break-before: page;
+          /* Reset full height chain that clips to one page */
+          html, body, main {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
           }
-          .bulk-summary-page + .bulk-pv-voucher {
-            page-break-before: always;
+          /* Kill the flex wrapper height constraint */
+          body > div, main {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          /* Hide sidebar, mobile nav, and all sticky UI chrome */
+          aside, nav, .mobile-nav { display: none !important; }
+
+          /* Page setup — landscape for the summary table */
+          @page { size: A4 landscape; margin: 10mm; }
+
+          /* Summary: break after so PV1 starts on a new page */
+          .bulk-summary-page {
+            display: block !important;
+            break-after: page;
+            page-break-after: always;
+          }
+
+          /* Each PV voucher: starts on its own page */
+          .bulk-pv-voucher {
+            display: block !important;
             break-before: page;
+            page-break-before: always;
+          }
+
+          /* Each attachment within a voucher: also its own page */
+          .bulk-attachment-page {
+            break-before: page;
+            page-break-before: always;
           }
         }
       `}</style>
@@ -749,10 +772,12 @@ export default function BulkPVPage() {
             {actionToast.msg && (
               <span className={`text-sm font-medium ${actionToast.ok ? "text-green-700" : "text-red-600"}`}>{actionToast.msg}</span>
             )}
-            <button onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-stone-300 rounded-lg text-sm text-stone-600 hover:bg-stone-50">
-              <Printer size={14} /> Print
-            </button>
+            {run && (
+              <BulkPVPdfDownload
+                run={run} pvs={pvs}
+                finSigData={finSigData} runByName={runByName}
+              />
+            )}
           </div>
         </div>
       </div>

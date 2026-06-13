@@ -114,7 +114,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
   })).filter(s => s.items.length > 0);
 
   return (
-    <aside className="hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-stone-200 h-full">
+    <aside className="hidden md:flex print:hidden flex-col w-60 shrink-0 bg-white border-r border-stone-200 h-full">
       {/* Logo */}
       <div className="px-5 py-4 border-b border-stone-100">
         <div className="text-[#4a6da7] font-bold text-lg tracking-wide">LCM Finance</div>
