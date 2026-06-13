@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDateTime, roleLabel } from "@/lib/utils";
+import { formatCurrency, formatDateTime, roleLabel, computedBadgeStatus } from "@/lib/utils";
 import {
   CheckCircle2, XCircle, Clock, Search, ChevronDown, ChevronRight,
   Layers, CheckSquare, RotateCcw,
@@ -284,7 +284,7 @@ export default function SignatoryActivityPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
             <Link href={`/my-pvs/${pv.id}`} className="text-xs font-bold text-[#4a6da7] hover:underline">{pv.pv_no}</Link>
-            <StatusBadge status={pv.status as import("@/lib/types").PVStatus} />
+            <StatusBadge status={computedBadgeStatus(pv)} />
           </div>
           <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
           <div className="text-xs text-stone-400 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>

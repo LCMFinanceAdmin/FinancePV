@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import {
   Search, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
@@ -310,7 +310,7 @@ export default function ExcoActivityPage() {
                         className="text-xs font-bold text-[#4a6da7] hover:underline">
                         {pv.pv_no}
                       </Link>
-                      <StatusBadge status={pv.status!} />
+                      <StatusBadge status={computedBadgeStatus(pv)} />
                       {pv.ministry && (
                         <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-1.5 py-0.5 rounded-full font-medium">
                           {pv.ministry}

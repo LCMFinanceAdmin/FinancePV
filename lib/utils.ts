@@ -73,6 +73,18 @@ export const STATUS_COLORS: Record<PVStatus, string> = {
   CANCELLED:          "bg-gray-100 text-gray-600",
 };
 
+const _FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+export function computedBadgeStatus(pv: { status?: string; approvals?: unknown[] }): PVStatus {
+  const s = pv.status ?? "";
+  if (["APPROVED", "PAID", "REJECTED", "CANCELLED", "REJECTED_HEAD", "PENDING_HEAD"].includes(s)) return s as PVStatus;
+  const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
+  const hasFinance = approvals.some(a => _FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
+  const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER"    && a.action === "APPROVED");
+  if (!hasFinance) return "PENDING";
+  if (!hasGM)      return "REVIEWED";
+  return "PENDING_SIGNATORY";
+}
+
 export function getLOATier(amount: number, paymentType = "GENERAL"): LOATier {
   if (paymentType === "ASSET_PURCHASE" && amount > 100000) {
     return { required: 2, roles: ["BISHOP", "SECRETARY", "TREASURER"], label: "EXCO required (E2)" };

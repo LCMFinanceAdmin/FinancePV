@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import type { PV, PVStatus } from "@/lib/types";
+import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
+import type { PV } from "@/lib/types";
 import {
   Search, Layers, FileText, Trash2,
   CheckCircle2, XCircle, RotateCcw, ShieldCheck,
@@ -14,17 +14,7 @@ import Link from "next/link";
 
 type FilterStatus = "ALL" | "IN_PROGRESS" | "APPROVED" | "PAID" | "REJECTED";
 
-const FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
-function computedBadgeStatus(pv: Partial<PV>): PVStatus {
-  const s = pv.status ?? "";
-  if (["APPROVED", "PAID", "REJECTED", "CANCELLED", "REJECTED_HEAD", "PENDING_HEAD"].includes(s)) return s as PVStatus;
-  const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
-  const hasFinance = approvals.some(a => FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
-  const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
-  if (!hasFinance) return "PENDING";
-  if (!hasGM)      return "REVIEWED";
-  return "PENDING_SIGNATORY";
-}
+
 
 const FILTER_OPTIONS: { label: string; value: FilterStatus }[] = [
   { label: "All",         value: "ALL"         },

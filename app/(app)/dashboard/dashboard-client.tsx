@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardBody } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import {
   FilePlus, Clock, CheckCircle, AlertCircle,
@@ -69,7 +69,7 @@ export default function DashboardPage() {
 
         const [pvResult, bulkResult, profileResult, pendingResult, approvedResult] = await Promise.all([
           supabase.from("pvs")
-            .select("id,pv_no,status,amount,payee_name,ministry,submitted_at,purpose,payment_type")
+            .select("id,pv_no,status,amount,payee_name,ministry,submitted_at,purpose,payment_type,approvals")
             .eq("submitted_by_email", user.email)
             .order("submitted_at", { ascending: false })
             .limit(5),
@@ -327,7 +327,7 @@ export default function DashboardPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                             <span className="text-xs font-semibold text-stone-600">{pv.pv_no}</span>
-                            <StatusBadge status={pv.status!} />
+                            <StatusBadge status={computedBadgeStatus(pv)} />
                             {pv.ministry && (
                               <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-1.5 py-0.5 rounded-full font-medium">{pv.ministry}</span>
                             )}
@@ -396,7 +396,7 @@ export default function DashboardPage() {
                                     onClick={e => e.stopPropagation()}>
                                     {pv.pv_no}
                                   </Link>
-                                  <StatusBadge status={pv.status!} />
+                                  <StatusBadge status={computedBadgeStatus(pv)} />
                                   {pv.ministry && (
                                     <span className="text-xs bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded-full">{pv.ministry}</span>
                                   )}

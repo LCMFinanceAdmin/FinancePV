@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV, PVStatus } from "@/lib/types";
 import { Search, Send, CheckSquare } from "lucide-react";
 
@@ -113,7 +113,7 @@ export default function AdminPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                      <StatusBadge status={pv.status!} />
+                      <StatusBadge status={computedBadgeStatus(pv)} />
                     </div>
                     <div className="text-sm font-semibold text-stone-800">{pv.payee_name}</div>
                     <div className="text-xs text-stone-400">{pv.ministry || pv.dept} · {formatDate(pv.submitted_at!)} · {pv.submitted_by_email}</div>

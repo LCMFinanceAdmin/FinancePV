@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateTime, computedBadgeStatus } from "@/lib/utils";
 import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
@@ -1342,7 +1342,7 @@ function HistoryPanel({ recurringId }: { recurringId: string }) {
   const [pvs, setPvs] = useState<{ id: string; pv_no: string; status: string; amount: number; submitted_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    supabase.from("pvs").select("id,pv_no,status,amount,submitted_at")
+    supabase.from("pvs").select("id,pv_no,status,amount,submitted_at,approvals")
       .eq("recurring_id", recurringId).order("submitted_at", { ascending: false }).limit(10)
       .then(({ data }) => { setPvs(data ?? []); setLoading(false); });
   }, [recurringId]);
@@ -1366,7 +1366,7 @@ function HistoryPanel({ recurringId }: { recurringId: string }) {
                 <div className="text-[12px] font-semibold text-stone-700 group-hover:text-[#4a6da7] transition-colors">{pv.pv_no}</div>
                 <div className="text-[10px] text-stone-400 mt-0.5">{fmtDT(pv.submitted_at)}</div>
               </div>
-              <StatusBadge status={pv.status as import("@/lib/types").PVStatus} />
+              <StatusBadge status={computedBadgeStatus(pv)} />
             </a>
           ))}
         </div>

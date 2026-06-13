@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import { CheckCircle, XCircle, ShieldCheck, Eye, EyeOff } from "lucide-react";
 
@@ -43,7 +43,7 @@ export default function ExcoPage() {
 
       const { data } = await supabase
         .from("pvs")
-        .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email")
+        .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals")
         .eq("status", "PENDING_HEAD")
         .in("ministry", ministries)
         .order("submitted_at", { ascending: true });
@@ -119,7 +119,7 @@ export default function ExcoPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                      <StatusBadge status={pv.status!} />
+                      <StatusBadge status={computedBadgeStatus(pv)} />
                     </div>
                     <div className="text-sm font-semibold text-stone-800">{pv.payee_name}</div>
                     <div className="text-xs text-stone-500">{pv.ministry} · {pv.purpose}</div>

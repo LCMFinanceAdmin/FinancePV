@@ -2,28 +2,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate, getLOATier } from "@/lib/utils";
-import type { PV, PVStatus } from "@/lib/types";
+import { formatCurrency, formatDate, getLOATier, computedBadgeStatus } from "@/lib/utils";
+import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
   Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw, Search, PenLine, Trash2,
 } from "lucide-react";
 import Link from "next/link";
 
-const FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
-
-/** Compute a display status from the approvals array rather than the raw DB status.
- *  This corrects legacy data where GM approval left status as "REVIEWED". */
-function computedBadgeStatus(pv: { status?: string; approvals?: unknown[] }): PVStatus {
-  const s = pv.status ?? "";
-  if (["APPROVED", "PAID", "REJECTED", "CANCELLED"].includes(s)) return s as PVStatus;
-  const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
-  const hasFinance = approvals.some(a => FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
-  const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
-  if (!hasFinance) return "PENDING";           // Pending Finance Review
-  if (!hasGM)      return "REVIEWED";          // Finance Reviewed
-  return "PENDING_SIGNATORY";                  // Pending Signatory
-}
 
 interface BudgetSummary {
   project_name: string;
