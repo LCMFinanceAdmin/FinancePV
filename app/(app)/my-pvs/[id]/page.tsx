@@ -223,7 +223,11 @@ export default function PVDetailPage() {
 
   // Voucher zoom / scale-to-fit
   const VOUCHER_NATURAL_WIDTH = 680;
-  const [autoScale, setAutoScale]       = useState(1);
+  const [autoScale, setAutoScale] = useState(() =>
+    typeof window !== "undefined"
+      ? Math.min(1, (window.innerWidth - 32) / VOUCHER_NATURAL_WIDTH)
+      : 1
+  );
   const [userZoom, setUserZoom]         = useState(0);   // steps: each step = +/- 0.15
   const [naturalHeight, setNaturalHeight] = useState(0);
   const voucherOuterRef = useRef<HTMLDivElement>(null);
@@ -234,7 +238,8 @@ export default function PVDetailPage() {
       const outer = voucherOuterRef.current;
       const inner = voucherInnerRef.current;
       if (!outer || !inner) return;
-      const s = Math.min(1, outer.offsetWidth / VOUCHER_NATURAL_WIDTH);
+      const availableWidth = Math.min(outer.offsetWidth, window.innerWidth - 16);
+      const s = Math.min(1, availableWidth / VOUCHER_NATURAL_WIDTH);
       setAutoScale(s);
       setNaturalHeight(inner.offsetHeight);
     }
@@ -710,7 +715,7 @@ export default function PVDetailPage() {
   const showExcoSectionApp = isFinanceExecPV || isExcoPV || pv.head_verified !== "N/A";
 
   return (
-    <div className="min-h-screen bg-stone-100 print:bg-white">
+    <div className="min-h-screen bg-stone-100 print:bg-white overflow-x-hidden">
       <style>{`@media print { .voucher-inner { width: auto !important; transform: none !important; } .voucher-clip { height: auto !important; overflow: visible !important; } }`}</style>
 
       {/* ── Sticky top bar ─────────────────────────────────────────── */}
@@ -1653,7 +1658,7 @@ export default function PVDetailPage() {
 
       {/* ── THE VOUCHER ─────────────────────────────────────────────── */}
       <div className="max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-6 print:p-0 print:max-w-none">
-        <div ref={voucherOuterRef} className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
+        <div ref={voucherOuterRef} className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none overflow-hidden">
           {/* Scaled voucher document */}
           <div
             className="voucher-clip overflow-hidden"
