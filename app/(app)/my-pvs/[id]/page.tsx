@@ -470,8 +470,8 @@ export default function PVDetailPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Action failed");
 
-      // Optionally save signature for next time
-      if (signatureData && saveSigForNext) {
+      // Auto-save if a new (different) signature was drawn
+      if (signatureData && signatureData !== savedSig) {
         await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
         setSavedSig(signatureData);
       }
@@ -1772,7 +1772,7 @@ export default function PVDetailPage() {
                     pending={!gmApproval}
                     savedSigFallback={gmApproval?.email ? approverSigs[gmApproval.email] : undefined}
                     onClickSpace={user?.isGeneralManager && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status)
-                      ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }
+                      ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setShowSignModal(true); }
                       : undefined}
                   />
                 </div>
@@ -1787,7 +1787,7 @@ export default function PVDetailPage() {
                       pending={!sigSlots[0]}
                       savedSigFallback={sigSlots[0]?.email ? approverSigs[sigSlots[0].email] : undefined}
                       onClickSpace={["BISHOP", "TREASURER", "SECRETARY"].includes(user?.role ?? "") && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status)
-                        ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSaveSigForNext(false); setSigMode("draw"); setShowSignModal(true); }
+                        ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setShowSignModal(true); }
                         : undefined}
                     />
                   ) : (

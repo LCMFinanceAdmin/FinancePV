@@ -1,14 +1,29 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, getLOATier } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
-  Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw, Search,
+  Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw, Search, PenLine, Trash2,
 } from "lucide-react";
 import Link from "next/link";
+
+const FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+
+/** Compute a display status from the approvals array rather than the raw DB status.
+ *  This corrects legacy data where GM approval left status as "REVIEWED". */
+function computedBadgeStatus(pv: { status?: string; approvals?: unknown[] }): string {
+  const s = pv.status ?? "";
+  if (["APPROVED", "PAID", "REJECTED", "CANCELLED"].includes(s)) return s;
+  const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
+  const hasFinance = approvals.some(a => FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
+  const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
+  if (!hasFinance) return "PENDING";           // Pending Finance Review
+  if (!hasGM)      return "REVIEWED";          // Finance Reviewed
+  return "PENDING_SIGNATORY";                  // Pending Signatory
+}
 
 interface BudgetSummary {
   project_name: string;
@@ -63,6 +78,16 @@ export default function SignatoryPage() {
   const [ministryFilter, setMinistryFilter] = useState("All Ministries");
   const [ministries, setMinistries] = useState<string[]>([]);
 
+  // Signature state
+  const [savedSig, setSavedSig] = useState("");          // user's saved_signature from DB
+  const [showSigCapture, setShowSigCapture] = useState(false);
+  const [pendingApprove, setPendingApprove] = useState<PinModal | null>(null);
+  const [capturedSig, setCapturedSig] = useState("");
+  const [savingSig, setSavingSig] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
+  const lastPtRef = useRef<{ x: number; y: number } | null>(null);
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
@@ -78,8 +103,9 @@ export default function SignatoryPage() {
 
       if (authUser) {
         const { data: profile } = await supabase.from("user_roles")
-          .select("role").eq("email", authUser.email!).single();
+          .select("role,saved_signature").eq("email", authUser.email!).single();
         setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF" });
+        if (profile?.saved_signature) setSavedSig(profile.saved_signature);
       }
 
       const bulkMap: Record<string, BulkRun> = {};
@@ -132,8 +158,75 @@ export default function SignatoryPage() {
   }
 
   function openPin(pvIds: string[], action: "APPROVED" | "REJECTED") {
+    if (action === "APPROVED" && !savedSig) {
+      // No saved signature — capture it first, then proceed to PIN
+      setPendingApprove({ pvIds, action });
+      setCapturedSig("");
+      setShowSigCapture(true);
+      return;
+    }
     setPinModal({ pvIds, action });
     setPin(""); setRemarks("");
+  }
+
+  // Canvas drawing helpers
+  function getCanvasPoint(e: React.MouseEvent | React.TouchEvent) {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const src = "touches" in e ? e.touches[0] : e;
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+  }
+  function startDraw(e: React.MouseEvent | React.TouchEvent) {
+    e.preventDefault();
+    isDrawingRef.current = true;
+    lastPtRef.current = getCanvasPoint(e);
+  }
+  function draw(e: React.MouseEvent | React.TouchEvent) {
+    e.preventDefault();
+    if (!isDrawingRef.current) return;
+    const pt = getCanvasPoint(e);
+    if (!pt) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!ctx || !lastPtRef.current) return;
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(lastPtRef.current.x, lastPtRef.current.y);
+    ctx.lineTo(pt.x, pt.y);
+    ctx.stroke();
+    lastPtRef.current = pt;
+    setCapturedSig(canvas!.toDataURL());
+  }
+  function endDraw() { isDrawingRef.current = false; lastPtRef.current = null; }
+  function clearCanvas() {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!ctx || !canvas) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setCapturedSig("");
+  }
+
+  async function confirmSigCapture() {
+    if (!capturedSig) return;
+    setSavingSig(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from("user_roles").update({ saved_signature: capturedSig }).eq("email", user.email!);
+        setSavedSig(capturedSig);
+      }
+    } finally {
+      setSavingSig(false);
+      setShowSigCapture(false);
+      if (pendingApprove) {
+        setPinModal(pendingApprove);
+        setPendingApprove(null);
+        setPin(""); setRemarks("");
+      }
+    }
   }
 
   async function submitPin() {
@@ -147,10 +240,12 @@ export default function SignatoryPage() {
       let successCount = 0;
       let lastError = "";
       for (const pvId of pinModal.pvIds) {
+        const body: Record<string, unknown> = { pv_id: pvId, action: pinModal.action, remarks, pin };
+        if (pinModal.action === "APPROVED" && savedSig) body.signature_data = savedSig;
         const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-          body: JSON.stringify({ pv_id: pvId, action: pinModal.action, remarks, pin }),
+          body: JSON.stringify(body),
         });
         const result = await res.json();
         if (res.ok) successCount++;
@@ -265,7 +360,7 @@ export default function SignatoryPage() {
             <Link href={`/my-pvs/${pv.id}`} className="flex-1 min-w-0 hover:opacity-90 transition-opacity">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                <StatusBadge status={pv.status!} />
+                <StatusBadge status={computedBadgeStatus(pv)} />
                 {pv.ministry && (
                   <button
                     onClick={e => { e.preventDefault(); e.stopPropagation(); openMinistryPopup(pv.ministry!, pv.amount ?? 0); }}
@@ -355,6 +450,54 @@ export default function SignatoryPage() {
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toastOk ? "bg-green-600" : "bg-red-500"}`}>
           {toast}
+        </div>
+      )}
+
+      {/* Signature Capture Modal */}
+      {showSigCapture && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-base font-bold text-stone-800 flex items-center gap-2">
+                  <PenLine size={16} className="text-[#4a6da7]" /> Set your signature
+                </div>
+                <div className="text-xs text-stone-400 mt-0.5">Draw once — it will be used for all future approvals</div>
+              </div>
+              <button onClick={() => { setShowSigCapture(false); setPendingApprove(null); }} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+            </div>
+            <div className="border-2 border-dashed border-stone-300 rounded-xl overflow-hidden bg-stone-50 relative" style={{ height: 140 }}>
+              <canvas
+                ref={canvasRef}
+                width={380}
+                height={140}
+                className="w-full h-full touch-none cursor-crosshair"
+                onMouseDown={startDraw}
+                onMouseMove={draw}
+                onMouseUp={endDraw}
+                onMouseLeave={endDraw}
+                onTouchStart={startDraw}
+                onTouchMove={draw}
+                onTouchEnd={endDraw}
+              />
+              {!capturedSig && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span className="text-stone-300 text-sm">Draw your signature here</span>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={clearCanvas}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs text-stone-500 border border-stone-200 rounded-lg hover:bg-stone-50">
+                <Trash2 size={12} /> Clear
+              </button>
+              <button onClick={confirmSigCapture}
+                disabled={!capturedSig || savingSig}
+                className="flex-1 py-2 rounded-xl bg-[#4a6da7] hover:bg-[#3d5a8e] text-white text-sm font-semibold transition-colors disabled:opacity-40">
+                {savingSig ? "Saving…" : "Save & Continue"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
