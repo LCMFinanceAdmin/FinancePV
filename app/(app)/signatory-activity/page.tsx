@@ -438,6 +438,12 @@ export default function SignatoryActivityPage() {
                   <span className="font-semibold text-stone-800 text-sm">{group.groupName}</span>
                   <span className="text-xs text-stone-400">{group.pvs.length} PVs</span>
                   <div className="ml-auto flex items-center gap-3">
+                    <Link
+                      href={`/bulk-pvs/${group.runId}`}
+                      onClick={e => e.stopPropagation()}
+                      className="text-[11px] text-[#4a6da7] hover:underline font-medium shrink-0">
+                      View Batch →
+                    </Link>
                     <span className="text-sm font-bold text-stone-700">{formatCurrency(groupTotal)}</span>
                     {groupCanAct && (
                       <div className="flex gap-1.5" onClick={e => e.stopPropagation()}>
