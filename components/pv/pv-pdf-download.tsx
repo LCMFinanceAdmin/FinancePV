@@ -7,6 +7,7 @@ import { getLOATier, roleLabel } from "@/lib/utils";
 import {
   pdf, Document, Page, Text, View, StyleSheet, Image, Font,
 } from "@react-pdf/renderer";
+import { PDFDocument } from "pdf-lib";
 
 async function svgToPngDataUri(svgPath: string, size = 200): Promise<string> {
   return new Promise((resolve) => {
@@ -369,6 +370,57 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
   );
 }
 
+/** Fetch a URL and return its bytes, or null on failure. */
+async function fetchBytes(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") ?? "";
+    const buf = await res.arrayBuffer();
+    return { bytes: new Uint8Array(buf), contentType };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Merge attachment files into the base PDF using pdf-lib.
+ * Images become full-page inserts; PDFs have their pages copied in.
+ */
+async function mergeAttachments(basePdfBytes: ArrayBuffer, attachmentUrls: string[]): Promise<Uint8Array> {
+  const merged = await PDFDocument.load(basePdfBytes);
+
+  for (const url of attachmentUrls) {
+    const file = await fetchBytes(url);
+    if (!file) continue;
+
+    const isPdf = file.contentType.includes("pdf") || url.toLowerCase().endsWith(".pdf");
+    const isJpeg = file.contentType.includes("jpeg") || file.contentType.includes("jpg") ||
+                   url.toLowerCase().match(/\.(jpg|jpeg)$/) !== null;
+    const isPng  = file.contentType.includes("png") || url.toLowerCase().endsWith(".png");
+
+    if (isPdf) {
+      const attachDoc = await PDFDocument.load(file.bytes);
+      const pages = await merged.copyPages(attachDoc, attachDoc.getPageIndices());
+      pages.forEach(p => merged.addPage(p));
+    } else if (isPng || isJpeg) {
+      const img = isPng
+        ? await merged.embedPng(file.bytes)
+        : await merged.embedJpg(file.bytes);
+      const { width, height } = img.scaleToFit(595, 842); // A4 portrait pts
+      const page = merged.addPage([595, 842]);
+      page.drawImage(img, {
+        x: (595 - width) / 2,
+        y: (842 - height) / 2,
+        width,
+        height,
+      });
+    }
+  }
+
+  return merged.save();
+}
+
 export default function PVPdfDownload({ pv }: { pv: PV }) {
   const [loading, setLoading] = useState(false);
   const [logoDataUri, setLogoDataUri] = useState("");
@@ -381,8 +433,23 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
     setLoading(true);
     try {
       const logo = logoDataUri || await svgToPngDataUri("/lcm-logo.svg", 200);
-      const blob = await pdf(<PVDocument pv={pv} logoDataUri={logo} />).toBlob();
-      const url = URL.createObjectURL(blob);
+      const baseBlob = await pdf(<PVDocument pv={pv} logoDataUri={logo} />).toBlob();
+
+      // Collect all attachment URLs: supporting docs + payment receipt
+      const attachmentUrls = [
+        ...(pv.attachments ?? []),
+        ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : []),
+      ].filter(Boolean);
+
+      let finalBytes: Uint8Array;
+      if (attachmentUrls.length > 0) {
+        const baseBuf = await baseBlob.arrayBuffer();
+        finalBytes = await mergeAttachments(baseBuf, attachmentUrls);
+      } else {
+        finalBytes = new Uint8Array(await baseBlob.arrayBuffer());
+      }
+
+      const url = URL.createObjectURL(new Blob([finalBytes.buffer as ArrayBuffer], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = url;
       a.download = `${pv.pv_no}.pdf`;

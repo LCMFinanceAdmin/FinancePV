@@ -2,28 +2,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate, getLOATier } from "@/lib/utils";
-import type { PV, PVStatus } from "@/lib/types";
+import { formatCurrency, formatDate, getLOATier, computedBadgeStatus } from "@/lib/utils";
+import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
   Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw, Search, PenLine, Trash2,
 } from "lucide-react";
 import Link from "next/link";
 
-const FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
-
-/** Compute a display status from the approvals array rather than the raw DB status.
- *  This corrects legacy data where GM approval left status as "REVIEWED". */
-function computedBadgeStatus(pv: { status?: string; approvals?: unknown[] }): PVStatus {
-  const s = pv.status ?? "";
-  if (["APPROVED", "PAID", "REJECTED", "CANCELLED"].includes(s)) return s;
-  const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
-  const hasFinance = approvals.some(a => FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
-  const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
-  if (!hasFinance) return "PENDING";           // Pending Finance Review
-  if (!hasGM)      return "REVIEWED";          // Finance Reviewed
-  return "PENDING_SIGNATORY";                  // Pending Signatory
-}
 
 interface BudgetSummary {
   project_name: string;
@@ -103,9 +89,12 @@ export default function SignatoryPage() {
 
       if (authUser) {
         const { data: profile } = await supabase.from("user_roles")
-          .select("role,saved_signature").eq("email", authUser.email!).single();
-        setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF" });
-        if (profile?.saved_signature) setSavedSig(profile.saved_signature);
+          .select("role,saved_signature,saved_signatures").eq("email", authUser.email!).single();
+        const role = profile?.role ?? "STAFF";
+        setCurrentUser({ email: authUser.email!, role });
+        const sigs = profile?.saved_signatures as Record<string, string> | null;
+        const roleSig = sigs?.[role] ?? profile?.saved_signature ?? "";
+        if (roleSig) setSavedSig(roleSig);
       }
 
       const bulkMap: Record<string, BulkRun> = {};
@@ -120,6 +109,10 @@ export default function SignatoryPage() {
       }));
 
       setPvs(withBulk);
+
+      // Auto-expand all bulk groups
+      const bulkRunIds = [...new Set((bulkData ?? []).map((r: BulkRun) => r.id))];
+      if (bulkRunIds.length > 0) setExpandedBulk(new Set(bulkRunIds));
 
       // Collect unique ministries for filter
       const mins = [...new Set((pvData ?? []).map((p: { ministry?: string }) => p.ministry).filter(Boolean))] as string[];
@@ -214,8 +207,11 @@ export default function SignatoryPage() {
     setSavingSig(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from("user_roles").update({ saved_signature: capturedSig }).eq("email", user.email!);
+      if (user && currentUser) {
+        const { data: profile } = await supabase.from("user_roles")
+          .select("saved_signatures").eq("email", user.email!).single();
+        const sigs = { ...(profile?.saved_signatures as Record<string, string> || {}), [currentUser.role]: capturedSig };
+        await supabase.from("user_roles").update({ saved_signatures: sigs }).eq("email", user.email!);
         setSavedSig(capturedSig);
       }
     } finally {

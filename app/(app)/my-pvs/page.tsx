@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import {
   Search, Layers, FileText, Trash2,
@@ -13,6 +13,8 @@ import {
 import Link from "next/link";
 
 type FilterStatus = "ALL" | "IN_PROGRESS" | "APPROVED" | "PAID" | "REJECTED";
+
+
 
 const FILTER_OPTIONS: { label: string; value: FilterStatus }[] = [
   { label: "All",         value: "ALL"         },
@@ -90,7 +92,7 @@ export default function MyPVsPage() {
           (() => {
             let q = supabase
               .from("pvs")
-              .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type")
+              .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type,approvals")
               .eq("submitted_by_email", user.email)
               .order("submitted_at", { ascending: false });
             if (filter !== "ALL") q = q.in("status", STATUS_MAP[filter]);
@@ -101,10 +103,29 @@ export default function MyPVsPage() {
         ]);
 
         setPvs(pvResult.data ?? []);
-        setBulkRuns(bulkResult.data ?? []);
+        const runs: BulkRun[] = bulkResult.data ?? [];
+        setBulkRuns(runs);
         const role = profileResult.data?.role ?? "";
         setUserRole(role);
         setUserMinistries(profileResult.data?.ministries ?? []);
+
+        // Auto-expand all bulk runs and eagerly load child PVs
+        if (runs.length > 0) {
+          setExpandedBulk(new Set(runs.map(r => r.id)));
+          const allPvIds = runs.flatMap(r => r.pv_ids ?? []);
+          if (allPvIds.length > 0) {
+            const { data: childPvData } = await supabase
+              .from("pvs")
+              .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type,approvals")
+              .in("id", allPvIds)
+              .order("pv_no");
+            const pvsByRun: Record<string, Partial<PV>[]> = {};
+            for (const r of runs) {
+              pvsByRun[r.id] = (childPvData ?? []).filter((p: Partial<PV>) => (r.pv_ids ?? []).includes(p.id!));
+            }
+            setBulkPVs(pvsByRun);
+          }
+        }
       } finally {
         setLoading(false);
       }
@@ -227,7 +248,7 @@ export default function MyPVsPage() {
       if (s === "PENDING")
         return { type: "admin", review: true,  signatory: false, revert: false,      reject: true  } as const;
       if (s === "REVIEWED" || s === "MINISTRY_VERIFIED")
-        return { type: "admin", review: false, signatory: true,  revert: canRevert,  reject: true  } as const;
+        return { type: "admin", review: false, signatory: false, revert: canRevert,  reject: true  } as const;
       if (s === "PENDING_SIGNATORY")
         return { type: "admin", review: false, signatory: false, revert: canRevert,  reject: false } as const;
       if (s === "REJECTED" || s === "REJECTED_HEAD")
@@ -481,7 +502,7 @@ export default function MyPVsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                            <StatusBadge status={pv.status!} />
+                            <StatusBadge status={computedBadgeStatus(pv)} />
                             {pv.ministry && (
                               <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-1.5 py-0.5 rounded-full font-medium">{pv.ministry}</span>
                             )}
@@ -573,7 +594,7 @@ export default function MyPVsPage() {
                                   onClick={e => e.stopPropagation()}>
                                   {pv.pv_no}
                                 </Link>
-                                <StatusBadge status={pv.status!} />
+                                <StatusBadge status={computedBadgeStatus(pv)} />
                                 {pv.ministry && (
                                   <span className="text-xs bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full">
                                     {pv.ministry}
