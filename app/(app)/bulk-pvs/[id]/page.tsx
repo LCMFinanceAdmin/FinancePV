@@ -946,12 +946,18 @@ export default function BulkPVPage() {
   function handlePrint() {
     if (!run || !pvs.length) return;
     const html = buildBulkPrintHtml(run, pvs, finSigData, runByName, approverSigs);
-    const win = window.open("", "_blank");
-    if (!win) { alert("Please allow pop-ups for printing."); return; }
-    win.document.write(html);
-    win.document.close();
-    // Give images 1.5 s to load before triggering the print dialog
-    setTimeout(() => { win.focus(); win.print(); }, 1500);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (!win) {
+      URL.revokeObjectURL(url);
+      alert("Pop-ups are blocked — please allow pop-ups for this site, then try again.");
+      return;
+    }
+    win.addEventListener("load", () => {
+      // Give images time to load before triggering the print dialog
+      setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 1500);
+    });
   }
 
   return (
