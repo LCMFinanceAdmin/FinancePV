@@ -642,8 +642,16 @@ export default function BulkPVPage() {
   const signingPv = pvs.find(p => p.id === signingPvId);
 
   return (
-    <div className="min-h-screen bg-stone-100 print:bg-white">
-      <style>{`@media print { @page { size: A4 landscape; margin: 12mm; } }`}</style>
+    <div className="min-h-screen bg-stone-100 print:bg-white print:min-h-0">
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 12mm; }
+          @page landscape-summary { size: A4 landscape; margin: 10mm; }
+          .bulk-summary-page { page: landscape-summary; }
+          .bulk-pv-voucher { page: portrait-voucher; }
+          @page portrait-voucher { size: A4 portrait; margin: 12mm; }
+        }
+      `}</style>
 
       {/* Sticky top bar */}
       <div className="print:hidden sticky top-0 z-20 bg-white border-b border-stone-200 px-5 py-3">
@@ -955,7 +963,7 @@ export default function BulkPVPage() {
       )}
 
       {/* ══ PAGE 1: INDEX ══════════════════════════════════════════════════ */}
-      <div className="max-w-6xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
+      <div className="bulk-summary-page max-w-6xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
         <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
           <div className="px-10 py-8 print:px-6 print:py-5" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}>
 
@@ -1155,7 +1163,7 @@ export default function BulkPVPage() {
         const gmSigned  = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
         const sigSigned = approvals.some(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED");
         return (
-          <div key={pv.id} className="print:break-before-page max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0">
+          <div key={pv.id} className="bulk-pv-voucher print:break-before-page max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0">
             <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
               <PVVoucher
                 pv={pv} idx={i}
