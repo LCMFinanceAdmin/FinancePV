@@ -63,7 +63,7 @@ export default function SignatoryPage() {
   const [search, setSearch] = useState("");
   const [ministryFilter, setMinistryFilter] = useState("All Ministries");
   const [ministries, setMinistries] = useState<string[]>([]);
-  const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "paid">("pending");
+  const [statusFilter, setStatusFilter] = useState<"pending" | "pending_signatory" | "approved" | "paid">("pending_signatory");
 
   // Signature state
   const [savedSig, setSavedSig] = useState("");          // user's saved_signature from DB
@@ -93,6 +93,7 @@ export default function SignatoryPage() {
           .select("role,saved_signature,saved_signatures").eq("email", authUser.email!).single();
         const role = profile?.role ?? "STAFF";
         setCurrentUser({ email: authUser.email!, role });
+        setStatusFilter(role === "GENERAL_MANAGER" ? "pending" : "pending_signatory");
         const sigs = profile?.saved_signatures as Record<string, string> | null;
         const roleSig = sigs?.[role] ?? profile?.saved_signature ?? "";
         if (roleSig) setSavedSig(roleSig);
@@ -284,14 +285,21 @@ export default function SignatoryPage() {
     } finally { setBudgetLoading(false); }
   }
 
-  const pendingPvsAll  = useMemo(() => pvs.filter(pv => ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "")), [pvs]);
-  const approvedPvsAll = useMemo(() => pvs.filter(pv => pv.status === "APPROVED"), [pvs]);
-  const paidPvsAll     = useMemo(() => pvs.filter(pv => pv.status === "PAID"), [pvs]);
+  const isGM = currentUser?.role === "GENERAL_MANAGER";
+
+  // GM's personal verification queue (REVIEWED/MINISTRY_VERIFIED = waiting on GM)
+  const pendingPvsAll          = useMemo(() => pvs.filter(pv => ["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "")), [pvs]);
+  // Ready for Treasurer/Bishop/Secretary (GM already verified)
+  const pendingSignatoryPvsAll = useMemo(() => pvs.filter(pv => pv.status === "PENDING_SIGNATORY"), [pvs]);
+  const approvedPvsAll         = useMemo(() => pvs.filter(pv => pv.status === "APPROVED"), [pvs]);
+  const paidPvsAll             = useMemo(() => pvs.filter(pv => pv.status === "PAID"), [pvs]);
+
   const activePvsForTab = useMemo(() =>
-    statusFilter === "pending"  ? pendingPvsAll  :
-    statusFilter === "approved" ? approvedPvsAll :
+    statusFilter === "pending"           ? pendingPvsAll :
+    statusFilter === "pending_signatory" ? pendingSignatoryPvsAll :
+    statusFilter === "approved"          ? approvedPvsAll :
     paidPvsAll,
-  [statusFilter, pendingPvsAll, approvedPvsAll, paidPvsAll]);
+  [statusFilter, pendingPvsAll, pendingSignatoryPvsAll, approvedPvsAll, paidPvsAll]);
 
   const { bulkGroups, standalones } = useMemo(() => {
     const groups: Record<string, { runId: string; groupName: string; pvs: PVWithBulk[] }> = {};
@@ -439,8 +447,9 @@ export default function SignatoryPage() {
       <div>
         <h1 className="text-xl font-bold text-stone-800">Signatory Queue</h1>
         <p className="text-sm text-stone-400">
-          {statusFilter === "pending"  ? "Payment vouchers awaiting your approval" :
-           statusFilter === "approved" ? "Payment vouchers approved by signatories" :
+          {statusFilter === "pending"           ? (isGM ? "PVs pending your verification" : "Payment vouchers awaiting your approval") :
+           statusFilter === "pending_signatory" ? "PVs pending Treasurer / Bishop / Secretary approval" :
+           statusFilter === "approved"          ? "Payment vouchers approved by signatories" :
            "Payment vouchers that have been paid"}
         </p>
       </div>
@@ -465,22 +474,27 @@ export default function SignatoryPage() {
         </select>
       </div>
 
-      {/* Status filter tabs */}
-      <div className="flex gap-2">
-        {([
-          { key: "pending",  label: "Pending",  count: pendingPvsAll.length,  activeColor: "bg-amber-500  text-white", dot: "bg-amber-200" },
-          { key: "approved", label: "Approved", count: approvedPvsAll.length, activeColor: "bg-green-600 text-white", dot: "bg-green-200" },
-          { key: "paid",     label: "Paid",     count: paidPvsAll.length,     activeColor: "bg-[#4a6da7] text-white", dot: "bg-blue-200"  },
-        ] as const).map(tab => {
+      {/* Role-aware status filter tabs */}
+      <div className="flex gap-2 flex-wrap">
+        {(isGM ? [
+          { key: "pending",           label: "Pending",                   count: pendingPvsAll.length,          activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
+          { key: "pending_signatory", label: "Pending Signatory Approval", count: pendingSignatoryPvsAll.length, activeColor: "bg-orange-500 text-white border-transparent", dot: "bg-orange-100 text-orange-700" },
+          { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
+          { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
+        ] : [
+          { key: "pending_signatory", label: "Pending Signatory Approval", count: pendingSignatoryPvsAll.length, activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
+          { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
+          { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
+        ] as { key: "pending" | "pending_signatory" | "approved" | "paid"; label: string; count: number; activeColor: string; dot: string }[]).map(tab => {
           const active = statusFilter === tab.key;
           return (
             <button
               key={tab.key}
-              onClick={() => setStatusFilter(tab.key)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${active ? `${tab.activeColor} border-transparent shadow-sm` : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+              onClick={() => setStatusFilter(tab.key as "pending" | "pending_signatory" | "approved" | "paid")}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${active ? `${tab.activeColor} shadow-sm` : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
             >
               {tab.label}
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? "bg-white/25 text-white" : `${tab.dot} text-stone-600`}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? "bg-white/25 text-white" : tab.dot}`}>
                 {tab.count}
               </span>
             </button>
@@ -596,8 +610,9 @@ export default function SignatoryPage() {
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : (filteredStandalones.length === 0 && filteredBulkGroups.length === 0) ? (
         <div className="py-8 text-center text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
-          {statusFilter === "pending"  ? "No PVs awaiting your signature" :
-           statusFilter === "approved" ? "No approved PVs" :
+          {statusFilter === "pending"           ? (isGM ? "No PVs pending your verification" : "No PVs awaiting your signature") :
+           statusFilter === "pending_signatory" ? "No PVs pending signatory approval" :
+           statusFilter === "approved"          ? "No approved PVs" :
            "No paid PVs"}
         </div>
       ) : (
