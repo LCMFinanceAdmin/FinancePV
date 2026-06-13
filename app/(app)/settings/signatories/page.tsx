@@ -13,7 +13,7 @@ const ROLES = [
 
 const ROLE_LABELS: Record<string, string> = {
   FINANCE_ADMIN: "Finance Executive", FINANCE_ADMIN_2: "Accounts Executive",
-  FINANCE_ADMIN_3: "Finance Admin 3", GENERAL_MANAGER: "General Manager",
+  FINANCE_ADMIN_3: "Finance Executive 3", GENERAL_MANAGER: "General Manager",
   BISHOP: "Bishop", TREASURER: "Treasurer", SECRETARY: "Secretary",
   MINISTRY_HEAD: "EXCO Member", STAFF: "Staff",
 };
@@ -107,7 +107,7 @@ export default function SignatoriesPage() {
         {users.map((u) => (
           <Card key={u.id}>
             <CardBody className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-stone-400">Full Name</label>
                   <input className={inp} value={u.full_name} placeholder="Full name"
@@ -120,7 +120,7 @@ export default function SignatoriesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-stone-400">Role</label>
                   <select className={inp} value={u.role}

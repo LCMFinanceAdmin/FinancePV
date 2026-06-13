@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 
 async function hashPin(pin: string): Promise<string> {
   const salt = Deno.env.get("PIN_SALT") ?? "lcm-finance-pin-salt";
@@ -18,11 +18,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { data: profile } = await db
-      .from("user_roles")
-      .select("role,full_name,pin_hash,has_pin")
-      .eq("email", user.email)
-      .single();
+    const profile = await getProfileByEmail(db, user.email!, "role,full_name,pin_hash,has_pin");
 
     const signatoryRoles = ["GENERAL_MANAGER", "BISHOP", "TREASURER", "SECRETARY"];
     if (!signatoryRoles.includes(profile?.role)) {
@@ -37,7 +33,7 @@ Deno.serve(async (req) => {
     const requiresPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(profile.role);
     if (requiresPin) {
       if (!pin) return json({ error: "Approval PIN required" }, 400);
-      if (!profile.has_pin) return json({ error: "No approval PIN set. Ask Finance Admin to set your PIN." }, 403);
+      if (!profile.has_pin) return json({ error: "No approval PIN set. Ask Finance Executive to set your PIN." }, 403);
       const inputHash = await hashPin(pin);
       if (inputHash !== profile.pin_hash) return json({ error: "Incorrect PIN" }, 403);
     }
@@ -79,7 +75,7 @@ Deno.serve(async (req) => {
     } else {
       // APPROVE — 1 approval is enough
       newStatus = "APPROVED";
-      // Notify Finance Admins
+      // Notify Finance Executives
       const { data: admins } = await db
         .from("user_roles")
         .select("email")

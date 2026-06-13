@@ -30,7 +30,7 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: "Finance Admin",
+    label: "Finance Executive",
     items: [
       { href: "/control-center",      label: "Control Center",    icon: <LayoutGrid size={16} />,     show: (u: UserProfile) => u.isFinanceAdmin },
       { href: "/recurring",           label: "Recurring Expenses",icon: <RefreshCw size={16} />,      show: (u: UserProfile) => u.isFinanceAdmin },
@@ -102,10 +102,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
   async function switchRole() {
     setSwitching(true);
     const ministries = selectedRole === "MINISTRY_HEAD" ? selectedMinistries : [];
-    await supabase
-      .from("user_roles")
-      .update({ role: selectedRole, ministries })
-      .eq("email", user.email);
+    await supabase.rpc("switch_own_role", { new_role: selectedRole, new_ministries: ministries });
     router.refresh();
     setSwitching(false);
     setShowRoleSwitcher(false);

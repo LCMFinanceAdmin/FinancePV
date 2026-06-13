@@ -267,7 +267,7 @@ function BudgetInner() {
           status: "pending",
         });
         if (error) { showToast("Error submitting request: " + error.message, false); return; }
-        showToast("Change request submitted — awaiting Finance Admin approval");
+        showToast("Change request submitted — awaiting Finance Executive approval");
       }
 
       setItemModal(null);
@@ -279,7 +279,7 @@ function BudgetInner() {
 
   async function deleteItem(item: BudgetItem) {
     if (!canDirectEdit) {
-      if (!confirm(`Request deletion of "${item.project_name}"? A Finance Admin will need to approve this.`)) return;
+      if (!confirm(`Request deletion of "${item.project_name}"? A Finance Executive will need to approve this.`)) return;
       const { error } = await supabase.from("budget_change_requests").insert({
         ministry: selectedMinistry,
         budget_item_id: item.id,
@@ -360,7 +360,7 @@ function BudgetInner() {
       <div className="p-10 text-center space-y-2">
         <div className="text-stone-400 text-4xl mb-4">🏛️</div>
         <h2 className="font-bold text-stone-700">No Ministry Assigned</h2>
-        <p className="text-sm text-stone-400">You have no ministries assigned to your account. Contact a Finance Admin to be assigned.</p>
+        <p className="text-sm text-stone-400">You have no ministries assigned to your account. Contact a Finance Executive to be assigned.</p>
       </div>
     );
   }
@@ -450,7 +450,7 @@ function BudgetInner() {
                   <div key={req.id} className="flex items-center gap-2 text-sm text-blue-700">
                     <Clock size={11} className="shrink-0 opacity-70" />
                     <span>
-                      {req.change_type === "add" ? "Add" : req.change_type === "edit" ? "Edit" : "Delete"} &ldquo;{String(req.proposed_data?.project_name ?? "")}&rdquo; — awaiting Finance Admin approval
+                      {req.change_type === "add" ? "Add" : req.change_type === "edit" ? "Edit" : "Delete"} &ldquo;{String(req.proposed_data?.project_name ?? "")}&rdquo; — awaiting Finance Executive approval
                     </span>
                   </div>
                 ))}
@@ -804,7 +804,7 @@ function BudgetInner() {
               {/* Approval notice for Ministry Heads */}
               {!canDirectEdit && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                  ⚠️ This request will be reviewed by a Finance Admin before being applied to the budget.
+                  ⚠️ This request will be reviewed by a Finance Executive before being applied to the budget.
                 </div>
               )}
             </div>

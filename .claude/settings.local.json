@@ -26,7 +26,8 @@
       "Bash(git rebase *)",
       "Bash(git restore *)",
       "mcp__Claude_in_Chrome__tabs_context_mcp",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(for f in \"app/\\(app\\)/dashboard/page.tsx\" \"app/\\(app\\)/budget/page.tsx\" \"app/\\(app\\)/submit/page.tsx\" \"app/\\(app\\)/signatory-activity/page.tsx\"; do *)"
     ]
   }
 }

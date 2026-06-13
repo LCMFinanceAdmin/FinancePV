@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 
 async function hashPin(pin: string): Promise<string> {
   const salt = Deno.env.get("PIN_SALT") ?? "lcm-finance-pin-salt";
@@ -24,14 +24,14 @@ Deno.serve(async (req) => {
     let userId = target_user_id;
 
     if (target_user_id) {
-      // Admin setting someone else's PIN — must be Finance Admin
-      const { data: caller } = await db.from("user_roles").select("role").eq("email", user.email).single();
+      // Admin setting someone else's PIN — must be Finance Executive
+      const caller = await getProfileByEmail(db, user.email!, "role");
       if (!["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(caller?.role)) {
-        return json({ error: "Finance Admin only" }, 403);
+        return json({ error: "Finance Executive only" }, 403);
       }
     } else {
       // Self-service — user sets their own PIN (Google login already verified identity)
-      const { data: self } = await db.from("user_roles").select("id").eq("email", user.email).single();
+      const self = await getProfileByEmail(db, user.email!, "id");
       if (!self) return json({ error: "User not found in system" }, 404);
       userId = self.id;
     }

@@ -1,9 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
-import { Plus, Trash2, Info, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle, X as XIcon } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import type { PVLineItem } from "@/lib/types";
 
@@ -85,8 +85,8 @@ function InlineSelect({ value, onChange, children, className = "" }: {
 
 function Row({ label, sublabel, children }: { label: string; sublabel?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-end gap-3 py-1.5 border-b border-stone-100 last:border-0">
-      <div className="shrink-0 min-w-[200px]">
+    <div className="flex flex-col sm:flex-row sm:items-end gap-1 sm:gap-3 py-1.5 border-b border-stone-100 last:border-0">
+      <div className="shrink-0 sm:min-w-[200px]">
         <span className="text-sm font-semibold text-stone-700">{label}</span>
         {sublabel && <div className="text-xs text-stone-400">{sublabel}</div>}
       </div>
@@ -137,12 +137,29 @@ export default function SubmitPVPage() {
   const [success, setSuccess] = useState("");
   const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
 
+  // Finance Executive e-signature
+  const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
+  const [finSigData, setFinSigData]         = useState(""); // base64
+  const [savedSig, setSavedSig]             = useState("");
+  const [sigMode, setSigMode]               = useState<"draw" | "upload">("draw");
+  const [saveSigForNext, setSaveSigForNext] = useState(false);
+  const canvasRef                           = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef                        = useRef(false);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("user_roles").select("full_name,role,ministries").eq("email", user.email).single().then(({ data: profile }) => {
-        setUserRole(profile?.role ?? "");
+      supabase.from("user_roles").select("full_name,role,ministries,saved_signature").eq("email", user.email).single().then(({ data: profile }) => {
+        const role = profile?.role ?? "";
+        setUserRole(role);
         setUserMinistries(profile?.ministries ?? []);
+        const faRoles = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+        const isFA = faRoles.includes(role);
+        setIsFinanceAdmin(isFA);
+        if (isFA && profile?.saved_signature) {
+          setSavedSig(profile.saved_signature);
+          setFinSigData(profile.saved_signature); // auto-apply saved sig
+        }
         setForm(f => ({
           ...f,
           applicant_email: user.email ?? "",
@@ -183,7 +200,7 @@ export default function SubmitPVPage() {
   const totalFromItems = form.line_items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const displayAmount = totalFromItems;
   const loa = getLOATier(displayAmount, "GENERAL");
-  // Finance Admin / senior roles can always manage; Ministry Heads only for their assigned ministry
+  // Finance Executive / senior roles can always manage; Ministry Heads only for their assigned ministry
   const DIRECT_MANAGER_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "GENERAL_MANAGER", "TREASURER", "BISHOP", "SECRETARY"];
   const canManageProjects =
     DIRECT_MANAGER_ROLES.includes(userRole) ||
@@ -209,6 +226,52 @@ export default function SubmitPVPage() {
   function removeLineItem(idx: number) {
     const items = form.line_items.filter((_, i) => i !== idx);
     setForm(f => ({ ...f, line_items: items.length ? items : [{ description: "", amount: 0, date: "" }] }));
+  }
+
+  // ── Canvas helpers for Finance Executive signature ──────────────────────
+  const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    isDrawingRef.current = true;
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    ctx.beginPath(); ctx.moveTo(x, y);
+  }, []);
+
+  const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawingRef.current) return;
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
+    ctx.lineTo(x, y); ctx.stroke();
+    setFinSigData(canvas.toDataURL("image/png"));
+  }, []);
+
+  const stopDraw = useCallback(() => { isDrawingRef.current = false; }, []);
+
+  function clearCanvas() {
+    const canvas = canvasRef.current; if (!canvas) return;
+    canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    setFinSigData("");
+  }
+
+  function loadSavedSigOnCanvas(data: string) {
+    setFinSigData(data);
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const img = new Image(); img.src = data;
+    img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
+  }
+
+  function handleSigUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => loadSavedSigOnCanvas(ev.target?.result as string);
+    reader.readAsDataURL(file);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -244,10 +307,19 @@ export default function SubmitPVPage() {
           payment_type: "GENERAL",
           sig_applicant_name: form.sig_applicant_name,
           sig_applicant_confirm: form.sig_applicant_confirm,
+          ...(isFinanceAdmin && finSigData ? { finance_signature_data: finSigData } : {}),
         }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Submission failed");
+      // Save signature for next time if requested
+      if (isFinanceAdmin && finSigData && saveSigForNext) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser?.email) {
+          await supabase.from("user_roles").update({ saved_signature: finSigData }).eq("email", authUser.email);
+          setSavedSig(finSigData);
+        }
+      }
       // If raised from a PR, mark the PR as PV_RAISED
       if (prBanner?.id && result.pv_id) {
         await supabase.from("purchase_requests").update({
@@ -329,7 +401,7 @@ export default function SubmitPVPage() {
           </div>
 
           {/* ── MAIN FORM FIELDS ──────────────────────────────────────── */}
-          <div className="px-6 py-4 space-y-0">
+          <div className="px-3 sm:px-6 py-4 space-y-0">
 
             <Row label="Applicant 申请者" sublabel="Full name of submitter">
               <input className={uline} value={form.applicant_name}
@@ -434,12 +506,13 @@ export default function SubmitPVPage() {
           </div>
 
           {/* ── PARTICULARS TABLE ──────────────────────────────────────── */}
-          <div className="px-6 pb-2">
+          <div className="px-3 sm:px-6 pb-2">
             <p className="text-xs font-semibold text-stone-500 mb-2 mt-1">
               Particulars of Claim / Payment
               <span className="text-stone-400 font-normal ml-1">(Please attach relevant Receipts / Invoices / Bills)</span>
             </p>
-            <table className="w-full border-collapse border border-stone-800 text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 420 }}>
               <thead>
                 <tr className="bg-stone-50">
                   <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
@@ -505,6 +578,7 @@ export default function SubmitPVPage() {
               </tfoot>
             </table>
 
+            </div>{/* end overflow-x-auto */}
             <button type="button" onClick={addLineItem}
               className="mt-2 flex items-center gap-1 text-xs text-[#4a6da7] hover:underline print:hidden">
               <Plus size={11} /> Add line item
@@ -525,7 +599,7 @@ export default function SubmitPVPage() {
           )}
 
           {/* ── DECLARATION ───────────────────────────────────────────── */}
-          <div className="px-6 py-4 border-t-2 border-stone-800 space-y-3 print:hidden">
+          <div className="px-3 sm:px-6 py-4 border-t-2 border-stone-800 space-y-3 print:hidden">
             <p className="text-xs text-stone-500 leading-relaxed">
               I hereby declare that the information provided is true and accurate, and that this payment is for legitimate
               church-related expenses in accordance with LCM&apos;s financial policies.
@@ -545,6 +619,69 @@ export default function SubmitPVPage() {
               <span className="text-xs text-stone-600">I confirm the above declaration and that all details are correct</span>
             </label>
           </div>
+
+          {/* ── FINANCE EXECUTIVE E-SIGNATURE ─────────────────────────── */}
+          {isFinanceAdmin && (
+            <div className="px-3 sm:px-6 py-4 border-t border-stone-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-1.5">
+                  <PenLine size={14} className="text-[#4a6da7]" />
+                  <span className="text-sm font-semibold text-stone-700">Finance Executive E-Signature</span>
+                  {finSigData && <span className="text-[11px] text-green-600 font-medium">(captured)</span>}
+                </div>
+                <div className="flex gap-1">
+                  <button type="button" onClick={() => setSigMode("draw")}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${sigMode === "draw" ? "bg-[#4a6da7]/10 border-[#4a6da7]/30 text-[#4a6da7]" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                    Draw
+                  </button>
+                  <button type="button" onClick={() => setSigMode("upload")}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${sigMode === "upload" ? "bg-[#4a6da7]/10 border-[#4a6da7]/30 text-[#4a6da7]" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                    Upload
+                  </button>
+                </div>
+              </div>
+
+              {sigMode === "draw" ? (
+                <div className="space-y-2">
+                  <div className="border-2 border-dashed border-stone-200 rounded-xl overflow-hidden bg-stone-50" style={{ touchAction: "none" }}>
+                    <canvas ref={canvasRef} width={560} height={90} className="w-full cursor-crosshair"
+                      onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                      onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={clearCanvas}
+                      className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors flex items-center gap-1">
+                      <XIcon size={10} /> Clear
+                    </button>
+                    {savedSig && (
+                      <button type="button" onClick={() => loadSavedSigOnCanvas(savedSig)}
+                        className="text-xs text-[#4a6da7] hover:text-[#3d5a8e] border border-[#4a6da7]/30 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1">
+                        <CheckCircle size={11} /> Use saved signature
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-200 rounded-xl p-5 bg-stone-50 cursor-pointer hover:border-[#4a6da7]/40 hover:bg-blue-50/30 transition-colors">
+                  <Upload size={18} className="text-stone-400 mb-1" />
+                  <span className="text-xs text-stone-500">Click to upload signature image</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
+                </label>
+              )}
+
+              {finSigData && (
+                <div className="mt-2 flex items-center gap-3 p-2.5 bg-green-50 border border-green-200 rounded-xl">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={finSigData} alt="signature preview" className="h-8 object-contain" />
+                  <span className="text-xs text-green-700 flex-1">Signature captured</span>
+                  <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer shrink-0">
+                    <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="accent-[#4a6da7]" />
+                    Save for next time
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
 
         </div>{/* end paper */}
 

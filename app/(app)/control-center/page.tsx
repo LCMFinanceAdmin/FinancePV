@@ -22,7 +22,7 @@ const ROLE_LABELS: Record<string, string> = {
   BISHOP: "Bishop", TREASURER: "Treasurer",
   SECRETARY: "Secretary", GENERAL_MANAGER: "General Manager",
   FINANCE_ADMIN: "Finance Executive", FINANCE_ADMIN_2: "Accounts Executive",
-  FINANCE_ADMIN_3: "Finance Admin 3",
+  FINANCE_ADMIN_3: "Finance Executive 3",
 };
 
 interface Signatory {
@@ -164,7 +164,7 @@ function ControlCenterInner() {
     <div className="p-5 max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-xl font-bold text-stone-800">Control Center</h1>
-        <p className="text-sm text-stone-400">Finance Admin — system overview and signatory management</p>
+        <p className="text-sm text-stone-400">Finance Executive — system overview and signatory management</p>
       </div>
 
       {toast.msg && (

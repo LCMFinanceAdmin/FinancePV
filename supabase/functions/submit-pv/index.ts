@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, getLOATier, nextPvNo } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getLOATier, nextPvNo, getProfileByEmail } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { data: profile } = await db.from("user_roles").select("*").eq("email", user.email).single();
+    const profile = await getProfileByEmail(db, user.email!, "*");
 
     const d = await req.json();
 
@@ -29,6 +29,20 @@ Deno.serve(async (req) => {
     const amount = Number(d.amount) || 0;
     const loa = getLOATier(amount, d.payment_type);
 
+    // Finance Executive e-signature entry
+    const now = new Date().toISOString();
+    const financeApprovalEntry = d.finance_signature_data
+      ? [{
+          role: "FINANCE_ADMIN",
+          email: user.email,
+          name: profile?.full_name || user.email,
+          action: "APPROVED",
+          timestamp: now,
+          remarks: "",
+          signature_data: d.finance_signature_data,
+        }]
+      : [];
+
     const pvRow = {
       pv_no:                 pvNo,
       date:                  d.pvDate || null,
@@ -38,7 +52,7 @@ Deno.serve(async (req) => {
       applicant_email:       applicantEmail,
       submitted_by_email:    user.email,
       submitted_by:          profile?.full_name || user.email,
-      submitted_at:          new Date().toISOString(),
+      submitted_at:          now,
       dept:                  d.dept || "",
       ministry,
       project:               d.project || "",
@@ -59,9 +73,11 @@ Deno.serve(async (req) => {
       sig_applicant_name:    d.sig_applicant_name || "",
       sig_applicant_confirm: "YES",
       admin_comment:         "",
-      approvals:             [],
+      approvals:             financeApprovalEntry,
       signed_pdf_url:        "",
       ministry_verified:     "NO",
+      finance_verified_by:   d.finance_signature_data ? (profile?.full_name || user.email) : "",
+      finance_verified_at:   d.finance_signature_data ? now : null,
       payment_type:          ["GENERAL", "ASSET_PURCHASE"].includes((d.payment_type || "").toUpperCase()) ? d.payment_type.toUpperCase() : "GENERAL",
       loa_required:          loa.required,
       loa_label:             loa.required === 1 ? "Treasurer only (D7 ≤RM30k)" : "Any 2 officers (D7 >RM30k)",

@@ -1,12 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
-  ArrowLeft, CheckCircle2, XCircle, Clock,
+  ArrowLeft, CheckCircle2, XCircle,
   Printer, ShieldCheck, Send, CreditCard,
+  PenLine, Eraser, Upload, X as XIcon, CheckCircle,
 } from "lucide-react";
 
 interface BulkRun {
@@ -32,14 +33,12 @@ function acctStr(pv: Partial<PV>) {
   if (pv.payment_method?.toLowerCase() === "jompay") return "";
   return pv.payee_bank_acct ?? "";
 }
-
 function fmtDate(s?: string | null) {
   if (!s) return "";
   const d = new Date(s);
   if (isNaN(d.getTime())) return s.slice(0, 10);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
-
 function computeStatus(pvs: Partial<PV>[]) {
   if (!pvs.length) return "IN_PROGRESS";
   if (pvs.every(p => p.status === "PAID")) return "PAID";
@@ -48,19 +47,27 @@ function computeStatus(pvs: Partial<PV>[]) {
   return "IN_PROGRESS";
 }
 
-// ── Approval sig cell ─────────────────────────────────────────────────────
-function SigCell({ approval, label }: { approval: PVApproval | null; label: string }) {
+// ── Interactive signature cell ─────────────────────────────────────────────
+function InteractiveSigCell({ approval, label, canSign, onSign }: {
+  approval: PVApproval | null; label: string;
+  canSign?: boolean; onSign?: () => void;
+}) {
+  const clickable = canSign && !approval;
   return (
-    <td className="border border-black px-2 py-1 align-top" style={{ minWidth: 110 }}>
-      <div className="text-[10px] font-bold text-stone-700 mb-0.5">{label}</div>
-      {approval ? (
-        <div className="flex items-center gap-0.5 text-[10px] text-green-700 mb-0.5">
-          <CheckCircle2 size={9} className="shrink-0" />
-          <span className="font-semibold truncate">{approval.name || approval.email}</span>
-        </div>
-      ) : (
-        <div className="h-5 border-b border-black mb-0.5" />
-      )}
+    <td
+      className={`border border-black px-2 py-1 align-top transition-colors ${clickable ? "cursor-pointer hover:bg-indigo-50 group" : ""}`}
+      onClick={clickable ? onSign : undefined}
+      style={{ minWidth: 110 }}>
+      <div className="text-[10px] font-bold text-stone-700 mb-0.5 flex items-center justify-between">
+        {label}
+        {clickable && <span className="text-[9px] text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Click to sign</span>}
+      </div>
+      {approval?.signature_data
+        ? <img src={approval.signature_data} alt="sig" className="h-6 w-full object-contain mb-0.5" style={{ maxWidth: 100 }} />
+        : approval
+          ? <div className="flex items-center gap-0.5 text-[10px] text-green-700 mb-0.5"><CheckCircle2 size={9} /><span className="font-semibold truncate">{approval.name}</span></div>
+          : <div className={`h-5 border-b mb-0.5 ${clickable ? "border-indigo-300 border-dashed" : "border-black"}`} />
+      }
       <div className="text-[10px] flex gap-0.5 items-end">
         <span className="font-semibold whitespace-nowrap">Name:</span>
         <span className="flex-1 border-b border-black text-[10px]">{approval?.name ?? ""}</span>
@@ -73,30 +80,37 @@ function SigCell({ approval, label }: { approval: PVApproval | null; label: stri
   );
 }
 
-// ── Individual PV Voucher (attached pages) ────────────────────────────────
-function PVVoucher({ pv, idx }: { pv: PV; idx: number }) {
+// ── Individual PV Voucher ─────────────────────────────────────────────────
+function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSig, onSignGM, onSignSig }: {
+  pv: PV; idx: number; finSigData?: string; approverSigs?: Record<string, string>;
+  canSignAsGM?: boolean; canSignAsSig?: boolean;
+  onSignGM?: () => void; onSignSig?: () => void;
+}) {
   const items = pv.line_items ?? [];
   const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0) || pv.amount;
   const PAD = Math.max(0, 7 - items.length);
   const approvals: PVApproval[] = pv.approvals ?? [];
   const headApproval = approvals.find(a => ["MINISTRY_HEAD", "DEPT_HEAD"].includes(a.role) && a.action === "APPROVED") ?? null;
-  const gmApproval = approvals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED") ?? null;
+  const gmApproval   = [...approvals].reverse().find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED") ?? null;
   const sigApprovals = approvals.filter(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED");
+  const finApproval  = approvals.find(a => a.role === "FINANCE_ADMIN" && a.action === "APPROVED") ?? null;
   const ministryVerified = String(pv.ministry_verified ?? "").toUpperCase() === "YES" || String(pv.head_verified ?? "").toUpperCase() === "YES";
   const projectLabel = [pv.ministry, pv.dept, pv.project].filter(Boolean).join("  /  ");
   const bLine = bankStr(pv);
   const acct = acctStr(pv);
+  const gmSigned   = !!gmApproval;
+  const sigSigned  = sigApprovals.length > 0;
+  const gmClickable  = canSignAsGM && !gmSigned;
+  const sigClickable = canSignAsSig && !sigSigned;
 
   return (
-    <div style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}
-      className="px-10 py-8 print:px-8 print:py-6">
+    <div style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111", minWidth: 560 }}
+      className="px-3 sm:px-10 py-4 sm:py-8 print:px-8 print:py-6">
 
-      {/* Attachment label */}
       <div className="text-[11px] text-stone-500 mb-2 font-semibold">
         Attachment {idx + 1} — {pv.pv_no}
       </div>
 
-      {/* Header */}
       <div className="flex items-start gap-4 mb-1">
         <div className="flex items-center gap-3 flex-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -116,7 +130,6 @@ function PVVoucher({ pv, idx }: { pv: PV; idx: number }) {
         </div>
       </div>
 
-      {/* Title */}
       <div className="text-center mb-1">
         <div className="font-bold" style={{ fontSize: 15 }}>LUTHERAN CHURCH IN MALAYSIA (REIMBURSEMENT CLAIM FORM/ PAYMENT VOUCHER)</div>
         <div className="font-bold border-b border-black pb-1 mt-0.5" style={{ fontSize: 15, fontFamily: "KaiTi, STKaiti, serif" }}>
@@ -124,8 +137,8 @@ function PVVoucher({ pv, idx }: { pv: PV; idx: number }) {
         </div>
       </div>
 
-      {/* Field rows */}
-      <table className="w-full border-collapse text-[13px] mt-3" style={{ tableLayout: "fixed" }}>
+      <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-[13px] mt-3" style={{ tableLayout: "fixed", minWidth: 340 }}>
         <colgroup><col style={{ width: "22%" }} /><col style={{ width: "43%" }} /><col style={{ width: "10%" }} /><col style={{ width: "25%" }} /></colgroup>
         <tbody>
           <tr>
@@ -152,15 +165,15 @@ function PVVoucher({ pv, idx }: { pv: PV; idx: number }) {
           </tr>
         </tbody>
       </table>
+      </div>
 
-      {/* Section note */}
       <div className="font-bold text-[12px] mt-3 mb-0">
         Particulars of Claim/Payment (Please attach relevant Receipts/Invoices/Bills){" "}
         <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>费用报销/付款详情（请附上有关收据/单据）</span>
       </div>
 
-      {/* Line items */}
-      <table className="w-full border-collapse border border-black text-[13px]" style={{ tableLayout: "fixed" }}>
+      <div className="overflow-x-auto">
+      <table className="w-full border-collapse border border-black text-[13px]" style={{ tableLayout: "fixed", minWidth: 340 }}>
         <colgroup><col style={{ width: "5%" }} /><col style={{ width: "14%" }} /><col style={{ width: "66%" }} /><col style={{ width: "15%" }} /></colgroup>
         <thead>
           <tr className="bg-gray-100">
@@ -199,29 +212,22 @@ function PVVoucher({ pv, idx }: { pv: PV; idx: number }) {
           </tr>
         </tbody>
       </table>
-
-      {/* Signatures */}
-      <div className="mt-5 grid grid-cols-3 gap-6 text-[13px]">
-        <div>
-          <div className="font-bold mb-1">Applicant{"'"}s Signature <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>申请者签名</span>:</div>
-          <div className="h-8 border-b border-black mb-1" />
-          <div className="flex items-center gap-1"><span className="font-bold text-[12px] whitespace-nowrap">Name:</span><span className="flex-1 border-b border-black text-[12px]">{pv.applicant_name}</span></div>
-          <div className="flex items-center gap-1 mt-0.5"><span className="font-bold text-[12px] whitespace-nowrap">Date:</span><span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.submitted_at)}</span></div>
-        </div>
-        {pv.head_verified !== "N/A" && (
-          <div className="col-span-2">
-            <div className="font-bold mb-1">Verified by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>审核者签名</span>:</div>
-            <div className="h-8 border-b border-black mb-1">
-              {ministryVerified && <div className="flex items-center gap-1 h-full text-[12px] text-green-700"><CheckCircle2 size={11} /><span>{pv.ministry_verified_by ?? headApproval?.name}</span></div>}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center gap-1"><span className="font-bold text-[12px]">Name:</span><span className="flex-1 border-b border-black text-[12px]">{pv.ministry_verified_by ?? headApproval?.name ?? ""}</span></div>
-              <div className="flex items-center gap-1"><span className="font-bold text-[12px]">Date:</span><span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.ministry_verified_at ?? headApproval?.timestamp)}</span></div>
-            </div>
-            <div className="text-[11px] text-stone-700 mt-0.5">(Chairperson/Treasurer/Person in Charge)</div>
-          </div>
-        )}
       </div>
+
+      {/* Ministry Head signature (if applicable) */}
+      {pv.head_verified !== "N/A" && (
+        <div className="mt-5 text-[13px]">
+          <div className="font-bold mb-1">Verified by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>审核者签名</span>:</div>
+          <div className="h-8 border-b border-black mb-1">
+            {ministryVerified && <div className="flex items-center gap-1 h-full text-[12px] text-green-700"><CheckCircle2 size={11} /><span>{pv.ministry_verified_by ?? headApproval?.name}</span></div>}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-1"><span className="font-bold text-[12px]">Name:</span><span className="flex-1 border-b border-black text-[12px]">{pv.ministry_verified_by ?? headApproval?.name ?? ""}</span></div>
+            <div className="flex items-center gap-1"><span className="font-bold text-[12px]">Date:</span><span className="flex-1 border-b border-black text-[12px]">{fmtDate(pv.ministry_verified_at ?? headApproval?.timestamp)}</span></div>
+          </div>
+          <div className="text-[11px] text-stone-700 mt-0.5">(Chairperson/Treasurer/Person in Charge)</div>
+        </div>
+      )}
 
       {/* Finance section */}
       <div className="mt-5 border-t-2 border-t-black border-b-2 border-b-black border-l border-r border-black">
@@ -229,22 +235,61 @@ function PVVoucher({ pv, idx }: { pv: PV; idx: number }) {
           For LCM Finance Office Use Only &emsp;
           <span style={{ fontFamily: "KaiTi, STKaiti, serif", fontWeight: "normal" }}>LCM财务处专用</span>
         </div>
-        <div className="grid grid-cols-3 divide-x divide-black">
-          {[
-            { title: "Prepared by:", sub: "Finance Executive", val: pv.finance_verified_by, date: pv.finance_verified_at },
-            { title: "Verified by:", sub: "General Manager", val: gmApproval?.name, date: gmApproval?.timestamp },
-            { title: "Approved by:", sub: "Bishop / Secretary / Treasurer", val: sigApprovals[0]?.name, date: sigApprovals[0]?.timestamp },
-          ].map((col, i) => (
-            <div key={i} className="px-4 py-3">
-              <div className="text-[12px] font-bold mb-0.5">{col.title}</div>
-              <div className="text-[11px] text-stone-800 mb-1">({col.sub})</div>
-              <div className="h-8 border-b border-black mb-1">
-                {col.val && <div className="flex items-center gap-1 h-full text-[11px] text-green-700"><CheckCircle2 size={10} /><span>{col.val}</span></div>}
-              </div>
-              <div className="flex items-center gap-1 text-[11px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black">{col.val ?? ""}</span></div>
-              <div className="flex items-center gap-1 text-[11px] mt-0.5"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black">{col.date ? fmtDate(col.date) : ""}</span></div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black">
+          {/* Prepared by — Finance Executive auto-sig */}
+          <div className="px-4 py-3">
+            <div className="text-[12px] font-bold mb-0.5">Prepared by:</div>
+            <div className="text-[11px] text-stone-800 mb-1">(Finance Executive)</div>
+            <div className="h-8 border-b border-black mb-1 flex items-end">
+              {finApproval?.signature_data
+                ? <img src={finApproval.signature_data} alt="fin sig" className="h-8 object-contain" />
+                : finSigData
+                  ? <img src={finSigData} alt="fin sig" className="h-8 object-contain" />
+                  : pv.finance_verified_by
+                    ? <div className="flex items-center gap-1 h-full text-[11px] text-green-700"><CheckCircle2 size={10} /><span>{pv.finance_verified_by}</span></div>
+                    : null}
             </div>
-          ))}
+            <div className="flex items-center gap-1 text-[11px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black">{pv.finance_verified_by ?? finApproval?.name ?? ""}</span></div>
+            <div className="flex items-center gap-1 text-[11px] mt-0.5"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black">{pv.finance_verified_at ? fmtDate(pv.finance_verified_at) : finApproval ? fmtDate(finApproval.timestamp) : ""}</span></div>
+          </div>
+
+          {/* Verified by GM */}
+          <div
+            className={`px-4 py-3 transition-colors ${gmClickable ? "cursor-pointer hover:bg-indigo-50 group" : ""}`}
+            onClick={gmClickable ? onSignGM : undefined}>
+            <div className="text-[12px] font-bold mb-0.5 flex items-center justify-between">
+              Verified by:
+              {gmClickable && <span className="text-[10px] text-indigo-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">Click to sign</span>}
+            </div>
+            <div className="text-[11px] text-stone-800 mb-1">(General Manager)</div>
+            <div className={`h-8 border-b mb-1 flex items-end ${gmClickable ? "border-indigo-300 border-dashed" : "border-black"}`}>
+              {(gmApproval?.signature_data || (gmApproval?.email && approverSigs?.[gmApproval.email]))
+                ? <img src={gmApproval.signature_data || approverSigs![gmApproval.email!]} alt="gm sig" className="h-8 object-contain" />
+                : gmApproval ? <div className="flex items-center gap-1 h-full text-[11px] text-green-700"><CheckCircle2 size={10} /><span>{gmApproval.name}</span></div>
+                : null}
+            </div>
+            <div className="flex items-center gap-1 text-[11px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black">{gmApproval?.name ?? ""}</span></div>
+            <div className="flex items-center gap-1 text-[11px] mt-0.5"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black">{gmApproval ? fmtDate(gmApproval.timestamp) : ""}</span></div>
+          </div>
+
+          {/* Approved by Signatory */}
+          <div
+            className={`px-4 py-3 transition-colors ${sigClickable ? "cursor-pointer hover:bg-purple-50 group" : ""}`}
+            onClick={sigClickable ? onSignSig : undefined}>
+            <div className="text-[12px] font-bold mb-0.5 flex items-center justify-between">
+              Approved by:
+              {sigClickable && <span className="text-[10px] text-purple-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">Click to sign</span>}
+            </div>
+            <div className="text-[11px] text-stone-800 mb-1">(Bishop / Secretary / Treasurer)</div>
+            <div className={`h-8 border-b mb-1 flex items-end ${sigClickable ? "border-purple-300 border-dashed" : "border-black"}`}>
+              {(sigApprovals[0]?.signature_data || (sigApprovals[0]?.email && approverSigs?.[sigApprovals[0].email]))
+                ? <img src={sigApprovals[0].signature_data || approverSigs![sigApprovals[0].email!]} alt="sig" className="h-8 object-contain" />
+                : sigApprovals[0] ? <div className="flex items-center gap-1 h-full text-[11px] text-green-700"><CheckCircle2 size={10} /><span>{sigApprovals[0].name}</span></div>
+                : null}
+            </div>
+            <div className="flex items-center gap-1 text-[11px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black">{sigApprovals[0]?.name ?? ""}</span></div>
+            <div className="flex items-center gap-1 text-[11px] mt-0.5"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black">{sigApprovals[0] ? fmtDate(sigApprovals[0].timestamp) : ""}</span></div>
+          </div>
         </div>
       </div>
 
@@ -266,16 +311,37 @@ export default function BulkPVPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [run, setRun] = useState<BulkRun | null>(null);
-  const [pvs, setPvs] = useState<PV[]>([]);
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [run, setRun]                     = useState<BulkRun | null>(null);
+  const [pvs, setPvs]                     = useState<PV[]>([]);
+  const [user, setUser]                   = useState<UserProfile | null>(null);
+  const [runByName, setRunByName]         = useState("");
+  const [loading, setLoading]             = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [actionToast, setActionToast] = useState({ msg: "", ok: true });
-  const [showPayModal, setShowPayModal] = useState(false);
-  const [payForm, setPayForm] = useState({ ref: "", date: "", method: "Bank Transfer" });
+  const [actionToast, setActionToast]     = useState({ msg: "", ok: true });
+  const [showPayModal, setShowPayModal]   = useState(false);
+  const [payForm, setPayForm]             = useState({ ref: "", date: "", method: "Bank Transfer" });
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectRemarks, setRejectRemarks] = useState("");
+  const [showFinSignModal, setShowFinSignModal] = useState(false);
+  const [finSignLoading, setFinSignLoading]     = useState(false);
+
+  // Signing state
+  const [showSignModal, setShowSignModal]   = useState(false);
+  const [signingPvId, setSigningPvId]       = useState<string | null>(null);
+  const [signatureData, setSignatureData]   = useState("");
+  const [savedSig, setSavedSig]             = useState("");
+  const [finSigData, setFinSigData]         = useState(""); // Finance Executive's sig for display
+  const [approverSigs, setApproverSigs]     = useState<Record<string, string>>({}); // email → saved_signature
+  const [sigMode, setSigMode]               = useState<"draw" | "upload">("draw");
+  const [pin, setPin]                       = useState("");
+  const [pinError, setPinError]             = useState("");
+  const [signLoading, setSignLoading]       = useState(false);
+  const [saveSigForNext, setSaveSigForNext] = useState(false);
+  const [canvasActive, setCanvasActive]     = useState(false);
+  const [isErasing, setIsErasing]           = useState(false);
+  const canvasRef                           = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef                        = useRef(false);
+  const lastPointRef                        = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -292,17 +358,42 @@ export default function BulkPVPage() {
         const { data: pvData } = await supabase.from("pvs").select("*").in("id", pv_ids);
         const ordered = pv_ids.map(pid => pvData?.find((p: PV) => p.id === pid)).filter(Boolean) as PV[];
         setPvs(ordered);
+        // Load saved signatures for all approvers across all PVs
+        const allApprovals = ordered.flatMap(p => (p.approvals ?? []) as { email?: string }[]);
+        const emails = [...new Set(allApprovals.map(a => a.email).filter(Boolean))] as string[];
+        if (emails.length > 0) {
+          const { data: approverProfiles } = await supabase
+            .from("user_roles").select("email,saved_signature").in("email", emails);
+          const sigsMap: Record<string, string> = {};
+          (approverProfiles ?? []).forEach((p: { email: string; saved_signature?: string }) => {
+            if (p.saved_signature) sigsMap[p.email] = p.saved_signature;
+          });
+          setApproverSigs(sigsMap);
+        }
       }
       const role = profile?.role ?? "STAFF";
+      const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role);
+      const isSignatory    = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"].includes(role);
       setUser({
         id: authUser.id, email: authUser.email!,
         full_name: profile?.full_name ?? authUser.email!,
         role, ministries: profile?.ministries ?? [],
-        isFinanceAdmin: ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role),
-        isSignatory: ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"].includes(role),
+        isFinanceAdmin, isSignatory,
         signatoryRole: role, isMinistryHead: role === "MINISTRY_HEAD",
         isGeneralManager: role === "GENERAL_MANAGER",
       });
+      // Load saved signature for current user
+      if (profile?.saved_signature) setSavedSig(profile.saved_signature);
+      // Load the Finance Executive's (run_by's) saved signature + full name for display
+      if (!isFinanceAdmin || !profile?.saved_signature) {
+        const { data: runByProfile } = await supabase.from("user_roles")
+          .select("saved_signature,full_name").eq("email", runData.run_by).single();
+        setFinSigData(runByProfile?.saved_signature ?? "");
+        setRunByName(runByProfile?.full_name || runData.run_by);
+      } else {
+        setFinSigData(profile.saved_signature ?? "");
+        setRunByName(profile.full_name || runData.run_by);
+      }
       setLoading(false);
     }
     load();
@@ -315,30 +406,21 @@ export default function BulkPVPage() {
   }
 
   async function callAdminAction(pvId: string, action: string, extras?: Record<string, string>) {
-    setActionLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ pv_id: pvId, action, ...extras }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Action failed");
-      return json;
-    } catch (e: unknown) {
-      throw e;
-    } finally {
-      setActionLoading(false);
-    }
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ pv_id: pvId, action, ...extras }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Action failed");
+    return json;
   }
 
   async function handleBulkAction(action: string, targetPvs: PV[], extras?: Record<string, string>) {
     setActionLoading(true);
     try {
-      for (const p of targetPvs) {
-        await callAdminAction(p.id, action, extras);
-      }
+      for (const p of targetPvs) await callAdminAction(p.id, action, extras);
       setActionToast({ msg: `Done — ${targetPvs.length} PV${targetPvs.length > 1 ? "s" : ""} updated`, ok: true });
       if (run) await refreshPvs(run);
     } catch (e: unknown) {
@@ -351,18 +433,179 @@ export default function BulkPVPage() {
     }
   }
 
+  // ── Canvas draw handlers ────────────────────────────────────────────────
+  const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!canvasActive) { setCanvasActive(true); return; }
+    e.preventDefault();
+    isDrawingRef.current = true;
+    const canvas = canvasRef.current; if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const x = (clientX - rect.left) * sx;
+    const y = (clientY - rect.top) * sy;
+    lastPointRef.current = { x, y };
+    const ctx = canvas.getContext("2d")!;
+    ctx.beginPath(); ctx.moveTo(x, y);
+  }, [canvasActive]);
+
+  const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawingRef.current) return;
+    e.preventDefault();
+    const canvas = canvasRef.current; if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const x = (clientX - rect.left) * sx;
+    const y = (clientY - rect.top) * sy;
+    const last = lastPointRef.current;
+    const ctx = canvas.getContext("2d")!;
+    if (isErasing) {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.lineWidth = 20 * sx; ctx.lineCap = "round"; ctx.strokeStyle = "rgba(0,0,0,1)";
+      ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y);
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.lineWidth = 2.5 * sx; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#1a1a2e";
+      if (last) {
+        const midX = (last.x + x) / 2;
+        const midY = (last.y + y) / 2;
+        ctx.quadraticCurveTo(last.x, last.y, midX, midY);
+        ctx.stroke(); ctx.beginPath(); ctx.moveTo(midX, midY);
+      } else {
+        ctx.lineTo(x, y); ctx.stroke();
+      }
+    }
+    lastPointRef.current = { x, y };
+    setSignatureData(canvas.toDataURL("image/png"));
+  }, [isErasing]);
+
+  const stopDraw = useCallback(() => {
+    isDrawingRef.current = false;
+    lastPointRef.current = null;
+  }, []);
+
+  function clearCanvas() {
+    const canvas = canvasRef.current; if (!canvas) return;
+    canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    setSignatureData("");
+  }
+
+  function handleSigUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setSignatureData(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  function useSavedSig() {
+    if (!savedSig) return;
+    setSignatureData(savedSig);
+    if (sigMode === "draw") {
+      const canvas = canvasRef.current; if (!canvas) return;
+      const ctx = canvas.getContext("2d")!;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      img.src = savedSig;
+      setCanvasActive(true);
+    }
+  }
+
+  function openSignModal(pvId: string) {
+    setSigningPvId(pvId);
+    setSignatureData("");
+    setPin("");
+    setPinError("");
+    setCanvasActive(false);
+    setIsErasing(false);
+    setSigMode("draw");
+    setShowSignModal(true);
+  }
+
+  async function submitSign() {
+    if (!signingPvId || !user) return;
+    setSignLoading(true);
+    setPinError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const requiresPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(user.role);
+      const body: Record<string, unknown> = { pv_id: signingPvId, action: "APPROVED" };
+      if (signatureData) body.signature_data = signatureData;
+      if (requiresPin) body.pin = pin;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        if (json.error?.toLowerCase().includes("pin")) { setPinError(json.error); return; }
+        throw new Error(json.error || "Sign failed");
+      }
+      if (saveSigForNext && signatureData) {
+        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
+        setSavedSig(signatureData);
+      }
+      setShowSignModal(false);
+      setSignatureData(""); setPin("");
+      if (run) await refreshPvs(run);
+      setActionToast({ msg: "Signed and approved successfully", ok: true });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+    } finally {
+      setSignLoading(false);
+    }
+  }
+
+  async function submitFinanceBulkSign() {
+    if (!user) return;
+    setFinSignLoading(true);
+    try {
+      for (const pv of pvs) {
+        const extras: Record<string, string> = {};
+        if (signatureData) extras.signature_data = signatureData;
+        await callAdminAction(pv.id, "FINANCE_SIGN", extras);
+      }
+      if (signatureData && saveSigForNext) {
+        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
+        setSavedSig(signatureData);
+      }
+      if (signatureData) setFinSigData(signatureData);
+      setShowFinSignModal(false);
+      setSignatureData(""); setCanvasActive(false);
+      if (run) await refreshPvs(run);
+      setActionToast({ msg: `Signature applied to all ${pvs.length} PVs ✓`, ok: true });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } finally {
+      setFinSignLoading(false);
+    }
+  }
+
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
   if (!run) return <div className="p-8 text-center text-stone-400 text-sm">Bulk PV not found</div>;
 
   const total = pvs.reduce((s, p) => s + (p.amount ?? 0), 0);
   const batchStatus = computeStatus(pvs);
-  const pendingPvs = pvs.filter(p => p.status === "PENDING");
+  const pendingPvs  = pvs.filter(p => p.status === "PENDING");
   const reviewedPvs = pvs.filter(p => ["REVIEWED", "MINISTRY_VERIFIED"].includes(p.status ?? ""));
   const approvedPvs = pvs.filter(p => p.status === "APPROVED");
+  const isGM        = user?.role === "GENERAL_MANAGER";
+  const isSig       = ["BISHOP", "TREASURER", "SECRETARY"].includes(user?.role ?? "");
+  const requiresPin = isSig;
+
+  const signingPv = pvs.find(p => p.id === signingPvId);
 
   return (
     <div className="min-h-screen bg-stone-100 print:bg-white">
-      {/* Print: landscape */}
       <style>{`@media print { @page { size: A4 landscape; margin: 12mm; } }`}</style>
 
       {/* Sticky top bar */}
@@ -383,6 +626,9 @@ export default function BulkPVPage() {
               : batchStatus === "PARTIAL_REJECT" ? "Partial Rejection" : "In Progress"}
           </span>
           <div className="ml-auto flex items-center gap-2">
+            {actionToast.msg && (
+              <span className={`text-sm font-medium ${actionToast.ok ? "text-green-700" : "text-red-600"}`}>{actionToast.msg}</span>
+            )}
             <button onClick={() => window.print()}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-stone-300 rounded-lg text-sm text-stone-600 hover:bg-stone-50">
               <Printer size={14} /> Print
@@ -391,13 +637,13 @@ export default function BulkPVPage() {
         </div>
       </div>
 
-      {/* Finance Admin Actions */}
+      {/* Finance Executive Actions */}
       {user?.isFinanceAdmin && (pendingPvs.length > 0 || reviewedPvs.length > 0 || approvedPvs.length > 0) && (
         <div className="print:hidden max-w-6xl mx-auto px-4 mt-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-blue-600" />
-              <span className="text-sm font-semibold text-blue-800">Finance Admin Actions</span>
+              <span className="text-sm font-semibold text-blue-800">Finance Executive Actions</span>
             </div>
             <div className="space-y-2">
               {pendingPvs.length > 0 && (
@@ -432,11 +678,16 @@ export default function BulkPVPage() {
                 </div>
               )}
             </div>
-            {actionToast.msg && (
-              <div className={`mt-2 text-sm font-medium ${actionToast.ok ? "text-green-700" : "text-red-600"}`}>
-                {actionToast.msg}
-              </div>
-            )}
+          </div>
+        </div>
+      )}
+
+      {/* Signatory action hint */}
+      {(isGM || isSig) && (
+        <div className="print:hidden max-w-6xl mx-auto px-4 mt-4">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-indigo-800">
+            <ShieldCheck size={15} className="text-indigo-500 shrink-0" />
+            <span>Click any signature space in the table or on individual vouchers below to sign and approve that PV.</span>
           </div>
         </div>
       )}
@@ -486,6 +737,190 @@ export default function BulkPVPage() {
                 {actionLoading ? "Processing…" : "✓ Confirm All Paid"}
               </button>
               <button onClick={() => setShowPayModal(false)} className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-lg text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sign Modal ─────────────────────────────────────────────────────── */}
+      {showSignModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+              <div>
+                <h2 className="text-base font-bold text-stone-800">Sign & Approve</h2>
+                {signingPv && <p className="text-xs text-stone-500 mt-0.5">{signingPv.pv_no} — {signingPv.payee_name}</p>}
+              </div>
+              <button onClick={() => setShowSignModal(false)} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400">
+                <XIcon size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* Signature */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5"><PenLine size={12} /> Signature (optional)</label>
+                <div className="flex gap-1">
+                  <button onClick={() => setSigMode("draw")}
+                    className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "draw" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                    Draw
+                  </button>
+                  <button onClick={() => setSigMode("upload")}
+                    className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "upload" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                    Upload
+                  </button>
+                </div>
+
+                {sigMode === "draw" ? (
+                  <div className="space-y-2">
+                    <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
+                      <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-indigo-400 bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}>
+                        <canvas ref={canvasRef} width={760} height={200}
+                          className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
+                          onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                          onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                        {!canvasActive && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-stone-400 text-xs">Click to start signing</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { clearCanvas(); setCanvasActive(false); }} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
+                      <button type="button" onClick={() => setIsErasing(e => !e)}
+                        className={`text-xs border px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${isErasing ? "bg-orange-100 border-orange-300 text-orange-700" : "text-stone-500 hover:text-stone-700 border-stone-200 hover:bg-stone-50"}`}>
+                        <Eraser size={11} /> {isErasing ? "Erasing" : "Erase"}
+                      </button>
+                      {savedSig && (
+                        <button onClick={useSavedSig} className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1">
+                          <CheckCircle size={11} /> Use saved signature
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-300 rounded-xl p-4 cursor-pointer hover:bg-stone-50 transition-colors">
+                      <Upload size={18} className="text-stone-400 mb-1" />
+                      <span className="text-xs text-stone-500">Click to upload signature image</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
+                    </label>
+                    {signatureData && (
+                      <div className="border border-stone-200 rounded-xl p-2 bg-white">
+                        <img src={signatureData} alt="sig preview" className="h-12 object-contain mx-auto" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {signatureData && (
+                  <label className="flex items-center gap-2 text-xs text-stone-600 cursor-pointer">
+                    <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="rounded" />
+                    Save signature for future use
+                  </label>
+                )}
+              </div>
+
+              {/* PIN (church officers only) */}
+              {requiresPin && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-stone-600 block">Approval PIN *</label>
+                  <input type="password" value={pin} onChange={e => { setPin(e.target.value); setPinError(""); }}
+                    placeholder="Enter 4-digit PIN"
+                    className={`w-full border rounded-lg p-2.5 text-sm outline-none text-center tracking-widest ${pinError ? "border-red-400 bg-red-50" : "border-stone-300"}`}
+                    maxLength={6} />
+                  {pinError && <p className="text-xs text-red-600">{pinError}</p>}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 pb-5 flex gap-2">
+              <button onClick={() => setShowSignModal(false)}
+                className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium">
+                Cancel
+              </button>
+              <button onClick={submitSign} disabled={signLoading || (requiresPin && !pin)}
+                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5">
+                {signLoading ? "Signing…" : <><CheckCircle size={14} /> Confirm Approval</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Finance Executive Bulk Sign Modal ─────────────────────────────── */}
+      {showFinSignModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+              <div>
+                <h2 className="text-base font-bold text-stone-800">Sign — Prepared by</h2>
+                <p className="text-xs text-stone-500 mt-0.5">Signature will be applied to all {pvs.length} PVs in this batch</p>
+              </div>
+              <button onClick={() => { setShowFinSignModal(false); setSignatureData(""); setCanvasActive(false); }}
+                className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400"><XIcon size={16} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {savedSig && (
+                <div>
+                  <p className="text-xs font-semibold text-stone-500 mb-2">Saved signature</p>
+                  <button onClick={() => {
+                    setSignatureData(savedSig);
+                    const canvas = canvasRef.current;
+                    if (canvas) {
+                      const ctx = canvas.getContext("2d")!;
+                      ctx.clearRect(0, 0, canvas.width, canvas.height);
+                      const img = new Image();
+                      img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                      img.src = savedSig;
+                      setCanvasActive(true);
+                    }
+                  }}
+                    className="border border-stone-200 rounded-xl p-2 w-full hover:bg-stone-50 transition-colors text-left">
+                    <img src={savedSig} alt="saved sig" className="h-10 object-contain mx-auto" />
+                    <p className="text-[10px] text-center text-stone-400 mt-1">Click to use this signature</p>
+                  </button>
+                </div>
+              )}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5"><PenLine size={12} /> Draw signature</label>
+                <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-[#4a6da7] bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}
+                  style={{ position: "relative", touchAction: "none" }}>
+                  <canvas ref={canvasRef} width={760} height={200}
+                    className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
+                    onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                    onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                  {!canvasActive && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="text-stone-400 text-xs">Click to start signing</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { clearCanvas(); setCanvasActive(false); }} className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
+                  <button type="button" onClick={() => setIsErasing(e => !e)}
+                    className={`text-xs border px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${isErasing ? "bg-orange-100 border-orange-300 text-orange-700" : "text-stone-500 hover:text-stone-700 border-stone-200 hover:bg-stone-50"}`}>
+                    <Eraser size={11} /> {isErasing ? "Erasing" : "Erase"}
+                  </button>
+                </div>
+              </div>
+              {signatureData && (
+                <label className="flex items-center gap-2 text-xs text-stone-600 cursor-pointer">
+                  <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="rounded" />
+                  Save as my signature for future use
+                </label>
+              )}
+            </div>
+            <div className="px-5 pb-5 flex gap-2">
+              <button onClick={() => { setShowFinSignModal(false); setSignatureData(""); setCanvasActive(false); }}
+                className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium">Cancel</button>
+              <button onClick={submitFinanceBulkSign} disabled={finSignLoading || !signatureData}
+                className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5">
+                {finSignLoading ? "Signing…" : <><CheckCircle size={14} /> Apply to All {pvs.length} PVs</>}
+              </button>
             </div>
           </div>
         </div>
@@ -555,7 +990,7 @@ export default function BulkPVPage() {
               <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>付款详情</span>
             </div>
 
-            {/* ── MASTER TABLE with approval columns ── */}
+            {/* ── MASTER TABLE ── */}
             <div className="overflow-x-auto print:overflow-visible">
               <table className="w-full border-collapse border border-black text-[12px]" style={{ minWidth: 900 }}>
                 <colgroup>
@@ -572,33 +1007,25 @@ export default function BulkPVPage() {
                   <tr className="bg-gray-100">
                     <th className="border border-black px-1 py-2 text-center font-bold">#</th>
                     <th className="border border-black px-2 py-2 text-center font-bold">PV No.</th>
-                    <th className="border border-black px-2 py-2 text-center font-bold">
-                      Payee <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收款人</span>
-                    </th>
-                    <th className="border border-black px-2 py-2 text-center font-bold">
-                      Bank <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>银行</span>
-                    </th>
-                    <th className="border border-black px-2 py-2 text-center font-bold">
-                      A/C No. <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>账号</span>
-                    </th>
-                    <th className="border border-black px-2 py-2 text-center font-bold leading-tight">
-                      Amount<br />(RM)
-                    </th>
+                    <th className="border border-black px-2 py-2 text-center font-bold">Payee <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收款人</span></th>
+                    <th className="border border-black px-2 py-2 text-center font-bold">Bank <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>银行</span></th>
+                    <th className="border border-black px-2 py-2 text-center font-bold">A/C No. <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>账号</span></th>
+                    <th className="border border-black px-2 py-2 text-center font-bold leading-tight">Amount<br />(RM)</th>
                     <th className="border border-black px-2 py-2 text-center font-bold leading-tight bg-blue-50">
-                      Verified by<br />
-                      <span className="font-normal text-[11px]">General Manager</span>
+                      Verified by<br /><span className="font-normal text-[11px]">General Manager</span>
                     </th>
                     <th className="border border-black px-2 py-2 text-center font-bold leading-tight bg-purple-50">
-                      Approved by<br />
-                      <span className="font-normal text-[11px]">Signatory</span>
+                      Approved by<br /><span className="font-normal text-[11px]">Signatory</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {pvs.map((pv, i) => {
                     const approvals: PVApproval[] = pv.approvals ?? [];
-                    const gmApproval = approvals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED") ?? null;
+                    const gmApproval  = approvals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED") ?? null;
                     const sigApproval = approvals.find(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED") ?? null;
+                    const userGmApproved  = isGM  && !!gmApproval;
+                    const userSigApproved = isSig && !!sigApproval;
                     return (
                       <tr key={pv.id}>
                         <td className="border border-black px-1 py-2 text-center font-semibold">{i + 1}</td>
@@ -622,8 +1049,18 @@ export default function BulkPVPage() {
                         <td className="border border-black px-2 py-2 text-right tabular-nums font-medium">
                           {Number(pv.amount ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
                         </td>
-                        <SigCell approval={gmApproval} label="GM / 总经理" />
-                        <SigCell approval={sigApproval} label="Signatory / 签署人" />
+                        <InteractiveSigCell
+                          approval={gmApproval}
+                          label="GM / 总经理"
+                          canSign={isGM && !userGmApproved}
+                          onSign={() => openSignModal(pv.id)}
+                        />
+                        <InteractiveSigCell
+                          approval={sigApproval}
+                          label="Signatory / 签署人"
+                          canSign={isSig && !userSigApproved}
+                          onSign={() => openSignModal(pv.id)}
+                        />
                       </tr>
                     );
                   })}
@@ -642,20 +1079,28 @@ export default function BulkPVPage() {
               </table>
             </div>
 
-            {/* Prepared by signature */}
-            <div className="mt-6 grid grid-cols-2 gap-10 text-[13px]">
-              <div>
-                <div className="font-bold mb-1">Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者签名</span>:</div>
-                <div className="h-10 border-b border-black mb-1" />
-                <div className="flex items-center gap-1 text-[12px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black ml-1">{run.run_by}</span></div>
-                <div className="flex items-center gap-1 text-[12px] mt-1"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black ml-1">{fmtDate(run.run_date)}</span></div>
+            {/* Prepared by */}
+            <div className="mt-6 text-[13px] max-w-xs">
+              <div className="font-bold mb-1 flex items-center gap-2">
+                Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者签名</span>:
+                {user?.isFinanceAdmin && (
+                  <button onClick={() => { setSignatureData(""); setCanvasActive(true); setIsErasing(false); setSaveSigForNext(false); setShowFinSignModal(true); }}
+                    className="print:hidden text-[10px] px-2 py-0.5 rounded-lg border border-[#4a6da7] text-[#4a6da7] hover:bg-blue-50 transition-colors font-normal">
+                    {finSigData ? "Re-sign all" : "Sign all PVs"}
+                  </button>
+                )}
               </div>
-              <div>
-                <div className="font-bold mb-1">Received / Checked by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收到/审核</span>:</div>
-                <div className="h-10 border-b border-black mb-1" />
-                <div className="flex items-center gap-1 text-[12px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black ml-1" /></div>
-                <div className="flex items-center gap-1 text-[12px] mt-1"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black ml-1" /></div>
+              <div
+                className={`h-10 border-b mb-1 flex items-end transition-colors ${user?.isFinanceAdmin ? "border-dashed border-[#4a6da7] cursor-pointer hover:bg-blue-50/40 group" : "border-black"}`}
+                onClick={user?.isFinanceAdmin ? () => { setSignatureData(""); setCanvasActive(true); setIsErasing(false); setSaveSigForNext(false); setShowFinSignModal(true); } : undefined}>
+                {finSigData
+                  ? <img src={finSigData} alt="Finance signature" className="h-10 object-contain" />
+                  : user?.isFinanceAdmin
+                    ? <span className="text-[10px] text-[#4a6da7] opacity-0 group-hover:opacity-100 transition-opacity pb-1">Click to sign</span>
+                    : null}
               </div>
+              <div className="flex items-center gap-1 text-[12px]"><span className="font-bold">Name:</span><span className="flex-1 border-b border-black ml-1">{runByName}</span></div>
+              <div className="flex items-center gap-1 text-[12px] mt-1"><span className="font-bold">Date:</span><span className="flex-1 border-b border-black ml-1">{fmtDate(run.run_date)}</span></div>
             </div>
 
             {batchStatus === "PAID" && (
@@ -670,13 +1115,26 @@ export default function BulkPVPage() {
       </div>
 
       {/* ══ PAGES 2+: INDIVIDUAL PV VOUCHERS ══════════════════════════════ */}
-      {pvs.map((pv, i) => (
-        <div key={pv.id} className="print:break-before-page max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0">
-          <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
-            <PVVoucher pv={pv} idx={i} />
+      {pvs.map((pv, i) => {
+        const approvals: PVApproval[] = pv.approvals ?? [];
+        const gmSigned  = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
+        const sigSigned = approvals.some(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED");
+        return (
+          <div key={pv.id} className="print:break-before-page max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0">
+            <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
+              <PVVoucher
+                pv={pv} idx={i}
+                finSigData={finSigData}
+                approverSigs={approverSigs}
+                canSignAsGM={isGM && !gmSigned}
+                canSignAsSig={isSig && !sigSigned}
+                onSignGM={() => openSignModal(pv.id)}
+                onSignSig={() => openSignModal(pv.id)}
+              />
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Metadata */}
       <div className="print:hidden max-w-6xl mx-auto px-4 pb-4 mt-2 text-xs text-stone-400">

@@ -29,6 +29,7 @@ interface RecurringPV {
   final_payment_note: string; current_pv_no: string | null; current_pv_status: string | null;
   current_pv_id: string | null;
   created_by: string; created_at: string; group_name: string;
+  commenced_date: string | null; current_period: string | null;
 }
 
 const BLANK_FORM = {
@@ -38,7 +39,7 @@ const BLANK_FORM = {
   ministry: "", dept: "", project: "", purpose: "", pv_label: "",
   payment_type: "GENERAL", line_items: [] as LineItem[],
   term_type: "INFINITE", term_end_date: "", final_payment_note: "",
-  group_name: "General",
+  group_name: "General", commenced_date: "",
 };
 type FormState = typeof BLANK_FORM & { id?: string };
 
@@ -92,6 +93,7 @@ export default function RecurringPage() {
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [groupBulkRuns, setGroupBulkRuns] = useState<Record<string, string>>({}); // group_name → bulk_run_id
+  const [lastPaidMap, setLastPaidMap] = useState<Record<string, { id: string; pv_no: string; paid_at: string }>>({});
   const [confirmModal, setConfirmModal] = useState<{
     title?: string;
     msg: string;
@@ -127,6 +129,24 @@ export default function RecurringPage() {
         if (!latestByGroup[br.group_name]) latestByGroup[br.group_name] = br.id;
       }
       setGroupBulkRuns(latestByGroup);
+    }
+
+    // Load last paid PV per recurring item
+    const recurringIds = (rec ?? []).map((r: RecurringPV) => r.id);
+    if (recurringIds.length > 0) {
+      const { data: paidPvs } = await supabase
+        .from("pvs")
+        .select("id,pv_no,paid_at,recurring_id")
+        .in("recurring_id", recurringIds)
+        .eq("status", "PAID")
+        .order("paid_at", { ascending: false });
+      if (paidPvs) {
+        const map: Record<string, { id: string; pv_no: string; paid_at: string }> = {};
+        for (const pv of paidPvs as { id: string; pv_no: string; paid_at: string; recurring_id: string }[]) {
+          if (!map[pv.recurring_id]) map[pv.recurring_id] = { id: pv.id, pv_no: pv.pv_no, paid_at: pv.paid_at };
+        }
+        setLastPaidMap(map);
+      }
     }
 
     setLoading(false);
@@ -326,8 +346,9 @@ export default function RecurringPage() {
           if (!res.ok) throw new Error(result.error ?? "Failed");
           const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
           const newPvId = pvRow?.id ?? null;
-          await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId }).eq("id", item.id);
-          setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId } : i));
+          const period = defaultPeriodLabel(item.frequency);
+          await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period }).eq("id", item.id);
+          setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period } : i));
           if (newPvId) created.push({ id: newPvId, pv_no: result.pv_no, amount: item.amount });
         } catch (e) { showMsg(`${item.name}: ${(e as Error).message}`, false); }
         setBatchProgress(p => p ? { ...p, done: p.done + 1, errors: p.errors } : null);
@@ -405,6 +426,7 @@ export default function RecurringPage() {
   function setField(k: string, v: unknown) { setForm(f => ({ ...f, [k]: v })); }
 
   function openNew() { setForm({ ...BLANK_FORM }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function openNewInGroup(groupName: string) { setForm({ ...BLANK_FORM, group_name: groupName }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
   function openEdit(item: RecurringPV) {
     setForm({
@@ -417,6 +439,7 @@ export default function RecurringPage() {
       payment_type: item.payment_type, line_items: item.line_items ?? [],
       term_type: item.term_type ?? "INFINITE", term_end_date: item.term_end_date ?? "",
       final_payment_note: item.final_payment_note ?? "", group_name: item.group_name || "General",
+      commenced_date: item.commenced_date ?? "",
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -444,6 +467,7 @@ export default function RecurringPage() {
       payment_type: form.payment_type, line_items: form.line_items,
       term_type: form.term_type, term_end_date: form.term_end_date || null,
       final_payment_note: form.final_payment_note, group_name: form.group_name || "General",
+      commenced_date: form.commenced_date || null,
     };
     let error;
     if (form.id) {
@@ -483,6 +507,18 @@ export default function RecurringPage() {
     if (freq === "HALF_YEARLY") d.setMonth(d.getMonth() + 6);
     if (freq === "ANNUAL")      d.setFullYear(d.getFullYear() + 1);
     return d.toISOString().slice(0, 10);
+  }
+
+  function defaultPeriodLabel(freq: string) {
+    // Default to next month for monthly/quarterly/etc — Finance Executive usually
+    // prepares PVs in advance for the upcoming period
+    const d = new Date();
+    if (freq === "WEEKLY")      d.setDate(d.getDate() + 7);
+    else if (freq === "MONTHLY")     d.setMonth(d.getMonth() + 1);
+    else if (freq === "QUARTERLY")   d.setMonth(d.getMonth() + 3);
+    else if (freq === "HALF_YEARLY") d.setMonth(d.getMonth() + 6);
+    else if (freq === "ANNUAL")      d.setFullYear(d.getFullYear() + 1);
+    return d.toLocaleDateString("en-MY", { month: "short", year: "numeric" });
   }
 
   // --- Batch run ---
@@ -530,8 +566,9 @@ export default function RecurringPage() {
         if (!res.ok) throw new Error(result.error ?? "Failed");
         const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
         const newPvId = pvRow?.id ?? null;
-        await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId }).eq("id", item.id);
-        setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId } : i));
+        const period = defaultPeriodLabel(item.frequency);
+        await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period }).eq("id", item.id);
+        setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period } : i));
         if (newPvId) created.push({ id: newPvId, pv_no: result.pv_no, amount: item.amount, group: item.group_name || "General", ministry: item.ministry || "" });
       } catch (e) { errors.push(`${item.name}: ${(e as Error).message}`); }
       setBatchProgress(p => p ? { ...p, done: p.done + 1, errors } : null);
@@ -573,7 +610,7 @@ export default function RecurringPage() {
   const filteredProjects = projects.filter(p => !form.ministry || p.ministry === form.ministry);
 
   return (
-    <div className="p-5 max-w-6xl mx-auto space-y-4">
+    <div className="p-3 sm:p-5 max-w-6xl mx-auto space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
@@ -636,29 +673,7 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Overdue banner */}
-      {overdue.length > 0 && !search && (
-        <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-          <RefreshCw size={15} className="shrink-0" />
-          <span className="flex-1"><strong>{overdue.length} payment{overdue.length > 1 ? "s" : ""} overdue</strong></span>
-          <button onClick={selectAllOverdue} className="text-xs font-medium underline whitespace-nowrap">Select all overdue</button>
-        </div>
-      )}
 
-      {/* Selected action bar */}
-      {selected.size > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-[#4a6da7] rounded-xl text-white">
-          <span className="flex-1 text-sm font-medium">{selected.size} item{selected.size > 1 ? "s" : ""} selected</span>
-          <button onClick={() => setSelected(new Set())} className="text-xs text-blue-200 hover:text-white">Clear</button>
-          <button onClick={resetSelected}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-400 text-amber-900 hover:bg-amber-300 transition-colors whitespace-nowrap">
-            <RotateCcw size={12} /> Undo Cycle
-          </button>
-          <Button size="sm" onClick={runBatch} loading={batchRunning} className="bg-white text-[#4a6da7] hover:bg-blue-50 border-0">
-            <Play size={12} /> Run Selected ({selected.size})
-          </Button>
-        </div>
-      )}
 
       {/* Batch progress */}
       {batchProgress && (batchRunning || batchProgress.errors.length > 0) && (
@@ -688,7 +703,7 @@ export default function RecurringPage() {
         <div className="bg-white border border-stone-200 rounded-2xl p-5 space-y-4">
           <p className="text-sm font-semibold text-stone-700">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Template Name *">
               <input className={inp} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="e.g. Office Rental" />
             </Field>
@@ -698,7 +713,7 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Frequency">
               <select className={inp} value={form.frequency} onChange={e => setField("frequency", e.target.value)}>
                 {FREQ_OPTIONS.map(f => <option key={f} value={f}>{FREQ_LABELS[f]}</option>)}
@@ -712,9 +727,9 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="First / Next Due Date">
-              <input className={inp} type="date" value={form.next_due ?? ""} onChange={e => setField("next_due", e.target.value)} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Commenced (Month / Year)">
+              <input className={inp} type="month" value={form.commenced_date ? form.commenced_date.slice(0, 7) : ""} onChange={e => setField("commenced_date", e.target.value ? e.target.value + "-01" : "")} />
             </Field>
             {form.term_type === "FIXED" && (
               <Field label="Term End Date">
@@ -722,13 +737,14 @@ export default function RecurringPage() {
               </Field>
             )}
           </div>
+
           {form.term_type === "FIXED" && (
             <Field label="Final Payment Note">
               <input className={inp} value={form.final_payment_note} onChange={e => setField("final_payment_note", e.target.value)} placeholder="e.g. Final instalment as per agreement" />
             </Field>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Payee Name *">
               <input className={inp} value={form.payee_name} onChange={e => setField("payee_name", e.target.value)} />
             </Field>
@@ -738,7 +754,7 @@ export default function RecurringPage() {
               </select>
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Bank Name">
               <input className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)} />
             </Field>
@@ -747,7 +763,7 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="Ministry">
               <select className={inp} value={form.ministry} onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
                 <option value="">— None —</option>
@@ -765,7 +781,7 @@ export default function RecurringPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Purpose *">
               <textarea className={`${inp} h-16 resize-none`} value={form.purpose} onChange={e => setField("purpose", e.target.value)} />
             </Field>
@@ -821,8 +837,6 @@ export default function RecurringPage() {
             const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
             const allGroupSel = eligible.length > 0 && eligible.every(i => selected.has(i.id));
             const someGroupSel = eligible.some(i => selected.has(i.id));
-            const groupTotal = groupItems.reduce((s, i) => s + i.amount, 0);
-
             return (
               <div key={groupName}>
                 {/* Group header */}
@@ -855,10 +869,7 @@ export default function RecurringPage() {
                   )}
                   <span className="text-xs text-stone-400 font-normal">({groupItems.length})</span>
 
-                  <div className="ml-auto flex items-center gap-3">
-                    <span className="text-xs text-stone-400 font-medium hidden sm:block">
-                      {formatCurrency(groupTotal)}/cycle
-                    </span>
+                  <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
                     {!collapsed && (
                       <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
                         <GroupCheckbox groupItems={groupItems} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
@@ -898,25 +909,49 @@ export default function RecurringPage() {
                   </div>
                 </div>
 
-                {/* Cards grid */}
+                {/* Table view */}
                 {!collapsed && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {groupItems.map(item => (
-                      <RecurringCard
-                        key={item.id} item={item}
-                        isSelected={selected.has(item.id)}
-                        onToggleSelect={() => {
-                          setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
-                        }}
-                        onEdit={() => openEdit(item)}
-                        onToggleActive={() => toggleActive(item)}
-                        onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
-                        onDelete={() => deleteItem(item.id)}
-                        onReset={() => resetItem(item.id)}
-                        showHistory={historyId === item.id}
-                        batchRunning={batchRunning}
-                      />
-                    ))}
+                  <div className="overflow-x-auto rounded-xl border border-stone-200">
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                          <th className="py-2.5 pl-3 w-8 text-left"></th>
+                          <th className="py-2.5 w-8 text-left">No</th>
+                          <th className="py-2.5 text-left">Description</th>
+                          <th className="py-2.5 text-left">Payable To</th>
+                          <th className="py-2.5 text-left">Duration</th>
+                          <th className="py-2.5 text-left">Last Created PV</th>
+                          <th className="py-2.5 text-left">Last Paid PV</th>
+                          <th className="py-2.5 text-right pr-4">Amount</th>
+                          <th className="py-2.5 w-40"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100">
+                        {groupItems.map((item, idx) => (
+                          <RecurringRow
+                            key={item.id} item={item} rowNo={idx + 1}
+                            isSelected={selected.has(item.id)}
+                            lastPaid={lastPaidMap[item.id] ?? null}
+                            onToggleSelect={() => {
+                              setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
+                            }}
+                            onEdit={() => openEdit(item)}
+                            onToggleActive={() => toggleActive(item)}
+                            onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
+                            onDelete={() => deleteItem(item.id)}
+                            onReset={() => resetItem(item.id)}
+                            showHistory={historyId === item.id}
+                            batchRunning={batchRunning}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="border-t border-stone-200 px-4 py-2.5 bg-stone-50/50">
+                      <button onClick={() => openNewInGroup(groupName)}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5a8e] transition-colors">
+                        <Plus size={13} /> Add Expense
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1051,6 +1086,175 @@ function RecurringCard({ item, isSelected, onToggleSelect, onEdit, onToggleActiv
         </div>
       )}
     </div>
+  );
+}
+
+// --- Recurring Row (table view) ---
+function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
+  item: RecurringPV; rowNo: number; isSelected: boolean;
+  lastPaid: { id: string; pv_no: string; paid_at: string } | null;
+  onToggleSelect: () => void; onEdit: () => void; onToggleActive: () => void;
+  onHistory: () => void; onDelete: () => void; onReset: () => void;
+  showHistory: boolean; batchRunning: boolean;
+}) {
+  const supabase = createClient();
+  const isExpired = !!(item.term_type === "FIXED" && item.term_end_date && item.next_due && new Date(item.next_due) > new Date(item.term_end_date));
+  const isOverdue = !isExpired && item.active && !!item.next_due && new Date(item.next_due) < new Date();
+  const alreadyRan = isAlreadyRunThisPeriod(item);
+
+  // Period badge editing state
+  const [editingPeriod, setEditingPeriod] = useState(false);
+  const [periodInput, setPeriodInput] = useState(item.current_period ?? "");
+  const [displayPeriod, setDisplayPeriod] = useState(
+    item.current_period ?? (item.last_run ? new Date(item.last_run).toLocaleDateString("en-MY", { month: "short", year: "numeric" }) : "")
+  );
+
+  const thisMonth = new Date().toLocaleDateString("en-MY", { month: "short", year: "numeric" });
+  const nextMonthDate = new Date(); nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+  const nextMonth = nextMonthDate.toLocaleDateString("en-MY", { month: "short", year: "numeric" });
+
+  async function savePeriod() {
+    const val = periodInput.trim();
+    if (!val) { setEditingPeriod(false); return; }
+    await supabase.from("recurring_pvs").update({ current_period: val }).eq("id", item.id);
+    setDisplayPeriod(val);
+    setEditingPeriod(false);
+  }
+
+  function durationLabel() {
+    const freq = FREQ_LABELS[item.frequency] ?? item.frequency;
+    let term = "Ongoing";
+    if (item.term_type === "FIXED" && item.term_end_date) {
+      const end = new Date(item.term_end_date);
+      const now = new Date();
+      const months = (end.getFullYear() - now.getFullYear()) * 12 + (end.getMonth() - now.getMonth());
+      if (months <= 0) term = "Expired";
+      else if (months < 12) term = `${months}mo left`;
+      else { const y = Math.floor(months / 12), m = months % 12; term = `${y}y${m > 0 ? ` ${m}mo` : ""} left`; }
+    }
+    return `${freq} · ${term}`;
+  }
+
+  function commencedLabel() {
+    if (!item.commenced_date) return null;
+    const d = new Date(item.commenced_date);
+    return "Since " + d.toLocaleDateString("en-MY", { month: "short", year: "numeric" });
+  }
+
+  return (
+    <>
+      <tr className={`border-b border-stone-50 transition-colors ${
+        isSelected ? "bg-blue-50/60"
+        : alreadyRan ? "bg-green-50/30"
+        : isExpired ? "opacity-50"
+        : "hover:bg-stone-50/70"
+      }`}>
+        <td className="py-2.5 pl-3 pr-2">
+          <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
+            disabled={isExpired || batchRunning}
+            className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer" />
+        </td>
+        <td className="py-2.5 pr-3 text-xs text-stone-400 font-medium">{rowNo}</td>
+        <td className="py-2.5 pr-4 min-w-[140px]">
+          <div className="font-medium text-stone-800 text-sm leading-tight">{item.name}</div>
+          <div className="flex gap-1 flex-wrap mt-0.5">
+            {alreadyRan && (
+              editingPeriod ? (
+                <div className="flex flex-col gap-1 mt-0.5">
+                  <div className="flex gap-1">
+                    {[thisMonth, nextMonth].map(m => (
+                      <button key={m} type="button" onClick={() => setPeriodInput(m)}
+                        className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${periodInput === m ? "bg-green-100 border-green-400 text-green-700 font-semibold" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input autoFocus value={periodInput} onChange={e => setPeriodInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") savePeriod(); if (e.key === "Escape") setEditingPeriod(false); }}
+                      placeholder="e.g. Jun-Jul 2026"
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-green-300 bg-white w-24 outline-none" />
+                    <button type="button" onClick={savePeriod} className="text-[10px] font-bold text-green-700 hover:text-green-900">✓</button>
+                    <button type="button" onClick={() => setEditingPeriod(false)} className="text-[10px] text-stone-400 hover:text-stone-600">✕</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button"
+                  onClick={() => { setPeriodInput(displayPeriod); setEditingPeriod(true); }}
+                  title="Click to change period"
+                  className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium hover:bg-green-200 transition-colors">
+                  ✓ {displayPeriod}
+                </button>
+              )
+            )}
+            {isOverdue && !alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Overdue</span>}
+            {!item.active && !isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Paused</span>}
+            {isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Expired</span>}
+            {item.pv_label && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">{item.pv_label}</span>}
+          </div>
+        </td>
+        <td className="py-2.5 pr-4 text-sm text-stone-600 whitespace-nowrap min-w-[120px]">{item.payee_name}</td>
+        <td className="py-2.5 pr-4 whitespace-nowrap">
+          <div className="text-xs text-stone-500">{durationLabel()}</div>
+          {commencedLabel() && <div className="text-[10px] text-stone-400 mt-0.5">{commencedLabel()}</div>}
+        </td>
+        <td className="py-2.5 pr-4 min-w-[110px]">
+          {item.current_pv_no && item.last_run ? (
+            <div>
+              <a href={item.current_pv_id ? `/my-pvs/${item.current_pv_id}` : "#"}
+                className="text-xs text-[#4a6da7] hover:underline font-medium">{item.current_pv_no}</a>
+              <div className="text-[10px] text-stone-400 mt-0.5">{formatDate(item.last_run)}</div>
+            </div>
+          ) : <span className="text-xs text-stone-300">—</span>}
+        </td>
+        <td className="py-2.5 pr-4 min-w-[110px]">
+          {lastPaid ? (
+            <div>
+              <a href={`/my-pvs/${lastPaid.id}`}
+                className="text-xs text-green-700 hover:underline font-medium">{lastPaid.pv_no}</a>
+              <div className="text-[10px] text-stone-400 mt-0.5">{formatDate(lastPaid.paid_at)}</div>
+            </div>
+          ) : <span className="text-xs text-stone-300">—</span>}
+        </td>
+        <td className="py-2.5 pr-4 text-sm font-bold text-[#4a6da7] text-right whitespace-nowrap">{formatCurrency(item.amount)}</td>
+        <td className="py-2.5">
+          <div className="flex items-center gap-0.5 justify-end">
+            {!isExpired && alreadyRan && item.current_pv_id && (
+              <a href={`/my-pvs/${item.current_pv_id}`}
+                className="text-[10px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg px-2 py-1 transition-colors border border-green-200 mr-1 whitespace-nowrap">
+                View PV
+              </a>
+            )}
+            <button onClick={onEdit} title="Edit" className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
+              <Pencil size={13} />
+            </button>
+            {!isExpired && (
+              <button onClick={onToggleActive} title={item.active ? "Pause" : "Resume"} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
+                {item.active ? <Pause size={13} /> : <Play size={13} />}
+              </button>
+            )}
+            <button onClick={onHistory} title="History" className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
+              <History size={13} />
+            </button>
+            {alreadyRan && (
+              <button onClick={onReset} title="Undo this cycle" className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-400 hover:text-amber-600 transition-colors">
+                <RotateCcw size={13} />
+              </button>
+            )}
+            <button onClick={onDelete} title="Delete" className="p-1.5 rounded-lg hover:bg-stone-100 text-red-400 hover:text-red-600 transition-colors">
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </td>
+      </tr>
+      {showHistory && (
+        <tr>
+          <td colSpan={9} className="px-4 pb-3 pt-1 bg-stone-50/50">
+            <HistoryPanel recurringId={item.id} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

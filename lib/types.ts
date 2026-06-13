@@ -65,6 +65,7 @@ export interface PV {
   payment_ref: string | null;
   payment_date: string | null;
   payment_method: string | null;
+  payment_receipt_url: string | null;
   exco_resolution_ref: string;
   exco_resolution_date: string;
   favourite_id: string;
@@ -99,9 +100,10 @@ export interface PVApproval {
   role: string;
   email: string;
   name: string;
-  action: "APPROVED" | "REJECTED";
+  action: "APPROVED" | "REJECTED" | "COMMENT" | "EDIT_COMMENT" | "REVERT";
   timestamp: string;
   remarks: string;
+  signature_data?: string;
 }
 
 export interface Lookup {

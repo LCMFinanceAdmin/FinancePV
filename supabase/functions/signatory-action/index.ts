@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, isSignatoryApprovalFinal } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, isSignatoryApprovalFinal, getProfileByEmail } from "../_shared/supabase.ts";
 
 async function hashPin(pin: string): Promise<string> {
   const salt = Deno.env.get("PIN_SALT") ?? "lcm-finance-pin-salt";
@@ -18,20 +18,82 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { data: profile } = await db.from("user_roles").select("role,full_name").eq("email", user.email).single();
+    const profile = await getProfileByEmail(db, user.email!);
     const signatoryRoles = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
     if (!signatoryRoles.includes(profile?.role)) return json({ error: "Not a signatory" }, 403);
 
-    const { pv_id, action, remarks, pin } = await req.json();
-    if (!["APPROVED", "REJECTED", "REVERT"].includes(action)) return json({ error: "Invalid action" }, 400);
+    const { pv_id, action, remarks, pin, signature_data } = await req.json();
+    if (!["APPROVED", "REJECTED", "REVERT", "COMMENT", "EDIT_COMMENT"].includes(action)) return json({ error: "Invalid action" }, 400);
     if (action === "REJECTED" && !remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
+
+    // ── EDIT_COMMENT: update the most recent comment by this role ───────
+    if (action === "EDIT_COMMENT") {
+      if (!remarks?.trim()) return json({ error: "Comment text is required" }, 400);
+      const { data: pv } = await db.from("pvs").select("approvals").eq("id", pv_id).single();
+      if (!pv) return json({ error: "PV not found" }, 404);
+      const approvals: Record<string, unknown>[] = [...(pv.approvals || [])];
+      // Find last COMMENT by this role
+      let found = false;
+      for (let i = approvals.length - 1; i >= 0; i--) {
+        if (approvals[i].role === profile.role && approvals[i].action === "COMMENT") {
+          approvals[i] = { ...approvals[i], remarks: remarks.trim(), timestamp: new Date().toISOString() };
+          found = true; break;
+        }
+      }
+      if (!found) return json({ error: "No comment found to edit" }, 404);
+      await db.from("pvs").update({ approvals, updated_at: new Date().toISOString() }).eq("id", pv_id);
+      return json({ ok: true });
+    }
+
+    // ── COMMENT: no PIN required, just append a comment entry ───────────
+    if (action === "COMMENT") {
+      if (!remarks?.trim()) return json({ error: "Comment text is required" }, 400);
+      const { data: pv } = await db.from("pvs").select("approvals").eq("id", pv_id).single();
+      if (!pv) return json({ error: "PV not found" }, 404);
+      const approvals = [...(pv.approvals || [])];
+      approvals.push({
+        role: profile.role, email: user.email,
+        name: profile.full_name || user.email,
+        action: "COMMENT", timestamp: new Date().toISOString(),
+        remarks: remarks.trim(),
+      });
+      await db.from("pvs").update({ approvals, updated_at: new Date().toISOString() }).eq("id", pv_id);
+      return json({ ok: true });
+    }
+
+    const isGM = profile.role === "GENERAL_MANAGER";
+
+    // ── REVERT: no PIN required — remove approval entries + add audit record ──
+    if (action === "REVERT") {
+      const { data: pvForRevert } = await db.from("pvs").select("*").eq("id", pv_id).single();
+      if (!pvForRevert) return json({ error: "PV not found" }, 404);
+      if (["PAID", "CANCELLED"].includes(pvForRevert.status)) return json({ error: "Cannot revert a finalised PV" }, 400);
+      const existingApprovals: { role: string; action: string }[] = pvForRevert.approvals ?? [];
+      const hadEntry = existingApprovals.some(a => a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action));
+      if (!hadEntry) return json({ error: "No action found to revert for your role" }, 400);
+      // Remove APPROVED/REJECTED entries for this role, keep COMMENTs; append REVERT audit record
+      const filtered = existingApprovals.filter(a => !(a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action)));
+      const newApprovals = [
+        ...filtered,
+        { role: profile.role, email: user.email, name: profile.full_name || user.email,
+          action: "REVERT", timestamp: new Date().toISOString(), remarks: "" },
+      ];
+      // Revert only undoes the signatory's own action — never push back past PENDING_SIGNATORY
+      let revertedStatus = pvForRevert.status;
+      if (["APPROVED", "REJECTED", "REVIEWED"].includes(pvForRevert.status)) {
+        revertedStatus = "PENDING_SIGNATORY";
+      }
+      // If already PENDING_SIGNATORY the status stays unchanged — signatory just clears their record
+      await db.from("pvs").update({ approvals: newApprovals, status: revertedStatus, updated_at: new Date().toISOString() }).eq("id", pv_id);
+      return json({ ok: true, status: revertedStatus });
+    }
 
     // PIN verification (required for church officer signatories)
     const requiresPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(profile.role);
     if (requiresPin) {
       if (!pin) return json({ error: "Approval PIN required" }, 400);
-      const { data: userRole } = await db.from("user_roles").select("pin_hash,has_pin").eq("email", user.email).single();
-      if (!userRole?.has_pin) return json({ error: "No approval PIN set. Ask Finance Admin to set your PIN." }, 403);
+      const userRole = await getProfileByEmail(db, user.email!, "pin_hash,has_pin");
+      if (!userRole?.has_pin) return json({ error: "No approval PIN set. Ask Finance Executive to set your PIN." }, 403);
       const inputHash = await hashPin(pin);
       if (inputHash !== userRole.pin_hash) return json({ error: "Incorrect PIN" }, 403);
     }
@@ -39,30 +101,9 @@ Deno.serve(async (req) => {
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
 
-    const isGM = profile.role === "GENERAL_MANAGER";
-
-    // ── REVERT: remove this signatory's approval entry ──────────────
-    if (action === "REVERT") {
-      const existingApprovals: { role: string }[] = pv.approvals ?? [];
-      const hadEntry = existingApprovals.some(a => a.role === profile.role);
-      if (!hadEntry) return json({ error: "No action found to revert for your role" }, 400);
-      if (["PAID", "CANCELLED"].includes(pv.status)) return json({ error: "Cannot revert a finalised PV" }, 400);
-
-      const newApprovals = existingApprovals.filter(a => a.role !== profile.role);
-      // Determine status after removal
-      let revertedStatus = pv.status;
-      if (isGM && pv.status === "REVIEWED") {
-        // GM approval is what set it to REVIEWED → revert to PENDING
-        revertedStatus = "PENDING";
-      } else if (["APPROVED", "REJECTED"].includes(pv.status)) {
-        revertedStatus = "PENDING_SIGNATORY";
-      }
-      // If still PENDING_SIGNATORY just keep it (other signatories still pending)
-      await db.from("pvs").update({ approvals: newApprovals, status: revertedStatus, updated_at: new Date().toISOString() }).eq("id", pv_id);
-      return json({ ok: true, status: revertedStatus });
-    }
-
-    const allowedStatuses = isGM ? ["PENDING", "REVIEWED"] : ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"];
+    const allowedStatuses = isGM
+      ? ["PENDING", "REVIEWED", "PENDING_SIGNATORY", "MINISTRY_VERIFIED"]
+      : ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"];
     if (!allowedStatuses.includes(pv.status)) return json({ error: `Cannot act on PV with status ${pv.status}` }, 400);
 
     const approvals = [...(pv.approvals || [])];
@@ -71,14 +112,15 @@ Deno.serve(async (req) => {
     // if (alreadySigned) return json({ error: "You have already acted on this PV" }, 400);
     // ────────────────────────────────────────────────────────────────
 
-    approvals.push({
-      role: profile.role,
-      email: user.email,
+    const entry: Record<string, unknown> = {
+      role: profile.role, email: user.email,
       name: profile.full_name || user.email,
-      action,
-      timestamp: new Date().toISOString(),
+      action, timestamp: new Date().toISOString(),
       remarks: remarks || "",
-    });
+    };
+    if (signature_data) entry.signature_data = signature_data;
+    else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
+    approvals.push(entry);
 
     let newStatus = pv.status;
 

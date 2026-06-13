@@ -72,11 +72,14 @@ export default function SwitchRolePage() {
     setSwitching(true);
     try {
       const mins = selectedRole === "MINISTRY_HEAD" ? selectedMinistries : [];
-      await supabase
-        .from("user_roles")
-        .update({ role: selectedRole, ministries: mins })
-        .eq("email", email);
-
+      const { error } = await supabase.rpc("switch_own_role", {
+        new_role: selectedRole,
+        new_ministries: mins,
+      });
+      if (error) {
+        showToast(error.message ?? "Switch failed", false);
+        return;
+      }
       setCurrentRole(selectedRole);
       showToast(`Switched to ${ROLES.find(r => r.value === selectedRole)?.label}`);
       router.refresh();

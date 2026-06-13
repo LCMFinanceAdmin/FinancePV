@@ -30,6 +30,23 @@ export function formatDateTime(iso: string): string {
   });
 }
 
+export const ROLE_LABELS: Record<string, string> = {
+  FINANCE_ADMIN:   "Finance Executive",
+  FINANCE_ADMIN_2: "Accounts Executive",
+  FINANCE_ADMIN_3: "Finance Executive 3",
+  GENERAL_MANAGER: "General Manager",
+  BISHOP:          "Bishop",
+  TREASURER:       "Treasurer",
+  SECRETARY:       "Secretary",
+  MINISTRY_HEAD:   "EXCO Member",
+  STAFF:           "Staff",
+};
+
+export function roleLabel(role?: string | null): string {
+  if (!role) return "";
+  return ROLE_LABELS[role] ?? role.replace(/_/g, " ");
+}
+
 export const STATUS_LABELS: Record<PVStatus, string> = {
   PENDING_HEAD:       "Pending EXCO Review",
   PENDING:            "Pending Finance Review",

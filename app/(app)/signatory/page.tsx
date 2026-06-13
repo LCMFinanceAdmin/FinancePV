@@ -6,8 +6,9 @@ import { formatCurrency, formatDate, getLOATier } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
-  Layers, ChevronDown, ChevronRight,
+  Layers, ChevronDown, ChevronRight, ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
 
 interface BudgetSummary {
   project_name: string;
@@ -194,13 +195,14 @@ export default function SignatoryPage() {
 
         <div className={`flex-1 bg-white rounded-xl overflow-hidden ${compact ? "border border-stone-100" : "border border-stone-200 shadow-sm"} ${isChecked ? "border-[#4a6da7]/50 bg-[#4a6da7]/5" : ""}`}>
           <div className="px-4 py-3 space-y-2">
+            <Link href={`/my-pvs/${pv.id}`} className="block hover:opacity-90 transition-opacity">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
                   <StatusBadge status={pv.status!} />
                   {pv.ministry && (
-                    <button onClick={() => openMinistryPopup(pv.ministry!, pv.amount ?? 0)}
+                    <button onClick={e => { e.preventDefault(); openMinistryPopup(pv.ministry!, pv.amount ?? 0); }}
                       className="flex items-center gap-1 text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium hover:bg-[#4a6da7]/20 transition-colors">
                       <Wallet size={10} /> {pv.ministry}
                     </button>
@@ -214,8 +216,12 @@ export default function SignatoryPage() {
                 <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
                 <div className="text-xs text-stone-400 mt-0.5">{loa.label}</div>
                 <div className="text-xs text-[#4a6da7] font-medium">{signatoryApprovals.length}/{loa.required} signed</div>
+                <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-stone-400">
+                  <ExternalLink size={10} /> View details
+                </div>
               </div>
             </div>
+            </Link>
             <div className="flex gap-2 pt-1 border-t border-stone-100">
               <button onClick={() => openPin([pv.id!], "APPROVED")}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
@@ -428,6 +434,10 @@ export default function SignatoryPage() {
                     {/* Amount + bulk actions */}
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-sm font-bold text-stone-800">{formatCurrency(groupTotal)}</span>
+                      <Link href={`/bulk-pvs/${group.runId}`}
+                        className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
+                        <ExternalLink size={11} /> View Batch
+                      </Link>
                       <button onClick={() => openPin(groupIds, "APPROVED")}
                         className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors">
                         <CheckCircle size={11} /> Approve All

@@ -15,6 +15,17 @@ export function getUserClient(jwt: string) {
   );
 }
 
+// Tolerates duplicate user_roles rows for the same email — .single() errors
+// and silently returns null in that case, which surfaces as a misleading 403.
+export async function getProfileByEmail(
+  db: ReturnType<typeof getServiceClient>,
+  email: string,
+  columns = "role,full_name,saved_signature",
+) {
+  const { data } = await db.from("user_roles").select(columns).eq("email", email).limit(1);
+  return data?.[0] ?? null;
+}
+
 export function getLOATier(amount: number, paymentType = "GENERAL") {
   if (paymentType === "ASSET_PURCHASE" && amount > 100000) {
     return { required: 2, roles: ["BISHOP", "SECRETARY", "TREASURER"] };
