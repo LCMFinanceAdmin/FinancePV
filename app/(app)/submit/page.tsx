@@ -156,6 +156,13 @@ export default function SubmitPVPage() {
   const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
   const [isTravelClaim, setIsTravelClaim] = useState(false);
   const [travelItems, setTravelItems] = useState<TravelItem[]>([{ ...EMPTY_TRAVEL_ITEM }]);
+  const [customLocations, setCustomLocations] = useState<string[]>(() => {
+    if (typeof window === "undefined") return LCM_LOCATIONS;
+    const stored = localStorage.getItem("lcm_travel_locations");
+    return stored ? JSON.parse(stored) : LCM_LOCATIONS;
+  });
+  const [showLocationMgr, setShowLocationMgr] = useState(false);
+  const [newLocation, setNewLocation] = useState("");
 
   // Finance Executive e-signature
   const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
@@ -261,6 +268,20 @@ export default function SubmitPVPage() {
   function addTravelItem() { setTravelItems(items => [...items, { ...EMPTY_TRAVEL_ITEM }]); }
   function removeTravelItem(idx: number) {
     setTravelItems(items => items.length > 1 ? items.filter((_, i) => i !== idx) : [{ ...EMPTY_TRAVEL_ITEM }]);
+  }
+
+  function saveLocations(locs: string[]) {
+    setCustomLocations(locs);
+    localStorage.setItem("lcm_travel_locations", JSON.stringify(locs));
+  }
+  function addLocation() {
+    const v = newLocation.trim();
+    if (!v || customLocations.includes(v)) return;
+    saveLocations([...customLocations, v].sort());
+    setNewLocation("");
+  }
+  function removeLocation(loc: string) {
+    saveLocations(customLocations.filter(l => l !== loc));
   }
 
   // ── Canvas helpers for Finance Executive signature ──────────────────────
@@ -566,7 +587,7 @@ export default function SubmitPVPage() {
             </div>
 
             <datalist id="lcm-locations">
-              {LCM_LOCATIONS.map(l => <option key={l} value={l} />)}
+              {customLocations.map(l => <option key={l} value={l} />)}
             </datalist>
 
             <div className="overflow-x-auto">
@@ -603,24 +624,28 @@ export default function SubmitPVPage() {
                       </td>
                       <td className="border border-stone-800 px-1 py-0.5">
                         {item.travel_type === "mileage" ? (
-                          <div className="flex items-center gap-1 flex-wrap py-0.5">
-                            <input list="lcm-locations"
-                              className="outline-none text-xs bg-transparent border-b border-stone-300 w-24 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300"
-                              placeholder="From"
-                              value={item.from}
-                              onChange={e => updateTravelItem(idx, { from: e.target.value })} />
-                            <span className="text-stone-400 text-xs shrink-0">→</span>
-                            <input list="lcm-locations"
-                              className="outline-none text-xs bg-transparent border-b border-stone-300 w-24 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300"
-                              placeholder="To"
-                              value={item.to}
-                              onChange={e => updateTravelItem(idx, { to: e.target.value })} />
-                            <span className="text-stone-400 text-[10px] shrink-0 ml-1">KM:</span>
-                            <input type="number" min="0" step="0.1"
-                              className="outline-none text-xs bg-transparent border-b border-stone-300 w-14 text-right focus:border-[#4a6da7] placeholder:text-stone-300"
-                              placeholder="0"
-                              value={item.km || ""}
-                              onChange={e => updateTravelItem(idx, { km: Number(e.target.value) })} />
+                          <div className="flex flex-col gap-1 py-0.5">
+                            <div className="flex items-center gap-1">
+                              <input list="lcm-locations"
+                                className="outline-none text-xs bg-transparent border-b border-stone-300 flex-1 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300"
+                                placeholder="From"
+                                value={item.from}
+                                onChange={e => updateTravelItem(idx, { from: e.target.value })} />
+                              <span className="text-stone-400 text-xs shrink-0">→</span>
+                              <input list="lcm-locations"
+                                className="outline-none text-xs bg-transparent border-b border-stone-300 flex-1 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300"
+                                placeholder="To"
+                                value={item.to}
+                                onChange={e => updateTravelItem(idx, { to: e.target.value })} />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-stone-400 text-[10px] shrink-0">KM:</span>
+                              <input type="number" min="0" step="0.1"
+                                className="outline-none text-xs bg-transparent border-b border-stone-300 w-20 focus:border-[#4a6da7] placeholder:text-stone-300"
+                                placeholder="0"
+                                value={item.km || ""}
+                                onChange={e => updateTravelItem(idx, { km: Number(e.target.value) })} />
+                            </div>
                           </div>
                         ) : (
                           <input
@@ -756,9 +781,44 @@ export default function SubmitPVPage() {
                 <Plus size={11} /> {isTravelClaim ? "Add travel item" : "Add line item"}
               </button>
               {isTravelClaim && (
-                <span className="text-[10px] text-stone-400">Mileage: RM{MILEAGE_RATE.toFixed(2)}/km (auto-calculated)</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-stone-400">Mileage: RM{MILEAGE_RATE.toFixed(2)}/km (auto-calculated)</span>
+                  <button type="button" onClick={() => setShowLocationMgr(s => !s)}
+                    className="text-[10px] text-[#7C4A0A] hover:underline font-medium">
+                    {showLocationMgr ? "Close" : "Edit locations"}
+                  </button>
+                </div>
               )}
             </div>
+
+            {isTravelClaim && showLocationMgr && (
+              <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2 print:hidden">
+                <p className="text-[11px] font-semibold text-amber-900">Location suggestions</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {customLocations.map(loc => (
+                    <span key={loc} className="flex items-center gap-1 text-xs bg-white border border-stone-200 px-2 py-0.5 rounded-full">
+                      {loc}
+                      <button type="button" onClick={() => removeLocation(loc)}
+                        className="text-stone-300 hover:text-red-400 transition-colors ml-0.5">
+                        <XIcon size={9} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={newLocation}
+                    onChange={e => setNewLocation(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addLocation(); } }}
+                    placeholder="Type new location and press Enter or + Add"
+                    className="flex-1 text-xs border-b border-amber-300 bg-transparent outline-none py-0.5 focus:border-[#7C4A0A] placeholder:text-stone-300" />
+                  <button type="button" onClick={addLocation}
+                    className="text-xs text-[#7C4A0A] font-semibold hover:underline shrink-0">
+                    + Add
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── LOA INDICATOR ─────────────────────────────────────────── */}
