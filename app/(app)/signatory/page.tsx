@@ -287,13 +287,9 @@ export default function SignatoryPage() {
 
   const isGM = currentUser?.role === "GENERAL_MANAGER";
 
-  // GM pending = REVIEWED/MINISTRY_VERIFIED (awaiting GM sign-off) + PENDING_SIGNATORY (GM also signs as signatory)
-  const pendingPvsAll          = useMemo(() => pvs.filter(pv =>
-    isGM
-      ? ["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(pv.status ?? "")
-      : ["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "")
-  ), [pvs, isGM]);
-  // Non-GM signatories: Treasurer/Bishop/Secretary see PENDING_SIGNATORY in their own Pending tab
+  // GM Pending = REVIEWED + MINISTRY_VERIFIED (GM must verify these to advance to PENDING_SIGNATORY)
+  const pendingPvsAll          = useMemo(() => pvs.filter(pv => ["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "")), [pvs]);
+  // Pending Signatory Approval = PENDING_SIGNATORY (GM already verified; now Treasurer/Bishop/Secretary sign)
   const pendingSignatoryPvsAll = useMemo(() => pvs.filter(pv => pv.status === "PENDING_SIGNATORY"), [pvs]);
   const approvedPvsAll         = useMemo(() => pvs.filter(pv => pv.status === "APPROVED"), [pvs]);
   const paidPvsAll             = useMemo(() => pvs.filter(pv => pv.status === "PAID"), [pvs]);
@@ -365,9 +361,10 @@ export default function SignatoryPage() {
 
     // Non-GM signatories only act on PENDING_SIGNATORY (GM already approved).
     // GM acts on REVIEWED (Finance Executive reviewed, awaiting GM).
+    // GM acts on REVIEWED/MINISTRY_VERIFIED only (already verified when PENDING_SIGNATORY)
     const isRelevantForRole =
       currentUser?.role === "GENERAL_MANAGER"
-        ? pv.status === "REVIEWED" || pv.status === "PENDING_SIGNATORY" || pv.status === "MINISTRY_VERIFIED"
+        ? pv.status === "REVIEWED" || pv.status === "MINISTRY_VERIFIED"
         : pv.status === "PENDING_SIGNATORY" || pv.status === "MINISTRY_VERIFIED";
 
     return (
@@ -451,7 +448,7 @@ export default function SignatoryPage() {
       <div>
         <h1 className="text-xl font-bold text-stone-800">Signatory Queue</h1>
         <p className="text-sm text-stone-400">
-          {statusFilter === "pending"           ? (isGM ? "PVs pending your review and approval" : "Payment vouchers awaiting your approval") :
+          {statusFilter === "pending"           ? (isGM ? "PVs pending your verification" : "Payment vouchers awaiting your approval") :
            statusFilter === "pending_signatory" ? "PVs pending Treasurer / Bishop / Secretary approval" :
            statusFilter === "approved"          ? "Payment vouchers approved by signatories" :
            "Payment vouchers that have been paid"}
@@ -481,9 +478,10 @@ export default function SignatoryPage() {
       {/* Role-aware status filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {(isGM ? [
-          { key: "pending",  label: "Pending",  count: pendingPvsAll.length,  activeColor: "bg-amber-500 text-white border-transparent", dot: "bg-amber-100 text-amber-700" },
-          { key: "approved", label: "Approved", count: approvedPvsAll.length, activeColor: "bg-green-600 text-white border-transparent", dot: "bg-green-100 text-green-700" },
-          { key: "paid",     label: "Paid",     count: paidPvsAll.length,     activeColor: "bg-[#4a6da7] text-white border-transparent", dot: "bg-blue-100 text-blue-700" },
+          { key: "pending",           label: "Pending",                   count: pendingPvsAll.length,          activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
+          { key: "pending_signatory", label: "Pending Signatory Approval", count: pendingSignatoryPvsAll.length, activeColor: "bg-orange-500 text-white border-transparent", dot: "bg-orange-100 text-orange-700" },
+          { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
+          { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
         ] : [
           { key: "pending_signatory", label: "Pending Signatory Approval", count: pendingSignatoryPvsAll.length, activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
           { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
@@ -613,7 +611,7 @@ export default function SignatoryPage() {
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : (filteredStandalones.length === 0 && filteredBulkGroups.length === 0) ? (
         <div className="py-8 text-center text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
-          {statusFilter === "pending"           ? (isGM ? "No PVs pending your review or approval" : "No PVs awaiting your signature") :
+          {statusFilter === "pending"           ? (isGM ? "No PVs pending your verification" : "No PVs awaiting your signature") :
            statusFilter === "pending_signatory" ? "No PVs pending signatory approval" :
            statusFilter === "approved"          ? "No approved PVs" :
            "No paid PVs"}
