@@ -4,6 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDateTime } from "@/lib/utils";
 import type { PV, UserProfile, PVApproval } from "@/lib/types";
+import dynamic from "next/dynamic";
+const PVPdfDownload = dynamic(() => import("@/components/pv/pv-pdf-download"), { ssr: false });
 import {
   ArrowLeft, CheckCircle2, XCircle,
   Printer, ShieldCheck, Send, CreditCard,
@@ -1237,7 +1239,13 @@ export default function BulkPVPage() {
         const sigSigned = approvals.some(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED");
         return (
           <div key={pv.id} className="bulk-pv-voucher max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0" style={{ pageBreakBefore: "always", breakBefore: "page" } as React.CSSProperties}>
-            <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
+            {/* Per-PV header bar */}
+          <div className="print:hidden flex items-center gap-3 mb-2 px-1">
+            <span className="text-sm font-semibold text-stone-600">{pv.pv_no} — {pv.payee_name}</span>
+            <PVPdfDownload pv={pv} />
+          </div>
+
+          <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
               <PVVoucher
                 pv={pv} idx={i}
                 finSigData={finSigData}
