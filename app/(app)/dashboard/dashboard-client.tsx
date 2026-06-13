@@ -88,12 +88,31 @@ export default function DashboardPage() {
 
         const profile = profileResult.data;
         setPvs(pvResult.data ?? []);
-        setBulkRuns(bulkResult.data ?? []);
+        const runs: BulkRun[] = bulkResult.data ?? [];
+        setBulkRuns(runs);
         setFirstName((profile?.full_name ?? user.email ?? "").split(" ")[0]);
         setUserRole(profile?.role ?? "");
         setUserMinistries(profile?.ministries ?? []);
         setPendingCount(pendingResult.count ?? 0);
         setApprovedCount(approvedResult.count ?? 0);
+
+        // Auto-expand all bulk runs and eagerly load child PVs
+        if (runs.length > 0) {
+          setExpandedBulk(new Set(runs.map(r => r.id)));
+          const allPvIds = runs.flatMap(r => r.pv_ids ?? []);
+          if (allPvIds.length > 0) {
+            const { data: childPvData } = await supabase
+              .from("pvs")
+              .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type,approvals")
+              .in("id", allPvIds)
+              .order("pv_no");
+            const pvsByRun: Record<string, Partial<PV>[]> = {};
+            for (const r of runs) {
+              pvsByRun[r.id] = (childPvData ?? []).filter((p: Partial<PV>) => (r.pv_ids ?? []).includes(p.id!));
+            }
+            setBulkPVs(pvsByRun);
+          }
+        }
       } finally {
         setLoading(false);
       }

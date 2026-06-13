@@ -110,6 +110,10 @@ export default function SignatoryPage() {
 
       setPvs(withBulk);
 
+      // Auto-expand all bulk groups
+      const bulkRunIds = [...new Set((bulkData ?? []).map((r: BulkRun) => r.id))];
+      if (bulkRunIds.length > 0) setExpandedBulk(new Set(bulkRunIds));
+
       // Collect unique ministries for filter
       const mins = [...new Set((pvData ?? []).map((p: { ministry?: string }) => p.ministry).filter(Boolean))] as string[];
       setMinistries(mins.sort());

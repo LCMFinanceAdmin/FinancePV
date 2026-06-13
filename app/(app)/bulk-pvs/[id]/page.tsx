@@ -301,6 +301,29 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
           </div>
         </div>
       )}
+
+      {/* Attached receipts / supporting documents */}
+      {((pv.attachments ?? []).length > 0 || pv.payment_receipt_url) && (
+        <div className="mt-6 space-y-4">
+          <div className="font-bold text-[12px] border-t border-black pt-3">
+            Attached Documents <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>附件</span>
+          </div>
+          {(pv.attachments ?? []).map((url, i) => (
+            <div key={i} className="print:break-before-page">
+              <div className="text-[11px] text-stone-500 mb-1 font-semibold">Supporting Document {i + 1} — {pv.pv_no}</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt={`Attachment ${i + 1}`} className="max-w-full border border-stone-200 rounded" />
+            </div>
+          ))}
+          {pv.payment_receipt_url && (
+            <div className="print:break-before-page">
+              <div className="text-[11px] text-stone-500 mb-1 font-semibold">Bank Payment Receipt — {pv.pv_no}</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={pv.payment_receipt_url} alt="Payment receipt" className="max-w-full border border-stone-200 rounded" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1053,6 +1076,13 @@ export default function BulkPVPage() {
                         <td className="border border-black px-2 py-2">{acctStr(pv)}</td>
                         <td className="border border-black px-2 py-2 text-right tabular-nums font-medium">
                           {Number(pv.amount ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                          {pv.status === "PAID" && (
+                            <div className="mt-1 flex justify-end">
+                              <span className="inline-block border-2 border-green-600 text-green-700 font-black text-[9px] px-1.5 py-0.5 rounded tracking-widest uppercase -rotate-2">
+                                PAID{pv.paid_at ? ` · ${fmtDate(pv.paid_at)}` : ""}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <InteractiveSigCell
                           approval={gmApproval}

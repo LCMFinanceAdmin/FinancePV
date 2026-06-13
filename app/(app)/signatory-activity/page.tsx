@@ -109,6 +109,10 @@ export default function SignatoryActivityPage() {
 
       setPendingPvs(withBulk);
 
+      // Auto-expand all bulk groups
+      const bulkRunIds = [...new Set((bulkData ?? []).map((r: BulkRun) => r.id))];
+      if (bulkRunIds.length > 0) setExpandedBulk(new Set(bulkRunIds));
+
       // History
       const flat: HistoryRow[] = [];
       for (const pv of (histData ?? []) as { id: string; pv_no: string; applicant_name?: string; ministry?: string; amount: number; approvals: PVApproval[]; status: string }[]) {
