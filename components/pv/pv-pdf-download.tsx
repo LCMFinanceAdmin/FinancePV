@@ -9,7 +9,7 @@ import {
 } from "@react-pdf/renderer";
 import { PDFDocument } from "pdf-lib";
 
-async function svgToPngDataUri(svgPath: string, size = 200): Promise<string> {
+export async function svgToPngDataUri(svgPath: string, size = 200): Promise<string> {
   return new Promise((resolve) => {
     const img = new window.Image();
     img.onload = () => {
@@ -119,7 +119,7 @@ function PaidBanner({ pv }: { pv: PV }) {
   );
 }
 
-function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
+export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
   const items = pv.line_items ?? [];
   const approvals: PVApproval[] = pv.approvals ?? [];
   const total = items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0) || pv.amount;
@@ -363,7 +363,7 @@ function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }) {
 }
 
 /** Fetch a URL and return its bytes, or null on failure. */
-async function fetchBytes(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+export async function fetchBytes(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;

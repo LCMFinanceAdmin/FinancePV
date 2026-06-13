@@ -3,21 +3,17 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDateTime, roleLabel } from "@/lib/utils";
-import type { PV, UserProfile, PVApproval } from "@/lib/types";
+import type { PV, UserProfile, PVApproval, BulkRun } from "@/lib/types";
 import dynamic from "next/dynamic";
-const PVPdfDownload = dynamic(() => import("@/components/pv/pv-pdf-download"), { ssr: false });
+const PVPdfDownload     = dynamic(() => import("@/components/pv/pv-pdf-download"),      { ssr: false });
+const BulkPVPdfDownload = dynamic(() => import("@/components/pv/bulk-pv-pdf-download"), { ssr: false });
 import {
   ArrowLeft, CheckCircle2, XCircle,
-  Printer, ShieldCheck, Send, CreditCard,
+  ShieldCheck, Send, CreditCard,
   PenLine, Eraser, Upload, X as XIcon, CheckCircle,
   FileText, Plus,
 } from "lucide-react";
 
-interface BulkRun {
-  id: string; group_name: string; run_by: string; run_date: string;
-  pv_ids: string[]; pv_nos: string[]; total_amount: number;
-  pv_count: number; ministry: string; created_at: string;
-}
 
 const BANK_ABBR: Record<string, string> = {
   "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",
@@ -42,239 +38,6 @@ function fmtDate(s?: string | null) {
   if (isNaN(d.getTime())) return s.slice(0, 10);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
-// ── Print document generator ──────────────────────────────────────────────
-function buildBulkPrintHtml(
-  run: BulkRun,
-  pvs: PV[],
-  finSigData: string,
-  runByName: string,
-  approverSigs: Record<string, string>,
-): string {
-  function esc(v: unknown) {
-    return String(v ?? "")
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
-  function fD(s?: string | null) {
-    if (!s) return "";
-    const d = new Date(s);
-    if (isNaN(d.getTime())) return s.slice(0, 10);
-    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
-  }
-  function sig(data: string | null | undefined) {
-    return data ? `<img src="${esc(data)}" style="height:36px;object-fit:contain;object-position:left;display:block">` : `<div style="height:36px"></div>`;
-  }
-
-  const batchRef = `BATCH-${new Date(run.run_date).getFullYear()}-${run.id.slice(-6).toUpperCase()}`;
-  const grandTotal = pvs.reduce((s, p) => s + (p.amount ?? 0), 0);
-  const sections: string[] = [];
-
-  // ── PAGE 1: BATCH SUMMARY ────────────────────────────────────────────────
-  const summaryRows = pvs.map((pv, i) => {
-    const approvals: PVApproval[] = pv.approvals ?? [];
-    const gm  = approvals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
-    const s1  = approvals.find(a => ["BISHOP","TREASURER","SECRETARY"].includes(a.role) && a.action === "APPROVED");
-    const isPaid = pv.status === "PAID";
-    const gmSig = gm?.signature_data || (gm?.email ? approverSigs[gm.email] ?? "" : "");
-    return `<tr>
-      <td style="text-align:center">${i+1}</td>
-      <td><b style="color:#4a6da7">${esc(pv.pv_no)}</b>${isPaid ? `<br><span style="color:#16a34a;font-size:10px;font-weight:bold">PAID</span>` : ""}</td>
-      <td>${esc(pv.payee_name)}</td>
-      <td>${esc(bankStr(pv))}</td>
-      <td>${esc(acctStr(pv))}</td>
-      <td style="text-align:right">${(pv.amount ?? 0).toFixed(2)}${isPaid ? `<div style="border:2px solid #16a34a;border-radius:3px;color:#16a34a;font-weight:bold;font-size:10px;padding:1px 4px;text-align:center;margin-top:2px">PAID · ${fD(pv.paid_at)}</div>` : ""}</td>
-      <td>${gmSig ? `<img src="${esc(gmSig)}" style="height:22px;display:block">` : ""}
-          <div style="font-size:10px;border-top:1px solid #000;padding-top:2px;margin-top:2px">Name: ${esc(gm?.name ?? "")}<br>Date: ${fD(gm?.timestamp)}</div></td>
-      <td>${s1 ? `<span style="color:#16a34a;font-size:10px">&#10003; ${esc(s1.name)}</span>` : ""}
-          <div style="font-size:10px;border-top:1px solid #000;padding-top:2px;margin-top:2px">Name: ${esc(s1?.name ?? "")}<br>Date: ${fD(s1?.timestamp)}</div></td>
-    </tr>`;
-  }).join("");
-
-  sections.push(`<div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
-      <div style="border:1px solid #000;font-size:12px">
-        <div style="border-bottom:1px solid #000;padding:3px 8px">For Office Use Only:</div>
-        <div style="border-bottom:1px solid #000;padding:3px 8px"><b>Batch Ref:</b> ${esc(batchRef)}</div>
-        <div style="padding:3px 8px"><b>Group:</b> ${esc(run.group_name)}</div>
-      </div>
-    </div>
-    <div style="text-align:center;font-weight:bold;font-size:15px">LUTHERAN CHURCH IN MALAYSIA &#8212; BATCH PAYMENT SUMMARY</div>
-    <div style="text-align:center;font-weight:bold;font-size:15px;font-family:KaiTi,STKaiti,serif;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:10px">&#39319;&#26469;&#35199;&#20122;&#22522;&#30563;&#25945;&#20449;&#20041;&#20250; &#8212; &#25209;&#37327;&#20184;&#27454;&#27719;&#24635;</div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">
-      <tr>
-        <td style="font-weight:bold;padding:2px 4px;width:16%">Group &#32452;&#21035;:</td>
-        <td style="border-bottom:1px solid #000;padding:2px 4px;width:34%"><b>${esc(run.group_name)}</b></td>
-        <td style="font-weight:bold;padding:2px 4px;width:16%">Run Date &#26085;&#26399;:</td>
-        <td style="border-bottom:1px solid #000;padding:2px 4px;width:34%">${fD(run.run_date)}</td>
-      </tr>
-      <tr>
-        <td style="font-weight:bold;padding:2px 4px">Prepared by &#21046;&#22791;&#32773;:</td>
-        <td style="border-bottom:1px solid #000;padding:2px 4px">${esc(run.run_by)}</td>
-        <td style="font-weight:bold;padding:2px 4px">No. of PVs:</td>
-        <td style="border-bottom:1px solid #000;padding:2px 4px"><b>${run.pv_count} voucher${run.pv_count !== 1 ? "s" : ""}</b></td>
-      </tr>
-      ${run.ministry ? `<tr><td style="font-weight:bold;padding:2px 4px">Ministry:</td><td style="border-bottom:1px solid #000;padding:2px 4px" colspan="3">${esc(run.ministry)}</td></tr>` : ""}
-    </table>
-    <div style="font-weight:bold;font-size:13px;margin-bottom:4px">Payment Details &#8212; Individual Transactions &#20184;&#27454;&#35814;&#24773;</div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:#f0f0f0">
-        <th style="border:1px solid #000;padding:3px 6px">#</th>
-        <th style="border:1px solid #000;padding:3px 6px">PV No.</th>
-        <th style="border:1px solid #000;padding:3px 6px">Payee &#25910;&#27454;&#20154;</th>
-        <th style="border:1px solid #000;padding:3px 6px">Bank &#39134;&#34892;</th>
-        <th style="border:1px solid #000;padding:3px 6px">A/C No. &#36134;&#21495;</th>
-        <th style="border:1px solid #000;padding:3px 6px;text-align:right">Amount (RM)</th>
-        <th style="border:1px solid #000;padding:3px 6px">Verified by<br>General Manager</th>
-        <th style="border:1px solid #000;padding:3px 6px">Approved by<br>Signatory</th>
-      </tr></thead>
-      <tbody>
-        ${summaryRows}
-        <tr>
-          <td colspan="5" style="border:1px solid #000;padding:3px 8px;text-align:right;font-weight:bold">Total &#24635;&#25968;:</td>
-          <td style="border:1px solid #000;padding:3px 8px;text-align:right;font-weight:bold">${grandTotal.toFixed(2)}</td>
-          <td colspan="2" style="border:1px solid #000"></td>
-        </tr>
-      </tbody>
-    </table>
-    <div style="margin-top:24px">
-      <div style="font-weight:bold;font-size:13px;margin-bottom:4px">Prepared by &#21046;&#22791;&#32773;&#31614;&#21517;&#65306;</div>
-      <div style="min-height:55px">${finSigData ? `<img src="${esc(finSigData)}" style="height:50px;object-fit:contain">` : ""}</div>
-      <div style="border-top:1px solid #000;padding-top:4px;font-size:12px">
-        Name: <span style="display:inline-block;border-bottom:1px solid #000;min-width:150px;padding:0 4px">${esc(runByName)}</span>&emsp;
-        Date: <span style="display:inline-block;border-bottom:1px solid #000;min-width:80px;padding:0 4px">${fD(run.run_date)}</span>
-      </div>
-    </div>
-  </div>`);
-
-  // ── PAGES 2+: PER-PV FORM + ATTACHMENTS ──────────────────────────────────
-  for (const [pvIdx, pv] of pvs.entries()) {
-    const approvals: PVApproval[] = pv.approvals ?? [];
-    const items = pv.line_items ?? [];
-    const pvTotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0) || pv.amount;
-    const PAD = Math.max(0, 7 - items.length);
-    const finApproval  = approvals.find(a => ["FINANCE_ADMIN","FINANCE_ADMIN_2","FINANCE_ADMIN_3"].includes(a.role) && a.action === "APPROVED");
-    const gmApproval   = [...approvals].reverse().find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
-    const sigApprovals = approvals.filter(a => ["BISHOP","TREASURER","SECRETARY"].includes(a.role) && a.action === "APPROVED");
-    const isPaid = pv.status === "PAID";
-    const finSigImg = finApproval?.signature_data || finSigData || "";
-    const gmSigImg  = gmApproval?.signature_data || (gmApproval?.email ? approverSigs[gmApproval.email] ?? "" : "") || "";
-    const projectLabel = [pv.ministry, pv.dept, pv.project].filter(Boolean).join(" / ");
-
-    const itemHtml = [
-      ...items.map((it, j) => `<tr>
-        <td style="border:1px solid #000;padding:3px 4px;text-align:center">${j+1}</td>
-        <td style="border:1px solid #000;padding:3px 4px">${it.date ? fD(it.date) : ""}</td>
-        <td style="border:1px solid #000;padding:3px 4px">${esc(it.description)}</td>
-        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${Number(it.amount || 0).toFixed(2)}</td>
-      </tr>`),
-      ...Array.from({length: PAD}).map(() => `<tr>
-        <td style="border:1px solid #000;height:18px"></td>
-        <td style="border:1px solid #000"></td><td style="border:1px solid #000"></td>
-        <td style="border:1px solid #000"></td>
-      </tr>`),
-    ].join("");
-
-    const sigBoxes = sigApprovals.length
-      ? sigApprovals.slice(0, 2).map(sa => {
-          const sImg = sa.signature_data || (sa.email ? approverSigs[sa.email] ?? "" : "");
-          return `<div style="flex:1;text-align:center">
-            ${sig(sImg)}
-            <div style="border-top:1px solid #000;padding-top:2px"><b>${esc(sa.name || "")}</b><br>${esc(roleLabel(sa.role))}<br>Date: ${fD(sa.timestamp)}</div>
-          </div>`;
-        }).join("")
-      : `<div style="flex:1;text-align:center;color:#ccc">___________</div>`;
-
-    sections.push(`<div style="break-before:page;page-break-before:always;font-family:Calibri,Arial,sans-serif;font-size:13px;color:#111">
-      <div style="font-size:11px;color:#555;font-weight:600;margin-bottom:6px">Attachment ${pvIdx+1} &#8212; ${esc(pv.pv_no)}</div>
-      <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
-        <div style="border:1px solid #000;font-size:8px;width:130px">
-          <div style="border-bottom:1px solid #000;padding:2px 6px;font-weight:bold;text-align:center">FOR OFFICE USE ONLY</div>
-          <div style="padding:2px 6px;font-size:14px;font-weight:bold;letter-spacing:1px;text-align:center">${esc(pv.pv_label?.split(" - ")[0] ?? "")}</div>
-          <div style="padding:2px 6px;font-size:9px">Ref: <b>${esc(pv.pv_no)}</b></div>
-        </div>
-      </div>
-      <div style="text-align:center;font-weight:bold;font-size:10px">LUTHERAN CHURCH IN MALAYSIA</div>
-      <div style="text-align:center;font-size:9px;margin-bottom:6px">(REIMBURSEMENT CLAIM FORM / PAYMENT VOUCHER)<br>&#39319;&#26469;&#35199;&#20122;&#22522;&#30563;&#25945;&#20449;&#20041;&#20250;&#65288;&#36153;&#29992;&#25253;&#38144; / &#20184;&#27454;&#20663;&#35777;&#34920;&#26684;&#65289;</div>
-      <table style="width:100%;border-collapse:collapse;border:1px solid #000;font-size:9px;margin-bottom:4px">
-        <tr>
-          <td style="border:1px solid #000;padding:3px 5px" colspan="3">Applicant &#30003;&#35831;&#32773;: <b>${esc(pv.applicant_name || pv.submitted_by)}</b></td>
-          <td style="border:1px solid #000;padding:3px 5px">Date &#26085;&#26399;: <b>${fD(pv.date ?? pv.submitted_at)}</b></td>
-        </tr>
-        <tr><td colspan="4" style="border:1px solid #000;padding:3px 5px">Payable to &#20184;&#32473;: <b>${esc(pv.payee_name)}</b></td></tr>
-        <tr><td colspan="4" style="border:1px solid #000;padding:3px 5px">Payee Bank A/C No: ${esc(bankStr(pv))}${acctStr(pv) ? " | " + esc(acctStr(pv)) : ""}</td></tr>
-        <tr><td colspan="4" style="border:1px solid #000;padding:3px 5px">Project &#20107;&#24037;: ${esc(projectLabel)}</td></tr>
-        <tr><td colspan="4" style="border:1px solid #000;padding:3px 5px">Purpose &#29992;&#36884;: ${esc(pv.purpose)}</td></tr>
-      </table>
-      <table style="width:100%;border-collapse:collapse;font-size:9px">
-        <thead><tr style="background:#f0f0f0">
-          <th style="border:1px solid #000;padding:3px 4px;width:24px">#</th>
-          <th style="border:1px solid #000;padding:3px 4px;width:75px">Date &#26085;&#26399;</th>
-          <th style="border:1px solid #000;padding:3px 4px">PARTICULARS</th>
-          <th style="border:1px solid #000;padding:3px 4px;width:75px;text-align:right">Amount (RM)</th>
-        </tr></thead>
-        <tbody>
-          ${itemHtml}
-          <tr>
-            <td colspan="3" style="border:1px solid #000;padding:3px 4px;text-align:right;font-weight:bold">Total &#24635;&#25968;:</td>
-            <td style="border:1px solid #000;padding:3px 4px;text-align:right;font-weight:bold">RM ${pvTotal.toFixed(2)}</td>
-          </tr>
-        </tbody>
-      </table>
-      ${isPaid ? `<div style="margin-top:8px;border:2px solid #16a34a;border-radius:4px;background:#f0fdf4;padding:6px 10px;display:inline-flex;align-items:center;gap:10px">
-        <div style="border:3px solid #16a34a;border-radius:3px;padding:3px 8px;transform:rotate(-8deg)">
-          <span style="font-size:14px;font-weight:bold;color:#16a34a;letter-spacing:3px">PAID</span>
-        </div>
-        <div style="font-size:8px;color:#166534"><b>Payment Completed</b><br>
-          ${[pv.payment_method, pv.payment_ref && "Ref:" + pv.payment_ref, fD(pv.paid_at)].filter(Boolean).join(" &middot; ")}</div>
-      </div>` : ""}
-      <div style="margin-top:6px">
-        <div style="background:#000;color:#fff;text-align:center;font-size:8px;font-weight:bold;padding:2px">FOR LCM FINANCE OFFICE ONLY &nbsp; LCM&#36136;&#21153;&#22788;&#19987;&#29992;</div>
-        <div style="border:1px solid #000;border-top:none;display:flex;font-size:8px">
-          <div style="flex:1;border-right:1px solid #000;padding:5px 7px">
-            <div style="font-weight:bold;border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:3px">Prepared by:<br><span style="font-weight:normal">(Finance Executive)</span></div>
-            ${sig(finSigImg)}
-            <div style="border-top:1px solid #000;padding-top:2px"><b>${esc(finApproval?.name || runByName || "")}</b><br>Date: ${fD(finApproval?.timestamp || run.run_date)}</div>
-          </div>
-          <div style="flex:1;border-right:1px solid #000;padding:5px 7px">
-            <div style="font-weight:bold;border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:3px">Verified by:<br><span style="font-weight:normal">(General Manager)</span></div>
-            ${sig(gmSigImg)}
-            <div style="border-top:1px solid #000;padding-top:2px"><b>${esc(gmApproval?.name || "")}</b><br>Date: ${fD(gmApproval?.timestamp)}</div>
-          </div>
-          <div style="flex:1;padding:5px 7px">
-            <div style="font-weight:bold;border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:3px">Approved by:<br><span style="font-weight:normal">(Bishop / Secretary / Treasurer)</span></div>
-            <div style="display:flex;gap:4px">${sigBoxes}</div>
-          </div>
-        </div>
-      </div>
-    </div>`);
-
-    // Attachment pages for this PV (each on its own page)
-    const allAtt: { url: string; label: string }[] = [
-      ...(pv.attachments ?? []).map((url, ai) => ({ url, label: `Supporting Document ${ai+1} &#8212; ${esc(pv.pv_no)}` })),
-      ...(pv.payment_receipt_url ? [{ url: pv.payment_receipt_url, label: `Bank Payment Receipt &#8212; ${esc(pv.pv_no)}` }] : []),
-    ];
-    for (const { url, label } of allAtt) {
-      sections.push(`<div style="break-before:page;page-break-before:always">
-        <div style="font-size:11px;color:#555;font-weight:600;margin-bottom:8px">${label}</div>
-        <img src="${esc(url)}" style="max-width:100%;max-height:calc(210mm - 30mm);object-fit:contain;display:block;margin:auto">
-      </div>`);
-    }
-  }
-
-  return `<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<title>Bulk PV &#8212; ${esc(run.group_name)}</title>
-<style>
-* { box-sizing: border-box; }
-@page { size: A4 landscape; margin: 10mm; }
-body { font-family: Calibri, Arial, sans-serif; font-size: 13px; color: #111; margin: 0; padding: 0; }
-</style>
-</head>
-<body>${sections.join("\n")}</body>
-</html>`;
-}
-
 function computeStatus(pvs: Partial<PV>[]) {
   if (!pvs.length) return "IN_PROGRESS";
   if (pvs.every(p => p.status === "PAID")) return "PAID";
@@ -943,23 +706,6 @@ export default function BulkPVPage() {
 
   const signingPv = pvs.find(p => p.id === signingPvId);
 
-  function handlePrint() {
-    if (!run || !pvs.length) return;
-    const html = buildBulkPrintHtml(run, pvs, finSigData, runByName, approverSigs);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const win = window.open(url, "_blank");
-    if (!win) {
-      URL.revokeObjectURL(url);
-      alert("Pop-ups are blocked — please allow pop-ups for this site, then try again.");
-      return;
-    }
-    win.addEventListener("load", () => {
-      // Give images time to load before triggering the print dialog
-      setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 1500);
-    });
-  }
-
   return (
     <div className="min-h-screen bg-stone-100 print:bg-white print:min-h-0">
       <style>{`
@@ -1026,10 +772,12 @@ export default function BulkPVPage() {
             {actionToast.msg && (
               <span className={`text-sm font-medium ${actionToast.ok ? "text-green-700" : "text-red-600"}`}>{actionToast.msg}</span>
             )}
-            <button onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-stone-300 rounded-lg text-sm text-stone-600 hover:bg-stone-50">
-              <Printer size={14} /> Print
-            </button>
+            {run && (
+              <BulkPVPdfDownload
+                run={run} pvs={pvs}
+                finSigData={finSigData} runByName={runByName}
+              />
+            )}
           </div>
         </div>
       </div>
