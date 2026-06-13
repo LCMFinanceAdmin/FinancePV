@@ -8,6 +8,7 @@ import {
   ArrowLeft, CheckCircle2, XCircle,
   Printer, ShieldCheck, Send, CreditCard,
   PenLine, Eraser, Upload, X as XIcon, CheckCircle,
+  FileText, Plus,
 } from "lucide-react";
 
 interface BulkRun {
@@ -366,6 +367,10 @@ export default function BulkPVPage() {
   const isDrawingRef                        = useRef(false);
   const lastPointRef                        = useRef<{ x: number; y: number } | null>(null);
 
+  // Attachment management
+  const [attachLoadingId, setAttachLoadingId] = useState<string | null>(null);
+  const attachInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
   useEffect(() => {
     async function load() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -624,6 +629,68 @@ export default function BulkPVPage() {
       setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
     } finally {
       setFinSignLoading(false);
+    }
+  }
+
+  async function savePvAttachments(pvId: string, attachments: string[], receiptUrl: string | null | undefined) {
+    setAttachLoadingId(pvId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const body: Record<string, unknown> = { pv_id: pvId, action: "UPDATE_ATTACHMENTS", attachments };
+      if (receiptUrl !== undefined) body.payment_receipt_url = receiptUrl;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update attachments");
+      const { data: updatedPv } = await supabase.from("pvs").select("*").eq("id", pvId).single();
+      if (updatedPv) setPvs(prev => prev.map(p => p.id === pvId ? updatedPv as PV : p));
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } finally {
+      setAttachLoadingId(null);
+    }
+  }
+
+  async function handleAddPvAttachments(pv: PV, files: FileList) {
+    if (files.length === 0) return;
+    setAttachLoadingId(pv.id);
+    try {
+      const uploaded: string[] = [];
+      for (const file of Array.from(files)) {
+        const path = `${pv.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const { error: upErr } = await supabase.storage.from("pv-attachments").upload(path, file, { upsert: false });
+        if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+        const { data: urlData } = supabase.storage.from("pv-attachments").getPublicUrl(path);
+        uploaded.push(urlData.publicUrl);
+      }
+      const newAttachments = [...(pv.attachments ?? []), ...uploaded];
+      await savePvAttachments(pv.id, newAttachments, undefined);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+      setAttachLoadingId(null);
+    }
+    const ref = attachInputRefs.current[pv.id];
+    if (ref) ref.value = "";
+  }
+
+  async function handleReplacePvReceipt(pv: PV, file: File) {
+    setAttachLoadingId(pv.id);
+    try {
+      const ext = file.name.split(".").pop() ?? "pdf";
+      const path = `${pv.id}/receipt.${ext}`;
+      const { error: upErr } = await supabase.storage.from("payment-receipts").upload(path, file, { upsert: true });
+      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+      const { data: urlData } = supabase.storage.from("payment-receipts").getPublicUrl(path);
+      await savePvAttachments(pv.id, pv.attachments ?? [], urlData.publicUrl);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+      setAttachLoadingId(null);
     }
   }
 
@@ -1181,6 +1248,74 @@ export default function BulkPVPage() {
                 onSignSig={() => openSignModal(pv.id)}
               />
             </div>
+
+            {/* Attachment management panel — print hidden */}
+            {(user?.isFinanceAdmin || (pv.attachments ?? []).length > 0 || pv.payment_receipt_url) && (
+              <div className="print:hidden bg-white border border-stone-200 rounded-xl p-4 mt-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText size={14} className="text-stone-500" />
+                  <span className="text-xs font-semibold text-stone-600">Supporting Documents — {pv.pv_no}</span>
+                  {attachLoadingId === pv.id && <span className="text-xs text-stone-400">Saving…</span>}
+                </div>
+                {(pv.attachments ?? []).length === 0 && !pv.payment_receipt_url && (
+                  <p className="text-xs text-stone-400 mb-3">No documents attached.</p>
+                )}
+                <div className="space-y-1.5 mb-3">
+                  {(pv.attachments ?? []).map((url, ai) => {
+                    const filename = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? `Document ${ai + 1}`);
+                    const isImg = /\.(jpg|jpeg|png|webp)$/i.test(filename);
+                    return (
+                      <div key={url} className="flex items-center gap-2 p-2 bg-stone-50 border border-stone-200 rounded-lg">
+                        <span className="text-sm shrink-0">{isImg ? "🖼️" : "📄"}</span>
+                        <a href={url} target="_blank" rel="noopener noreferrer"
+                          className="flex-1 text-xs text-[#4a6da7] hover:underline truncate min-w-0">{filename}</a>
+                        {user?.isFinanceAdmin && (
+                          <button onClick={() => savePvAttachments(pv.id, (pv.attachments ?? []).filter(a => a !== url), undefined)}
+                            disabled={attachLoadingId === pv.id}
+                            className="shrink-0 p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                            <XIcon size={13} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {pv.payment_receipt_url && (
+                    <div className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                      <span className="text-sm shrink-0">🧾</span>
+                      <a href={pv.payment_receipt_url} target="_blank" rel="noopener noreferrer"
+                        className="flex-1 text-xs text-emerald-700 hover:underline truncate min-w-0">Bank Payment Receipt</a>
+                      {user?.isFinanceAdmin && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <label className="p-1 rounded hover:bg-emerald-100 text-emerald-600 transition-colors cursor-pointer">
+                            <Upload size={13} />
+                            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                              onChange={e => { const f = e.target.files?.[0]; if (f) handleReplacePvReceipt(pv, f); if (e.target) e.target.value = ""; }} />
+                          </label>
+                          <button onClick={() => savePvAttachments(pv.id, pv.attachments ?? [], null)}
+                            disabled={attachLoadingId === pv.id}
+                            className="p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                            <XIcon size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {user?.isFinanceAdmin && (
+                  <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#4a6da7] text-[#4a6da7] hover:bg-blue-50 transition-colors cursor-pointer ${attachLoadingId === pv.id ? "opacity-50 pointer-events-none" : ""}`}>
+                    <Plus size={12} /> Add Documents
+                    <input
+                      ref={el => { attachInputRefs.current[pv.id] = el; }}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                      multiple
+                      className="hidden"
+                      onChange={e => { if (e.target.files?.length) handleAddPvAttachments(pv, e.target.files); }}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
