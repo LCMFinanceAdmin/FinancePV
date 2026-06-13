@@ -443,9 +443,13 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
         finalBytes = new Uint8Array(await baseBlob.arrayBuffer());
       }
 
-      // Pass Uint8Array directly — avoids potential oversized .buffer when pdf-lib
-      // returns a view into a larger ArrayBuffer.
-      const url = URL.createObjectURL(new Blob([finalBytes], { type: "application/pdf" }));
+      // Slice exactly the valid byte range — normalises ArrayBufferLike from pdf-lib
+      // to a plain ArrayBuffer so Blob constructor typing and byte bounds are correct.
+      const pdfBuf = finalBytes.buffer.slice(
+        finalBytes.byteOffset,
+        finalBytes.byteOffset + finalBytes.byteLength,
+      ) as ArrayBuffer;
+      const url = URL.createObjectURL(new Blob([pdfBuf], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = url;
       a.download = `${pv.pv_no}.pdf`;
