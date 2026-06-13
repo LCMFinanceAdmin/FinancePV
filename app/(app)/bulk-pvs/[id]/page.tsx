@@ -645,11 +645,17 @@ export default function BulkPVPage() {
     <div className="min-h-screen bg-stone-100 print:bg-white print:min-h-0">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 12mm; }
-          @page landscape-summary { size: A4 landscape; margin: 10mm; }
-          .bulk-summary-page { page: landscape-summary; }
-          .bulk-pv-voucher { page: portrait-voucher; }
-          @page portrait-voucher { size: A4 portrait; margin: 12mm; }
+          @page { size: A4 landscape; margin: 10mm; }
+          .bulk-summary-page { display: block; }
+          .bulk-pv-voucher {
+            display: block;
+            page-break-before: always;
+            break-before: page;
+          }
+          .bulk-summary-page + .bulk-pv-voucher {
+            page-break-before: always;
+            break-before: page;
+          }
         }
       `}</style>
 
@@ -1163,7 +1169,7 @@ export default function BulkPVPage() {
         const gmSigned  = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
         const sigSigned = approvals.some(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED");
         return (
-          <div key={pv.id} className="bulk-pv-voucher print:break-before-page max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0">
+          <div key={pv.id} className="bulk-pv-voucher max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0" style={{ pageBreakBefore: "always", breakBefore: "page" } as React.CSSProperties}>
             <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
               <PVVoucher
                 pv={pv} idx={i}
