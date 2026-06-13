@@ -63,6 +63,7 @@ export default function SignatoryPage() {
   const [search, setSearch] = useState("");
   const [ministryFilter, setMinistryFilter] = useState("All Ministries");
   const [ministries, setMinistries] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "paid">("pending");
 
   // Signature state
   const [savedSig, setSavedSig] = useState("");          // user's saved_signature from DB
@@ -81,9 +82,9 @@ export default function SignatoryPage() {
         supabase.auth.getUser(),
         supabase
           .from("pvs")
-          .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name")
-          .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"])
-          .order("submitted_at", { ascending: true }),
+          .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
+          .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED", "APPROVED", "PAID"])
+          .order("submitted_at", { ascending: false }),
         supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount"),
       ]);
 
@@ -283,17 +284,26 @@ export default function SignatoryPage() {
     } finally { setBudgetLoading(false); }
   }
 
+  const pendingPvsAll  = useMemo(() => pvs.filter(pv => ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "")), [pvs]);
+  const approvedPvsAll = useMemo(() => pvs.filter(pv => pv.status === "APPROVED"), [pvs]);
+  const paidPvsAll     = useMemo(() => pvs.filter(pv => pv.status === "PAID"), [pvs]);
+  const activePvsForTab = useMemo(() =>
+    statusFilter === "pending"  ? pendingPvsAll  :
+    statusFilter === "approved" ? approvedPvsAll :
+    paidPvsAll,
+  [statusFilter, pendingPvsAll, approvedPvsAll, paidPvsAll]);
+
   const { bulkGroups, standalones } = useMemo(() => {
     const groups: Record<string, { runId: string; groupName: string; pvs: PVWithBulk[] }> = {};
     const standalones: PVWithBulk[] = [];
-    for (const pv of pvs) {
+    for (const pv of activePvsForTab) {
       if (pv.bulk_run_id && pv.bulk_group) {
         if (!groups[pv.bulk_run_id]) groups[pv.bulk_run_id] = { runId: pv.bulk_run_id, groupName: pv.bulk_group, pvs: [] };
         groups[pv.bulk_run_id].pvs.push(pv);
       } else standalones.push(pv);
     }
     return { bulkGroups: Object.values(groups), standalones };
-  }, [pvs]);
+  }, [activePvsForTab]);
 
   // Apply search + ministry filter to standalone PVs
   const filteredStandalones = standalones.filter(pv => {
@@ -400,7 +410,16 @@ export default function SignatoryPage() {
                 )
               )}
 
-              <div className="text-xs text-[#4a6da7] font-medium">{signatoryApprovals.length}/{loa.required} signed</div>
+              {pv.status === "PAID" ? (
+                <div className="flex flex-col items-end gap-0.5">
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Paid</span>
+                  {(pv as PVWithBulk & { paid_at?: string }).paid_at && (
+                    <span className="text-[10px] text-stone-400">{formatDate((pv as PVWithBulk & { paid_at?: string }).paid_at!)}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-[#4a6da7] font-medium">{signatoryApprovals.length}/{loa.required} signed</div>
+              )}
 
               <Link href={`/my-pvs/${pv.id}`}
                 className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-[#4a6da7] transition-colors">
@@ -419,7 +438,11 @@ export default function SignatoryPage() {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-stone-800">Signatory Queue</h1>
-        <p className="text-sm text-stone-400">Payment vouchers awaiting your approval</p>
+        <p className="text-sm text-stone-400">
+          {statusFilter === "pending"  ? "Payment vouchers awaiting your approval" :
+           statusFilter === "approved" ? "Payment vouchers approved by signatories" :
+           "Payment vouchers that have been paid"}
+        </p>
       </div>
 
       {/* Search + Ministry filter */}
@@ -440,6 +463,29 @@ export default function SignatoryPage() {
           <option>All Ministries</option>
           {ministries.map(m => <option key={m}>{m}</option>)}
         </select>
+      </div>
+
+      {/* Status filter tabs */}
+      <div className="flex gap-2">
+        {([
+          { key: "pending",  label: "Pending",  count: pendingPvsAll.length,  activeColor: "bg-amber-500  text-white", dot: "bg-amber-200" },
+          { key: "approved", label: "Approved", count: approvedPvsAll.length, activeColor: "bg-green-600 text-white", dot: "bg-green-200" },
+          { key: "paid",     label: "Paid",     count: paidPvsAll.length,     activeColor: "bg-[#4a6da7] text-white", dot: "bg-blue-200"  },
+        ] as const).map(tab => {
+          const active = statusFilter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setStatusFilter(tab.key)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${active ? `${tab.activeColor} border-transparent shadow-sm` : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+            >
+              {tab.label}
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? "bg-white/25 text-white" : `${tab.dot} text-stone-600`}`}>
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Toast */}
@@ -540,7 +586,9 @@ export default function SignatoryPage() {
 
       {/* Count */}
       {!loading && (
-        <p className="text-xs text-stone-400">{filteredStandalones.length + filteredBulkGroups.reduce((s, g) => s + g.pvs.length, 0)} PVs</p>
+        <p className="text-xs text-stone-400">
+          {filteredStandalones.length + filteredBulkGroups.reduce((s, g) => s + g.pvs.length, 0)} PVs
+        </p>
       )}
 
       {/* List */}
@@ -548,7 +596,9 @@ export default function SignatoryPage() {
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : (filteredStandalones.length === 0 && filteredBulkGroups.length === 0) ? (
         <div className="py-8 text-center text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
-          No PVs awaiting your signature
+          {statusFilter === "pending"  ? "No PVs awaiting your signature" :
+           statusFilter === "approved" ? "No approved PVs" :
+           "No paid PVs"}
         </div>
       ) : (
         <div className="space-y-2">
