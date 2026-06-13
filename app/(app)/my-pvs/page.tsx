@@ -541,11 +541,13 @@ export default function MyPVsPage() {
                     {run.ministry && <div className="text-xs text-stone-400 mt-0.5">{run.ministry}</div>}
                     <div className="text-xs text-stone-400 mt-0.5">{formatDate(run.run_date)}</div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(run.total_amount)}</div>
-                    <div className="text-xs text-stone-400">{run.pv_count} vouchers</div>
-                    <div className="mt-1 text-stone-400">
-                      {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(run.total_amount)}</div>
+                      <div className="text-xs text-stone-400">{run.pv_count} vouchers</div>
+                    </div>
+                    <div className="text-stone-400">
+                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </div>
                   </div>
                 </button>
@@ -562,10 +564,10 @@ export default function MyPVsPage() {
                           : "No vouchers found."}
                       </div>
                     ) : (
-                      <div className="divide-y divide-stone-50">
+                      <div className="pl-4 border-l-2 border-stone-100 ml-4 my-2 divide-y divide-stone-50 rounded-sm">
                         {visible.map((pv, idx) => (
                           <div key={pv.id}
-                            className={`px-4 py-3 flex items-start gap-3 transition-colors hover:bg-stone-50/70 ${idx % 2 === 0 ? "" : "bg-stone-50/30"}`}>
+                            className={`px-3 py-3 flex items-start gap-3 transition-colors hover:bg-stone-50/70 ${idx % 2 === 0 ? "" : "bg-stone-50/30"}`}>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap mb-0.5">
                                 <Link href={`/my-pvs/${pv.id}`}
