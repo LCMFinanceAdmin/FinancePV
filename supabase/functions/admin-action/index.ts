@@ -62,8 +62,12 @@ Deno.serve(async (req) => {
         name: profile?.full_name || user.email,
         action: "APPROVED", timestamp: now, remarks: "",
       };
-      if (body.signature_data) entry.signature_data = body.signature_data;
-      else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
+      if (body.signature_data) {
+        entry.signature_data = body.signature_data;
+        await db.from("user_roles").update({ saved_signature: body.signature_data }).eq("email", user.email!);
+      } else if (profile?.saved_signature) {
+        entry.signature_data = profile.saved_signature;
+      }
       await db.from("pvs").update({
         status: "REVIEWED",
         finance_verified_by: profile?.full_name || user.email,
@@ -197,8 +201,12 @@ Deno.serve(async (req) => {
         timestamp: now,
         remarks: "",
       };
-      if (body.signature_data) entry.signature_data = body.signature_data;
-      else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
+      if (body.signature_data) {
+        entry.signature_data = body.signature_data;
+        await db.from("user_roles").update({ saved_signature: body.signature_data }).eq("email", user.email!);
+      } else if (profile?.saved_signature) {
+        entry.signature_data = profile.saved_signature;
+      }
       const newApprovals = [entry, ...filtered];
       // If the PV is still PENDING, signing counts as reviewing it
       const wasPending = pv.status === "PENDING";

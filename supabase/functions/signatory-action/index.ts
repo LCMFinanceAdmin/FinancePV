@@ -118,8 +118,15 @@ Deno.serve(async (req) => {
       action, timestamp: new Date().toISOString(),
       remarks: remarks || "",
     };
-    if (signature_data) entry.signature_data = signature_data;
-    else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
+    if (signature_data) {
+      entry.signature_data = signature_data;
+      // Persist the new signature for future approvals (bypasses RLS via service role)
+      if (action === "APPROVED") {
+        await db.from("user_roles").update({ saved_signature: signature_data }).eq("email", user.email!);
+      }
+    } else if (profile?.saved_signature) {
+      entry.signature_data = profile.saved_signature;
+    }
     approvals.push(entry);
 
     let newStatus = pv.status;
