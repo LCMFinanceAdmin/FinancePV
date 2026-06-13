@@ -16,7 +16,7 @@ const FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
  *  This corrects legacy data where GM approval left status as "REVIEWED". */
 function computedBadgeStatus(pv: { status?: string; approvals?: unknown[] }): PVStatus {
   const s = pv.status ?? "";
-  if (["APPROVED", "PAID", "REJECTED", "CANCELLED"].includes(s)) return s;
+  if (["APPROVED", "PAID", "REJECTED", "CANCELLED"].includes(s)) return s as PVStatus;
   const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
   const hasFinance = approvals.some(a => FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
   const hasGM      = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
