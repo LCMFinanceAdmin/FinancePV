@@ -38,70 +38,74 @@ const st = StyleSheet.create({
   small:   { fontSize: 8 },
 });
 
-// ── Batch Summary Page ────────────────────────────────────────────────────
+// ── Batch Summary Page (landscape A4, matches HTML layout) ───────────────
 function BatchSummaryDocument({
   run, pvs, finSigData, runByName, logoDataUri,
 }: {
   run: BulkRun; pvs: PV[]; finSigData: string; runByName: string; logoDataUri?: string;
 }) {
-  const year      = new Date(run.run_date).getFullYear();
-  const batchRef  = `BATCH-${year}-${run.id.slice(-6).toUpperCase()}`;
+  const year       = new Date(run.run_date).getFullYear();
+  const batchRef   = `BATCH-${year}-${run.id.slice(-6).toUpperCase()}`;
   const grandTotal = pvs.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+
+  // Landscape A4: ~841pt wide. With 8mm padding each side (~22.7pt), usable ≈ 796pt.
+  // Columns: 18 + 68 + 160 + 80 + 115 + 70 + 142.5 + 142.5 = 796pt
+  const COL = { num: 18, pvno: 68, payee: 160, bank: 80, acct: 115, amt: 70, sig: 142.5 };
 
   return (
     <Document title={`Batch ${run.group_name}`}>
-      <Page size="A4" style={st.page}>
+      <Page size="A4" orientation="landscape" style={[st.page, { padding: "8mm" }]}>
 
-        {/* ── Header ── */}
-        <View style={[st.row, { marginBottom: 8, alignItems: "flex-start" }]}>
-          <View style={{ flex: 1 }}>
-            <View style={st.row}>
-              {logoDataUri
-                ? <Image src={logoDataUri} style={{ width: 44, height: 44, marginRight: 8 }} />
-                : null}
-              <View style={{ flex: 1 }}>
-                <Text style={[st.bold, { fontSize: 12 }]}>LUTHERAN CHURCH IN MALAYSIA</Text>
-                <Text style={[st.tiny, { color: "#555", marginBottom: 4 }]}>马来西亚基督教信义会</Text>
-                <Text style={[st.bold, { fontSize: 10 }]}>BATCH PAYMENT SUMMARY  批量付款汇总</Text>
-              </View>
-            </View>
+        {/* ── Header: logo + centered title + office-use box ── */}
+        <View style={[st.row, { marginBottom: 6, alignItems: "flex-start" }]}>
+          {/* Logo left */}
+          <View style={{ width: 50 }}>
+            {logoDataUri
+              ? <Image src={logoDataUri} style={{ width: 44, height: 44 }} />
+              : null}
           </View>
-          <View style={[st.border, { width: 120, padding: "4pt 6pt", alignItems: "center" }]}>
-            <Text style={[st.bold, st.tiny, {
-              textAlign: "center", borderBottom: "1pt solid #000",
-              width: "100%", paddingBottom: 2, marginBottom: 3,
-            }]}>FOR OFFICE USE ONLY</Text>
-            <Text style={[st.bold, { fontSize: 8 }]}>{batchRef}</Text>
+          {/* Centered titles */}
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text style={[st.bold, { fontSize: 13 }]}>
+              LUTHERAN CHURCH IN MALAYSIA — BATCH PAYMENT SUMMARY
+            </Text>
+            <Text style={[st.bold, { fontSize: 11, fontFamily: "Helvetica" }]}>
+              马来西亚基督教信义会 — 批量付款汇总
+            </Text>
+          </View>
+          {/* Office-use box right */}
+          <View style={[st.border, { width: 145, marginLeft: 8 }]}>
+            <View style={{ padding: "3pt 6pt", borderBottom: "1pt solid #000" }}>
+              <Text style={[st.bold, st.tiny]}>For Office Use Only:</Text>
+            </View>
+            <View style={{ padding: "3pt 6pt", borderBottom: "1pt solid #000" }}>
+              <Text style={st.tiny}><Text style={st.bold}>Batch Ref: </Text>{batchRef}</Text>
+            </View>
+            <View style={{ padding: "3pt 6pt" }}>
+              <Text style={st.tiny}><Text style={st.bold}>Group: </Text>{run.group_name}</Text>
+            </View>
           </View>
         </View>
 
-        {/* ── Batch info grid ── */}
-        <View style={[st.border, { marginBottom: 8 }]}>
-          <View style={st.row}>
-            <View style={{ width: 80, padding: "3pt 5pt", borderRight: "1pt solid #000", borderBottom: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>Group 组别:</Text>
-            </View>
-            <View style={{ flex: 1, padding: "3pt 5pt", borderRight: "1pt solid #000", borderBottom: "1pt solid #000" }}>
+        {/* ── Info rows ── */}
+        <View style={{ marginBottom: 6 }}>
+          <View style={[st.row, { marginBottom: 3 }]}>
+            <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Group 组别:</Text>
+            <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
               <Text style={[st.bold, { fontSize: 8 }]}>{run.group_name}</Text>
             </View>
-            <View style={{ width: 70, padding: "3pt 5pt", borderRight: "1pt solid #000", borderBottom: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>Run Date 日期:</Text>
-            </View>
-            <View style={{ flex: 1, padding: "3pt 5pt", borderBottom: "1pt solid #000" }}>
+            <Text style={[st.bold, { width: 100, fontSize: 8, marginLeft: 24 }]}>Run Date 日期:</Text>
+            <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
               <Text style={{ fontSize: 8 }}>{fmtDate(run.run_date)}</Text>
             </View>
           </View>
-          <View style={[st.row, run.ministry ? { borderBottom: "1pt solid #000" } : {}]}>
-            <View style={{ width: 80, padding: "3pt 5pt", borderRight: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>Prepared by:</Text>
-            </View>
-            <View style={{ flex: 1, padding: "3pt 5pt", borderRight: "1pt solid #000" }}>
+          <View style={[st.row, { marginBottom: run.ministry ? 3 : 0 }]}>
+            <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Prepared by 制备者:</Text>
+            <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
               <Text style={{ fontSize: 8 }}>{runByName || run.run_by}</Text>
             </View>
-            <View style={{ width: 70, padding: "3pt 5pt", borderRight: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>No. of PVs:</Text>
-            </View>
-            <View style={{ flex: 1, padding: "3pt 5pt" }}>
+            <Text style={[st.bold, { width: 100, fontSize: 8, marginLeft: 24 }]}>No. of PVs:</Text>
+            <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
               <Text style={[st.bold, { fontSize: 8 }]}>
                 {run.pv_count} voucher{run.pv_count !== 1 ? "s" : ""}
               </Text>
@@ -109,42 +113,48 @@ function BatchSummaryDocument({
           </View>
           {run.ministry ? (
             <View style={st.row}>
-              <View style={{ width: 80, padding: "3pt 5pt", borderRight: "1pt solid #000" }}>
-                <Text style={[st.bold, st.tiny]}>Ministry:</Text>
-              </View>
-              <View style={{ flex: 1, padding: "3pt 5pt" }}>
+              <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Ministry:</Text>
+              <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
                 <Text style={{ fontSize: 8 }}>{run.ministry}</Text>
               </View>
             </View>
           ) : null}
         </View>
 
-        {/* ── Payment details table ── */}
+        {/* ── Section heading ── */}
         <Text style={[st.bold, { fontSize: 9, marginBottom: 3 }]}>
-          Payment Details 付款详情
+          Payment Details — Individual Transactions 付款详情
         </Text>
+
+        {/* ── Payment table ── */}
         <View style={st.border}>
           {/* Header row */}
           <View style={[st.row, st.hdrBg]}>
-            <View style={{ width: 16, padding: "3pt 2pt", borderRight: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny, st.center]}>#</Text>
+            <View style={{ width: COL.num,  padding: "3pt 2pt", borderRight: "1pt solid #000", textAlign: "center" }}>
+              <Text style={[st.bold, st.tiny]}>#</Text>
             </View>
-            <View style={{ width: 58, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
+            <View style={{ width: COL.pvno, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
               <Text style={[st.bold, st.tiny]}>PV No.</Text>
             </View>
-            <View style={{ width: 105, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
+            <View style={{ width: COL.payee, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
               <Text style={[st.bold, st.tiny]}>Payee 收款人</Text>
             </View>
-            <View style={{ width: 140, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>Bank / Account No.</Text>
+            <View style={{ width: COL.bank, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
+              <Text style={[st.bold, st.tiny]}>Bank 银行</Text>
             </View>
-            <View style={{ width: 65, padding: "3pt 4pt", borderRight: "1pt solid #000", textAlign: "right" }}>
-              <Text style={[st.bold, st.tiny]}>Amount (RM)</Text>
+            <View style={{ width: COL.acct, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
+              <Text style={[st.bold, st.tiny]}>A/C No. 账号</Text>
             </View>
-            <View style={{ flex: 1, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>GM Verified</Text>
+            <View style={{ width: COL.amt, padding: "3pt 4pt", borderRight: "1pt solid #000", textAlign: "right" }}>
+              <Text style={[st.bold, st.tiny]}>Amount</Text>
+              <Text style={[st.bold, st.tiny]}>(RM)</Text>
             </View>
-            <View style={{ flex: 1, padding: "3pt 4pt" }}>
+            <View style={{ width: COL.sig, padding: "3pt 6pt", borderRight: "1pt solid #000", textAlign: "center" }}>
+              <Text style={[st.bold, st.tiny]}>Verified by</Text>
+              <Text style={[st.bold, st.tiny]}>General Manager</Text>
+            </View>
+            <View style={{ width: COL.sig, padding: "3pt 6pt", textAlign: "center" }}>
+              <Text style={[st.bold, st.tiny]}>Approved by</Text>
               <Text style={[st.bold, st.tiny]}>Signatory</Text>
             </View>
           </View>
@@ -156,45 +166,73 @@ function BatchSummaryDocument({
             const sa = approvals.find(a =>
               ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
             );
-            const bankLine = pv.payment_method?.toLowerCase() === "jompay"
-              ? `JomPay · Biller: ${pv.biller_code ?? ""}  Ref: ${pv.ref_no ?? ""}`
+            const bankName = pv.payment_method?.toLowerCase() === "jompay"
+              ? "JomPay"
               : pv.cheque_no
-                ? `Cheque ${pv.cheque_no}`
-                : [
-                    BANK_ABBR[(pv.payee_bank_name ?? "").toLowerCase().trim()] ?? pv.payee_bank_name ?? "",
-                    pv.payee_bank_acct ?? "",
-                  ].filter(Boolean).join(" | ");
+                ? "Cheque"
+                : BANK_ABBR[(pv.payee_bank_name ?? "").toLowerCase().trim()] ?? pv.payee_bank_name ?? "";
+            const acctNo = pv.payment_method?.toLowerCase() === "jompay"
+              ? `Biller: ${pv.biller_code ?? ""}  Ref: ${pv.ref_no ?? ""}`
+              : pv.cheque_no
+                ? pv.cheque_no
+                : pv.payee_bank_acct ?? "";
             const isPaid = pv.status === "PAID";
 
             return (
               <View key={pv.id} style={[st.row, { borderTop: "1pt solid #000" }]}>
-                <View style={{ width: 16, padding: "3pt 2pt", borderRight: "1pt solid #000", textAlign: "center" }}>
+                <View style={{ width: COL.num, padding: "4pt 2pt", borderRight: "1pt solid #000", textAlign: "center" }}>
                   <Text style={st.tiny}>{i + 1}</Text>
                 </View>
-                <View style={{ width: 58, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
+                <View style={{ width: COL.pvno, padding: "4pt 4pt", borderRight: "1pt solid #000" }}>
                   <Text style={[st.bold, st.tiny, { color: "#4a6da7" }]}>{pv.pv_no}</Text>
                   {isPaid
-                    ? <Text style={[st.tiny, { color: "#16a34a" }]}>{"●"} PAID</Text>
+                    ? <Text style={[st.tiny, { color: "#16a34a", fontFamily: "Helvetica-Bold" }]}>PAID</Text>
                     : null}
                 </View>
-                <View style={{ width: 105, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
+                <View style={{ width: COL.payee, padding: "4pt 4pt", borderRight: "1pt solid #000" }}>
                   <Text style={st.tiny}>{pv.payee_name ?? ""}</Text>
                 </View>
-                <View style={{ width: 140, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
-                  <Text style={st.tiny}>{bankLine}</Text>
+                <View style={{ width: COL.bank, padding: "4pt 4pt", borderRight: "1pt solid #000" }}>
+                  <Text style={st.tiny}>{bankName}</Text>
                 </View>
-                <View style={{ width: 65, padding: "3pt 4pt", borderRight: "1pt solid #000", textAlign: "right" }}>
-                  <Text style={[st.bold, st.small]}>{fmt(pv.amount ?? 0)}</Text>
+                <View style={{ width: COL.acct, padding: "4pt 4pt", borderRight: "1pt solid #000" }}>
+                  <Text style={st.tiny}>{acctNo}</Text>
                 </View>
-                <View style={{ flex: 1, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
-                  {gm
-                    ? <Text style={[st.tiny, { color: "#15803d" }]}>{"✓"} {gm.name ?? ""}</Text>
-                    : <Text style={[st.tiny, { color: "#bbb" }]}>{"—"}</Text>}
+                <View style={{ width: COL.amt, padding: "4pt 4pt", borderRight: "1pt solid #000", textAlign: "right" }}>
+                  <Text style={[st.bold, { fontSize: 8 }]}>{fmt(pv.amount ?? 0)}</Text>
+                  {isPaid && (
+                    <View style={{ border: "1pt solid #16a34a", borderRadius: 2, padding: "1pt 3pt", marginTop: 2 }}>
+                      <Text style={[st.tiny, { color: "#16a34a", textAlign: "center" }]}>
+                        PAID · {fmtDate(pv.paid_at)}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                <View style={{ flex: 1, padding: "3pt 4pt" }}>
-                  {sa
-                    ? <Text style={[st.tiny, { color: "#15803d" }]}>{"✓"} {sa.name ?? ""}</Text>
-                    : <Text style={[st.tiny, { color: "#bbb" }]}>{"—"}</Text>}
+                {/* GM Verified */}
+                <View style={{ width: COL.sig, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
+                  <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>GM / 总经理</Text>
+                  {gm?.signature_data
+                    ? <Image src={gm.signature_data} style={{ height: 22, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
+                    : <View style={{ height: 22 }} />}
+                  <View style={{ borderTop: "0.5pt solid #000", paddingTop: 2 }}>
+                    <Text style={st.tiny}>Name: <Text style={st.bold}>{gm?.name ?? ""}</Text></Text>
+                    <View style={{ borderBottom: "0.5pt solid #aaa", height: 1, marginBottom: 1 }} />
+                    <Text style={st.tiny}>Date: {fmtDate(gm?.timestamp)}</Text>
+                    <View style={{ borderBottom: "0.5pt solid #aaa", height: 1 }} />
+                  </View>
+                </View>
+                {/* Signatory */}
+                <View style={{ width: COL.sig, padding: "4pt 6pt" }}>
+                  <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>Signatory / 签署人</Text>
+                  {sa?.signature_data
+                    ? <Image src={sa.signature_data} style={{ height: 22, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
+                    : <View style={{ height: 22 }} />}
+                  <View style={{ borderTop: "0.5pt solid #000", paddingTop: 2 }}>
+                    <Text style={st.tiny}>Name: <Text style={st.bold}>{sa?.name ?? ""}</Text></Text>
+                    <View style={{ borderBottom: "0.5pt solid #aaa", height: 1, marginBottom: 1 }} />
+                    <Text style={st.tiny}>Date: {fmtDate(sa?.timestamp)}</Text>
+                    <View style={{ borderBottom: "0.5pt solid #aaa", height: 1 }} />
+                  </View>
                 </View>
               </View>
             );
@@ -202,32 +240,31 @@ function BatchSummaryDocument({
 
           {/* Total row */}
           <View style={[st.row, { borderTop: "1pt solid #000", backgroundColor: "#f8f8f8" }]}>
-            <View style={{ flex: 1, padding: "3pt 6pt", textAlign: "right", borderRight: "1pt solid #000" }}>
+            <View style={{
+              width: COL.num + COL.pvno + COL.payee + COL.bank + COL.acct,
+              padding: "3pt 6pt", textAlign: "right", borderRight: "1pt solid #000",
+            }}>
               <Text style={[st.bold, st.small]}>Total 总数:</Text>
             </View>
-            <View style={{ width: 65, padding: "3pt 4pt", textAlign: "right", borderRight: "1pt solid #000" }}>
+            <View style={{ width: COL.amt, padding: "3pt 4pt", textAlign: "right", borderRight: "1pt solid #000" }}>
               <Text style={[st.bold, st.small]}>RM {fmt(grandTotal)}</Text>
             </View>
-            <View style={{ flex: 1, padding: "3pt 4pt", borderRight: "1pt solid #000" }}><Text>{" "}</Text></View>
-            <View style={{ flex: 1, padding: "3pt 4pt" }}><Text>{" "}</Text></View>
+            <View style={{ width: COL.sig, padding: "3pt 4pt", borderRight: "1pt solid #000" }}><Text>{" "}</Text></View>
+            <View style={{ width: COL.sig, padding: "3pt 4pt" }}><Text>{" "}</Text></View>
           </View>
         </View>
 
         {/* ── Finance signature ── */}
-        <View style={{ marginTop: 16 }}>
+        <View style={{ marginTop: 12 }}>
           <Text style={[st.bold, st.small, { marginBottom: 3 }]}>
             Prepared by 制备者签名 (Finance Executive):
           </Text>
           {finSigData
-            ? <Image src={finSigData} style={{ height: 44, objectFit: "contain", objectPositionX: "left" }} />
-            : <View style={{ height: 44 }} />}
-          <View style={[st.borderT, { paddingTop: 3, flexDirection: "row", gap: 20 }]}>
-            <Text style={st.tiny}>
-              Name: <Text style={st.bold}>{runByName || run.run_by}</Text>
-            </Text>
-            <Text style={st.tiny}>
-              Date: <Text style={st.bold}>{fmtDate(run.run_date)}</Text>
-            </Text>
+            ? <Image src={finSigData} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
+            : <View style={{ height: 40 }} />}
+          <View style={[st.borderT, { paddingTop: 3, flexDirection: "row", gap: 30 }]}>
+            <Text style={st.tiny}>Name: <Text style={st.bold}>{runByName || run.run_by}</Text></Text>
+            <Text style={st.tiny}>Date: <Text style={st.bold}>{fmtDate(run.run_date)}</Text></Text>
           </View>
         </View>
 
