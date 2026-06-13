@@ -227,7 +227,7 @@ export default function MyPVsPage() {
       if (s === "PENDING")
         return { type: "admin", review: true,  signatory: false, revert: false,      reject: true  } as const;
       if (s === "REVIEWED" || s === "MINISTRY_VERIFIED")
-        return { type: "admin", review: false, signatory: true,  revert: canRevert,  reject: true  } as const;
+        return { type: "admin", review: false, signatory: false, revert: canRevert,  reject: true  } as const;
       if (s === "PENDING_SIGNATORY")
         return { type: "admin", review: false, signatory: false, revert: canRevert,  reject: false } as const;
       if (s === "REJECTED" || s === "REJECTED_HEAD")

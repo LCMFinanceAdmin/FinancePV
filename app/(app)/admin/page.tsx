@@ -131,11 +131,6 @@ export default function AdminPage() {
                       <CheckSquare size={13} /> Mark Reviewed
                     </Button>
                   )}
-                  {(pv.status === "REVIEWED" || pv.status === "MINISTRY_VERIFIED") && (
-                    <Button variant="primary" size="sm" loading={acting} onClick={() => advance(pv.id!, "SEND_TO_SIGNATORY")}>
-                      <Send size={13} /> Send to Signatory
-                    </Button>
-                  )}
                   {pv.status === "APPROVED" && (
                     <Button variant="secondary" size="sm" onClick={() => setSelected(selected?.id === pv.id ? null : pv)}>
                       Mark as Paid

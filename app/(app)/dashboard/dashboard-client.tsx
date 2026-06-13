@@ -233,11 +233,6 @@ export default function DashboardPage() {
                 loading={actioning === pv.id}
                 onClick={() => callAdminAction(pv.id!, "REVIEW", undefined, bulkId)} />
             )}
-            {actions.signatory && (
-              <Btn color="blue" label="→ Signatory"
-                loading={actioning === pv.id}
-                onClick={() => callAdminAction(pv.id!, "SEND_TO_SIGNATORY", undefined, bulkId)} />
-            )}
             {actions.revert && (
               <Btn color="gray" icon={<RotateCcw size={10} />} label="Revert"
                 loading={actioning === pv.id}

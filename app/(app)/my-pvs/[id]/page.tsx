@@ -755,15 +755,6 @@ export default function PVDetailPage() {
               )}
             </div>
 
-            {/* ── Row 2: Send to Signatory ── */}
-            {["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
-              <div className="flex gap-2 flex-wrap mt-2">
-                <button onClick={() => callAdminAction("SEND_TO_SIGNATORY")} disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-[#4a6da7] text-white text-sm rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
-                  <Send size={14} /> Send to Signatory
-                </button>
-              </div>
-            )}
 
             {pv.status === "PENDING_SIGNATORY" && (
               <p className="text-sm text-stone-500 mt-2">Awaiting signatory signatures.</p>

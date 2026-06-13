@@ -76,6 +76,10 @@ Deno.serve(async (req) => {
 
     if (action === "SEND_TO_SIGNATORY") {
       if (!["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status)) return json({ error: "PV must be reviewed first" }, 400);
+      // GM must approve before Finance Executive can send to signatories
+      const existingApprovals: { role: string; action: string }[] = pv.approvals ?? [];
+      const gmApproved = existingApprovals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
+      if (!gmApproved) return json({ error: "General Manager must approve this PV before it can be sent to signatories" }, 400);
       await db.from("pvs").update({ status: "PENDING_SIGNATORY", updated_at: new Date().toISOString() }).eq("id", pv_id);
 
       // Notify signatories

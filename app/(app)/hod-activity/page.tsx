@@ -355,11 +355,6 @@ export default function ExcoActivityPage() {
                                 loading={actioning === pv.id}
                                 onClick={() => callAdmin(pv.id!, "REVIEW")} />
                             )}
-                            {actions.signatory && (
-                              <Btn color="blue" label="→ Signatory"
-                                loading={actioning === pv.id}
-                                onClick={() => callAdmin(pv.id!, "SEND_TO_SIGNATORY")} />
-                            )}
                             {actions.revert && (
                               <Btn color="gray" icon={<RotateCcw size={10} />} label="Revert"
                                 loading={actioning === pv.id}

@@ -673,15 +673,6 @@ export default function BulkPVPage() {
                   </button>
                 </div>
               )}
-              {reviewedPvs.length > 0 && (
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-xs text-stone-600 w-36">{reviewedPvs.length} reviewed:</span>
-                  <button onClick={() => handleBulkAction("SEND_TO_SIGNATORY", reviewedPvs)} disabled={actionLoading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4a6da7] text-white text-xs rounded-lg font-medium disabled:opacity-50">
-                    <Send size={12} /> Send All to Signatory ({reviewedPvs.length})
-                  </button>
-                </div>
-              )}
               {approvedPvs.length > 0 && (
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-xs text-stone-600 w-36">{approvedPvs.length} approved:</span>
