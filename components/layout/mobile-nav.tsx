@@ -55,14 +55,15 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
 
   // Primary bottom bar items (max 4, role-appropriate)
   const primaryItems = [
-    { href: "/dashboard",      label: "Home",    icon: <LayoutDashboard size={20} />, show: !user.isSignatory },
-    { href: "/submit",         label: "Submit",  icon: <FilePlus size={20} />,        show: !user.isSignatory },
-    { href: "/my-pvs",         label: "My PVs",  icon: <FileText size={20} />,        show: !user.isSignatory },
-    { href: "/control-center", label: "Admin",   icon: <LayoutGrid size={20} />,      show: user.isFinanceAdmin },
-    { href: "/ministry",       label: "EXCO",    icon: <Building2 size={20} />,       show: user.isMinistryHead && !user.isSignatory },
-    { href: "/signatory",      label: "Sign Q",  icon: <Users size={20} />,           show: user.isSignatory },
-    { href: "/pr-queue",       label: "PR Q",    icon: <ClipboardList size={20} />,   show: user.isSignatory || user.isGeneralManager },
-    { href: "/budget",         label: "Budget",  icon: <PiggyBank size={20} />,       show: user.isSignatory },
+    { href: "/dashboard",           label: "Home",     icon: <LayoutDashboard size={20} />, show: !user.isSignatory },
+    { href: "/submit",              label: "Submit",   icon: <FilePlus size={20} />,        show: !user.isSignatory },
+    { href: "/my-pvs",              label: "My PVs",   icon: <FileText size={20} />,        show: !user.isSignatory && !user.isFinanceAdmin },
+    { href: "/control-center",      label: "Admin",    icon: <LayoutGrid size={20} />,      show: user.isFinanceAdmin },
+    { href: "/signatory-activity",  label: "Activity", icon: <Activity size={20} />,        show: user.isFinanceAdmin },
+    { href: "/ministry",            label: "EXCO",     icon: <Building2 size={20} />,       show: user.isMinistryHead && !user.isSignatory },
+    { href: "/signatory",           label: "Sign Q",   icon: <Users size={20} />,           show: user.isSignatory },
+    { href: "/pr-queue",            label: "PR Q",     icon: <ClipboardList size={20} />,   show: user.isSignatory || user.isGeneralManager },
+    { href: "/budget",              label: "Budget",   icon: <PiggyBank size={20} />,       show: user.isSignatory },
   ].filter(i => i.show).slice(0, 4);
 
   // All sections for the "More" drawer

@@ -50,7 +50,11 @@ interface BulkRun { id: string; group_name: string; pv_ids: string[]; total_amou
 
 export default function SignatoryActivityPage() {
   const supabase = createClient();
-  const [statusTab, setStatusTab]     = useState<StatusTab>("pending");
+  const [statusTab, setStatusTab]     = useState<StatusTab>(() => {
+    if (typeof window === "undefined") return "pending";
+    const param = new URLSearchParams(window.location.search).get("tab") as StatusTab | null;
+    return param && (param in TAB_STATUSES) ? param : "pending";
+  });
   const [allPvs, setAllPvs]           = useState<PendingPV[]>([]);
   const [loading, setLoading]         = useState(true);
   const [userRole, setUserRole]       = useState("");

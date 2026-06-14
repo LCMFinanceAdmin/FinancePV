@@ -307,8 +307,8 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
-        <StatCard icon={<Clock size={18} className="text-amber-500" />}        label="In Progress" value={pendingCount} />
-        <StatCard icon={<CheckCircle size={18} className="text-green-500" />}  label="Approved"    value={approvedCount} />
+        <StatCard icon={<Clock size={18} className="text-amber-500" />}        label="In Progress" value={pendingCount}  href={isFinanceAdmin ? "/signatory-activity?tab=pending"  : undefined} />
+        <StatCard icon={<CheckCircle size={18} className="text-green-500" />}  label="Approved"    value={approvedCount} href={isFinanceAdmin ? "/signatory-activity?tab=approved" : undefined} />
         <StatCard icon={<AlertCircle size={18} className="text-[#4a6da7]" />}  label="Total"       value={pendingCount + approvedCount} />
       </div>
 
@@ -522,9 +522,9 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
-  return (
-    <Card>
+function StatCard({ icon, label, value, href }: { icon: React.ReactNode; label: string; value: number; href?: string }) {
+  const inner = (
+    <Card className={href ? "cursor-pointer hover:shadow-md transition-shadow active:scale-95" : undefined}>
       <CardBody className="flex flex-col items-center gap-1 py-3 text-center">
         {icon}
         <div className="text-xl font-bold text-stone-800">{value}</div>
@@ -532,6 +532,8 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
       </CardBody>
     </Card>
   );
+  if (href) return <Link href={href}>{inner}</Link>;
+  return inner;
 }
 
 function Btn({ label, icon, color, loading, onClick }: {
