@@ -53,13 +53,13 @@ export function SplashScreen() {
           className="text-[10px] tracking-[0.35em] font-semibold mb-1"
           style={{ color: "#F5C400" }}
         >
-          LIGHTHOUSE CALVARY MISSION
+          LUTHERAN CHURCH IN MALAYSIA
         </div>
         <div className="text-4xl font-bold text-white tracking-tight leading-none">
           Finance
         </div>
         <div className="text-[13px] text-white/60 mt-1.5 tracking-wide">
-          Payment Voucher System
+          Finance Payment System
         </div>
       </div>
 
