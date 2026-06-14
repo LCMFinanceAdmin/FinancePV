@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Lato } from "next/font/google";
 import "./globals.css";
+import { SplashScreen } from "@/components/splash-screen";
 
 const lato = Lato({ subsets: ["latin"], weight: ["300", "400", "700"] });
 
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className={`${lato.className} h-full bg-stone-50 text-stone-800 antialiased`}>
+        <SplashScreen />
         {children}
       </body>
     </html>
