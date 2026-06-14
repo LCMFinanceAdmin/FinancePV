@@ -30,14 +30,15 @@ interface RecurringPV {
   current_pv_id: string | null;
   created_by: string; created_at: string; group_name: string;
   commenced_date: string | null; current_period: string | null;
+  description: string;
 }
 
 const BLANK_FORM = {
   name: "", frequency: "MONTHLY", next_due: "", active: true,
   payee_name: "", payee_bank_name: "", payee_bank_acct: "",
   payment_method: "Bank transfer", amount: 0,
-  ministry: "", dept: "", project: "", purpose: "", pv_label: "",
-  payment_type: "GENERAL", line_items: [] as LineItem[],
+  ministry: "", dept: "", project: "", purpose: "", description: "", pv_label: "",
+  payment_type: "GENERAL", line_items: [{ description: "", amount: 0 }] as LineItem[],
   term_type: "INFINITE", term_end_date: "", final_payment_note: "",
   group_name: "General", commenced_date: "",
 };
@@ -447,8 +448,10 @@ export default function RecurringPage() {
       payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
       payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
       amount: item.amount, ministry: item.ministry, dept: item.dept,
-      project: item.project ?? "", purpose: item.purpose, pv_label: item.pv_label ?? "",
-      payment_type: item.payment_type, line_items: item.line_items ?? [],
+      project: item.project ?? "", purpose: item.purpose, description: item.description ?? "",
+      pv_label: item.pv_label ?? "",
+      payment_type: item.payment_type,
+      line_items: item.line_items?.length ? item.line_items : [{ description: "", amount: 0 }],
       term_type: item.term_type ?? "INFINITE", term_end_date: item.term_end_date ?? "",
       final_payment_note: item.final_payment_note ?? "", group_name: item.group_name || "General",
       commenced_date: item.commenced_date ?? "",
@@ -457,7 +460,7 @@ export default function RecurringPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function lineTotal() { return form.line_items.reduce((s, li) => s + (Number(li.amount) || 0), 0); }
+  function lineTotal() { return form.line_items.filter(li => li.description.trim() || Number(li.amount)).reduce((s, li) => s + (Number(li.amount) || 0), 0); }
   function addLineItem() { setForm(f => ({ ...f, line_items: [...f.line_items, { description: "", amount: 0 }] })); }
   function updateLineItem(i: number, field: keyof LineItem, value: string | number) {
     setForm(f => ({ ...f, line_items: f.line_items.map((li, idx) => idx === i ? { ...li, [field]: value } : li) }));
@@ -465,9 +468,10 @@ export default function RecurringPage() {
   function removeLineItem(i: number) { setForm(f => ({ ...f, line_items: f.line_items.filter((_, idx) => idx !== i) })); }
 
   async function save() {
-    if (!form.name || !form.payee_name || !form.purpose) { showMsg("Fill in name, payee and purpose", false); return; }
-    const effectiveAmount = form.line_items.length > 0 ? lineTotal() : Number(form.amount);
-    if (!effectiveAmount) { showMsg("Amount or line items required", false); return; }
+    if (!form.name || !form.payee_name || !form.purpose) { showMsg("Fill in template name, payee and purpose", false); return; }
+    const filledItems = form.line_items.filter(li => li.description.trim() || Number(li.amount));
+    const effectiveAmount = filledItems.length > 0 ? filledItems.reduce((s, li) => s + (Number(li.amount) || 0), 0) : Number(form.amount);
+    if (!effectiveAmount) { showMsg("At least one line item with an amount is required", false); return; }
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     const payload = {
@@ -475,8 +479,9 @@ export default function RecurringPage() {
       active: form.active, payee_name: form.payee_name, payee_bank_name: form.payee_bank_name,
       payee_bank_acct: form.payee_bank_acct, payment_method: form.payment_method,
       amount: effectiveAmount, ministry: form.ministry, dept: form.dept,
-      project: form.project, purpose: form.purpose, pv_label: form.pv_label,
-      payment_type: form.payment_type, line_items: form.line_items,
+      project: form.project, purpose: form.purpose, description: form.description,
+      pv_label: form.pv_label,
+      payment_type: form.payment_type, line_items: filledItems,
       term_type: form.term_type, term_end_date: form.term_end_date || null,
       final_payment_note: form.final_payment_note, group_name: form.group_name || "General",
       commenced_date: form.commenced_date || null,
@@ -719,124 +724,192 @@ export default function RecurringPage() {
 
       {/* Create / Edit form */}
       {showForm && (
-        <div className="bg-white border border-stone-200 rounded-2xl p-5 space-y-4">
-          <p className="text-sm font-semibold text-stone-700">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Template Name *">
-              <input className={inp} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="e.g. Office Rental" />
-            </Field>
-            <Field label="Group / Folder">
-              <input className={inp} list="group-list" value={form.group_name} onChange={e => setField("group_name", e.target.value)} placeholder="e.g. Allowances" />
-              <datalist id="group-list">{existingGroups.map(g => <option key={g} value={g} />)}</datalist>
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Frequency">
-              <select className={inp} value={form.frequency} onChange={e => setField("frequency", e.target.value)}>
-                {FREQ_OPTIONS.map(f => <option key={f} value={f}>{FREQ_LABELS[f]}</option>)}
-              </select>
-            </Field>
-            <Field label="Term">
-              <select className={inp} value={form.term_type} onChange={e => setField("term_type", e.target.value)}>
-                <option value="INFINITE">Ongoing (no end date)</option>
-                <option value="FIXED">Fixed term (end date)</option>
-              </select>
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Commenced (Month / Year)">
-              <input className={inp} type="month" value={form.commenced_date ? form.commenced_date.slice(0, 7) : ""} onChange={e => setField("commenced_date", e.target.value ? e.target.value + "-01" : "")} />
-            </Field>
-            {form.term_type === "FIXED" && (
-              <Field label="Term End Date">
-                <input className={inp} type="date" value={form.term_end_date ?? ""} onChange={e => setField("term_end_date", e.target.value)} />
-              </Field>
-            )}
-          </div>
-
-          {form.term_type === "FIXED" && (
-            <Field label="Final Payment Note">
-              <input className={inp} value={form.final_payment_note} onChange={e => setField("final_payment_note", e.target.value)} placeholder="e.g. Final instalment as per agreement" />
-            </Field>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Payee Name *">
-              <input className={inp} value={form.payee_name} onChange={e => setField("payee_name", e.target.value)} />
-            </Field>
-            <Field label="Payment Method">
-              <select className={inp} value={form.payment_method} onChange={e => setField("payment_method", e.target.value)}>
-                {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </Field>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Bank Name">
-              <input className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)} />
-            </Field>
-            <Field label="Account No.">
-              <input className={inp} value={form.payee_bank_acct} onChange={e => setField("payee_bank_acct", e.target.value)} />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Ministry">
-              <select className={inp} value={form.ministry} onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
-                <option value="">— None —</option>
-                {ministries.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </Field>
-            <Field label="Department">
-              <input className={inp} value={form.dept} onChange={e => setField("dept", e.target.value)} placeholder="Optional" />
-            </Field>
-            <Field label="Project">
-              <select className={inp} value={form.project} onChange={e => setField("project", e.target.value)}>
-                <option value="">— None —</option>
-                {filteredProjects.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-              </select>
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Purpose *">
-              <textarea className={`${inp} h-16 resize-none`} value={form.purpose} onChange={e => setField("purpose", e.target.value)} />
-            </Field>
-            <Field label="PV Label (optional)">
-              <input className={inp} value={form.pv_label} onChange={e => setField("pv_label", e.target.value)} placeholder="e.g. LCM - PBB" />
-            </Field>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-stone-500">
-                {form.line_items.length > 0 ? `Line Items (total: ${formatCurrency(lineTotal())})` : "Amount (RM) *"}
-              </label>
-              <button type="button" onClick={addLineItem} className="text-xs text-[#4a6da7] hover:underline flex items-center gap-1">
-                <Plus size={11} /> Add line item
-              </button>
+        <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden shadow-sm">
+          {/* Form header */}
+          <div className="px-6 py-4 border-b border-stone-100 bg-stone-50 flex items-center justify-between">
+            <div>
+              <p className="text-base font-bold text-stone-800">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
+              <p className="text-xs text-stone-400 mt-0.5">Template that generates a payment voucher on schedule</p>
             </div>
-            {form.line_items.length === 0 ? (
-              <input className={inp} type="number" value={form.amount || ""} onChange={e => setField("amount", e.target.value)} placeholder="0.00" />
-            ) : (
-              <div className="space-y-2">
+            {isBuildingManager && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">BAM</span>}
+          </div>
+
+          <div className="p-6 space-y-6">
+
+            {/* ── Section 1: Template Setup ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-3">Template Setup</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Template Name *">
+                  <input className={inp} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="e.g. Office Rental" />
+                </Field>
+                <Field label="Group / Folder">
+                  <input className={inp} list="group-list" value={form.group_name} onChange={e => setField("group_name", e.target.value)} placeholder="e.g. Allowances" />
+                  <datalist id="group-list">{existingGroups.map(g => <option key={g} value={g} />)}</datalist>
+                </Field>
+                <Field label="Frequency">
+                  <select className={inp} value={form.frequency} onChange={e => setField("frequency", e.target.value)}>
+                    {FREQ_OPTIONS.map(f => <option key={f} value={f}>{FREQ_LABELS[f]}</option>)}
+                  </select>
+                </Field>
+                <Field label="Term">
+                  <select className={inp} value={form.term_type} onChange={e => setField("term_type", e.target.value)}>
+                    <option value="INFINITE">Ongoing (no end date)</option>
+                    <option value="FIXED">Fixed term (end date)</option>
+                  </select>
+                </Field>
+                <Field label="Commenced (Month / Year)">
+                  <input className={inp} type="month" value={form.commenced_date ? form.commenced_date.slice(0, 7) : ""} onChange={e => setField("commenced_date", e.target.value ? e.target.value + "-01" : "")} />
+                </Field>
+                {form.term_type === "FIXED" && (
+                  <Field label="Term End Date">
+                    <input className={inp} type="date" value={form.term_end_date ?? ""} onChange={e => setField("term_end_date", e.target.value)} />
+                  </Field>
+                )}
+              </div>
+              {form.term_type === "FIXED" && (
+                <div className="mt-4">
+                  <Field label="Final Payment Note">
+                    <input className={inp} value={form.final_payment_note} onChange={e => setField("final_payment_note", e.target.value)} placeholder="e.g. Final instalment as per agreement" />
+                  </Field>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-stone-100" />
+
+            {/* ── Section 2: Payee Details ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-3">Payee Details</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Payee Name *">
+                  <input className={inp} value={form.payee_name} onChange={e => setField("payee_name", e.target.value)} placeholder="e.g. Sdn Bhd Company" />
+                </Field>
+                <Field label="Payment Method">
+                  <select className={inp} value={form.payment_method} onChange={e => setField("payment_method", e.target.value)}>
+                    {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </Field>
+                <Field label="Bank Name">
+                  <input className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)} placeholder="e.g. Maybank" />
+                </Field>
+                <Field label="Account No.">
+                  <input className={inp} value={form.payee_bank_acct} onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="e.g. 1234 5678 9012" />
+                </Field>
+              </div>
+            </div>
+
+            <div className="border-t border-stone-100" />
+
+            {/* ── Section 3: Classification ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-3">Classification</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Field label="Ministry">
+                  <select className={inp} value={form.ministry} onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
+                    <option value="">— None —</option>
+                    {ministries.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </Field>
+                <Field label="Department">
+                  <input className={inp} value={form.dept} onChange={e => setField("dept", e.target.value)} placeholder="Optional" />
+                </Field>
+                <Field label="Project">
+                  <select className={inp} value={form.project} onChange={e => setField("project", e.target.value)}>
+                    <option value="">— None —</option>
+                    {filteredProjects.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <div className="mt-4">
+                <Field label="PV Label (optional)">
+                  <input className={inp} value={form.pv_label} onChange={e => setField("pv_label", e.target.value)} placeholder="e.g. LCM - PBB" />
+                </Field>
+              </div>
+            </div>
+
+            <div className="border-t border-stone-100" />
+
+            {/* ── Section 4: Purpose & Description ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-3">Purpose & Description</p>
+              <div className="space-y-4">
+                <Field label="Purpose * (one-line summary shown on PV)">
+                  <input className={inp} value={form.purpose} onChange={e => setField("purpose", e.target.value)} placeholder="e.g. Monthly office rental payment" />
+                </Field>
+                <Field label="Description (fuller narrative — context, background, or rationale)">
+                  <textarea
+                    className={`${inp} resize-none`}
+                    rows={3}
+                    value={form.description}
+                    onChange={e => setField("description", e.target.value)}
+                    placeholder="e.g. Monthly rental for Level 3 office space at Menara LCM as per tenancy agreement dated Jan 2024. Rental is payable on the 1st of each month."
+                  />
+                </Field>
+              </div>
+            </div>
+
+            <div className="border-t border-stone-100" />
+
+            {/* ── Section 5: Line Items ── */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Line Items</p>
+                  <p className="text-xs text-stone-400 mt-0.5">Each item appears as a separate row on the payment voucher</p>
+                </div>
+                <button type="button" onClick={addLineItem} className="flex items-center gap-1.5 text-xs font-medium text-[#4a6da7] hover:text-[#3d5c96] transition-colors">
+                  <Plus size={13} /> Add item
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-stone-200 overflow-hidden">
+                {/* Header row */}
+                <div className="grid grid-cols-[1fr_140px_36px] gap-0 bg-stone-50 px-3 py-2 border-b border-stone-200">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Description</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 text-right">Amount (RM)</span>
+                  <span />
+                </div>
+
                 {form.line_items.map((li, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <input className={`${inp} flex-1`} value={li.description} placeholder="Description" onChange={e => updateLineItem(i, "description", e.target.value)} />
-                    <input className={inp} type="number" value={li.amount || ""} placeholder="Amount" style={{ width: 110 }} onChange={e => updateLineItem(i, "amount", e.target.value)} />
-                    <button type="button" onClick={() => removeLineItem(i)} className="text-stone-400 hover:text-red-500"><X size={14} /></button>
+                  <div key={i} className="grid grid-cols-[1fr_140px_36px] gap-0 border-b border-stone-100 last:border-0 items-center px-3 py-2 hover:bg-stone-50/50">
+                    <input
+                      className="text-sm text-stone-800 bg-transparent outline-none placeholder:text-stone-300 pr-3"
+                      value={li.description}
+                      placeholder={`Item ${i + 1} description`}
+                      onChange={e => updateLineItem(i, "description", e.target.value)}
+                    />
+                    <input
+                      className="text-sm text-right text-stone-800 bg-transparent outline-none placeholder:text-stone-300 font-mono"
+                      type="number"
+                      value={li.amount || ""}
+                      placeholder="0.00"
+                      onChange={e => updateLineItem(i, "amount", e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => form.line_items.length > 1 ? removeLineItem(i) : updateLineItem(i, "description", "") }
+                      className="flex items-center justify-center text-stone-300 hover:text-red-400 transition-colors ml-1"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
                 ))}
-                <div className="text-right text-xs font-medium text-stone-600 pr-8">Total: {formatCurrency(lineTotal())}</div>
-              </div>
-            )}
-          </div>
 
-          <Button onClick={save} loading={saving} className="w-full">
-            {form.id ? "Update Template" : "Save Recurring Expense"}
-          </Button>
+                {/* Total row */}
+                <div className="grid grid-cols-[1fr_140px_36px] bg-stone-50 px-3 py-2.5 border-t-2 border-stone-200">
+                  <span className="text-xs font-bold text-stone-600">Total</span>
+                  <span className="text-sm font-bold text-stone-800 text-right font-mono">{formatCurrency(lineTotal())}</span>
+                  <span />
+                </div>
+              </div>
+            </div>
+
+            {/* Save button */}
+            <Button onClick={save} loading={saving} className="w-full">
+              {form.id ? "Update Template" : "Save Recurring Expense"}
+            </Button>
+          </div>
         </div>
       )}
 
