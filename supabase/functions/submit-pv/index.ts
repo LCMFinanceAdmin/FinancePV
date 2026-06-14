@@ -1,6 +1,8 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, getLOATier, nextPvNo, getProfileByEmail } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
+
+const BAM_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "BUILDING_MANAGER"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -15,7 +17,123 @@ Deno.serve(async (req) => {
     const profile = await getProfileByEmail(db, user.email!, "*");
 
     const d = await req.json();
+    const pvType = d.pv_type === "BAM" ? "BAM" : "LCM";
 
+    // ── BAM PV flow ─────────────────────────────────────────────────────
+    if (pvType === "BAM") {
+      if (!BAM_ROLES.includes(profile?.role)) {
+        return json({ error: "Only Finance Executive or Building Manager can submit BAM PVs" }, 403);
+      }
+
+      const pvNo = await nextBamPvNo(db);
+      const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+      const now = new Date().toISOString();
+      const amount = Number(d.amount) || 0;
+      const loa = getLOATier(amount, d.payment_type);
+      const applicantEmail = (d.applicant_email || user.email || "").toLowerCase().trim();
+      const isBuildingManager = profile?.role === "BUILDING_MANAGER";
+
+      // BM submitting → skip BAM_REVIEW, go straight to FE review
+      // FE submitting → BM must review first
+      const initialStatus = isBuildingManager ? "FINANCE_REVIEW" : "BAM_REVIEW";
+
+      // Submitter auto-signs their approval entry
+      const submitterEntry = {
+        role: profile?.role || "BUILDING_MANAGER",
+        email: user.email,
+        name: profile?.full_name || user.email,
+        action: "APPROVED",
+        timestamp: now,
+        remarks: "Submitted",
+        ...(d.finance_signature_data ? { signature_data: d.finance_signature_data } : {}),
+      };
+
+      const pvRow = {
+        pv_no:                 pvNo,
+        pv_type:               "BAM",
+        date:                  d.pvDate || null,
+        status:                initialStatus,
+        tracking_token:        trackingToken,
+        applicant_name:        d.applicant_name || profile?.full_name || "",
+        applicant_email:       applicantEmail,
+        submitted_by_email:    user.email,
+        submitted_by:          profile?.full_name || user.email,
+        submitted_by_role:     profile?.role || "BUILDING_MANAGER",
+        submitted_at:          now,
+        dept:                  d.dept || "Property",
+        ministry:              d.ministry || "Property",
+        project:               d.project || "",
+        dept_head_name:        "",
+        dept_head_email:       "",
+        head_verified:         "N/A",
+        payee_name:            d.payee_name || "",
+        payment_method:        d.payment_method || "",
+        payee_bank_name:       d.payee_bank_name || "",
+        payee_bank_acct:       d.payee_bank_acct || "",
+        cheque_no:             d.cheque_no || "",
+        biller_code:           d.biller_code || "",
+        ref_no:                d.ref_no || "",
+        purpose:               d.purpose || "",
+        amount,
+        line_items:            d.line_items || [],
+        attachments:           d.attachments || [],
+        sig_applicant_name:    d.sig_applicant_name || "",
+        sig_applicant_confirm: "YES",
+        admin_comment:         "",
+        approvals:             [submitterEntry],
+        signed_pdf_url:        "",
+        ministry_verified:     "N/A",
+        finance_verified_by:   "",
+        finance_verified_at:   null,
+        payment_type:          ["GENERAL", "ASSET_PURCHASE"].includes((d.payment_type || "").toUpperCase()) ? d.payment_type.toUpperCase() : "GENERAL",
+        loa_required:          loa.required,
+        loa_label:             loa.required === 1 ? "Treasurer only (D7 ≤RM30k)" : "Any 2 officers (D7 >RM30k)",
+        exco_resolution_ref:   "",
+        exco_resolution_date:  "",
+        pv_label:              "BAM",
+      };
+
+      const { error: insertErr } = await db.from("pvs").insert(pvRow);
+      if (insertErr) throw new Error(insertErr.message);
+
+      // Notify the next reviewer
+      if (initialStatus === "BAM_REVIEW") {
+        const { data: bmUsers } = await db.from("user_roles").select("email").eq("role", "BUILDING_MANAGER");
+        if (bmUsers?.length) {
+          await db.from("notifications").insert(
+            bmUsers.map((bm: { email: string }) => ({
+              recipient_email: bm.email,
+              type: "BAM_REVIEW",
+              pv_no: pvNo,
+              pv_id: null,
+              message: `BAM PV ${pvNo} (${formatRM(amount)}) submitted by Finance Executive — requires your review`,
+              read: false,
+              created_at: now,
+            }))
+          );
+        }
+      } else {
+        // FINANCE_REVIEW — notify Finance Exec
+        const { data: feUsers } = await db.from("user_roles").select("email").in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
+        if (feUsers?.length) {
+          await db.from("notifications").insert(
+            feUsers.map((fe: { email: string }) => ({
+              recipient_email: fe.email,
+              type: "BAM_FINANCE_REVIEW",
+              pv_no: pvNo,
+              pv_id: null,
+              message: `BAM PV ${pvNo} (${formatRM(amount)}) submitted by Building Manager — requires your finance review`,
+              read: false,
+              created_at: now,
+            }))
+          );
+        }
+      }
+
+      return json({ ok: true, pv_no: pvNo, status: initialStatus });
+    }
+
+    // ── Standard LCM PV flow ─────────────────────────────────────────────
     const pvNo = await nextPvNo(db);
     const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
@@ -46,6 +164,7 @@ Deno.serve(async (req) => {
 
     const pvRow = {
       pv_no:                 pvNo,
+      pv_type:               "LCM",
       date:                  d.pvDate || null,
       status:                initialStatus,
       tracking_token:        trackingToken,

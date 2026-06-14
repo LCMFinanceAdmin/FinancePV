@@ -58,6 +58,44 @@ Deno.serve(async (req) => {
     if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Executive only" }, 403);
 
     if (action === "REVIEW") {
+      // BAM PV: FINANCE_REVIEW → GM_REVIEW
+      if (pv.pv_type === "BAM" && pv.status === "FINANCE_REVIEW") {
+        const now = new Date().toISOString();
+        const existingApprovals: Record<string, unknown>[] = pv.approvals ?? [];
+        const entry: Record<string, unknown> = {
+          role: "FINANCE_ADMIN", email: user.email,
+          name: profile?.full_name || user.email,
+          action: "APPROVED", timestamp: now, remarks: "Finance review",
+        };
+        if (body.signature_data) entry.signature_data = body.signature_data;
+        else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
+        await db.from("pvs").update({
+          status: "GM_REVIEW",
+          finance_verified_by: profile?.full_name || user.email,
+          finance_verified_at: now,
+          approvals: [...existingApprovals, entry],
+          updated_at: now,
+        }).eq("id", pv_id);
+
+        // Notify GM
+        const { data: gmUsers } = await db.from("user_roles").select("email").eq("role", "GENERAL_MANAGER");
+        if (gmUsers?.length) {
+          await db.from("notifications").insert(
+            gmUsers.map((gm: { email: string }) => ({
+              recipient_email: gm.email,
+              type: "BAM_GM_REVIEW",
+              pv_no: pv.pv_no,
+              pv_id,
+              message: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) requires your approval`,
+              read: false,
+              created_at: now,
+            }))
+          );
+        }
+        return json({ ok: true, status: "GM_REVIEW" });
+      }
+
+      // LCM PV: PENDING → REVIEWED
       if (pv.status !== "PENDING") return json({ error: "PV is not in PENDING status" }, 400);
       const now = new Date().toISOString();
       // Build approvals: prepend FINANCE_ADMIN entry (with optional signature)

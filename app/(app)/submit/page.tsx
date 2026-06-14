@@ -139,6 +139,10 @@ export default function SubmitPVPage() {
   const supabase = createClient();
 
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
+  const [pvType, setPvType] = useState<"LCM" | "BAM">(() => {
+    if (typeof window === "undefined") return "LCM";
+    return new URLSearchParams(window.location.search).get("type") === "bam" ? "BAM" : "LCM";
+  });
   const [userRole, setUserRole] = useState("");
   const [userMinistries, setUserMinistries] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
@@ -193,7 +197,10 @@ export default function SubmitPVPage() {
         setUserMinistries(profile?.ministries ?? []);
         const faRoles = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
         const isFA = faRoles.includes(role);
+        const isBM = role === "BUILDING_MANAGER";
         setIsFinanceAdmin(isFA);
+        // Building Manager can only submit BAM PVs
+        if (isBM) setPvType("BAM");
         if (isFA && profile?.saved_signature) {
           setSavedSig(profile.saved_signature);
           setFinSigData(profile.saved_signature);
@@ -203,6 +210,8 @@ export default function SubmitPVPage() {
           applicant_email: user.email ?? "",
           applicant_name: profile?.full_name || user.user_metadata?.full_name || "",
           sig_applicant_name: profile?.full_name || user.user_metadata?.full_name || "",
+          // Pre-fill ministry to Property for Building Manager
+          ministry: isBM ? "Property" : f.ministry,
         }));
       });
     });
@@ -401,11 +410,12 @@ export default function SubmitPVPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
+          pv_type: pvType,
           applicant_name: form.applicant_name,
           applicant_email: form.applicant_email,
           pvDate: form.pvDate,
           dept: form.dept,
-          ministry: form.ministry,
+          ministry: pvType === "BAM" ? (form.ministry || "Property") : form.ministry,
           project: form.project,
           payee_name: form.payee_name,
           payment_method: form.payment_method,
@@ -926,7 +936,12 @@ export default function SubmitPVPage() {
       <div className="min-h-screen bg-stone-50">
         {/* Sticky progress header */}
         <div className="sticky top-0 z-10 bg-white border-b border-stone-100 px-4 py-3 shadow-sm">
-          <h1 className="text-base font-bold text-stone-800">Submit Payment Voucher</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-bold text-stone-800">Submit Payment Voucher</h1>
+            {pvType === "BAM" && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">BAM (MAYBANK)</span>
+            )}
+          </div>
           <div className="flex gap-1 mt-2.5">
             {SECTION_TITLES.map((_, i) => (
               <div key={i} className={`h-1.5 flex-1 rounded-full transition-colors ${
@@ -1007,12 +1022,37 @@ export default function SubmitPVPage() {
   }
 
   // ── DESKTOP RENDER ──────────────────────────────────────────────────────
+  const isBuildingManagerRole = userRole === "BUILDING_MANAGER";
+  const canSubmitBAM = isFinanceAdmin || isBuildingManagerRole;
+
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
       <div className="mb-5">
         <h1 className="text-xl font-bold text-stone-800">Submit Payment Voucher</h1>
         <p className="text-xs text-stone-400 mt-0.5">Fill in all required fields and submit for Finance review</p>
       </div>
+
+      {/* PV Type toggle — Finance Exec can choose; Building Manager is locked to BAM */}
+      {canSubmitBAM && (
+        <div className="mb-5 flex gap-2">
+          {!isBuildingManagerRole && (
+            <button
+              type="button"
+              onClick={() => setPvType("LCM")}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "LCM" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}
+            >
+              LCM PV
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { setPvType("BAM"); setForm(f => ({ ...f, ministry: f.ministry || "Property" })); }}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "BAM" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}
+          >
+            BAM PV <span className="text-[10px] opacity-80">(MAYBANK)</span>
+          </button>
+        </div>
+      )}
 
       {prBanner && (
         <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
@@ -1034,7 +1074,7 @@ export default function SubmitPVPage() {
                 <div className="text-[9px] text-stone-400">马来西亚基督教信义会</div>
               </div>
             </div>
-            <div className="text-right">
+            <div className="text-right flex flex-col items-end gap-1">
               <table className="border border-stone-800 text-xs">
                 <tbody>
                   <tr><td className="border border-stone-800 px-2 py-1 font-bold bg-stone-50" colSpan={2}>For Office Use Only:</td></tr>
@@ -1048,6 +1088,12 @@ export default function SubmitPVPage() {
                   </tr>
                 </tbody>
               </table>
+              {pvType === "BAM" && (
+                <div className="border-2 border-stone-800 text-center min-w-[90px]">
+                  <div className="text-2xl font-black text-stone-900 px-3 py-1">BAM</div>
+                  <div className="text-[10px] font-bold text-stone-700 border-t border-stone-800 px-2 py-0.5">(MAYBANK)</div>
+                </div>
+              )}
             </div>
           </div>
 

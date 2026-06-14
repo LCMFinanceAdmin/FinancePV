@@ -32,6 +32,7 @@ async function getUserProfile(): Promise<UserProfile | null> {
     signatoryRole: isSignatory ? role : "",
     isMinistryHead: role === "MINISTRY_HEAD" || ministries.length > 0,
     isGeneralManager: role === "GENERAL_MANAGER",
+    isBuildingManager: role === "BUILDING_MANAGER",
   };
 }
 

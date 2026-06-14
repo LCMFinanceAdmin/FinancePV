@@ -102,6 +102,49 @@ Deno.serve(async (req) => {
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
 
+    // BAM PV GM approval step: GM_REVIEW → PENDING_SIGNATORY
+    if (isGM && pv.pv_type === "BAM" && pv.status === "GM_REVIEW") {
+      const now = new Date().toISOString();
+      const entry: Record<string, unknown> = {
+        role: "GENERAL_MANAGER", email: user.email,
+        name: profile.full_name || user.email,
+        action: action === "REJECTED" ? "REJECTED" : "APPROVED",
+        timestamp: now, remarks: remarks || "",
+      };
+      if (signature_data) entry.signature_data = signature_data;
+      else if (profile?.saved_signature) entry.signature_data = profile.saved_signature;
+      const approvals = [...(pv.approvals || []), entry];
+
+      if (action === "REJECTED") {
+        await db.from("pvs").update({ status: "REJECTED", admin_comment: remarks, approvals, updated_at: now }).eq("id", pv_id);
+        await db.from("notifications").insert({
+          recipient_email: pv.submitted_by_email,
+          type: "PV_REJECTED", pv_no: pv.pv_no, pv_id,
+          message: `BAM PV ${pv.pv_no} was rejected by GM${remarks ? `: ${remarks}` : ""}`,
+          read: false, created_at: now,
+        });
+        return json({ ok: true, status: "REJECTED" });
+      }
+
+      // Approved: auto-advance to PENDING_SIGNATORY and notify signatories
+      await db.from("pvs").update({ status: "PENDING_SIGNATORY", approvals, updated_at: now }).eq("id", pv_id);
+
+      const loa = pv.loa_required ?? 1;
+      const sigRoles = loa === 1 ? ["TREASURER"] : ["BISHOP", "SECRETARY", "TREASURER"];
+      const { data: sigUsers } = await db.from("user_roles").select("email").in("role", sigRoles);
+      if (sigUsers?.length) {
+        await db.from("notifications").insert(
+          sigUsers.map((s: { email: string }) => ({
+            recipient_email: s.email,
+            type: "SIGNATORY_REVIEW", pv_no: pv.pv_no, pv_id,
+            message: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) approved by GM — requires your signature`,
+            read: false, created_at: now,
+          }))
+        );
+      }
+      return json({ ok: true, status: "PENDING_SIGNATORY" });
+    }
+
     const allowedStatuses = isGM
       ? ["PENDING", "REVIEWED", "PENDING_SIGNATORY", "MINISTRY_VERIFIED"]
       : ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"];
@@ -255,4 +298,8 @@ function json(data: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function formatRM(n: number) {
+  return `RM ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }

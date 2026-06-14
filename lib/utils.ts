@@ -58,6 +58,9 @@ export const STATUS_LABELS: Record<PVStatus, string> = {
   REJECTED:           "Rejected",
   REJECTED_HEAD:      "Rejected by EXCO Member",
   CANCELLED:          "Cancelled",
+  BAM_REVIEW:         "Pending BM Review",
+  FINANCE_REVIEW:     "Pending Finance Review",
+  GM_REVIEW:          "Pending GM Approval",
 };
 
 export const STATUS_COLORS: Record<PVStatus, string> = {
@@ -71,6 +74,9 @@ export const STATUS_COLORS: Record<PVStatus, string> = {
   REJECTED:           "bg-red-100 text-red-800",
   REJECTED_HEAD:      "bg-red-100 text-red-800",
   CANCELLED:          "bg-gray-100 text-gray-600",
+  BAM_REVIEW:         "bg-orange-100 text-orange-800",
+  FINANCE_REVIEW:     "bg-blue-100 text-blue-800",
+  GM_REVIEW:          "bg-purple-100 text-purple-800",
 };
 
 const _FINANCE_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
@@ -78,7 +84,8 @@ export function computedBadgeStatus(pv: { status?: string; approvals?: unknown[]
   const s = pv.status ?? "";
   // Trust DB status for terminal and late-stage statuses (GM has already signed off for these)
   if (["APPROVED", "PAID", "REJECTED", "CANCELLED", "REJECTED_HEAD", "PENDING_HEAD",
-       "PENDING_SIGNATORY", "MINISTRY_VERIFIED"].includes(s)) return s as PVStatus;
+       "PENDING_SIGNATORY", "MINISTRY_VERIFIED",
+       "BAM_REVIEW", "FINANCE_REVIEW", "GM_REVIEW"].includes(s)) return s as PVStatus;
   // For PENDING / REVIEWED DB statuses, infer badge from approvals
   const approvals = (pv.approvals ?? []) as { role: string; action: string }[];
   const hasFinance = approvals.some(a => _FINANCE_ROLES.includes(a.role) && a.action === "APPROVED");
