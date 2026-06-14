@@ -11,8 +11,9 @@ const ROLES = [
   { value: "BISHOP",          label: "Bishop",             color: "bg-indigo-100 text-indigo-800 border-indigo-200" },
   { value: "TREASURER",       label: "Treasurer",          color: "bg-green-100 text-green-800 border-green-200" },
   { value: "SECRETARY",       label: "Secretary",          color: "bg-teal-100 text-teal-800 border-teal-200" },
-  { value: "MINISTRY_HEAD",   label: "EXCO Member",        color: "bg-amber-100 text-amber-800 border-amber-200" },
-  { value: "STAFF",           label: "Staff",              color: "bg-stone-100 text-stone-600 border-stone-200" },
+  { value: "MINISTRY_HEAD",    label: "EXCO Member",           color: "bg-amber-100 text-amber-800 border-amber-200" },
+  { value: "BUILDING_MANAGER", label: "Building/Event Manager", color: "bg-orange-100 text-orange-800 border-orange-200" },
+  { value: "STAFF",            label: "Staff",                  color: "bg-stone-100 text-stone-600 border-stone-200" },
 ];
 
 const PIN_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER", "MINISTRY_HEAD"];

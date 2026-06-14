@@ -27,6 +27,7 @@ export default function BamQueuePage() {
   const [pvs, setPvs] = useState<BAMPv[]>([]);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState("");
+  const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
   const [actionPv, setActionPv] = useState<BAMPv | null>(null);
   const [actionType, setActionType] = useState<"APPROVE" | "REJECT" | null>(null);
   const [remarks, setRemarks] = useState("");
@@ -49,7 +50,10 @@ export default function BamQueuePage() {
       .eq("email", user.email!)
       .single();
 
-    setUserRole(profile?.role ?? "");
+    const role = profile?.role ?? "";
+    const isFE = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role);
+    setUserRole(role);
+    setIsFinanceAdmin(isFE);
 
     const { data } = await supabase
       .from("pvs")
@@ -64,9 +68,15 @@ export default function BamQueuePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const pendingPvs = pvs.filter(p => p.status === "BAM_REVIEW");
-  const otherPvs   = pvs.filter(p => p.status !== "BAM_REVIEW");
   const isBuildingManager = userRole === "BUILDING_MANAGER";
+  const pendingPvs = pvs.filter(p =>
+    (isBuildingManager && p.status === "BAM_REVIEW") ||
+    (isFinanceAdmin && p.status === "FINANCE_REVIEW")
+  );
+  const otherPvs = pvs.filter(p =>
+    !((isBuildingManager && p.status === "BAM_REVIEW") ||
+      (isFinanceAdmin && p.status === "FINANCE_REVIEW"))
+  );
 
   async function submitAction() {
     if (!actionPv || !actionType) return;
@@ -76,14 +86,17 @@ export default function BamQueuePage() {
     setSubmitting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/bam-action`, {
+      const endpoint = isFinanceAdmin ? "admin-action" : "bam-action";
+      const body: Record<string, unknown> = { pv_id: actionPv.id, action: isFinanceAdmin ? "REVIEW" : actionType, remarks };
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ pv_id: actionPv.id, action: actionType, remarks }),
+        body: JSON.stringify(body),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Action failed");
-      showToast(actionType === "APPROVE" ? "BAM PV approved — sent to Finance Executive" : "BAM PV rejected");
+      const approveMsg = isFinanceAdmin ? "BAM PV sent to General Manager" : "BAM PV approved — sent to Finance Executive";
+      showToast(actionType === "APPROVE" ? approveMsg : "BAM PV rejected");
       setActionPv(null); setActionType(null); setRemarks("");
       load();
     } catch (err: unknown) {
@@ -137,8 +150,8 @@ export default function BamQueuePage() {
         </div>
       )}
 
-      {/* Pending BM Review */}
-      {isBuildingManager && pendingPvs.length > 0 && (
+      {/* Pending action */}
+      {(isBuildingManager || isFinanceAdmin) && pendingPvs.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle size={16} className="text-orange-500" />
@@ -185,7 +198,7 @@ export default function BamQueuePage() {
         </div>
       )}
 
-      {isBuildingManager && pendingPvs.length === 0 && (
+      {(isBuildingManager || isFinanceAdmin) && pendingPvs.length === 0 && (
         <Card>
           <CardBody className="py-8 text-center text-stone-400">
             <CheckCircle size={32} className="mx-auto mb-2 text-green-400" />
@@ -252,7 +265,9 @@ export default function BamQueuePage() {
             )}
             {actionType === "APPROVE" && (
               <p className="text-sm text-stone-500">
-                Approving will send this BAM PV to the Finance Executive for finance review.
+                {isFinanceAdmin
+                  ? "Approving will send this BAM PV to the General Manager for final approval."
+                  : "Approving will send this BAM PV to the Finance Executive for finance review."}
               </p>
             )}
             <div className="flex gap-3">

@@ -78,6 +78,7 @@ export default function RecurringPage() {
   const supabase = createClient();
   const [items, setItems] = useState<RecurringPV[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isBuildingManager, setIsBuildingManager] = useState(false);
   const [form, setForm] = useState<FormState>({ ...BLANK_FORM });
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -109,8 +110,18 @@ export default function RecurringPage() {
   }
 
   async function load() {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const { data: profile } = authUser
+      ? await supabase.from("user_roles").select("role").eq("email", authUser.email!).single()
+      : { data: null };
+    const isBM = profile?.role === "BUILDING_MANAGER";
+    setIsBuildingManager(isBM);
+
+    let recQuery = supabase.from("recurring_pvs").select("*").order("name");
+    if (isBM) recQuery = recQuery.eq("pv_type", "BAM");
+
     const [{ data: rec }, { data: min }, { data: proj }] = await Promise.all([
-      supabase.from("recurring_pvs").select("*").order("name"),
+      recQuery,
       supabase.from("ministries").select("name").order("name"),
       supabase.from("projects").select("name,ministry").order("name"),
     ]);
@@ -340,6 +351,7 @@ export default function RecurringPage() {
               purpose: item.purpose, pv_label: item.pv_label, amount: item.amount,
               payment_type: item.payment_type, line_items: lineItems, pvDate: today,
               sig_applicant_name: u?.email, sig_applicant_confirm: true, recurring_id: item.id,
+              pv_type: (item as RecurringPV & { pv_type?: string }).pv_type || "LCM",
             }),
           });
           const result = await res.json();
@@ -468,6 +480,7 @@ export default function RecurringPage() {
       term_type: form.term_type, term_end_date: form.term_end_date || null,
       final_payment_note: form.final_payment_note, group_name: form.group_name || "General",
       commenced_date: form.commenced_date || null,
+      pv_type: isBuildingManager ? "BAM" : "LCM",
     };
     let error;
     if (form.id) {
@@ -560,6 +573,7 @@ export default function RecurringPage() {
             purpose, pv_label: item.pv_label, amount: item.amount,
             payment_type: item.payment_type, line_items: lineItems, pvDate: today,
             sig_applicant_name: user?.email, sig_applicant_confirm: true, recurring_id: item.id,
+            pv_type: (item as RecurringPV & { pv_type?: string }).pv_type || "LCM",
           }),
         });
         const result = await res.json();
@@ -614,8 +628,13 @@ export default function RecurringPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-stone-800">Recurring Expenses</h1>
-          <p className="text-sm text-stone-400">Scheduled payment voucher templates</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-stone-800">Recurring Expenses</h1>
+            {isBuildingManager && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">BAM</span>}
+          </div>
+          <p className="text-sm text-stone-400">
+            {isBuildingManager ? "Building & Event recurring BAM payment templates" : "Scheduled payment voucher templates"}
+          </p>
         </div>
         <Button size="sm" onClick={showForm ? () => { setShowForm(false); setForm({ ...BLANK_FORM }); } : openNew}>
           {showForm ? <><X size={14} /> Cancel</> : <><Plus size={14} /> New Recurring</>}
