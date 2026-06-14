@@ -172,6 +172,10 @@ export default function SubmitPVPage() {
   const [saveSigForNext, setSaveSigForNext] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
+  // Applicant signature (mobile declaration)
+  const applicantCanvasRef = useRef<HTMLCanvasElement>(null);
+  const isApplicantDrawingRef = useRef(false);
+  const [applicantSigData, setApplicantSigData] = useState("");
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -340,10 +344,41 @@ export default function SubmitPVPage() {
     reader.readAsDataURL(file);
   }
 
+  const startApplicantDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    isApplicantDrawingRef.current = true;
+    const canvas = applicantCanvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    ctx.beginPath(); ctx.moveTo(x, y);
+  }, []);
+
+  const drawApplicant = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isApplicantDrawingRef.current) return;
+    const canvas = applicantCanvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
+    ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
+    ctx.lineTo(x, y); ctx.stroke();
+    setApplicantSigData(canvas.toDataURL("image/png"));
+  }, []);
+
+  const stopApplicantDraw = useCallback(() => { isApplicantDrawingRef.current = false; }, []);
+
+  function clearApplicantCanvas() {
+    const canvas = applicantCanvasRef.current; if (!canvas) return;
+    canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    setApplicantSigData("");
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(""); setSuccess("");
     if (!form.sig_applicant_confirm) { setError("Please confirm the declaration before submitting."); return; }
+    if (isMobile && !applicantSigData) { setError("Please sign the declaration before submitting."); return; }
     if (!form.payee_name.trim()) { setError("Please enter the payee name."); return; }
     if (!form.purpose.trim()) { setError("Please enter the purpose of payment."); return; }
     if (displayAmount <= 0) { setError("Please enter at least one line item with an amount."); return; }
@@ -395,6 +430,7 @@ export default function SubmitPVPage() {
           sig_applicant_confirm: form.sig_applicant_confirm,
           attachment_urls: attachmentUrls,
           ...(isFinanceAdmin && finSigData ? { finance_signature_data: finSigData } : {}),
+          ...(applicantSigData ? { applicant_signature_data: applicantSigData } : {}),
         }),
       });
       const result = await res.json();
@@ -418,6 +454,7 @@ export default function SubmitPVPage() {
       // Revoke all object URLs
       attachments.forEach(a => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
       setAttachments([]);
+      clearApplicantCanvas();
       setTimeout(() => router.push("/my-pvs"), 1500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -438,7 +475,7 @@ export default function SubmitPVPage() {
     !!(form.ministry && form.purpose),
     displayAmount > 0,
     true,
-    !!(form.sig_applicant_confirm && form.sig_applicant_name),
+    !!(form.sig_applicant_confirm && applicantSigData),
   ];
   const sectionSummary = [
     form.applicant_name || "Tap to fill in",
@@ -446,7 +483,7 @@ export default function SubmitPVPage() {
     form.ministry ? `${form.ministry}${form.purpose ? ` · ${form.purpose.slice(0, 28)}` : ""}` : "Tap to fill in",
     displayAmount > 0 ? `${isTravelClaim ? "Travel" : "General"} · ${formatCurrency(displayAmount)}` : "Tap to add items",
     attachments.length > 0 ? `${attachments.length} file(s) attached` : "Optional",
-    form.sig_applicant_confirm ? "Confirmed ✓" : "Tap to complete",
+    (form.sig_applicant_confirm && applicantSigData) ? "Signed & confirmed ✓" : "Tap to sign & confirm",
   ];
 
   // ── Shared: attachments UI ──────────────────────────────────────────────
@@ -852,9 +889,26 @@ export default function SubmitPVPage() {
         church-related expenses in accordance with LCM&apos;s financial policies.
       </p>
       <div>
-        <label className={mLabel}>Your Full Name (as signature) <span className="text-red-400">*</span></label>
-        <input className={mInput} value={form.sig_applicant_name}
-          onChange={e => setField("sig_applicant_name", e.target.value)} />
+        <label className={mLabel}>Signature <span className="text-red-400">*</span></label>
+        <div className="border-2 border-dashed border-stone-300 rounded-2xl overflow-hidden bg-white" style={{ touchAction: "none" }}>
+          <canvas
+            ref={applicantCanvasRef}
+            width={400} height={130}
+            className="w-full cursor-crosshair"
+            onMouseDown={startApplicantDraw} onMouseMove={drawApplicant}
+            onMouseUp={stopApplicantDraw} onMouseLeave={stopApplicantDraw}
+            onTouchStart={startApplicantDraw} onTouchMove={drawApplicant} onTouchEnd={stopApplicantDraw}
+          />
+        </div>
+        <div className="flex items-center justify-between mt-1.5 px-0.5">
+          <p className="text-[11px] text-stone-400">Sign above with your finger</p>
+          {applicantSigData && (
+            <button type="button" onClick={clearApplicantCanvas}
+              className="text-[11px] text-stone-400 hover:text-red-400 flex items-center gap-1 transition-colors">
+              <XIcon size={10} /> Clear
+            </button>
+          )}
+        </div>
       </div>
       <label className="flex items-start gap-3 cursor-pointer p-3 bg-stone-50 rounded-xl border border-stone-100">
         <input type="checkbox" className="mt-0.5 accent-[#4a6da7] w-4 h-4 shrink-0"
@@ -891,7 +945,7 @@ export default function SubmitPVPage() {
             </div>
           )}
 
-          <div className="p-4 space-y-3 pb-32">
+          <div className="p-4 space-y-3 pb-10">
             {SECTION_TITLES.map((title, i) => (
               <div key={i} className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-sm">
                 <button
@@ -931,21 +985,18 @@ export default function SubmitPVPage() {
               </div>
             ))}
 
-            {error && <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>}
-            {success && <div className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">{success}</div>}
-          </div>
-
-          {/* Fixed bottom submit bar */}
-          <div className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-stone-100 px-4 py-3 shadow-lg">
-            <div className="flex items-center gap-3">
+            {/* Submit area */}
+            <div className="space-y-3 pt-1">
               {displayAmount > 0 && (
-                <div className="text-right shrink-0">
-                  <div className="text-[10px] text-stone-400 uppercase tracking-wide">Total</div>
-                  <div className="text-sm font-bold text-stone-800">{formatCurrency(displayAmount)}</div>
+                <div className="flex items-center justify-between px-4 py-3 bg-stone-50 rounded-xl border border-stone-100">
+                  <span className="text-sm text-stone-500">Total Amount</span>
+                  <span className="text-base font-bold text-stone-800">{formatCurrency(displayAmount)}</span>
                 </div>
               )}
+              {error && <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>}
+              {success && <div className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">{success}</div>}
               <button type="submit" disabled={submitting}
-                className="flex-1 py-3.5 bg-[#4a6da7] hover:bg-[#3d5a8e] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                className="w-full py-4 bg-[#4a6da7] hover:bg-[#3d5a8e] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                 {submitting ? "Submitting…" : "Submit Payment Voucher"}
               </button>
             </div>
