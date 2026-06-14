@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardBody } from "@/components/ui/card";
@@ -8,10 +8,15 @@ import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import { CheckCircle, XCircle, ShieldCheck, Eye, EyeOff } from "lucide-react";
 
+type TabKey = "pending" | "my_pvs" | "ministry";
+
 export default function ExcoPage() {
   const supabase = createClient();
-  const [pvs, setPvs] = useState<Partial<PV>[]>([]);
+  const [pendingPvs, setPendingPvs] = useState<Partial<PV>[]>([]);
+  const [myPvs, setMyPvs] = useState<Partial<PV>[]>([]);
+  const [ministryPvs, setMinistryPvs] = useState<Partial<PV>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<TabKey>("pending");
   const [selected, setSelected] = useState<Partial<PV> | null>(null);
   const [remarks, setRemarks] = useState("");
   const [pin, setPin] = useState("");
@@ -25,7 +30,7 @@ export default function ExcoPage() {
     setTimeout(() => setToast({ msg: "", ok: true }), 3000);
   }
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -39,22 +44,35 @@ export default function ExcoPage() {
 
       setHasPin(profile?.has_pin ?? false);
       const ministries: string[] = profile?.ministries ?? [];
-      if (!ministries.length) return;
 
-      const { data } = await supabase
-        .from("pvs")
-        .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals")
-        .eq("status", "PENDING_HEAD")
-        .in("ministry", ministries)
-        .order("submitted_at", { ascending: true });
+      const PV_COLS = "id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals";
 
-      setPvs(data ?? []);
+      const [pendingRes, myRes, ministryRes] = await Promise.all([
+        ministries.length
+          ? supabase.from("pvs").select(PV_COLS)
+              .eq("status", "PENDING_HEAD")
+              .in("ministry", ministries)
+              .order("submitted_at", { ascending: true })
+          : Promise.resolve({ data: [] }),
+        supabase.from("pvs").select(PV_COLS)
+          .eq("submitted_by_email", user.email)
+          .order("submitted_at", { ascending: false }),
+        ministries.length
+          ? supabase.from("pvs").select(PV_COLS)
+              .in("ministry", ministries)
+              .order("submitted_at", { ascending: false })
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      setPendingPvs(pendingRes.data ?? []);
+      setMyPvs(myRes.data ?? []);
+      setMinistryPvs(ministryRes.data ?? []);
     } finally {
       setLoading(false);
     }
-  }
+  }, [supabase]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   async function act(pvId: string, action: "APPROVED" | "REJECTED") {
     if (!pin) { showMsg("Enter your PIN to confirm", false); return; }
@@ -78,12 +96,21 @@ export default function ExcoPage() {
     }
   }
 
+  const TABS: { key: TabKey; label: string; count: number }[] = [
+    { key: "pending",  label: "Pending Verification", count: pendingPvs.length },
+    { key: "my_pvs",  label: "My PVs",               count: myPvs.length },
+    { key: "ministry", label: "Ministry PVs",         count: ministryPvs.length },
+  ];
+
+  const pvList = tab === "pending" ? pendingPvs : tab === "my_pvs" ? myPvs : ministryPvs;
+  const isActionTab = tab === "pending";
+
   return (
     <div className="p-5 max-w-3xl mx-auto space-y-4">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-bold text-stone-800">EXCO Queue</h1>
-          <p className="text-sm text-stone-400">PVs from your ministry awaiting EXCO verification</p>
+          <p className="text-sm text-stone-400">Ministry PV overview and verification</p>
         </div>
         <Button size="sm" variant={hasPin ? "ghost" : "primary"} onClick={() => setShowPinSetup(true)}>
           <ShieldCheck size={13} /> {hasPin ? "Change My PIN" : "Set My PIN"}
@@ -96,7 +123,25 @@ export default function ExcoPage() {
         </div>
       )}
 
-      {!hasPin && (
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 bg-stone-100 rounded-xl">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => { setTab(t.key); setSelected(null); setRemarks(""); setPin(""); }}
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              tab === t.key ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"
+            }`}
+          >
+            {t.label}
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+              tab === t.key ? "bg-stone-100 text-stone-600" : "bg-stone-200 text-stone-500"
+            }`}>{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {!hasPin && isActionTab && (
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
           <strong>Set your PIN first</strong> — you need a 6-digit PIN to verify or reject PVs. Click "Set My PIN" above.
         </div>
@@ -108,11 +153,15 @@ export default function ExcoPage() {
 
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
-      ) : pvs.length === 0 ? (
-        <Card><CardBody><div className="py-8 text-center text-stone-400 text-sm">No PVs awaiting your verification</div></CardBody></Card>
+      ) : pvList.length === 0 ? (
+        <Card><CardBody>
+          <div className="py-8 text-center text-stone-400 text-sm">
+            {tab === "pending" ? "No PVs awaiting your verification" : "No PVs found"}
+          </div>
+        </CardBody></Card>
       ) : (
         <div className="space-y-3">
-          {pvs.map((pv) => (
+          {pvList.map((pv) => (
             <Card key={pv.id} className={selected?.id === pv.id ? "border-[#4a6da7]" : ""}>
               <div className="px-4 py-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
@@ -128,34 +177,36 @@ export default function ExcoPage() {
                   <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
                 </div>
 
-                {selected?.id === pv.id ? (
-                  <div className="space-y-2 pt-2 border-t border-stone-100">
-                    <textarea
-                      className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
-                      placeholder="Remarks (optional)"
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                    />
-                    <input
-                      className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] tracking-widest"
-                      type="password"
-                      maxLength={6}
-                      placeholder="Enter your 6-digit PIN to confirm"
-                      value={pin}
-                      onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    />
-                    <div className="flex gap-2">
-                      <Button variant="primary" size="sm" loading={acting} onClick={() => act(pv.id!, "APPROVED")} className="flex-1">
-                        <CheckCircle size={14} /> Verify
-                      </Button>
-                      <Button variant="danger" size="sm" loading={acting} onClick={() => act(pv.id!, "REJECTED")} className="flex-1">
-                        <XCircle size={14} /> Reject
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setRemarks(""); setPin(""); }}>Cancel</Button>
+                {isActionTab && (
+                  selected?.id === pv.id ? (
+                    <div className="space-y-2 pt-2 border-t border-stone-100">
+                      <textarea
+                        className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
+                        placeholder="Remarks (optional)"
+                        value={remarks}
+                        onChange={(e) => setRemarks(e.target.value)}
+                      />
+                      <input
+                        className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] tracking-widest"
+                        type="password"
+                        maxLength={6}
+                        placeholder="Enter your 6-digit PIN to confirm"
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      />
+                      <div className="flex gap-2">
+                        <Button variant="primary" size="sm" loading={acting} onClick={() => act(pv.id!, "APPROVED")} className="flex-1">
+                          <CheckCircle size={14} /> Verify
+                        </Button>
+                        <Button variant="danger" size="sm" loading={acting} onClick={() => act(pv.id!, "REJECTED")} className="flex-1">
+                          <XCircle size={14} /> Reject
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setRemarks(""); setPin(""); }}>Cancel</Button>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <Button variant="secondary" size="sm" onClick={() => setSelected(pv)}>Review</Button>
+                  ) : (
+                    <Button variant="secondary" size="sm" onClick={() => setSelected(pv)}>Review</Button>
+                  )
                 )}
               </div>
             </Card>
