@@ -2035,7 +2035,7 @@ export default function PVDetailPage() {
           </div>{/* end scale clip */}
 
           {/* ── Approval activity (below voucher, hidden on print) ── */}
-          <div className="print:hidden border-t border-stone-200 px-4 sm:px-8 py-5">
+          <div className="print:hidden border-t border-stone-200 px-4 sm:px-8 pt-3 pb-5 sm:pt-5">
             <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3">Approval Activity</h3>
             {approvals.length === 0 ? (
               <p className="text-sm text-stone-400">No approvals recorded yet.</p>
