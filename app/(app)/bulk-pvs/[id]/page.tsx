@@ -408,6 +408,7 @@ export default function BulkPVPage() {
         isFinanceAdmin, isSignatory,
         signatoryRole: role, isMinistryHead: role === "MINISTRY_HEAD",
         isGeneralManager: role === "GENERAL_MANAGER",
+        isBuildingManager: role === "BUILDING_MANAGER",
       });
       // Load saved signature for current user
       if (profile?.saved_signature) setSavedSig(profile.saved_signature);
