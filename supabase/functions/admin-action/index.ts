@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
+import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -44,6 +45,11 @@ Deno.serve(async (req) => {
           read: false,
           created_at: new Date().toISOString(),
         });
+        await sendPushToEmails(db, [pv.submitted_by_email], {
+          title: "PV Cancelled",
+          body: `Your PV ${pv.pv_no} was cancelled by Finance Executive`,
+          url: "/my-pvs",
+        });
       }
       return json({ ok: true, status: "CANCELLED" });
     }
@@ -77,6 +83,11 @@ Deno.serve(async (req) => {
         approvals: [entry, ...filtered],
         updated_at: now,
       }).eq("id", pv_id);
+      await sendPushToEmails(db, [pv.submitted_by_email], {
+        title: "PV Reviewed by Finance",
+        body: `Your PV ${pv.pv_no} (${formatRM(pv.amount)}) has been reviewed by Finance Executive`,
+        url: "/my-pvs",
+      });
       return json({ ok: true, status: "REVIEWED" });
     }
 
@@ -106,6 +117,11 @@ Deno.serve(async (req) => {
             created_at: new Date().toISOString(),
           }))
         );
+        await sendPushToEmails(db, signatoryEmails, {
+          title: "PV Awaiting Your Signature",
+          body: `PV ${pv.pv_no} (${formatRM(pv.amount)}) requires your signature`,
+          url: "/signatory",
+        });
       }
 
       return json({ ok: true, status: "PENDING_SIGNATORY" });
@@ -134,6 +150,29 @@ Deno.serve(async (req) => {
         read: false,
         created_at: new Date().toISOString(),
       });
+      const paidLabel = `${pv.pv_no} · ${formatRM(pv.amount)}`;
+      await Promise.all([
+        sendPushToEmails(db, [pv.submitted_by_email], {
+          title: "PV Paid",
+          body: `Your PV ${paidLabel} has been paid`,
+          url: "/my-pvs",
+        }),
+        sendPushToRoles(db, ["GENERAL_MANAGER"], {
+          title: "PV Marked as Paid",
+          body: `PV ${paidLabel} has been paid`,
+          url: "/signatory",
+        }),
+        pv.ministry ? sendPushToMinistryHeads(db, pv.ministry, {
+          title: "PV Marked as Paid",
+          body: `PV ${paidLabel} has been paid`,
+          url: "/ministry",
+        }) : Promise.resolve(),
+        sendPushToRoles(db, ["BISHOP", "TREASURER", "SECRETARY"], {
+          title: "PV Marked as Paid",
+          body: `PV ${paidLabel} has been paid`,
+          url: "/signatory",
+        }),
+      ]);
 
       return json({ ok: true, status: "PAID" });
     }
@@ -225,6 +264,14 @@ Deno.serve(async (req) => {
       return json({ ok: true, reviewed: wasPending });
     }
 
+    if (action === "UPDATE_ATTACHMENTS") {
+      const attachments = Array.isArray(body.attachments) ? body.attachments : pv.attachments ?? [];
+      const updateData: Record<string, unknown> = { attachments, updated_at: new Date().toISOString() };
+      if ("payment_receipt_url" in body) updateData.payment_receipt_url = body.payment_receipt_url ?? null;
+      await db.from("pvs").update(updateData).eq("id", pv_id);
+      return json({ ok: true, action: "ATTACHMENTS_UPDATED" });
+    }
+
     if (action === "REJECT") {
       if (!body.remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
       await db.from("pvs").update({
@@ -240,6 +287,11 @@ Deno.serve(async (req) => {
         message: `Your PV ${pv.pv_no} was rejected by Finance Executive: ${body.remarks}`,
         read: false,
         created_at: new Date().toISOString(),
+      });
+      await sendPushToEmails(db, [pv.submitted_by_email], {
+        title: "PV Rejected",
+        body: `Your PV ${pv.pv_no} was rejected: ${body.remarks}`,
+        url: "/my-pvs",
       });
       return json({ ok: true, status: "REJECTED" });
     }

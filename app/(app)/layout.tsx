@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { PushSetup } from "@/components/push-setup";
 import type { UserProfile } from "@/lib/types";
 
 async function getUserProfile(): Promise<UserProfile | null> {
@@ -45,6 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-full print:block print:h-auto">
+      <PushSetup />
       <Sidebar user={user} ministryList={ministryList} />
       <main className="flex-1 overflow-y-auto pb-20 md:pb-0 print:overflow-visible print:flex-none print:h-auto">
         {children}

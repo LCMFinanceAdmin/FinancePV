@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
+import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -62,6 +63,34 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Push notifications
+    const pvLabel = `${pv.pv_no} · ${formatRM(pv.amount)}`;
+    if (action === "APPROVED") {
+      await Promise.all([
+        sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+          title: "EXCO Verified",
+          body: `PV ${pvLabel} verified by EXCO`,
+          url: "/control-center",
+        }),
+        sendPushToRoles(db, ["GENERAL_MANAGER"], {
+          title: "EXCO Verified",
+          body: `PV ${pvLabel} verified by EXCO`,
+          url: "/signatory",
+        }),
+        sendPushToEmails(db, [pv.submitted_by_email], {
+          title: "PV Verified by EXCO",
+          body: `Your PV ${pvLabel} has been verified by EXCO`,
+          url: "/my-pvs",
+        }),
+      ]);
+    } else {
+      await sendPushToEmails(db, [pv.submitted_by_email], {
+        title: "PV Rejected by EXCO",
+        body: `Your PV ${pv.pv_no} was rejected${remarks ? `: ${remarks}` : ""}`,
+        url: "/my-pvs",
+      });
+    }
+
     return json({ ok: true, status: newStatus });
   } catch (err) {
     return json({ error: err.message }, 500);
@@ -73,4 +102,8 @@ function json(data: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function formatRM(n: number) {
+  return `RM ${(n ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }

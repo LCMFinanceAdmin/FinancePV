@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getLOATier, nextPvNo, getProfileByEmail } from "../_shared/supabase.ts";
+import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -108,6 +109,26 @@ Deno.serve(async (req) => {
         );
       }
     }
+
+    // Push notifications
+    const pvMsg = `${pvNo} · ${d.applicant_name} · ${formatRM(amount)}`;
+    await Promise.all([
+      sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+        title: "New Payment Voucher",
+        body: pvMsg,
+        url: "/control-center",
+      }),
+      sendPushToRoles(db, ["GENERAL_MANAGER"], {
+        title: "New Payment Voucher",
+        body: pvMsg,
+        url: "/signatory",
+      }),
+      ministry ? sendPushToMinistryHeads(db, ministry, {
+        title: "New PV in Your Ministry",
+        body: pvMsg,
+        url: "/ministry",
+      }) : Promise.resolve(),
+    ]);
 
     return json({ ok: true, pv_no: pvNo, status: initialStatus });
   } catch (err) {

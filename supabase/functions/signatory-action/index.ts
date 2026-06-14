@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, isSignatoryApprovalFinal, getProfileByEmail } from "../_shared/supabase.ts";
+import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
 async function hashPin(pin: string): Promise<string> {
   const salt = Deno.env.get("PIN_SALT") ?? "lcm-finance-pin-salt";
@@ -176,6 +177,71 @@ Deno.serve(async (req) => {
         read: false,
         created_at: new Date().toISOString(),
       });
+    }
+
+    // Push notifications
+    const pvLabel = `${pv.pv_no} · RM ${(pv.amount ?? 0).toFixed(2)}`;
+    if (isGM && action === "APPROVED") {
+      // GM approved → notify signatories, Finance Exec, EXCO, and submitter
+      await Promise.all([
+        sendPushToRoles(db, ["BISHOP", "TREASURER", "SECRETARY"], {
+          title: "PV Awaiting Your Signature",
+          body: `PV ${pvLabel} approved by GM — please sign`,
+          url: "/signatory",
+        }),
+        sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+          title: "GM Approved PV",
+          body: `PV ${pvLabel} approved by General Manager`,
+          url: "/control-center",
+        }),
+        pv.ministry ? sendPushToMinistryHeads(db, pv.ministry, {
+          title: "GM Approved PV",
+          body: `PV ${pvLabel} approved by General Manager`,
+          url: "/ministry",
+        }) : Promise.resolve(),
+        sendPushToEmails(db, [pv.submitted_by_email], {
+          title: "GM Approved Your PV",
+          body: `PV ${pvLabel} approved by General Manager`,
+          url: "/my-pvs",
+        }),
+      ]);
+    } else if (newStatus === "APPROVED") {
+      // Final signatory approval
+      await Promise.all([
+        sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+          title: "PV Fully Approved",
+          body: `PV ${pvLabel} has been fully approved`,
+          url: "/control-center",
+        }),
+        sendPushToRoles(db, ["GENERAL_MANAGER"], {
+          title: "PV Fully Approved",
+          body: `PV ${pvLabel} has been fully approved`,
+          url: "/signatory",
+        }),
+        pv.ministry ? sendPushToMinistryHeads(db, pv.ministry, {
+          title: "PV Fully Approved",
+          body: `PV ${pvLabel} has been fully approved`,
+          url: "/ministry",
+        }) : Promise.resolve(),
+        sendPushToEmails(db, [pv.submitted_by_email], {
+          title: "Your PV is Approved!",
+          body: `PV ${pvLabel} has been fully approved by signatories`,
+          url: "/my-pvs",
+        }),
+      ]);
+    } else if (newStatus === "REJECTED") {
+      await Promise.all([
+        sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+          title: "PV Rejected",
+          body: `PV ${pvLabel} was rejected${remarks ? `: ${remarks}` : ""}`,
+          url: "/control-center",
+        }),
+        sendPushToEmails(db, [pv.submitted_by_email], {
+          title: "PV Rejected",
+          body: `Your PV ${pvLabel} was rejected${remarks ? `: ${remarks}` : ""}`,
+          url: "/my-pvs",
+        }),
+      ]);
     }
 
     return json({ ok: true, status: newStatus });
