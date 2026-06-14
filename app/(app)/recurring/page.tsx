@@ -724,22 +724,19 @@ export default function RecurringPage() {
 
       {/* Create / Edit form */}
       {showForm && (
-        <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="bg-white border-2 border-stone-300 rounded-xl overflow-hidden">
           {/* Form header */}
-          <div className="px-6 py-4 border-b border-stone-100 bg-stone-50 flex items-center justify-between">
-            <div>
-              <p className="text-base font-bold text-stone-800">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
-              <p className="text-xs text-stone-400 mt-0.5">Template that generates a payment voucher on schedule</p>
-            </div>
-            {isBuildingManager && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">BAM</span>}
+          <div className="px-4 py-3 border-b-4 border-stone-800 bg-stone-800 flex items-center justify-between">
+            <p className="text-sm font-bold text-white">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
+            {isBuildingManager && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-400 text-white">BAM</span>}
           </div>
 
-          <div className="p-6 space-y-6">
+          <div className="divide-y-4 divide-stone-200">
 
             {/* ── Section 1: Template Setup ── */}
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-3">Template Setup</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="px-4 py-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Template Setup</p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                 <Field label="Template Name *">
                   <input className={inp} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="e.g. Office Rental" />
                 </Field>
@@ -768,7 +765,7 @@ export default function RecurringPage() {
                 )}
               </div>
               {form.term_type === "FIXED" && (
-                <div className="mt-4">
+                <div className="mt-2">
                   <Field label="Final Payment Note">
                     <input className={inp} value={form.final_payment_note} onChange={e => setField("final_payment_note", e.target.value)} placeholder="e.g. Final instalment as per agreement" />
                   </Field>
@@ -776,12 +773,10 @@ export default function RecurringPage() {
               )}
             </div>
 
-            <div className="border-t border-stone-100" />
-
             {/* ── Section 2: Payee Details ── */}
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-3">Payee Details</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="px-4 py-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Payee Details</p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                 <Field label="Payee Name *">
                   <input className={inp} value={form.payee_name} onChange={e => setField("payee_name", e.target.value)} placeholder="e.g. Sdn Bhd Company" />
                 </Field>
@@ -799,12 +794,10 @@ export default function RecurringPage() {
               </div>
             </div>
 
-            <div className="border-t border-stone-100" />
-
             {/* ── Section 3: Classification ── */}
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-3">Classification</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="px-4 py-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Classification</p>
+              <div className="grid grid-cols-3 gap-x-3 gap-y-2">
                 <Field label="Ministry">
                   <select className={inp} value={form.ministry} onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
                     <option value="">— None —</option>
@@ -821,66 +814,57 @@ export default function RecurringPage() {
                   </select>
                 </Field>
               </div>
-              <div className="mt-4">
+              <div className="mt-2">
                 <Field label="PV Label (optional)">
                   <input className={inp} value={form.pv_label} onChange={e => setField("pv_label", e.target.value)} placeholder="e.g. LCM - PBB" />
                 </Field>
               </div>
             </div>
 
-            <div className="border-t border-stone-100" />
-
             {/* ── Section 4: Purpose & Description ── */}
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-3">Purpose & Description</p>
-              <div className="space-y-4">
-                <Field label="Purpose * (one-line summary shown on PV)">
+            <div className="px-4 py-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Purpose & Description</p>
+              <div className="grid grid-cols-1 gap-y-2">
+                <Field label="Purpose * — one-line summary printed on PV">
                   <input className={inp} value={form.purpose} onChange={e => setField("purpose", e.target.value)} placeholder="e.g. Monthly office rental payment" />
                 </Field>
-                <Field label="Description (fuller narrative — context, background, or rationale)">
+                <Field label="Description — fuller context, background, or breakdown">
                   <textarea
                     className={`${inp} resize-none`}
-                    rows={3}
+                    rows={2}
                     value={form.description}
                     onChange={e => setField("description", e.target.value)}
-                    placeholder="e.g. Monthly rental for Level 3 office space at Menara LCM as per tenancy agreement dated Jan 2024. Rental is payable on the 1st of each month."
+                    placeholder="e.g. Monthly rental for Level 3 office space at Menara LCM per tenancy agreement Jan 2024."
                   />
                 </Field>
               </div>
             </div>
 
-            <div className="border-t border-stone-100" />
-
             {/* ── Section 5: Line Items ── */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Line Items</p>
-                  <p className="text-xs text-stone-400 mt-0.5">Each item appears as a separate row on the payment voucher</p>
-                </div>
-                <button type="button" onClick={addLineItem} className="flex items-center gap-1.5 text-xs font-medium text-[#4a6da7] hover:text-[#3d5c96] transition-colors">
-                  <Plus size={13} /> Add item
+            <div className="px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-stone-500">Line Items</p>
+                <button type="button" onClick={addLineItem} className="flex items-center gap-1 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5c96] transition-colors">
+                  <Plus size={12} /> Add item
                 </button>
               </div>
 
-              <div className="rounded-xl border border-stone-200 overflow-hidden">
-                {/* Header row */}
-                <div className="grid grid-cols-[1fr_140px_36px] gap-0 bg-stone-50 px-3 py-2 border-b border-stone-200">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Description</span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 text-right">Amount (RM)</span>
+              <div className="rounded-lg border-2 border-stone-300 overflow-hidden">
+                <div className="grid grid-cols-[1fr_130px_28px] bg-stone-200 px-3 py-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-stone-600">Description</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-stone-600 text-right">Amount (RM)</span>
                   <span />
                 </div>
-
                 {form.line_items.map((li, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_140px_36px] gap-0 border-b border-stone-100 last:border-0 items-center px-3 py-2 hover:bg-stone-50/50">
+                  <div key={i} className="grid grid-cols-[1fr_130px_28px] border-t border-stone-200 items-center px-3 py-1.5 hover:bg-stone-50">
                     <input
-                      className="text-sm text-stone-800 bg-transparent outline-none placeholder:text-stone-300 pr-3"
+                      className="text-sm text-stone-900 bg-transparent outline-none placeholder:text-stone-300 pr-2 font-medium"
                       value={li.description}
-                      placeholder={`Item ${i + 1} description`}
+                      placeholder={`Item ${i + 1}`}
                       onChange={e => updateLineItem(i, "description", e.target.value)}
                     />
                     <input
-                      className="text-sm text-right text-stone-800 bg-transparent outline-none placeholder:text-stone-300 font-mono"
+                      className="text-sm text-right text-stone-900 bg-transparent outline-none placeholder:text-stone-300 font-mono font-medium"
                       type="number"
                       value={li.amount || ""}
                       placeholder="0.00"
@@ -888,24 +872,25 @@ export default function RecurringPage() {
                     />
                     <button
                       type="button"
-                      onClick={() => form.line_items.length > 1 ? removeLineItem(i) : updateLineItem(i, "description", "") }
-                      className="flex items-center justify-center text-stone-300 hover:text-red-400 transition-colors ml-1"
+                      onClick={() => form.line_items.length > 1 ? removeLineItem(i) : updateLineItem(i, "description", "")}
+                      className="flex items-center justify-center text-stone-300 hover:text-red-400 transition-colors"
                     >
-                      <X size={14} />
+                      <X size={13} />
                     </button>
                   </div>
                 ))}
-
-                {/* Total row */}
-                <div className="grid grid-cols-[1fr_140px_36px] bg-stone-50 px-3 py-2.5 border-t-2 border-stone-200">
-                  <span className="text-xs font-bold text-stone-600">Total</span>
-                  <span className="text-sm font-bold text-stone-800 text-right font-mono">{formatCurrency(lineTotal())}</span>
+                <div className="grid grid-cols-[1fr_130px_28px] bg-stone-200 px-3 py-1.5 border-t-2 border-stone-400">
+                  <span className="text-xs font-black text-stone-700">Total</span>
+                  <span className="text-sm font-black text-stone-900 text-right font-mono">{formatCurrency(lineTotal())}</span>
                   <span />
                 </div>
               </div>
             </div>
 
-            {/* Save button */}
+          </div>
+
+          {/* Save button */}
+          <div className="px-4 py-3 border-t-4 border-stone-200 bg-stone-50">
             <Button onClick={save} loading={saving} className="w-full">
               {form.id ? "Update Template" : "Save Recurring Expense"}
             </Button>
