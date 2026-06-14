@@ -5,6 +5,7 @@ export type UserRole =
   | "TREASURER"
   | "SECRETARY"
   | "MINISTRY_HEAD"
+  | "BUILDING_MANAGER"
   | "STAFF";
 
 export type PVStatus =
@@ -17,7 +18,13 @@ export type PVStatus =
   | "PAID"
   | "REJECTED"
   | "REJECTED_HEAD"
-  | "CANCELLED";
+  | "CANCELLED"
+  // BAM PV statuses
+  | "BAM_REVIEW"      // waiting for Building Manager review
+  | "FINANCE_REVIEW"  // waiting for Finance Executive review
+  | "GM_REVIEW";      // waiting for General Manager approval
+
+export type PVType = "LCM" | "BAM";
 
 export type PaymentType = "GENERAL" | "ASSET_PURCHASE";
 
@@ -32,6 +39,7 @@ export interface UserProfile {
   signatoryRole: string;
   isMinistryHead: boolean;
   isGeneralManager: boolean;
+  isBuildingManager: boolean;
 }
 
 export interface PV {
@@ -71,6 +79,7 @@ export interface PV {
   exco_resolution_date: string;
   favourite_id: string;
   pv_label: string;
+  pv_type: PVType;
   admin_comment: string;
   ministry_verified: string;
   ministry_verified_by: string;

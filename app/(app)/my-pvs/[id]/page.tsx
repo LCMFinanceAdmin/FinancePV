@@ -293,6 +293,7 @@ export default function PVDetailPage() {
         isSignatory: ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"].includes(role),
         signatoryRole: role, isMinistryHead: role === "MINISTRY_HEAD",
         isGeneralManager: role === "GENERAL_MANAGER",
+        isBuildingManager: role === "BUILDING_MANAGER",
       });
       setLoading(false);
     }
@@ -792,8 +793,45 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── Building Manager Action Panel (BAM PVs in BAM_REVIEW) ─────── */}
+      {user?.isBuildingManager && pv.pv_type === "BAM" && pv.status === "BAM_REVIEW" && (
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck size={16} className="text-orange-600" />
+              <span className="text-sm font-semibold text-orange-800">Building Manager Review</span>
+              <span className="ml-auto text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">BAM PV</span>
+            </div>
+            <p className="text-sm text-stone-600 mb-3">Review this BAM PV before it proceeds to the Finance Executive.</p>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={async () => {
+                  if (!confirm("Approve this BAM PV and send to Finance Executive?")) return;
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/bam-action`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+                    body: JSON.stringify({ pv_id: pv.id, action: "APPROVE" }),
+                  });
+                  const json = await res.json();
+                  if (res.ok) { setPv(p => p ? { ...p, status: "FINANCE_REVIEW" } : p); }
+                  else alert(json.error);
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 transition-colors">
+                <CheckCircle2 size={14} /> Approve BAM PV
+              </button>
+              <button
+                onClick={() => setShowRejectModal(true)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
+                <XCircle size={14} /> Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Finance Executive Action Panel ─────────────────────────────── */}
-      {user?.isFinanceAdmin && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD"].includes(pv.status) && (
+      {user?.isFinanceAdmin && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD", "BAM_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -802,7 +840,25 @@ export default function PVDetailPage() {
               <span className="ml-auto text-xs text-stone-500">PV is <strong>{pv.status.replace(/_/g, " ")}</strong></span>
             </div>
 
-            {/* ── Row 1: Review decision — always visible, active only when PENDING ── */}
+            {/* BAM PV in FINANCE_REVIEW — FE must review before it goes to GM */}
+            {pv.pv_type === "BAM" && pv.status === "FINANCE_REVIEW" && (
+              <div className="flex gap-2 flex-wrap items-center mb-2">
+                <p className="text-sm text-stone-600 w-full">This BAM PV has been approved by the Building Manager and requires your finance review before going to the General Manager.</p>
+                <button
+                  onClick={() => callAdminAction("REVIEW")}
+                  disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-[#4a6da7] text-white text-sm rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
+                  <CheckCircle2 size={14} /> Approve Finance Review → Send to GM
+                </button>
+                <button onClick={() => setShowRejectModal(true)} disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
+                  <XCircle size={14} /> Reject
+                </button>
+              </div>
+            )}
+
+            {/* Standard LCM PV review */}
+            {pv.pv_type !== "BAM" && (
             <div className="flex gap-2 flex-wrap items-center">
               <button
                 onClick={() => {
@@ -838,6 +894,7 @@ export default function PVDetailPage() {
                 </button>
               )}
             </div>
+            )}
 
             {/* ── Row 2: Send to Signatory ── */}
             {["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
@@ -1080,7 +1137,22 @@ export default function PVDetailPage() {
               className="w-full border border-stone-300 rounded-lg p-3 text-sm outline-none focus:border-red-400 min-h-[96px] resize-none"
             />
             <div className="flex gap-2 mt-4">
-              <button onClick={() => callAdminAction("REJECT", { remarks: rejectRemarks })}
+              <button onClick={async () => {
+                if (!rejectRemarks.trim()) return;
+                if (user?.isBuildingManager && pv.pv_type === "BAM" && pv.status === "BAM_REVIEW") {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/bam-action`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+                    body: JSON.stringify({ pv_id: pv.id, action: "REJECT", remarks: rejectRemarks }),
+                  });
+                  const json = await res.json();
+                  if (res.ok) { setPv(p => p ? { ...p, status: "REJECTED" } : p); setShowRejectModal(false); setRejectRemarks(""); }
+                  else alert(json.error);
+                } else {
+                  callAdminAction("REJECT", { remarks: rejectRemarks });
+                }
+              }}
                 disabled={!rejectRemarks.trim() || actionLoading}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors">
                 {actionLoading ? "Rejecting…" : "Confirm Reject"}
@@ -1681,16 +1753,24 @@ export default function PVDetailPage() {
               </div>
 
               {/* For Office Use Only box — col J–K, rows 1–3 */}
-              <div className="border border-black shrink-0 text-[12px]" style={{ width: 160 }}>
-                <div className="px-2 py-1 border-b border-black font-medium">For Office Use Only:</div>
-                <div className="px-2 py-1 border-b border-black flex items-center gap-1">
-                  <span className="shrink-0">Ref No:</span>
-                  <span className="font-bold ml-1">{pv.pv_no}</span>
+              <div className="shrink-0 flex flex-col items-end gap-1">
+                <div className="border border-black text-[12px]" style={{ width: 160 }}>
+                  <div className="px-2 py-1 border-b border-black font-medium">For Office Use Only:</div>
+                  <div className="px-2 py-1 border-b border-black flex items-center gap-1">
+                    <span className="shrink-0">Ref No:</span>
+                    <span className="font-bold ml-1">{pv.pv_no}</span>
+                  </div>
+                  <div className="px-2 py-1 flex items-center gap-1">
+                    <span className="shrink-0">A/C Code:</span>
+                    <span className="font-bold ml-1">{pv.pv_type !== "BAM" ? (pv.pv_label || "") : ""}</span>
+                  </div>
                 </div>
-                <div className="px-2 py-1 flex items-center gap-1">
-                  <span className="shrink-0">A/C Code:</span>
-                  <span className="font-bold ml-1">{pv.pv_label || ""}</span>
-                </div>
+                {pv.pv_type === "BAM" && (
+                  <div className="border-2 border-black text-center" style={{ width: 100 }}>
+                    <div className="font-black text-2xl px-2 py-0.5">BAM</div>
+                    <div className="text-[10px] font-bold border-t border-black px-1 py-0.5">(MAYBANK)</div>
+                  </div>
+                )}
               </div>
             </div>
 

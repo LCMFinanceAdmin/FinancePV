@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid,
   RefreshCw, Users, Building2, Settings, LogOut,
   ChevronRight, Activity, ClipboardCheck, PiggyBank, FlaskConical,
-  ShoppingCart, ClipboardList, CreditCard,
+  ShoppingCart, ClipboardList, CreditCard, Hammer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -25,8 +25,8 @@ const NAV_SECTIONS = [
     label: null,
     items: [
       { href: "/dashboard", label: "Dashboard",  icon: <LayoutDashboard size={16} />, show: (u: UserProfile) => !u.isSignatory },
-      { href: "/submit",    label: "Submit PV",  icon: <FilePlus size={16} />,        show: (u: UserProfile) => !u.isSignatory },
-      { href: "/my-pvs",   label: "My PVs",     icon: <FileText size={16} />,        show: (u: UserProfile) => !u.isSignatory && !u.isMinistryHead },
+      { href: "/submit",    label: "Submit PV",  icon: <FilePlus size={16} />,        show: (u: UserProfile) => !u.isSignatory && !u.isBuildingManager },
+      { href: "/my-pvs",   label: "My PVs",     icon: <FileText size={16} />,        show: (u: UserProfile) => !u.isSignatory && !u.isMinistryHead && !u.isBuildingManager },
     ],
   },
   {
@@ -54,6 +54,13 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: "Building / Event",
+    items: [
+      { href: "/submit?type=bam", label: "Submit BAM PV",    icon: <Hammer size={16} />,        show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
+      { href: "/bam-queue",       label: "BAM Queue",        icon: <Building2 size={16} />,     show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
+    ],
+  },
+  {
     label: "Requests & Payments",
     items: [
       { href: "/purchase-requests", label: "Purchase Requests", icon: <ShoppingCart size={16} />, show: () => true },
@@ -69,14 +76,15 @@ const NAV_SECTIONS = [
 ] satisfies { label: string | null; items: NavItem[] }[];
 
 const TEST_ROLES = [
-  { value: "FINANCE_ADMIN",  label: "Finance Executive" },
-  { value: "FINANCE_ADMIN_2", label: "Accounts Executive" },
-  { value: "GENERAL_MANAGER", label: "General Manager" },
-  { value: "BISHOP",          label: "Bishop" },
-  { value: "TREASURER",       label: "Treasurer" },
-  { value: "SECRETARY",       label: "Secretary" },
-  { value: "MINISTRY_HEAD",   label: "EXCO Member" },
-  { value: "STAFF",           label: "Staff" },
+  { value: "FINANCE_ADMIN",    label: "Finance Executive" },
+  { value: "FINANCE_ADMIN_2",  label: "Accounts Executive" },
+  { value: "GENERAL_MANAGER",  label: "General Manager" },
+  { value: "BISHOP",           label: "Bishop" },
+  { value: "TREASURER",        label: "Treasurer" },
+  { value: "SECRETARY",        label: "Secretary" },
+  { value: "MINISTRY_HEAD",    label: "EXCO Member" },
+  { value: "BUILDING_MANAGER", label: "Building/Event Mgr" },
+  { value: "STAFF",            label: "Staff" },
 ];
 
 const TEST_MINISTRIES = [

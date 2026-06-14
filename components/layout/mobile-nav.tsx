@@ -5,21 +5,22 @@ import { useState } from "react";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2,
   FlaskConical, X, ClipboardList, RefreshCw, Settings, Activity,
-  ClipboardCheck, PiggyBank, ShoppingCart, CreditCard, Menu, LogOut,
+  ClipboardCheck, PiggyBank, ShoppingCart, CreditCard, Menu, LogOut, Hammer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 
 const TEST_ROLES = [
-  { value: "FINANCE_ADMIN",   label: "Finance Executive" },
-  { value: "FINANCE_ADMIN_2", label: "Accounts Executive" },
-  { value: "GENERAL_MANAGER", label: "General Manager" },
-  { value: "BISHOP",          label: "Bishop" },
-  { value: "TREASURER",       label: "Treasurer" },
-  { value: "SECRETARY",       label: "Secretary" },
-  { value: "MINISTRY_HEAD",   label: "EXCO Member" },
-  { value: "STAFF",           label: "Staff" },
+  { value: "FINANCE_ADMIN",    label: "Finance Executive" },
+  { value: "FINANCE_ADMIN_2",  label: "Accounts Executive" },
+  { value: "GENERAL_MANAGER",  label: "General Manager" },
+  { value: "BISHOP",           label: "Bishop" },
+  { value: "TREASURER",        label: "Treasurer" },
+  { value: "SECRETARY",        label: "Secretary" },
+  { value: "MINISTRY_HEAD",    label: "EXCO Member" },
+  { value: "BUILDING_MANAGER", label: "Building/Event Mgr" },
+  { value: "STAFF",            label: "Staff" },
 ];
 
 const TEST_MINISTRIES = [
@@ -55,15 +56,18 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
 
   // Primary bottom bar items (max 4, role-appropriate)
   const primaryItems = [
-    { href: "/dashboard",           label: "Home",     icon: <LayoutDashboard size={20} />, show: !user.isSignatory },
-    { href: "/submit",              label: "Submit",   icon: <FilePlus size={20} />,        show: !user.isSignatory },
-    { href: "/my-pvs",              label: "My PVs",   icon: <FileText size={20} />,        show: !user.isSignatory && !user.isFinanceAdmin },
-    { href: "/control-center",      label: "Admin",    icon: <LayoutGrid size={20} />,      show: user.isFinanceAdmin },
-    { href: "/signatory-activity",  label: "Fin. Activity", icon: <Activity size={20} />,   show: user.isFinanceAdmin },
-    { href: "/ministry",            label: "EXCO",     icon: <Building2 size={20} />,       show: user.isMinistryHead && !user.isSignatory },
-    { href: "/signatory",           label: "Sign Q",   icon: <Users size={20} />,           show: user.isSignatory },
-    { href: "/pr-queue",            label: "PR Q",     icon: <ClipboardList size={20} />,   show: user.isSignatory || user.isGeneralManager },
-    { href: "/budget",              label: "Budget",   icon: <PiggyBank size={20} />,       show: user.isSignatory },
+    { href: "/dashboard",           label: "Home",          icon: <LayoutDashboard size={20} />, show: !user.isSignatory && !user.isBuildingManager },
+    { href: "/submit",              label: "Submit",        icon: <FilePlus size={20} />,        show: !user.isSignatory && !user.isBuildingManager },
+    { href: "/my-pvs",              label: "My PVs",        icon: <FileText size={20} />,        show: !user.isSignatory && !user.isFinanceAdmin && !user.isBuildingManager },
+    { href: "/control-center",      label: "Admin",         icon: <LayoutGrid size={20} />,      show: user.isFinanceAdmin },
+    { href: "/signatory-activity",  label: "Fin. Activity", icon: <Activity size={20} />,        show: user.isFinanceAdmin },
+    { href: "/ministry",            label: "EXCO",          icon: <Building2 size={20} />,       show: user.isMinistryHead && !user.isSignatory },
+    { href: "/signatory",           label: "Sign Q",        icon: <Users size={20} />,           show: user.isSignatory },
+    { href: "/pr-queue",            label: "PR Q",          icon: <ClipboardList size={20} />,   show: user.isSignatory || user.isGeneralManager },
+    { href: "/budget",              label: "Budget",        icon: <PiggyBank size={20} />,       show: user.isSignatory },
+    { href: "/dashboard",           label: "Home",          icon: <LayoutDashboard size={20} />, show: user.isBuildingManager },
+    { href: "/submit?type=bam",     label: "Submit BAM",    icon: <Hammer size={20} />,          show: user.isBuildingManager },
+    { href: "/bam-queue",           label: "BAM Queue",     icon: <Building2 size={20} />,       show: user.isBuildingManager },
   ].filter(i => i.show).slice(0, 4);
 
   // All sections for the "More" drawer
@@ -84,6 +88,13 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
         { href: "/signatory-activity", label: "Finance Activity",   icon: <Activity size={16} />,       show: user.isFinanceAdmin },
         { href: "/hod-activity",       label: "Finance Activity",   icon: <ClipboardCheck size={16} />, show: user.isMinistryHead || user.isSignatory },
         { href: "/settings",           label: "Settings",           icon: <Settings size={16} />,       show: user.isFinanceAdmin },
+      ],
+    },
+    {
+      label: "Building / Event",
+      items: [
+        { href: "/submit?type=bam", label: "Submit BAM PV", icon: <Hammer size={16} />,    show: user.isBuildingManager || user.isFinanceAdmin },
+        { href: "/bam-queue",       label: "BAM Queue",     icon: <Building2 size={16} />, show: user.isBuildingManager || user.isFinanceAdmin },
       ],
     },
     {

@@ -82,8 +82,8 @@ export default function SignatoryPage() {
         supabase.auth.getUser(),
         supabase
           .from("pvs")
-          .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
-          .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED", "APPROVED", "PAID"])
+          .select("id,pv_no,pv_type,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
+          .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED", "APPROVED", "PAID", "GM_REVIEW"])
           .order("submitted_at", { ascending: false }),
         supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount"),
       ]);
@@ -293,7 +293,8 @@ export default function SignatoryPage() {
 
   // GM Pending = REVIEWED/MINISTRY_VERIFIED where GM has NOT yet acted
   const pendingPvsAll = useMemo(() => pvs.filter(pv =>
-    ["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "") && !(isGM && gmHasApproved(pv))
+    (["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "") && !(isGM && gmHasApproved(pv))) ||
+    (isGM && pv.status === "GM_REVIEW")
   ), [pvs, isGM, gmHasApproved]);
 
   // Pending Signatory Approval:
@@ -374,11 +375,10 @@ export default function SignatoryPage() {
     );
 
     // Non-GM signatories only act on PENDING_SIGNATORY (GM already approved).
-    // GM acts on REVIEWED (Finance Executive reviewed, awaiting GM).
-    // GM acts on REVIEWED/MINISTRY_VERIFIED only (already verified when PENDING_SIGNATORY)
+    // GM acts on REVIEWED/MINISTRY_VERIFIED (LCM) or GM_REVIEW (BAM).
     const isRelevantForRole =
       currentUser?.role === "GENERAL_MANAGER"
-        ? pv.status === "REVIEWED" || pv.status === "MINISTRY_VERIFIED"
+        ? pv.status === "REVIEWED" || pv.status === "MINISTRY_VERIFIED" || pv.status === "GM_REVIEW"
         : pv.status === "PENDING_SIGNATORY" || pv.status === "MINISTRY_VERIFIED";
 
     return (
