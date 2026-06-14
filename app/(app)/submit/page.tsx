@@ -3,23 +3,18 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
-import { Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle, X as XIcon, Car } from "lucide-react";
+import {
+  Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle,
+  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon,
+} from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import type { PVLineItem } from "@/lib/types";
 
-// ── Ministry list (hardcoded per LCM structure) ────────────────────────
+// ── Ministry list ───────────────────────────────────────────────────────
 const MINISTRIES = [
-  "Mission",
-  "Social Concern",
-  "Education",
-  "Stewardship",
-  "Orang Asli",
-  "Property",
-  "Head Quarters (HQ)",
-  "Reconcile",
-  "Trustees",
-  "Sisters and Women Fellowship (SWF)",
-  "Young Adult and Youth (YAY)",
+  "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
+  "Property", "Head Quarters (HQ)", "Reconcile", "Trustees",
+  "Sisters and Women Fellowship (SWF)", "Young Adult and Youth (YAY)",
 ];
 
 const PAYMENT_METHODS = ["Online Transfer", "Cheque", "Cash", "JomPay", "Auto Debit"];
@@ -47,30 +42,21 @@ interface TravelItem {
 }
 const EMPTY_TRAVEL_ITEM: TravelItem = { date: "", travel_type: "", description: "", from: "", to: "", km: 0, amount: 0 };
 
-// Roles that can manage projects
-const PROJECT_MANAGER_ROLES = [
-  "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
-  "GENERAL_MANAGER", "TREASURER", "BISHOP", "SECRETARY", "MINISTRY_HEAD",
-];
+interface AttachmentFile { file: File; previewUrl: string; }
+
+function formatFileSize(b: number) {
+  if (b < 1024) return `${b} B`;
+  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1048576).toFixed(1)} MB`;
+}
 
 interface FormData {
-  applicant_name: string;
-  applicant_email: string;
-  dept: string;
-  pvDate: string;
-  payee_name: string;
-  payment_method: string;
-  payee_bank_name: string;
-  payee_bank_acct: string;
-  cheque_no: string;
-  biller_code: string;
-  ref_no: string;
-  ministry: string;
-  project: string;
-  purpose: string;
+  applicant_name: string; applicant_email: string; dept: string; pvDate: string;
+  payee_name: string; payment_method: string; payee_bank_name: string;
+  payee_bank_acct: string; cheque_no: string; biller_code: string; ref_no: string;
+  ministry: string; project: string; purpose: string;
   line_items: PVLineItem[];
-  sig_applicant_name: string;
-  sig_applicant_confirm: boolean;
+  sig_applicant_name: string; sig_applicant_confirm: boolean;
 }
 
 const EMPTY_FORM: FormData = {
@@ -84,18 +70,20 @@ const EMPTY_FORM: FormData = {
   sig_applicant_name: "", sig_applicant_confirm: false,
 };
 
-// ── Inline field styled as a document underline ──────────────────────
+// ── Desktop inline styles ───────────────────────────────────────────────
 const uline = "border-0 border-b border-stone-400 bg-transparent outline-none text-sm text-stone-800 px-1 py-0 w-full focus:border-[#4a6da7] transition-colors placeholder:text-stone-300";
 const uselect = `${uline} cursor-pointer appearance-none pr-6`;
+
+// ── Mobile styles ───────────────────────────────────────────────────────
+const mInput = "w-full border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-800 outline-none focus:border-[#4a6da7] bg-white transition-colors placeholder:text-stone-300";
+const mLabel = "block text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5";
 
 function InlineSelect({ value, onChange, children, className = "" }: {
   value: string; onChange: (v: string) => void; children: React.ReactNode; className?: string;
 }) {
   return (
     <div className={`relative flex-1 ${className}`}>
-      <select value={value} onChange={e => onChange(e.target.value)} className={uselect}>
-        {children}
-      </select>
+      <select value={value} onChange={e => onChange(e.target.value)} className={uselect}>{children}</select>
       <ChevronDown size={12} className="absolute right-0 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
     </div>
   );
@@ -113,7 +101,6 @@ function Row({ label, sublabel, children }: { label: string; sublabel?: string; 
   );
 }
 
-// ── Luther Rose inline SVG (always renders, no external dependency) ───
 function LutherRose({ size = 64 }: { size?: number }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width={size} height={size}>
@@ -142,6 +129,11 @@ function LutherRose({ size = 64 }: { size?: number }) {
   );
 }
 
+const SECTION_TITLES = [
+  "Your Details", "Payee & Payment", "Ministry & Purpose",
+  "Claim Items", "Supporting Documents", "Declaration",
+];
+
 export default function SubmitPVPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -164,14 +156,29 @@ export default function SubmitPVPage() {
   const [showLocationMgr, setShowLocationMgr] = useState(false);
   const [newLocation, setNewLocation] = useState("");
 
+  // Attachments
+  const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+
+  // Mobile accordion
+  const [isMobile, setIsMobile] = useState(false);
+  const [openSection, setOpenSection] = useState(0);
+
   // Finance Executive e-signature
   const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
-  const [finSigData, setFinSigData]         = useState(""); // base64
-  const [savedSig, setSavedSig]             = useState("");
-  const [sigMode, setSigMode]               = useState<"draw" | "upload">("draw");
+  const [finSigData, setFinSigData] = useState("");
+  const [savedSig, setSavedSig] = useState("");
+  const [sigMode, setSigMode] = useState<"draw" | "upload">("draw");
   const [saveSigForNext, setSaveSigForNext] = useState(false);
-  const canvasRef                           = useRef<HTMLCanvasElement>(null);
-  const isDrawingRef                        = useRef(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef = useRef(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -185,7 +192,7 @@ export default function SubmitPVPage() {
         setIsFinanceAdmin(isFA);
         if (isFA && profile?.saved_signature) {
           setSavedSig(profile.saved_signature);
-          setFinSigData(profile.saved_signature); // auto-apply saved sig
+          setFinSigData(profile.saved_signature);
         }
         setForm(f => ({
           ...f,
@@ -196,7 +203,6 @@ export default function SubmitPVPage() {
       });
     });
 
-    // Pre-fill from purchase request if pr_id in query
     const params = new URLSearchParams(window.location.search);
     const prId = params.get("pr_id");
     if (prId) {
@@ -217,11 +223,9 @@ export default function SubmitPVPage() {
     }
   }, []);
 
-  // Load projects when ministry changes
   useEffect(() => {
     if (!form.ministry) { setProjects([]); return; }
-    loadBudgetProjects(supabase, form.ministry)
-      .then((projectNames) => setProjects(projectNames));
+    loadBudgetProjects(supabase, form.ministry).then(setProjects);
   }, [form.ministry]);
 
   const totalFromItems = isTravelClaim
@@ -229,11 +233,10 @@ export default function SubmitPVPage() {
     : form.line_items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const displayAmount = totalFromItems;
   const loa = getLOATier(displayAmount, "GENERAL");
-  // Finance Executive / senior roles can always manage; Ministry Heads only for their assigned ministry
+
   const DIRECT_MANAGER_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "GENERAL_MANAGER", "TREASURER", "BISHOP", "SECRETARY"];
   const canManageProjects =
     DIRECT_MANAGER_ROLES.includes(userRole) ||
-    (userRole === "MINISTRY_HEAD" && form.ministry !== "" && userMinistries.includes(form.ministry)) ||
     (userMinistries.length > 0 && form.ministry !== "" && userMinistries.includes(form.ministry));
   const budgetManageUrl = `/budget?ministry=${encodeURIComponent(form.ministry)}`;
 
@@ -247,11 +250,7 @@ export default function SubmitPVPage() {
     );
     setForm(f => ({ ...f, line_items: items }));
   }
-
-  function addLineItem() {
-    setForm(f => ({ ...f, line_items: [...f.line_items, { description: "", amount: 0, date: "" }] }));
-  }
-
+  function addLineItem() { setForm(f => ({ ...f, line_items: [...f.line_items, { description: "", amount: 0, date: "" }] })); }
   function removeLineItem(idx: number) {
     const items = form.line_items.filter((_, i) => i !== idx);
     setForm(f => ({ ...f, line_items: items.length ? items : [{ description: "", amount: 0, date: "" }] }));
@@ -280,11 +279,22 @@ export default function SubmitPVPage() {
     saveLocations([...customLocations, v].sort());
     setNewLocation("");
   }
-  function removeLocation(loc: string) {
-    saveLocations(customLocations.filter(l => l !== loc));
+  function removeLocation(loc: string) { saveLocations(customLocations.filter(l => l !== loc)); }
+
+  function handleFiles(files: FileList | null) {
+    if (!files) return;
+    const newFiles = Array.from(files)
+      .filter(f => f.type.startsWith("image/") || f.type === "application/pdf")
+      .map(f => ({ file: f, previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : "" }));
+    setAttachments(prev => [...prev, ...newFiles]);
+  }
+  function removeAttachment(idx: number) {
+    setAttachments(prev => {
+      if (prev[idx]?.previewUrl) URL.revokeObjectURL(prev[idx].previewUrl);
+      return prev.filter((_, i) => i !== idx);
+    });
   }
 
-  // ── Canvas helpers for Finance Executive signature ──────────────────────
   const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     isDrawingRef.current = true;
     const canvas = canvasRef.current; if (!canvas) return;
@@ -339,6 +349,18 @@ export default function SubmitPVPage() {
     if (displayAmount <= 0) { setError("Please enter at least one line item with an amount."); return; }
     setSubmitting(true);
     try {
+      // Upload attachments to Supabase storage
+      const attachmentUrls: string[] = [];
+      for (const att of attachments) {
+        const ext = att.file.name.split(".").pop() ?? "bin";
+        const path = `pvs/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: uploadErr } = await supabase.storage.from("pv-attachments").upload(path, att.file);
+        if (!uploadErr) {
+          const { data: { publicUrl } } = supabase.storage.from("pv-attachments").getPublicUrl(path);
+          attachmentUrls.push(publicUrl);
+        }
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
         method: "POST",
@@ -371,12 +393,13 @@ export default function SubmitPVPage() {
           payment_type: isTravelClaim ? "TRAVEL_CLAIM" : "GENERAL",
           sig_applicant_name: form.sig_applicant_name,
           sig_applicant_confirm: form.sig_applicant_confirm,
+          attachment_urls: attachmentUrls,
           ...(isFinanceAdmin && finSigData ? { finance_signature_data: finSigData } : {}),
         }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Submission failed");
-      // Save signature for next time if requested
+
       if (isFinanceAdmin && finSigData && saveSigForNext) {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (authUser?.email) {
@@ -384,7 +407,6 @@ export default function SubmitPVPage() {
           setSavedSig(finSigData);
         }
       }
-      // If raised from a PR, mark the PR as PV_RAISED
       if (prBanner?.id && result.pv_id) {
         await supabase.from("purchase_requests").update({
           status: "PV_RAISED", pv_id: result.pv_id, updated_at: new Date().toISOString(),
@@ -393,6 +415,9 @@ export default function SubmitPVPage() {
       setSuccess(`PV ${result.pv_no} submitted successfully!`);
       setForm(EMPTY_FORM);
       setPrBanner(null);
+      // Revoke all object URLs
+      attachments.forEach(a => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
+      setAttachments([]);
       setTimeout(() => router.push("/my-pvs"), 1500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -401,11 +426,536 @@ export default function SubmitPVPage() {
     }
   }
 
-  const isCheque = form.payment_method === "Cheque";
-  const isJomPay = form.payment_method === "JomPay";
-  const isCash = form.payment_method === "Cash";
+  const isCheque  = form.payment_method === "Cheque";
+  const isJomPay  = form.payment_method === "JomPay";
+  const isCash    = form.payment_method === "Cash";
   const isTransfer = !isCheque && !isJomPay && !isCash;
 
+  // ── Section completion + summary (for mobile accordion) ────────────────
+  const sectionComplete = [
+    !!(form.applicant_name && form.applicant_email && form.pvDate),
+    !!(form.payee_name && (isCash || (isCheque) || (isJomPay) || (!isCash && !isCheque && !isJomPay && form.payee_bank_acct))),
+    !!(form.ministry && form.purpose),
+    displayAmount > 0,
+    true,
+    !!(form.sig_applicant_confirm && form.sig_applicant_name),
+  ];
+  const sectionSummary = [
+    form.applicant_name || "Tap to fill in",
+    form.payee_name ? `${form.payee_name} · ${form.payment_method}` : "Tap to fill in",
+    form.ministry ? `${form.ministry}${form.purpose ? ` · ${form.purpose.slice(0, 28)}` : ""}` : "Tap to fill in",
+    displayAmount > 0 ? `${isTravelClaim ? "Travel" : "General"} · ${formatCurrency(displayAmount)}` : "Tap to add items",
+    attachments.length > 0 ? `${attachments.length} file(s) attached` : "Optional",
+    form.sig_applicant_confirm ? "Confirmed ✓" : "Tap to complete",
+  ];
+
+  // ── Shared: attachments UI ──────────────────────────────────────────────
+  const AttachmentsUI = (
+    <div className="space-y-3">
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+        className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors ${dragOver ? "border-[#4a6da7] bg-blue-50" : "border-stone-200"}`}
+      >
+        <Paperclip size={20} className="mx-auto text-stone-300 mb-2" />
+        <p className="text-xs text-stone-400 mb-3">Attach receipts, invoices, or photos</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-600 cursor-pointer hover:bg-stone-50 transition-colors font-medium">
+            <Upload size={12} /> Choose File
+            <input type="file" accept="image/*,application/pdf" multiple className="hidden"
+              onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+          </label>
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-600 cursor-pointer hover:bg-stone-50 transition-colors font-medium">
+            <Camera size={12} /> Take Photo
+            <input type="file" accept="image/*" capture="environment" multiple className="hidden"
+              onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+          </label>
+        </div>
+      </div>
+      {attachments.length > 0 && (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {attachments.map((att, idx) => (
+            <div key={idx} className="relative group">
+              {att.previewUrl ? (
+                <div className="h-20 rounded-xl overflow-hidden border border-stone-200">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={att.previewUrl} alt={att.file.name} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="h-20 rounded-xl border border-red-100 bg-red-50 flex flex-col items-center justify-center gap-1 px-1">
+                  <FileIcon size={20} className="text-red-300" />
+                  <span className="text-[9px] text-stone-500 text-center leading-tight break-all line-clamp-2">{att.file.name}</span>
+                </div>
+              )}
+              <button type="button" onClick={() => removeAttachment(idx)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white shadow border border-stone-200 flex items-center justify-center opacity-0 group-hover:opacity-100 active:opacity-100 transition-opacity z-10">
+                <XIcon size={9} className="text-stone-600" />
+              </button>
+              <p className="text-[9px] text-stone-400 mt-0.5 text-center truncate">{formatFileSize(att.file.size)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Shared: e-signature UI ──────────────────────────────────────────────
+  const SignatureUI = isFinanceAdmin ? (
+    <div className="space-y-3 pt-3 border-t border-stone-100">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <PenLine size={14} className="text-[#4a6da7]" />
+          <span className="text-sm font-semibold text-stone-700">Finance Executive E-Signature</span>
+          {finSigData && <span className="text-[11px] text-green-600 font-medium">(captured)</span>}
+        </div>
+        <div className="flex gap-1">
+          {(["draw", "upload"] as const).map(m => (
+            <button key={m} type="button" onClick={() => setSigMode(m)}
+              className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors capitalize ${sigMode === m ? "bg-[#4a6da7]/10 border-[#4a6da7]/30 text-[#4a6da7]" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+              {m}
+            </button>
+          ))}
+        </div>
+      </div>
+      {sigMode === "draw" ? (
+        <div className="space-y-2">
+          <div className="border-2 border-dashed border-stone-200 rounded-xl overflow-hidden bg-stone-50" style={{ touchAction: "none" }}>
+            <canvas ref={canvasRef} width={560} height={90} className="w-full cursor-crosshair"
+              onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+              onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={clearCanvas}
+              className="text-xs text-stone-500 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors flex items-center gap-1">
+              <XIcon size={10} /> Clear
+            </button>
+            {savedSig && (
+              <button type="button" onClick={() => loadSavedSigOnCanvas(savedSig)}
+                className="text-xs text-[#4a6da7] border border-[#4a6da7]/30 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1">
+                <CheckCircle size={11} /> Use saved signature
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-200 rounded-xl p-5 bg-stone-50 cursor-pointer hover:border-[#4a6da7]/40 hover:bg-blue-50/30 transition-colors">
+          <Upload size={18} className="text-stone-400 mb-1" />
+          <span className="text-xs text-stone-500">Click to upload signature image</span>
+          <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
+        </label>
+      )}
+      {finSigData && (
+        <div className="flex items-center gap-3 p-2.5 bg-green-50 border border-green-200 rounded-xl">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={finSigData} alt="signature preview" className="h-8 object-contain" />
+          <span className="text-xs text-green-700 flex-1">Signature captured</span>
+          <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer shrink-0">
+            <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="accent-[#4a6da7]" />
+            Save for next time
+          </label>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  // ── Mobile section content ──────────────────────────────────────────────
+  const mobileSections: React.ReactNode[] = [
+
+    // 0: Your Details
+    <div key="s0" className="space-y-4">
+      <div>
+        <label className={mLabel}>Full Name <span className="text-red-400">*</span></label>
+        <input className={mInput} value={form.applicant_name}
+          onChange={e => setField("applicant_name", e.target.value)} placeholder="Your full name" />
+      </div>
+      <div>
+        <label className={mLabel}>Email <span className="text-red-400">*</span></label>
+        <input className={mInput} type="email" value={form.applicant_email}
+          onChange={e => setField("applicant_email", e.target.value)} placeholder="your@email.com" />
+      </div>
+      <div>
+        <label className={mLabel}>Date <span className="text-red-400">*</span></label>
+        <input className={mInput} type="date" value={form.pvDate}
+          onChange={e => setField("pvDate", e.target.value)} />
+      </div>
+    </div>,
+
+    // 1: Payee & Payment
+    <div key="s1" className="space-y-4">
+      <div>
+        <label className={mLabel}>Payable To <span className="text-red-400">*</span></label>
+        <input className={mInput} value={form.payee_name}
+          onChange={e => setField("payee_name", e.target.value)} placeholder="Full name or company" />
+      </div>
+      <div>
+        <label className={mLabel}>Payment Method</label>
+        <div className="relative">
+          <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.payment_method}
+            onChange={e => setField("payment_method", e.target.value)}>
+            {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+        </div>
+      </div>
+      {isTransfer && <>
+        <div>
+          <label className={mLabel}>Payee Bank</label>
+          <div className="relative">
+            <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.payee_bank_name}
+              onChange={e => setField("payee_bank_name", e.target.value)}>
+              <option value="">— Select bank —</option>
+              {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+          </div>
+        </div>
+        <div>
+          <label className={mLabel}>Account Number <span className="text-red-400">*</span></label>
+          <input className={mInput} value={form.payee_bank_acct}
+            onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="Bank account number" />
+        </div>
+      </>}
+      {isCheque && (
+        <div>
+          <label className={mLabel}>Cheque No.</label>
+          <input className={mInput} value={form.cheque_no}
+            onChange={e => setField("cheque_no", e.target.value)} placeholder="Cheque number" />
+        </div>
+      )}
+      {isJomPay && (
+        <div>
+          <label className={mLabel}>Biller Code</label>
+          <input className={mInput} value={form.biller_code}
+            onChange={e => setField("biller_code", e.target.value)} placeholder="JomPay biller code" />
+        </div>
+      )}
+    </div>,
+
+    // 2: Ministry & Purpose
+    <div key="s2" className="space-y-4">
+      <div>
+        <label className={mLabel}>Ministry <span className="text-red-400">*</span></label>
+        <div className="relative">
+          <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.ministry}
+            onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
+            <option value="">— Select ministry —</option>
+            {MINISTRIES.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className={mLabel}>Project <span className="text-stone-300 font-normal normal-case">(optional)</span></label>
+        {form.ministry && projects.length > 0 ? (
+          <div className="relative">
+            <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.project}
+              onChange={e => setField("project", e.target.value)}>
+              <option value="">— Select project —</option>
+              {projects.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+          </div>
+        ) : (
+          <input className={mInput} disabled={!form.ministry} value={form.project}
+            onChange={e => setField("project", e.target.value)}
+            placeholder={form.ministry ? "No projects set up — type or leave blank" : "Select ministry first"} />
+        )}
+        {canManageProjects && form.ministry && (
+          <a href={budgetManageUrl} target="_blank" className="text-[11px] text-[#4a6da7] hover:underline font-medium mt-1 inline-block">
+            + Manage projects
+          </a>
+        )}
+      </div>
+      <div>
+        <label className={mLabel}>Purpose <span className="text-red-400">*</span></label>
+        <input className={mInput} value={form.purpose}
+          onChange={e => setField("purpose", e.target.value)}
+          placeholder="e.g. Monthly Cost of Living Allowance" />
+      </div>
+    </div>,
+
+    // 3: Claim Items
+    <div key="s3" className="space-y-4">
+      <datalist id="lcm-locations">
+        {customLocations.map(l => <option key={l} value={l} />)}
+      </datalist>
+
+      {/* Travel toggle */}
+      <button type="button" onClick={() => setIsTravelClaim(t => !t)}
+        className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border font-semibold text-sm transition-colors ${
+          isTravelClaim ? "bg-[#7C4A0A] text-white border-transparent" : "border-[#7C4A0A] text-[#7C4A0A] bg-white"
+        }`}>
+        <Car size={15} /> {isTravelClaim ? "Switch to General Claim" : "Switch to Travel Claim"}
+      </button>
+
+      {isTravelClaim ? (
+        <div className="space-y-3">
+          {travelItems.map((item, idx) => (
+            <div key={idx} className="border border-stone-200 rounded-2xl p-4 space-y-3 bg-amber-50/30">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">Item {idx + 1}</span>
+                {travelItems.length > 1 && (
+                  <button type="button" onClick={() => removeTravelItem(idx)} className="text-stone-300 hover:text-red-400 p-1 transition-colors">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className={mLabel}>Date</label>
+                <input type="date" className={mInput} value={item.date || form.pvDate}
+                  onChange={e => updateTravelItem(idx, { date: e.target.value })} />
+              </div>
+              <div>
+                <label className={mLabel}>Type</label>
+                <div className="relative">
+                  <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={item.travel_type}
+                    onChange={e => updateTravelItem(idx, { travel_type: e.target.value as TravelType | "", description: "", from: "", to: "", km: 0, amount: 0 })}>
+                    <option value="">— Select type —</option>
+                    {TRAVEL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                </div>
+              </div>
+              {item.travel_type === "mileage" ? <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={mLabel}>From</label>
+                    <input list="lcm-locations" className={mInput} placeholder="From" value={item.from}
+                      onChange={e => updateTravelItem(idx, { from: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={mLabel}>To</label>
+                    <input list="lcm-locations" className={mInput} placeholder="To" value={item.to}
+                      onChange={e => updateTravelItem(idx, { to: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <label className={mLabel}>Distance (km)</label>
+                  <input type="number" min="0" step="0.1" className={mInput} placeholder="0"
+                    value={item.km || ""}
+                    onChange={e => updateTravelItem(idx, { km: Number(e.target.value) })} />
+                  {item.km > 0 && (
+                    <p className="text-xs text-[#7C4A0A] font-semibold mt-1.5">
+                      = RM {(item.km * MILEAGE_RATE).toFixed(2)} (RM{MILEAGE_RATE.toFixed(2)}/km)
+                    </p>
+                  )}
+                </div>
+              </> : item.travel_type ? <>
+                <div>
+                  <label className={mLabel}>Description</label>
+                  <input className={mInput} value={item.description}
+                    placeholder={
+                      item.travel_type === "petrol"  ? "e.g. Petrol — Tapah to Cameron Highlands"
+                      : item.travel_type === "train"   ? "e.g. KL Sentral → Ipoh (KTM)"
+                      : "e.g. KL → Kota Kinabalu (AirAsia)"
+                    }
+                    onChange={e => updateTravelItem(idx, { description: e.target.value })} />
+                </div>
+                <div>
+                  <label className={mLabel}>Amount (RM)</label>
+                  <input type="number" min="0" step="0.01" className={mInput} placeholder="0.00"
+                    value={item.amount || ""}
+                    onChange={e => updateTravelItem(idx, { amount: Number(e.target.value) })} />
+                </div>
+              </> : null}
+            </div>
+          ))}
+          <button type="button" onClick={addTravelItem}
+            className="w-full flex items-center justify-center gap-2 py-3.5 border-2 border-dashed border-stone-200 rounded-2xl text-sm text-stone-400 hover:border-stone-300 hover:text-stone-500 transition-colors">
+            <Plus size={14} /> Add travel item
+          </button>
+          <button type="button" onClick={() => setShowLocationMgr(s => !s)}
+            className="text-xs text-[#7C4A0A] hover:underline font-medium w-full text-center py-1">
+            {showLocationMgr ? "Close location editor" : "Edit location suggestions"}
+          </button>
+          {showLocationMgr && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+              <p className="text-[11px] font-semibold text-amber-900">Location suggestions</p>
+              <div className="flex flex-wrap gap-1.5">
+                {customLocations.map(loc => (
+                  <span key={loc} className="flex items-center gap-1 text-xs bg-white border border-stone-200 px-2 py-0.5 rounded-full">
+                    {loc}
+                    <button type="button" onClick={() => removeLocation(loc)} className="text-stone-300 hover:text-red-400 ml-0.5"><XIcon size={9} /></button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input value={newLocation} onChange={e => setNewLocation(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addLocation(); } }}
+                  placeholder="Add new location…"
+                  className="flex-1 text-xs border-b border-amber-300 bg-transparent outline-none py-1 focus:border-[#7C4A0A] placeholder:text-stone-300" />
+                <button type="button" onClick={addLocation} className="text-xs text-[#7C4A0A] font-semibold hover:underline shrink-0">+ Add</button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {form.line_items.map((item, idx) => (
+            <div key={idx} className="border border-stone-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">Item {idx + 1}</span>
+                {form.line_items.length > 1 && (
+                  <button type="button" onClick={() => removeLineItem(idx)} className="text-stone-300 hover:text-red-400 p-1 transition-colors">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className={mLabel}>Date</label>
+                <input type="date" className={mInput} value={item.date || form.pvDate}
+                  onChange={e => updateLineItem(idx, "date", e.target.value)} />
+              </div>
+              <div>
+                <label className={mLabel}>Description</label>
+                <input className={mInput} value={item.description}
+                  placeholder="Description of item / service"
+                  onChange={e => updateLineItem(idx, "description", e.target.value)} />
+              </div>
+              <div>
+                <label className={mLabel}>Amount (RM)</label>
+                <input type="number" min="0" step="0.01" className={mInput} placeholder="0.00"
+                  value={item.amount || ""}
+                  onChange={e => updateLineItem(idx, "amount", e.target.value)} />
+              </div>
+            </div>
+          ))}
+          <button type="button" onClick={addLineItem}
+            className="w-full flex items-center justify-center gap-2 py-3.5 border-2 border-dashed border-stone-200 rounded-2xl text-sm text-stone-400 hover:border-stone-300 hover:text-stone-500 transition-colors">
+            <Plus size={14} /> Add item
+          </button>
+        </div>
+      )}
+
+      {displayAmount > 0 && (
+        <div className="flex items-center justify-between p-3.5 bg-stone-50 rounded-xl border border-stone-100">
+          <span className="text-sm text-stone-600">Total</span>
+          <span className="text-base font-bold text-stone-800">{formatCurrency(displayAmount)}</span>
+        </div>
+      )}
+      {displayAmount > 0 && (
+        <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+          <Info size={13} className="mt-0.5 shrink-0" />
+          <span><strong>Approval:</strong> {loa.label} — {loa.required} signatory{loa.required > 1 ? "ies" : ""} needed.</span>
+        </div>
+      )}
+    </div>,
+
+    // 4: Supporting Documents
+    AttachmentsUI,
+
+    // 5: Declaration
+    <div key="s5" className="space-y-4">
+      <p className="text-xs text-stone-500 leading-relaxed bg-stone-50 p-3 rounded-xl border border-stone-100">
+        I hereby declare that the information provided is true and accurate, and that this payment is for legitimate
+        church-related expenses in accordance with LCM&apos;s financial policies.
+      </p>
+      <div>
+        <label className={mLabel}>Your Full Name (as signature) <span className="text-red-400">*</span></label>
+        <input className={mInput} value={form.sig_applicant_name}
+          onChange={e => setField("sig_applicant_name", e.target.value)} />
+      </div>
+      <label className="flex items-start gap-3 cursor-pointer p-3 bg-stone-50 rounded-xl border border-stone-100">
+        <input type="checkbox" className="mt-0.5 accent-[#4a6da7] w-4 h-4 shrink-0"
+          checked={form.sig_applicant_confirm}
+          onChange={e => setField("sig_applicant_confirm", e.target.checked)} />
+        <span className="text-sm text-stone-600">I confirm the above declaration and that all details are correct</span>
+      </label>
+      {SignatureUI}
+    </div>,
+  ];
+
+  // ── MOBILE RENDER ───────────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div className="min-h-screen bg-stone-50">
+        {/* Sticky progress header */}
+        <div className="sticky top-0 z-10 bg-white border-b border-stone-100 px-4 py-3 shadow-sm">
+          <h1 className="text-base font-bold text-stone-800">Submit Payment Voucher</h1>
+          <div className="flex gap-1 mt-2.5">
+            {SECTION_TITLES.map((_, i) => (
+              <div key={i} className={`h-1.5 flex-1 rounded-full transition-colors ${
+                sectionComplete[i] ? "bg-[#4a6da7]" : i === openSection ? "bg-[#4a6da7]/40" : "bg-stone-200"
+              }`} />
+            ))}
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {prBanner && (
+            <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
+              <span className="text-blue-600 font-semibold shrink-0">📋 {prBanner.request_no}</span>
+              <span className="text-blue-800 flex-1 text-xs">Raising PV for: <strong>{prBanner.title}</strong></span>
+              <button type="button" onClick={() => setPrBanner(null)} className="text-blue-400 text-xs shrink-0">Clear</button>
+            </div>
+          )}
+
+          <div className="p-4 space-y-3 pb-32">
+            {SECTION_TITLES.map((title, i) => (
+              <div key={i} className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setOpenSection(openSection === i ? -1 : i)}
+                  className="w-full flex items-center gap-3 px-4 py-4 text-left"
+                >
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                    sectionComplete[i]
+                      ? "bg-green-500 text-white"
+                      : i === openSection
+                        ? "bg-[#4a6da7] text-white"
+                        : "bg-stone-100 text-stone-500"
+                  } text-xs font-bold transition-colors`}>
+                    {sectionComplete[i] ? <CheckCircle size={14} /> : i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-stone-800">{title}</div>
+                    {openSection !== i && (
+                      <div className="text-xs text-stone-400 truncate mt-0.5">{sectionSummary[i]}</div>
+                    )}
+                  </div>
+                  <ChevronDown size={16} className={`text-stone-400 transition-transform shrink-0 ${openSection === i ? "rotate-180" : ""}`} />
+                </button>
+
+                {openSection === i && (
+                  <div className="px-4 pb-5 border-t border-stone-100">
+                    <div className="pt-4">{mobileSections[i]}</div>
+                    {i < SECTION_TITLES.length - 1 && (
+                      <button type="button" onClick={() => setOpenSection(i + 1)}
+                        className="mt-4 w-full py-3 rounded-xl bg-stone-100 text-stone-700 text-sm font-semibold hover:bg-stone-200 transition-colors">
+                        Next: {SECTION_TITLES[i + 1]} →
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {error && <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>}
+            {success && <div className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">{success}</div>}
+          </div>
+
+          {/* Fixed bottom submit bar */}
+          <div className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-stone-100 px-4 py-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              {displayAmount > 0 && (
+                <div className="text-right shrink-0">
+                  <div className="text-[10px] text-stone-400 uppercase tracking-wide">Total</div>
+                  <div className="text-sm font-bold text-stone-800">{formatCurrency(displayAmount)}</div>
+                </div>
+              )}
+              <button type="submit" disabled={submitting}
+                className="flex-1 py-3.5 bg-[#4a6da7] hover:bg-[#3d5a8e] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                {submitting ? "Submitting…" : "Submit Payment Voucher"}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // ── DESKTOP RENDER ──────────────────────────────────────────────────────
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
       <div className="mb-5">
@@ -413,7 +963,6 @@ export default function SubmitPVPage() {
         <p className="text-xs text-stone-400 mt-0.5">Fill in all required fields and submit for Finance review</p>
       </div>
 
-      {/* PR pre-fill banner */}
       {prBanner && (
         <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
           <span className="text-blue-600 font-semibold shrink-0">📋 {prBanner.request_no}</span>
@@ -423,7 +972,6 @@ export default function SubmitPVPage() {
       )}
 
       <form onSubmit={handleSubmit}>
-        {/* ── DOCUMENT PAPER ─────────────────────────────────────────── */}
         <div className="bg-white border border-stone-300 shadow-md rounded-sm print:shadow-none">
 
           {/* Header */}
@@ -438,9 +986,7 @@ export default function SubmitPVPage() {
             <div className="text-right">
               <table className="border border-stone-800 text-xs">
                 <tbody>
-                  <tr>
-                    <td className="border border-stone-800 px-2 py-1 font-bold bg-stone-50" colSpan={2}>For Office Use Only:</td>
-                  </tr>
+                  <tr><td className="border border-stone-800 px-2 py-1 font-bold bg-stone-50" colSpan={2}>For Office Use Only:</td></tr>
                   <tr>
                     <td className="border border-stone-800 px-2 py-1 text-stone-600 whitespace-nowrap">Ref No:</td>
                     <td className="border border-stone-800 px-2 py-1 text-stone-400 italic">(auto-generated)</td>
@@ -459,18 +1005,14 @@ export default function SubmitPVPage() {
             <p className="text-xs font-bold uppercase tracking-wide leading-relaxed">
               LUTHERAN CHURCH IN MALAYSIA (REIMBURSEMENT CLAIM FORM / PAYMENT VOUCHER)
             </p>
-            <p className="text-xs font-bold mt-0.5">
-              马来西亚基督教信义会（费用报销 / 付款凭证表格）
-            </p>
+            <p className="text-xs font-bold mt-0.5">马来西亚基督教信义会（费用报销 / 付款凭证表格）</p>
           </div>
 
-          {/* ── MAIN FORM FIELDS ──────────────────────────────────────── */}
+          {/* Main form fields */}
           <div className="px-3 sm:px-6 py-4 space-y-0">
-
             <Row label="Applicant 申请者" sublabel="Full name of submitter">
               <input className={uline} value={form.applicant_name}
-                onChange={e => setField("applicant_name", e.target.value)}
-                placeholder="Your full name" required />
+                onChange={e => setField("applicant_name", e.target.value)} placeholder="Your full name" required />
               <div className="shrink-0 flex items-end gap-2 whitespace-nowrap">
                 <span className="text-sm font-semibold text-stone-700">Date 日期:</span>
                 <input type="date" className={`${uline} w-36`} value={form.pvDate}
@@ -480,14 +1022,12 @@ export default function SubmitPVPage() {
 
             <Row label="Email 电邮">
               <input className={uline} type="email" value={form.applicant_email}
-                onChange={e => setField("applicant_email", e.target.value)}
-                placeholder="applicant@lcm.org.my" required />
+                onChange={e => setField("applicant_email", e.target.value)} placeholder="applicant@lcm.org.my" required />
             </Row>
 
             <Row label="Payable to 付给" sublabel="Person or company to be paid">
               <input className={uline} value={form.payee_name}
-                onChange={e => setField("payee_name", e.target.value)}
-                placeholder="Full name / company name" required />
+                onChange={e => setField("payee_name", e.target.value)} placeholder="Full name / company name" required />
             </Row>
 
             <Row label="Payment Method 付款方式">
@@ -504,8 +1044,7 @@ export default function SubmitPVPage() {
                 </InlineSelect>
                 <span className="text-stone-400 text-xs shrink-0">A/C:</span>
                 <input className={`${uline} flex-1`} value={form.payee_bank_acct}
-                  onChange={e => setField("payee_bank_acct", e.target.value)}
-                  placeholder="Account number" required={isTransfer} />
+                  onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="Account number" required={isTransfer} />
               </Row>
             )}
             {isCheque && (
@@ -528,7 +1067,6 @@ export default function SubmitPVPage() {
               </InlineSelect>
             </Row>
 
-            {/* Project dropdown — loads from budget_items per ministry */}
             <Row label="Project 计划" sublabel="Sub-project or budget code">
               {form.ministry ? (
                 projects.length > 0 ? (
@@ -537,23 +1075,16 @@ export default function SubmitPVPage() {
                       <option value="">— Select project (optional) —</option>
                       {projects.map(p => <option key={p} value={p}>{p}</option>)}
                     </InlineSelect>
-                    {canManageProjects && form.ministry && (
-                      <a href={budgetManageUrl} target="_blank"
-                        className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap font-medium">
-                        + Manage
-                      </a>
+                    {canManageProjects && (
+                      <a href={budgetManageUrl} target="_blank" className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap font-medium">+ Manage</a>
                     )}
                   </div>
                 ) : (
                   <div className="flex-1 flex items-end gap-2">
                     <input className={`${uline} flex-1`} value={form.project}
-                      onChange={e => setField("project", e.target.value)}
-                      placeholder="No projects set up yet — type or leave blank" />
-                    {canManageProjects && form.ministry && (
-                      <a href={budgetManageUrl} target="_blank"
-                        className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap font-medium">
-                        + Add projects
-                      </a>
+                      onChange={e => setField("project", e.target.value)} placeholder="No projects set up yet — type or leave blank" />
+                    {canManageProjects && (
+                      <a href={budgetManageUrl} target="_blank" className="shrink-0 text-[10px] text-[#4a6da7] hover:underline whitespace-nowrap font-medium">+ Add projects</a>
                     )}
                   </div>
                 )
@@ -564,12 +1095,11 @@ export default function SubmitPVPage() {
 
             <Row label="Purpose 用途" sublabel="Describe what this payment is for">
               <input className={uline} value={form.purpose}
-                onChange={e => setField("purpose", e.target.value)}
-                placeholder="e.g. Monthly Cost of Living Allowance" required />
+                onChange={e => setField("purpose", e.target.value)} placeholder="e.g. Monthly Cost of Living Allowance" required />
             </Row>
           </div>
 
-          {/* ── PARTICULARS TABLE ──────────────────────────────────────── */}
+          {/* Particulars table */}
           <div className="px-3 sm:px-6 pb-2">
             <div className="flex items-center justify-between mb-2 mt-1">
               <p className="text-xs font-semibold text-stone-500">
@@ -578,9 +1108,7 @@ export default function SubmitPVPage() {
               </p>
               <button type="button" onClick={() => setIsTravelClaim(t => !t)}
                 className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors shrink-0 ml-3 ${
-                  isTravelClaim
-                    ? "bg-[#7C4A0A] text-white border-transparent"
-                    : "border-[#7C4A0A] text-[#7C4A0A] hover:bg-amber-50"
+                  isTravelClaim ? "bg-[#7C4A0A] text-white border-transparent" : "border-[#7C4A0A] text-[#7C4A0A] hover:bg-amber-50"
                 }`}>
                 <Car size={11} /> Travel Claim
               </button>
@@ -591,190 +1119,140 @@ export default function SubmitPVPage() {
             </datalist>
 
             <div className="overflow-x-auto">
-            {isTravelClaim ? (
-              <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 540 }}>
-                <thead>
-                  <tr className="bg-stone-50">
-                    <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
-                    <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-24">Date 日期</th>
-                    <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold w-32">Type 类型</th>
-                    <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold">Route / Particulars 路线 / 事项</th>
-                    <th className="border border-stone-800 px-2 py-1.5 text-right text-xs font-bold w-28">Amount 数目 (RM)</th>
-                    <th className="border border-stone-800 w-8 print:hidden" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {travelItems.map((item, idx) => (
-                    <tr key={idx} className="group">
-                      <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-500">{idx + 1}</td>
-                      <td className="border border-stone-800 px-1 py-0.5">
-                        <input type="date"
-                          className="w-full outline-none text-xs text-stone-600 bg-transparent border-0 py-0.5"
-                          value={item.date || form.pvDate}
-                          onChange={e => updateTravelItem(idx, { date: e.target.value })} />
-                      </td>
-                      <td className="border border-stone-800 px-1 py-0.5">
-                        <select
-                          value={item.travel_type}
-                          onChange={e => updateTravelItem(idx, { travel_type: e.target.value as TravelType | "", description: "", from: "", to: "", km: 0, amount: 0 })}
-                          className="w-full outline-none text-xs bg-transparent border-0 py-0.5 cursor-pointer">
-                          <option value="">— Select —</option>
-                          {TRAVEL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                        </select>
-                      </td>
-                      <td className="border border-stone-800 px-1 py-0.5">
-                        {item.travel_type === "mileage" ? (
-                          <div className="flex flex-col gap-1 py-0.5">
-                            <div className="flex items-center gap-1">
-                              <input list="lcm-locations"
-                                className="outline-none text-xs bg-transparent border-b border-stone-300 flex-1 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300"
-                                placeholder="From"
-                                value={item.from}
-                                onChange={e => updateTravelItem(idx, { from: e.target.value })} />
-                              <span className="text-stone-400 text-xs shrink-0">→</span>
-                              <input list="lcm-locations"
-                                className="outline-none text-xs bg-transparent border-b border-stone-300 flex-1 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300"
-                                placeholder="To"
-                                value={item.to}
-                                onChange={e => updateTravelItem(idx, { to: e.target.value })} />
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-stone-400 text-[10px] shrink-0">KM:</span>
-                              <input type="number" min="0" step="0.1"
-                                className="outline-none text-xs bg-transparent border-b border-stone-300 w-20 focus:border-[#4a6da7] placeholder:text-stone-300"
-                                placeholder="0"
-                                value={item.km || ""}
-                                onChange={e => updateTravelItem(idx, { km: Number(e.target.value) })} />
-                            </div>
-                          </div>
-                        ) : (
-                          <input
-                            className="w-full outline-none text-xs bg-transparent border-0 py-0.5 placeholder:text-stone-300"
-                            placeholder={
-                              item.travel_type === "petrol"  ? "e.g. Petrol — Tapah to Cameron Highlands"
-                              : item.travel_type === "train"   ? "e.g. KL Sentral → Ipoh (KTM)"
-                              : item.travel_type === "airfare" ? "e.g. KL → Kota Kinabalu (AirAsia)"
-                              : "Description of travel expense"
-                            }
-                            value={item.description}
-                            onChange={e => updateTravelItem(idx, { description: e.target.value })} />
-                        )}
-                      </td>
-                      <td className="border border-stone-800 px-1 py-0.5">
-                        {item.travel_type === "mileage" ? (
-                          <div className="text-right text-sm text-stone-600 bg-stone-50 py-0.5 px-1 tabular-nums font-medium select-none">
-                            {item.km > 0 ? (item.km * MILEAGE_RATE).toFixed(2) : "—"}
-                          </div>
-                        ) : (
-                          <input type="number" min="0" step="0.01"
-                            className="w-full outline-none text-sm text-right bg-transparent border-0 py-0.5 placeholder:text-stone-300"
-                            placeholder="0.00"
-                            value={item.amount || ""}
-                            onChange={e => updateTravelItem(idx, { amount: Number(e.target.value) })} />
-                        )}
-                      </td>
-                      <td className="border border-stone-800 px-1 py-0.5 text-center print:hidden">
-                        {travelItems.length > 1 && (
-                          <button type="button" onClick={() => removeTravelItem(idx)}
-                            className="text-stone-300 hover:text-red-400 transition-colors p-0.5">
-                            <Trash2 size={12} />
-                          </button>
-                        )}
-                      </td>
+              {isTravelClaim ? (
+                <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 540 }}>
+                  <thead>
+                    <tr className="bg-stone-50">
+                      <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
+                      <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-24">Date 日期</th>
+                      <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold w-32">Type 类型</th>
+                      <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold">Route / Particulars 路线 / 事项</th>
+                      <th className="border border-stone-800 px-2 py-1.5 text-right text-xs font-bold w-28">Amount 数目 (RM)</th>
+                      <th className="border border-stone-800 w-8 print:hidden" />
                     </tr>
-                  ))}
-                  {Array.from({ length: Math.max(0, 5 - travelItems.length) }).map((_, i) => (
-                    <tr key={`pad-${i}`} className="h-8 cursor-pointer hover:bg-amber-50/40 group/pad" onClick={addTravelItem}>
-                      <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-300">{travelItems.length + i + 1}</td>
-                      <td className="border border-stone-800" />
-                      <td className="border border-stone-800" />
-                      <td className="border border-stone-800 px-2 text-xs text-stone-300 italic group-hover/pad:text-stone-400">{i === 0 ? "Click to add item…" : ""}</td>
-                      <td className="border border-stone-800" />
+                  </thead>
+                  <tbody>
+                    {travelItems.map((item, idx) => (
+                      <tr key={idx} className="group">
+                        <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-500">{idx + 1}</td>
+                        <td className="border border-stone-800 px-1 py-0.5">
+                          <input type="date" className="w-full outline-none text-xs text-stone-600 bg-transparent border-0 py-0.5"
+                            value={item.date || form.pvDate} onChange={e => updateTravelItem(idx, { date: e.target.value })} />
+                        </td>
+                        <td className="border border-stone-800 px-1 py-0.5">
+                          <select value={item.travel_type}
+                            onChange={e => updateTravelItem(idx, { travel_type: e.target.value as TravelType | "", description: "", from: "", to: "", km: 0, amount: 0 })}
+                            className="w-full outline-none text-xs bg-transparent border-0 py-0.5 cursor-pointer">
+                            <option value="">— Select —</option>
+                            {TRAVEL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          </select>
+                        </td>
+                        <td className="border border-stone-800 px-1 py-0.5">
+                          {item.travel_type === "mileage" ? (
+                            <div className="flex flex-col gap-1 py-0.5">
+                              <div className="flex items-center gap-1">
+                                <input list="lcm-locations" className="outline-none text-xs bg-transparent border-b border-stone-300 flex-1 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300" placeholder="From" value={item.from} onChange={e => updateTravelItem(idx, { from: e.target.value })} />
+                                <span className="text-stone-400 text-xs shrink-0">→</span>
+                                <input list="lcm-locations" className="outline-none text-xs bg-transparent border-b border-stone-300 flex-1 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300" placeholder="To" value={item.to} onChange={e => updateTravelItem(idx, { to: e.target.value })} />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-stone-400 text-[10px] shrink-0">KM:</span>
+                                <input type="number" min="0" step="0.1" className="outline-none text-xs bg-transparent border-b border-stone-300 w-20 focus:border-[#4a6da7] placeholder:text-stone-300" placeholder="0" value={item.km || ""} onChange={e => updateTravelItem(idx, { km: Number(e.target.value) })} />
+                              </div>
+                            </div>
+                          ) : (
+                            <input className="w-full outline-none text-xs bg-transparent border-0 py-0.5 placeholder:text-stone-300"
+                              placeholder={item.travel_type === "petrol" ? "e.g. Petrol — Tapah to Cameron Highlands" : item.travel_type === "train" ? "e.g. KL Sentral → Ipoh (KTM)" : item.travel_type === "airfare" ? "e.g. KL → Kota Kinabalu (AirAsia)" : "Description"}
+                              value={item.description} onChange={e => updateTravelItem(idx, { description: e.target.value })} />
+                          )}
+                        </td>
+                        <td className="border border-stone-800 px-1 py-0.5">
+                          {item.travel_type === "mileage" ? (
+                            <div className="text-right text-sm text-stone-600 bg-stone-50 py-0.5 px-1 tabular-nums font-medium select-none">
+                              {item.km > 0 ? (item.km * MILEAGE_RATE).toFixed(2) : "—"}
+                            </div>
+                          ) : (
+                            <input type="number" min="0" step="0.01" className="w-full outline-none text-sm text-right bg-transparent border-0 py-0.5 placeholder:text-stone-300" placeholder="0.00" value={item.amount || ""} onChange={e => updateTravelItem(idx, { amount: Number(e.target.value) })} />
+                          )}
+                        </td>
+                        <td className="border border-stone-800 px-1 py-0.5 text-center print:hidden">
+                          {travelItems.length > 1 && (
+                            <button type="button" onClick={() => removeTravelItem(idx)} className="text-stone-300 hover:text-red-400 transition-colors p-0.5"><Trash2 size={12} /></button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {Array.from({ length: Math.max(0, 5 - travelItems.length) }).map((_, i) => (
+                      <tr key={`pad-${i}`} className="h-8 cursor-pointer hover:bg-amber-50/40 group/pad" onClick={addTravelItem}>
+                        <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-300">{travelItems.length + i + 1}</td>
+                        <td className="border border-stone-800" />
+                        <td className="border border-stone-800" />
+                        <td className="border border-stone-800 px-2 text-xs text-stone-300 italic group-hover/pad:text-stone-400">{i === 0 ? "Click to add item…" : ""}</td>
+                        <td className="border border-stone-800" />
+                        <td className="border border-stone-800 print:hidden" />
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-stone-50">
+                      <td colSpan={4} className="border border-stone-800 px-3 py-1.5 text-right text-sm font-bold">TOTAL AMOUNT 总数额</td>
+                      <td className="border border-stone-800 px-2 py-1.5 text-right text-sm font-bold text-stone-800">{displayAmount > 0 ? displayAmount.toFixed(2) : "—"}</td>
                       <td className="border border-stone-800 print:hidden" />
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-stone-50">
-                    <td colSpan={4} className="border border-stone-800 px-3 py-1.5 text-right text-sm font-bold">
-                      TOTAL AMOUNT 总数额
-                    </td>
-                    <td className="border border-stone-800 px-2 py-1.5 text-right text-sm font-bold text-stone-800">
-                      {displayAmount > 0 ? displayAmount.toFixed(2) : "—"}
-                    </td>
-                    <td className="border border-stone-800 print:hidden" />
-                  </tr>
-                </tfoot>
-              </table>
-            ) : (
-              <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 420 }}>
-                <thead>
-                  <tr className="bg-stone-50">
-                    <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
-                    <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-28">Date 日期</th>
-                    <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold">PARTICULARS 事项</th>
-                    <th className="border border-stone-800 px-2 py-1.5 text-right text-xs font-bold w-28">Amount 数目 (RM)</th>
-                    <th className="border border-stone-800 w-8 print:hidden" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {form.line_items.map((item, idx) => (
-                    <tr key={idx} className="group">
-                      <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-500">{idx + 1}</td>
-                      <td className="border border-stone-800 px-1 py-0.5">
-                        <input type="date"
-                          className="w-full outline-none text-xs text-stone-600 bg-transparent border-0 py-0.5"
-                          value={item.date || form.pvDate}
-                          onChange={e => updateLineItem(idx, "date", e.target.value)} />
-                      </td>
-                      <td className="border border-stone-800 px-1 py-0.5">
-                        <input className="w-full outline-none text-sm bg-transparent border-0 py-0.5 placeholder:text-stone-300"
-                          placeholder="Description of item / service"
-                          value={item.description}
-                          onChange={e => updateLineItem(idx, "description", e.target.value)} />
-                      </td>
-                      <td className="border border-stone-800 px-1 py-0.5">
-                        <input type="number" min="0" step="0.01"
-                          className="w-full outline-none text-sm text-right bg-transparent border-0 py-0.5 placeholder:text-stone-300"
-                          placeholder="0.00"
-                          value={item.amount || ""}
-                          onChange={e => updateLineItem(idx, "amount", e.target.value)} />
-                      </td>
-                      <td className="border border-stone-800 px-1 py-0.5 text-center print:hidden">
-                        {form.line_items.length > 1 && (
-                          <button type="button" onClick={() => removeLineItem(idx)}
-                            className="text-stone-300 hover:text-red-400 transition-colors p-0.5">
-                            <Trash2 size={12} />
-                          </button>
-                        )}
-                      </td>
+                  </tfoot>
+                </table>
+              ) : (
+                <table className="w-full border-collapse border border-stone-800 text-sm" style={{ minWidth: 420 }}>
+                  <thead>
+                    <tr className="bg-stone-50">
+                      <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-8">#</th>
+                      <th className="border border-stone-800 px-2 py-1.5 text-center text-xs font-bold w-28">Date 日期</th>
+                      <th className="border border-stone-800 px-2 py-1.5 text-left text-xs font-bold">PARTICULARS 事项</th>
+                      <th className="border border-stone-800 px-2 py-1.5 text-right text-xs font-bold w-28">Amount 数目 (RM)</th>
+                      <th className="border border-stone-800 w-8 print:hidden" />
                     </tr>
-                  ))}
-                  {Array.from({ length: Math.max(0, 5 - form.line_items.length) }).map((_, i) => (
-                    <tr key={`pad-${i}`} className="h-8">
-                      <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-300">{form.line_items.length + i + 1}</td>
-                      <td className="border border-stone-800" />
-                      <td className="border border-stone-800" />
-                      <td className="border border-stone-800" />
+                  </thead>
+                  <tbody>
+                    {form.line_items.map((item, idx) => (
+                      <tr key={idx} className="group">
+                        <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-500">{idx + 1}</td>
+                        <td className="border border-stone-800 px-1 py-0.5">
+                          <input type="date" className="w-full outline-none text-xs text-stone-600 bg-transparent border-0 py-0.5" value={item.date || form.pvDate} onChange={e => updateLineItem(idx, "date", e.target.value)} />
+                        </td>
+                        <td className="border border-stone-800 px-1 py-0.5">
+                          <input className="w-full outline-none text-sm bg-transparent border-0 py-0.5 placeholder:text-stone-300" placeholder="Description of item / service" value={item.description} onChange={e => updateLineItem(idx, "description", e.target.value)} />
+                        </td>
+                        <td className="border border-stone-800 px-1 py-0.5">
+                          <input type="number" min="0" step="0.01" className="w-full outline-none text-sm text-right bg-transparent border-0 py-0.5 placeholder:text-stone-300" placeholder="0.00" value={item.amount || ""} onChange={e => updateLineItem(idx, "amount", e.target.value)} />
+                        </td>
+                        <td className="border border-stone-800 px-1 py-0.5 text-center print:hidden">
+                          {form.line_items.length > 1 && (
+                            <button type="button" onClick={() => removeLineItem(idx)} className="text-stone-300 hover:text-red-400 transition-colors p-0.5"><Trash2 size={12} /></button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {Array.from({ length: Math.max(0, 5 - form.line_items.length) }).map((_, i) => (
+                      <tr key={`pad-${i}`} className="h-8">
+                        <td className="border border-stone-800 px-2 py-1 text-center text-xs text-stone-300">{form.line_items.length + i + 1}</td>
+                        <td className="border border-stone-800" />
+                        <td className="border border-stone-800" />
+                        <td className="border border-stone-800" />
+                        <td className="border border-stone-800 print:hidden" />
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-stone-50">
+                      <td colSpan={3} className="border border-stone-800 px-3 py-1.5 text-right text-sm font-bold">TOTAL AMOUNT 总数额</td>
+                      <td className="border border-stone-800 px-2 py-1.5 text-right text-sm font-bold text-stone-800">{displayAmount > 0 ? displayAmount.toFixed(2) : "—"}</td>
                       <td className="border border-stone-800 print:hidden" />
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-stone-50">
-                    <td colSpan={3} className="border border-stone-800 px-3 py-1.5 text-right text-sm font-bold">
-                      TOTAL AMOUNT 总数额
-                    </td>
-                    <td className="border border-stone-800 px-2 py-1.5 text-right text-sm font-bold text-stone-800">
-                      {displayAmount > 0 ? displayAmount.toFixed(2) : "—"}
-                    </td>
-                    <td className="border border-stone-800 print:hidden" />
-                  </tr>
-                </tfoot>
-              </table>
-            )}
+                  </tfoot>
+                </table>
+              )}
+            </div>
 
-            </div>{/* end overflow-x-auto */}
             <div className="flex items-center justify-between mt-2 print:hidden">
               <button type="button" onClick={isTravelClaim ? addTravelItem : addLineItem}
                 className="flex items-center gap-1 text-xs text-[#4a6da7] hover:underline">
@@ -798,43 +1276,42 @@ export default function SubmitPVPage() {
                   {customLocations.map(loc => (
                     <span key={loc} className="flex items-center gap-1 text-xs bg-white border border-stone-200 px-2 py-0.5 rounded-full">
                       {loc}
-                      <button type="button" onClick={() => removeLocation(loc)}
-                        className="text-stone-300 hover:text-red-400 transition-colors ml-0.5">
-                        <XIcon size={9} />
-                      </button>
+                      <button type="button" onClick={() => removeLocation(loc)} className="text-stone-300 hover:text-red-400 transition-colors ml-0.5"><XIcon size={9} /></button>
                     </span>
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    value={newLocation}
-                    onChange={e => setNewLocation(e.target.value)}
+                  <input value={newLocation} onChange={e => setNewLocation(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addLocation(); } }}
                     placeholder="Type new location and press Enter or + Add"
                     className="flex-1 text-xs border-b border-amber-300 bg-transparent outline-none py-0.5 focus:border-[#7C4A0A] placeholder:text-stone-300" />
-                  <button type="button" onClick={addLocation}
-                    className="text-xs text-[#7C4A0A] font-semibold hover:underline shrink-0">
-                    + Add
-                  </button>
+                  <button type="button" onClick={addLocation} className="text-xs text-[#7C4A0A] font-semibold hover:underline shrink-0">+ Add</button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* ── LOA INDICATOR ─────────────────────────────────────────── */}
+          {/* LOA indicator */}
           {displayAmount > 0 && (
             <div className="px-6 pb-3 print:hidden">
               <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
                 <Info size={13} className="mt-0.5 shrink-0" />
-                <span>
-                  <strong>Approval required:</strong> {loa.label} — {loa.required} signatory{loa.required > 1 ? "ies" : ""} needed.
-                  Total: <strong>{formatCurrency(displayAmount)}</strong>
-                </span>
+                <span><strong>Approval required:</strong> {loa.label} — {loa.required} signatory{loa.required > 1 ? "ies" : ""} needed. Total: <strong>{formatCurrency(displayAmount)}</strong></span>
               </div>
             </div>
           )}
 
-          {/* ── DECLARATION ───────────────────────────────────────────── */}
+          {/* Supporting Documents */}
+          <div className="px-3 sm:px-6 py-4 border-t border-stone-200 print:hidden">
+            <div className="flex items-center gap-2 mb-3">
+              <Paperclip size={13} className="text-stone-500" />
+              <span className="text-sm font-semibold text-stone-700">Supporting Documents</span>
+              <span className="text-xs text-stone-400">(Receipts, Invoices, Bills — optional)</span>
+            </div>
+            {AttachmentsUI}
+          </div>
+
+          {/* Declaration */}
           <div className="px-3 sm:px-6 py-4 border-t-2 border-stone-800 space-y-3 print:hidden">
             <p className="text-xs text-stone-500 leading-relaxed">
               I hereby declare that the information provided is true and accurate, and that this payment is for legitimate
@@ -842,84 +1319,22 @@ export default function SubmitPVPage() {
             </p>
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Your Full Name (as signature) <span className="text-red-400">*</span></label>
-              <input
-                className="w-full border-b border-stone-400 bg-transparent outline-none text-sm px-1 py-1 focus:border-[#4a6da7] transition-colors"
-                value={form.sig_applicant_name}
-                onChange={e => setField("sig_applicant_name", e.target.value)}
-                required />
+              <input className="w-full border-b border-stone-400 bg-transparent outline-none text-sm px-1 py-1 focus:border-[#4a6da7] transition-colors"
+                value={form.sig_applicant_name} onChange={e => setField("sig_applicant_name", e.target.value)} required />
             </div>
             <label className="flex items-start gap-2 cursor-pointer">
               <input type="checkbox" className="mt-0.5 accent-[#4a6da7] w-3.5 h-3.5"
-                checked={form.sig_applicant_confirm}
-                onChange={e => setField("sig_applicant_confirm", e.target.checked)} />
+                checked={form.sig_applicant_confirm} onChange={e => setField("sig_applicant_confirm", e.target.checked)} />
               <span className="text-xs text-stone-600">I confirm the above declaration and that all details are correct</span>
             </label>
           </div>
 
-          {/* ── FINANCE EXECUTIVE E-SIGNATURE ─────────────────────────── */}
+          {/* Finance Executive E-Signature */}
           {isFinanceAdmin && (
-            <div className="px-3 sm:px-6 py-4 border-t border-stone-200">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-1.5">
-                  <PenLine size={14} className="text-[#4a6da7]" />
-                  <span className="text-sm font-semibold text-stone-700">Finance Executive E-Signature</span>
-                  {finSigData && <span className="text-[11px] text-green-600 font-medium">(captured)</span>}
-                </div>
-                <div className="flex gap-1">
-                  <button type="button" onClick={() => setSigMode("draw")}
-                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${sigMode === "draw" ? "bg-[#4a6da7]/10 border-[#4a6da7]/30 text-[#4a6da7]" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
-                    Draw
-                  </button>
-                  <button type="button" onClick={() => setSigMode("upload")}
-                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${sigMode === "upload" ? "bg-[#4a6da7]/10 border-[#4a6da7]/30 text-[#4a6da7]" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
-                    Upload
-                  </button>
-                </div>
-              </div>
-
-              {sigMode === "draw" ? (
-                <div className="space-y-2">
-                  <div className="border-2 border-dashed border-stone-200 rounded-xl overflow-hidden bg-stone-50" style={{ touchAction: "none" }}>
-                    <canvas ref={canvasRef} width={560} height={90} className="w-full cursor-crosshair"
-                      onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
-                      onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={clearCanvas}
-                      className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors flex items-center gap-1">
-                      <XIcon size={10} /> Clear
-                    </button>
-                    {savedSig && (
-                      <button type="button" onClick={() => loadSavedSigOnCanvas(savedSig)}
-                        className="text-xs text-[#4a6da7] hover:text-[#3d5a8e] border border-[#4a6da7]/30 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1">
-                        <CheckCircle size={11} /> Use saved signature
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-200 rounded-xl p-5 bg-stone-50 cursor-pointer hover:border-[#4a6da7]/40 hover:bg-blue-50/30 transition-colors">
-                  <Upload size={18} className="text-stone-400 mb-1" />
-                  <span className="text-xs text-stone-500">Click to upload signature image</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
-                </label>
-              )}
-
-              {finSigData && (
-                <div className="mt-2 flex items-center gap-3 p-2.5 bg-green-50 border border-green-200 rounded-xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={finSigData} alt="signature preview" className="h-8 object-contain" />
-                  <span className="text-xs text-green-700 flex-1">Signature captured</span>
-                  <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer shrink-0">
-                    <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="accent-[#4a6da7]" />
-                    Save for next time
-                  </label>
-                </div>
-              )}
-            </div>
+            <div className="px-3 sm:px-6 py-4 border-t border-stone-200">{SignatureUI}</div>
           )}
 
-        </div>{/* end paper */}
+        </div>
 
         {error && <div className="mt-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
         {success && <div className="mt-4 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 font-medium">{success}</div>}
