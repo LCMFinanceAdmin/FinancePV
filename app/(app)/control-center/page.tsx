@@ -69,6 +69,9 @@ function ControlCenterInner() {
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [prs, setPrs] = useState<PurchaseRequest[]>([]);
   const [prTab, setPrTab] = useState<"submitted" | "approved">("submitted");
+  const [assigningMinistry, setAssigningMinistry] = useState<string | null>(null);
+  const [assignEmail, setAssignEmail] = useState("");
+  const [assignSaving, setAssignSaving] = useState(false);
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -149,6 +152,49 @@ function ControlCenterInner() {
     showToast("Signature removed");
   }
 
+  async function assignMinistry(ministry: string) {
+    const email = assignEmail.trim().toLowerCase();
+    if (!email) return;
+    setAssignSaving(true);
+    try {
+      const { data: existing } = await supabase
+        .from("user_roles").select("role,ministries,full_name").eq("email", email).single();
+      if (!existing) {
+        // Insert new row — user hasn't logged in yet but we can pre-assign
+        const { error } = await supabase.from("user_roles").insert({
+          email, role: "MINISTRY_HEAD", ministries: [ministry], full_name: email,
+        });
+        if (error) throw new Error(error.message);
+      } else {
+        const current: string[] = existing.ministries ?? [];
+        if (current.includes(ministry)) { showToast("Already assigned to this ministry", false); return; }
+        const { error } = await supabase.from("user_roles").update({
+          role: "MINISTRY_HEAD",
+          ministries: [...current, ministry],
+        }).eq("email", email);
+        if (error) throw new Error(error.message);
+      }
+      showToast(`Assigned ${email} to ${ministry}`);
+      setAssigningMinistry(null);
+      setAssignEmail("");
+      await load();
+    } catch (err: unknown) {
+      showToast((err as Error).message, false);
+    } finally {
+      setAssignSaving(false);
+    }
+  }
+
+  async function removeMinistryAssignment(ministry: string, email: string) {
+    const { data: existing } = await supabase
+      .from("user_roles").select("ministries").eq("email", email).single();
+    if (!existing) return;
+    const updated = (existing.ministries ?? []).filter((m: string) => m !== ministry);
+    await supabase.from("user_roles").update({ ministries: updated }).eq("email", email);
+    showToast(`Removed ${email} from ${ministry}`);
+    await load();
+  }
+
   // Build ministry → head map
   const ministryHeadMap: Record<string, { email: string; name: string }[]> = {};
   ministryHeads.forEach(h => {
@@ -185,37 +231,85 @@ function ControlCenterInner() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-bold text-stone-700">EXCO Member Assignments</h2>
-          <a
-            href="/settings/signatories"
-            className="text-xs text-[#4a6da7] hover:underline font-medium"
-          >
+          <a href="/settings/signatories" className="text-xs text-[#4a6da7] hover:underline font-medium">
             Manage Roles →
           </a>
         </div>
         <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
           {MINISTRIES.map((ministry, idx) => {
             const assigned = ministryHeadMap[ministry] ?? [];
+            const isAssigning = assigningMinistry === ministry;
             return (
-              <div
-                key={ministry}
-                className={`flex items-center justify-between px-5 py-3 gap-4 ${idx < MINISTRIES.length - 1 ? "border-b border-stone-100" : ""}`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <UserCircle2 size={16} className={assigned.length > 0 ? "text-[#4a6da7] shrink-0" : "text-stone-300 shrink-0"} />
-                  <span className="text-sm font-medium text-stone-700 truncate">{ministry}</span>
-                </div>
-                <div className="text-right shrink-0">
-                  {assigned.length > 0 ? (
-                    assigned.map(h => (
-                      <div key={h.email}>
-                        {h.name && <div className="text-xs font-medium text-stone-700">{h.name}</div>}
-                        <div className="text-xs text-[#4a6da7]">{h.email}</div>
+              <div key={ministry} className={idx < MINISTRIES.length - 1 ? "border-b border-stone-100" : ""}>
+                {/* Main row */}
+                <div className="flex items-center justify-between px-4 py-2.5 gap-4">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <UserCircle2 size={15} className={assigned.length > 0 ? "text-[#4a6da7] shrink-0" : "text-stone-300 shrink-0"} />
+                    <span className="text-sm font-medium text-stone-800 truncate">{ministry}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {assigned.length > 0 ? (
+                      <div className="flex flex-col items-end gap-1">
+                        {assigned.map(h => (
+                          <div key={h.email} className="flex items-center gap-2">
+                            <div className="text-right">
+                              {h.name && h.name !== h.email && (
+                                <div className="text-xs font-semibold text-stone-700 leading-tight">{h.name}</div>
+                              )}
+                              <div className="text-xs text-[#4a6da7]">{h.email}</div>
+                            </div>
+                            <button
+                              onClick={() => removeMinistryAssignment(ministry, h.email)}
+                              className="text-stone-300 hover:text-red-400 transition-colors"
+                              title="Remove assignment"
+                            >
+                              <XIcon size={13} />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ))
-                  ) : (
-                    <span className="text-xs text-stone-400 italic">Unassigned</span>
-                  )}
+                    ) : (
+                      <span className="text-xs text-stone-400 italic">Unassigned</span>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (isAssigning) { setAssigningMinistry(null); setAssignEmail(""); }
+                        else { setAssigningMinistry(ministry); setAssignEmail(""); }
+                      }}
+                      className={`text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+                        isAssigning
+                          ? "border-stone-300 text-stone-500 bg-stone-50"
+                          : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-[#4a6da7]/5"
+                      }`}
+                    >
+                      {isAssigning ? "Cancel" : assigned.length > 0 ? "+ Add" : "Assign"}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Inline assign form */}
+                {isAssigning && (
+                  <div className="px-4 pb-3 flex items-center gap-2 bg-blue-50/50 border-t border-blue-100">
+                    <div className="flex-1 relative">
+                      <input
+                        autoFocus
+                        type="email"
+                        className="w-full text-sm border border-stone-200 rounded-lg px-3 py-1.5 outline-none focus:border-[#4a6da7] bg-white placeholder:text-stone-300"
+                        placeholder="Enter Google / email address"
+                        value={assignEmail}
+                        onChange={e => setAssignEmail(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") assignMinistry(ministry); if (e.key === "Escape") { setAssigningMinistry(null); setAssignEmail(""); } }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => assignMinistry(ministry)}
+                      disabled={assignSaving || !assignEmail.trim()}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5c96] disabled:opacity-40 transition-colors whitespace-nowrap"
+                    >
+                      {assignSaving ? "Saving…" : "Assign"}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
