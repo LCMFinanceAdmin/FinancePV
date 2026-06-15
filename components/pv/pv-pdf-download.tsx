@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, Eye, X } from "lucide-react";
 import type { PV, PVApproval } from "@/lib/types";
 import { getLOATier, roleLabel } from "@/lib/utils";
 import {
@@ -45,8 +45,9 @@ function fmtDate(s?: string | null) {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
+// Font sizes: base +3pt from original
 const s = StyleSheet.create({
-  page:      { fontFamily: "Helvetica", fontSize: 9, padding: "10mm", color: "#000" },
+  page:      { fontFamily: "Helvetica", fontSize: 12, padding: "10mm", color: "#000" },
   row:       { flexDirection: "row" },
   bold:      { fontFamily: "Helvetica-Bold" },
   border:    { border: "1pt solid #000" },
@@ -56,9 +57,9 @@ const s = StyleSheet.create({
   headerBg:  { backgroundColor: "#f0f0f0" },
   center:    { textAlign: "center" },
   right:     { textAlign: "right" },
-  tiny:      { fontSize: 7 },
-  small:     { fontSize: 8 },
-  finHeader: { backgroundColor: "#000", color: "#fff", textAlign: "center", fontSize: 8, fontFamily: "Helvetica-Bold", padding: "3pt" },
+  tiny:      { fontSize: 10 },
+  small:     { fontSize: 11 },
+  finHeader: { backgroundColor: "#000", color: "#fff", textAlign: "center", fontSize: 11, fontFamily: "Helvetica-Bold", padding: "3pt" },
 });
 
 function SigBox({ approval, label, subtitle }: { approval?: PVApproval; label: string; subtitle?: string }) {
@@ -98,11 +99,11 @@ function PaidBanner({ pv }: { pv: PV }) {
         border: "3pt solid #16a34a", borderRadius: 4,
         padding: "4pt 10pt", transform: "rotate(-8deg)",
       }}>
-        <Text style={{ fontSize: 16, fontFamily: "Helvetica-Bold", color: "#16a34a", letterSpacing: 3 }}>PAID</Text>
+        <Text style={{ fontSize: 19, fontFamily: "Helvetica-Bold", color: "#16a34a", letterSpacing: 3 }}>PAID</Text>
       </View>
       <View>
-        <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#166534" }}>Payment Completed</Text>
-        <Text style={{ fontSize: 8, color: "#15803d", marginTop: 2 }}>
+        <Text style={{ fontSize: 12, fontFamily: "Helvetica-Bold", color: "#166534" }}>Payment Completed</Text>
+        <Text style={{ fontSize: 11, color: "#15803d", marginTop: 2 }}>
           {[
             pv.payment_method,
             pv.payment_ref && `Ref: ${pv.payment_ref}`,
@@ -110,7 +111,7 @@ function PaidBanner({ pv }: { pv: PV }) {
           ].filter(Boolean).join("  ·  ")}
         </Text>
         {pv.paid_by ? (
-          <Text style={{ fontSize: 8, color: "#15803d", marginTop: 1 }}>
+          <Text style={{ fontSize: 11, color: "#15803d", marginTop: 1 }}>
             Marked paid by {pv.paid_by} (Finance Executive)
           </Text>
         ) : null}
@@ -148,20 +149,19 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
 
   const isPaid = pv.status === "PAID";
 
-  // Determine submitter role to conditionally show sections
   const financeRoles = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
   const isFinanceExecPV = financeRoles.includes(pv.submitted_by_role ?? "");
   const isExcoPV = pv.submitted_by_role === "MINISTRY_HEAD";
-  // Staff/general stakeholders sign the applicant section; Finance Exec & EXCO Members do not
   const showApplicantSig = !isFinanceExecPV && !isExcoPV;
-  // EXCO verification section is always shown — Finance Exec PVs need it for EXCO physical signing
   const showExcoSection = true;
+
+  // Ref shown in the FOR OFFICE USE ONLY box — Finance Exec can override via office_ref
+  const displayRef = pv.office_ref?.trim() || pv.pv_no;
 
   return (
     <Document title={`PV ${pv.pv_no}`}>
       <Page size="A4" style={s.page}>
 
-        {/* ── PAID banner at TOP ──────────────────────────────────────── */}
         {isPaid && <View style={{ marginBottom: 8 }}><PaidBanner pv={pv} /></View>}
 
         {/* Row 1: Logo + Office Use */}
@@ -172,14 +172,14 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
                 {logoDataUri ? <Image src={logoDataUri} style={{ width: 50, height: 50 }} /> : null}
               </View>
               <View style={{ flex: 1, paddingLeft: 6 }}>
-                <Text style={[s.bold, { fontSize: 11 }]}>LUTHERAN CHURCH IN MALAYSIA</Text>
+                <Text style={[s.bold, { fontSize: 14 }]}>LUTHERAN CHURCH IN MALAYSIA</Text>
                 <Text style={[s.tiny, { color: "#555" }]}>(ROS: PPM-001-10-09031964)</Text>
                 <Text style={[s.tiny, { marginTop: 2 }]}>Luther Centre, No. 6, Jalan Utara, 46200 Petaling Jaya, Selangor</Text>
                 <Text style={s.tiny}>Tel: 03-7956 5992  Fax: 03-7957 6953  Email: finance@lcm.org.my</Text>
               </View>
             </View>
           </View>
-          <View style={[s.border, { width: 130, padding: "5pt 8pt", alignItems: "center" }]}>
+          <View style={[s.border, { width: 140, padding: "5pt 8pt", alignItems: "center" }]}>
             <Text style={[s.bold, s.tiny, { borderBottom: "1pt solid #000", width: "100%", textAlign: "center", paddingBottom: 2, marginBottom: 3 }]}>FOR OFFICE USE ONLY</Text>
             {pv.pv_type === "BAM" ? (
               <View style={{ alignItems: "center" }}>
@@ -191,30 +191,29 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
             ) : (
               <Text style={[s.tiny, { color: "#bbb", fontStyle: "italic" }]}>Not labelled</Text>
             )}
-            <Text style={[s.tiny, { marginTop: 4, alignSelf: "flex-start" }]}>Ref: <Text style={s.bold}>{pv.pv_no}</Text></Text>
+            <Text style={[s.tiny, { marginTop: 4, alignSelf: "flex-start" }]}>Ref: <Text style={s.bold}>{displayRef}</Text></Text>
+            <Text style={[s.tiny, { marginTop: 3, alignSelf: "flex-start" }]}>A/C Code: <Text style={s.bold}>{pv.accounting_code ?? ""}</Text></Text>
           </View>
         </View>
 
-        {/* Title */}
-        <Text style={[s.bold, s.center, { fontSize: 10, marginBottom: 1 }]}>LUTHERAN CHURCH IN MALAYSIA</Text>
-        <Text style={[s.center, { fontSize: 9, marginBottom: 6 }]}>(REIMBURSEMENT CLAIM FORM / PAYMENT VOUCHER){"\n"}
-          <Text style={s.tiny}>马来西亚基督教信义会（费用报销 / 付款凭证表格）</Text>
-        </Text>
+        {/* Title — English only */}
+        <Text style={[s.bold, s.center, { fontSize: 13, marginBottom: 1 }]}>LUTHERAN CHURCH IN MALAYSIA</Text>
+        <Text style={[s.center, { fontSize: 12, marginBottom: 6 }]}>(REIMBURSEMENT CLAIM FORM / PAYMENT VOUCHER)</Text>
 
         {/* Info grid */}
         <View style={[s.border, { marginBottom: 6 }]}>
           <View style={s.row}>
             <View style={[s.cell, { flex: 2 }]}>
-              <Text style={s.tiny}>Applicant 申请者:  <Text style={s.bold}>{pv.applicant_name || pv.submitted_by}</Text></Text>
+              <Text style={s.tiny}>Applicant:  <Text style={s.bold}>{pv.applicant_name || pv.submitted_by}</Text></Text>
             </View>
             <View style={[s.cell, { flex: 1 }]}>
-              <Text style={s.tiny}>Date 日期:  <Text style={s.bold}>{fmtDate(pv.date ?? pv.submitted_at)}</Text></Text>
+              <Text style={s.tiny}>Date:  <Text style={s.bold}>{fmtDate(pv.date ?? pv.submitted_at)}</Text></Text>
             </View>
           </View>
-          <View style={s.cell}><Text style={s.tiny}>Payable to 付给:  <Text style={s.bold}>{pv.payee_name}</Text></Text></View>
-          <View style={s.cell}><Text style={s.tiny}>Payee Bank A/C No 收款人账户号码:  {bankLine}</Text></View>
-          <View style={s.cell}><Text style={s.tiny}>Project 事工:  {projectLabel}</Text></View>
-          <View style={s.cell}><Text style={s.tiny}>Purpose 用途:  {pv.purpose}</Text></View>
+          <View style={s.cell}><Text style={s.tiny}>Payable to:  <Text style={s.bold}>{pv.payee_name}</Text></Text></View>
+          <View style={s.cell}><Text style={s.tiny}>Payee Bank A/C No:  {bankLine}</Text></View>
+          <View style={s.cell}><Text style={s.tiny}>Project:  {projectLabel}</Text></View>
+          <View style={s.cell}><Text style={s.tiny}>Purpose:  {pv.purpose}</Text></View>
           {pv.exco_resolution_ref ? (
             <View style={[s.cell, { backgroundColor: "#fef3c7" }]}>
               <Text style={[s.tiny, s.bold]}>EXCO Resolution Ref: {pv.exco_resolution_ref}{pv.exco_resolution_date ? `  dated ${pv.exco_resolution_date}` : ""}</Text>
@@ -226,16 +225,16 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
         <View style={[s.border, { marginBottom: 0 }]}>
           <View style={[s.row, s.headerBg]}>
             <View style={[s.cell, { width: 24, ...s.center }]}><Text style={[s.bold, s.tiny]}>#</Text></View>
-            <View style={[s.cell, { width: 75 }]}><Text style={[s.bold, s.tiny]}>Date 日期</Text></View>
+            <View style={[s.cell, { width: 75 }]}><Text style={[s.bold, s.tiny]}>Date</Text></View>
             <View style={[s.cell, { flex: 1 }]}><Text style={[s.bold, s.tiny]}>PARTICULARS</Text></View>
-            <View style={[s.cell, { width: 75, ...s.right }]}><Text style={[s.bold, s.tiny]}>Amount (RM)</Text></View>
+            <View style={[s.cell, { width: 80, ...s.right }]}><Text style={[s.bold, s.tiny]}>Amount (RM)</Text></View>
           </View>
           {items.map((item, i) => (
             <View key={i} style={s.row}>
               <View style={[s.cell, { width: 24, ...s.center }]}><Text>{i + 1}</Text></View>
               <View style={[s.cell, { width: 75 }]}><Text>{item.date ? fmtDate(item.date) : ""}</Text></View>
               <View style={[s.cell, { flex: 1 }]}><Text>{item.description}</Text></View>
-              <View style={[s.cell, { width: 75, ...s.right }]}><Text>{fmt(Number(item.amount) || 0)}</Text></View>
+              <View style={[s.cell, { width: 80, ...s.right }]}><Text>{fmt(Number(item.amount) || 0)}</Text></View>
             </View>
           ))}
           {Array.from({ length: padRows }).map((_, i) => (
@@ -243,19 +242,19 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
               <View style={[s.cell, { width: 24 }]}><Text> </Text></View>
               <View style={[s.cell, { width: 75 }]}><Text> </Text></View>
               <View style={[s.cell, { flex: 1 }]}><Text> </Text></View>
-              <View style={[s.cell, { width: 75 }]}><Text> </Text></View>
+              <View style={[s.cell, { width: 80 }]}><Text> </Text></View>
             </View>
           ))}
           <View style={s.row}>
-            <View style={[s.cell, { flex: 1, ...s.right }]}><Text style={s.bold}>Total 总数:</Text></View>
-            <View style={[s.cell, { width: 75, ...s.right }]}><Text style={s.bold}>RM {fmt(total)}</Text></View>
+            <View style={[s.cell, { flex: 1, ...s.right }]}><Text style={s.bold}>Total:</Text></View>
+            <View style={[s.cell, { width: 80, ...s.right }]}><Text style={s.bold}>RM {fmt(total)}</Text></View>
           </View>
         </View>
 
-        {/* Applicant signature — hidden for Finance Executive and EXCO-member PVs */}
+        {/* Applicant signature */}
         {showApplicantSig && (
           <View style={[s.border, { marginTop: 8, padding: "6pt 8pt" }]}>
-            <Text style={[s.bold, s.tiny, { marginBottom: 3 }]}>Applicant{"'"}s Signature 申请者签名:</Text>
+            <Text style={[s.bold, s.tiny, { marginBottom: 3 }]}>{"Applicant's Signature:"}</Text>
             <View style={{ height: 40 }} />
             <View style={[s.borderT, { paddingTop: 3 }]}>
               <Text style={s.tiny}>Name: <Text style={s.bold}>{pv.sig_applicant_name || pv.applicant_name}</Text>    Date: {fmtDate(pv.submitted_at)}</Text>
@@ -263,11 +262,11 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
           </View>
         )}
 
-        {/* EXCO / Ministry Head verification — hidden for Finance Executive PVs */}
+        {/* EXCO / Ministry Head verification */}
         {showExcoSection && (
           <View style={[s.border, { marginTop: 6, padding: "6pt 8pt" }]}>
-            <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by 审核者签名:</Text>
-            <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By EXCO Member / Dept Head in Charge  事工主席/负责人)</Text>
+            <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by:</Text>
+            <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By EXCO Member / Dept Head in Charge)</Text>
             {excoApproval?.signature_data ? (
               <Image src={excoApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
             ) : (
@@ -285,19 +284,18 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
                   </Text>
                 </>
               ) : (
-                <Text style={s.tiny}>Name 姓名: _______________________________{"     "}Date 日期: ___________</Text>
+                <Text style={s.tiny}>Name: _______________________________{"     "}Date: ___________</Text>
               )}
             </View>
           </View>
         )}
 
-        {/* Finance section — with signature images */}
+        {/* Finance section */}
         <View style={{ marginTop: 8 }}>
           <View style={s.finHeader}>
-            <Text>FOR LCM FINANCE OFFICE ONLY  LCM财务处专用</Text>
+            <Text>FOR LCM FINANCE OFFICE ONLY</Text>
           </View>
           <View style={[s.row, s.border, { borderTop: "none" }]}>
-            {/* Finance Executive */}
             <View style={[{ flex: 1, borderRight: "1pt solid #000" }]}>
               <SigBox
                 approval={financeApproval ?? (pv.finance_verified_by ? {
@@ -308,11 +306,9 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
                 subtitle="(Finance Executive)"
               />
             </View>
-            {/* General Manager */}
             <View style={[{ flex: 1, borderRight: "1pt solid #000" }]}>
               <SigBox approval={gmApproval} label="Verified by:" subtitle="(General Manager)" />
             </View>
-            {/* Signatories */}
             <View style={{ flex: 1 }}>
               <View style={[{ padding: "6pt 8pt" }]}>
                 <View style={[s.borderB, { paddingBottom: 2, marginBottom: 4 }]}>
@@ -359,7 +355,6 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
           </View>
         )}
 
-        {/* ── PAID banner at BOTTOM ──────────────────────────────────── */}
         {isPaid && <View style={{ marginTop: 10 }}><PaidBanner pv={pv} /></View>}
 
       </Page>
@@ -380,100 +375,141 @@ export async function fetchBytes(url: string): Promise<{ bytes: Uint8Array; cont
   }
 }
 
-/**
- * Merge attachment files into the base PDF using pdf-lib.
- * Images become full-page inserts; PDFs have their pages copied in.
- */
 async function mergeAttachments(basePdfBytes: ArrayBuffer, attachmentUrls: string[]): Promise<Uint8Array> {
   const merged = await PDFDocument.load(basePdfBytes);
-
   for (const url of attachmentUrls) {
     const file = await fetchBytes(url);
     if (!file) continue;
-
-    const isPdf = file.contentType.includes("pdf") || url.toLowerCase().endsWith(".pdf");
-    const isJpeg = file.contentType.includes("jpeg") || file.contentType.includes("jpg") ||
-                   url.toLowerCase().match(/\.(jpg|jpeg)$/) !== null;
+    const isPdf  = file.contentType.includes("pdf") || url.toLowerCase().endsWith(".pdf");
+    const isJpeg = file.contentType.includes("jpeg") || file.contentType.includes("jpg") || url.toLowerCase().match(/\.(jpg|jpeg)$/) !== null;
     const isPng  = file.contentType.includes("png") || url.toLowerCase().endsWith(".png");
-
     if (isPdf) {
       const attachDoc = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
       const pages = await merged.copyPages(attachDoc, attachDoc.getPageIndices());
       pages.forEach(p => merged.addPage(p));
     } else if (isPng || isJpeg) {
-      const img = isPng
-        ? await merged.embedPng(file.bytes)
-        : await merged.embedJpg(file.bytes);
-      const { width, height } = img.scaleToFit(595, 842); // A4 portrait pts
+      const img = isPng ? await merged.embedPng(file.bytes) : await merged.embedJpg(file.bytes);
+      const { width, height } = img.scaleToFit(595, 842);
       const page = merged.addPage([595, 842]);
-      page.drawImage(img, {
-        x: (595 - width) / 2,
-        y: (842 - height) / 2,
-        width,
-        height,
-      });
+      page.drawImage(img, { x: (595 - width) / 2, y: (842 - height) / 2, width, height });
     }
   }
-
   return merged.save();
 }
 
+async function buildPdfBytes(pv: PV, logoDataUri: string): Promise<ArrayBuffer> {
+  const baseBlob = await pdf(<PVDocument pv={pv} logoDataUri={logoDataUri} />).toBlob();
+  const attachmentUrls = [
+    ...(pv.attachments ?? []),
+    ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : []),
+  ].filter(Boolean);
+  let finalBytes: Uint8Array;
+  if (attachmentUrls.length > 0) {
+    const baseBuf = await baseBlob.arrayBuffer();
+    finalBytes = await mergeAttachments(baseBuf, attachmentUrls);
+  } else {
+    finalBytes = new Uint8Array(await baseBlob.arrayBuffer());
+  }
+  return finalBytes.buffer.slice(finalBytes.byteOffset, finalBytes.byteOffset + finalBytes.byteLength) as ArrayBuffer;
+}
+
 export default function PVPdfDownload({ pv }: { pv: PV }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [dlLoading, setDlLoading]     = useState(false);
+  const [error, setError]             = useState<string | null>(null);
   const [logoDataUri, setLogoDataUri] = useState("");
+  const [previewUrl, setPreviewUrl]   = useState<string | null>(null);
 
   useEffect(() => {
     svgToPngDataUri("/lcm-logo.svg", 200).then(setLogoDataUri);
   }, []);
 
-  async function download() {
-    setLoading(true);
+  const getLogoUri = () => logoDataUri || svgToPngDataUri("/lcm-logo.svg", 200);
+
+  async function openPreview() {
+    setViewLoading(true);
     setError(null);
     try {
-      const logo = logoDataUri || await svgToPngDataUri("/lcm-logo.svg", 200);
-      const baseBlob = await pdf(<PVDocument pv={pv} logoDataUri={logo} />).toBlob();
-
-      // Collect all attachment URLs: supporting docs + payment receipt
-      const attachmentUrls = [
-        ...(pv.attachments ?? []),
-        ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : []),
-      ].filter(Boolean);
-
-      let finalBytes: Uint8Array;
-      if (attachmentUrls.length > 0) {
-        const baseBuf = await baseBlob.arrayBuffer();
-        finalBytes = await mergeAttachments(baseBuf, attachmentUrls);
-      } else {
-        finalBytes = new Uint8Array(await baseBlob.arrayBuffer());
-      }
-
-      // Slice exactly the valid byte range — normalises ArrayBufferLike from pdf-lib
-      // to a plain ArrayBuffer so Blob constructor typing and byte bounds are correct.
-      const pdfBuf = finalBytes.buffer.slice(
-        finalBytes.byteOffset,
-        finalBytes.byteOffset + finalBytes.byteLength,
-      ) as ArrayBuffer;
-      const url = URL.createObjectURL(new Blob([pdfBuf], { type: "application/pdf" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${pv.pv_no}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("PDF download failed:", err);
-      setError("Failed to generate PDF. Please try again.");
+      const logo = await getLogoUri();
+      const buf = await buildPdfBytes(pv, typeof logo === "string" ? logo : logoDataUri);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(URL.createObjectURL(new Blob([buf], { type: "application/pdf" })));
+    } catch {
+      setError("Failed to generate PDF preview.");
     } finally {
-      setLoading(false);
+      setViewLoading(false);
     }
   }
 
+  async function download() {
+    setDlLoading(true);
+    setError(null);
+    try {
+      const logo = await getLogoUri();
+      const buf = await buildPdfBytes(pv, typeof logo === "string" ? logo : logoDataUri);
+      const url = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `${pv.pv_no}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Failed to generate PDF.");
+    } finally {
+      setDlLoading(false);
+    }
+  }
+
+  function closePreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+  }
+
   return (
-    <div className="inline-flex flex-col items-start gap-1">
-      <Button variant="secondary" size="sm" onClick={download} loading={loading}>
-        <Download size={14} /> PDF
-      </Button>
-      {error && <p className="text-xs text-red-600">{error}</p>}
-    </div>
+    <>
+      {/* Full-screen PDF preview overlay */}
+      {previewUrl && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-stone-900">
+          <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-stone-200 shrink-0">
+            <span className="text-sm font-semibold text-stone-700">{pv.pv_no}.pdf</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={download}
+                disabled={dlLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors"
+              >
+                <Download size={13} /> {dlLoading ? "Saving…" : "Download"}
+              </button>
+              <button
+                onClick={closePreview}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 transition-colors"
+              >
+                <X size={13} /> Close
+              </button>
+            </div>
+          </div>
+          <iframe
+            src={previewUrl}
+            className="flex-1 w-full border-0"
+            title={`${pv.pv_no} Preview`}
+          />
+        </div>
+      )}
+
+      <div className="inline-flex flex-col items-start gap-1">
+        <div className="flex items-center gap-1.5">
+          <Button variant="secondary" size="sm" onClick={openPreview} loading={viewLoading}>
+            <Eye size={14} /> View PDF
+          </Button>
+          <button
+            onClick={download}
+            disabled={dlLoading}
+            title="Download PDF"
+            className="flex items-center justify-center w-8 h-8 border border-stone-200 rounded-lg text-stone-500 hover:bg-stone-50 disabled:opacity-50 transition-colors"
+          >
+            {dlLoading ? <span className="text-[10px]">…</span> : <Download size={14} />}
+          </button>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+      </div>
+    </>
   );
 }

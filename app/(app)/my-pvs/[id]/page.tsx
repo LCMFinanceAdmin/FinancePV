@@ -214,6 +214,12 @@ export default function PVDetailPage() {
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
   const [revertLoading, setRevertLoading]         = useState(false);
 
+  // Finance office fields (Accounting Code + Office Ref)
+  const [accountingCode, setAccountingCode] = useState("");
+  const [officeRef, setOfficeRef]           = useState("");
+  const [officeSaving, setOfficeSaving]     = useState(false);
+  const [officeSaved, setOfficeSaved]       = useState(false);
+
   // Approver saved signatures (email → saved_signature) for display fallback
   const [approverSigs, setApproverSigs] = useState<Record<string, string>>({});
 
@@ -273,7 +279,11 @@ export default function PVDetailPage() {
       const sigs = profile?.saved_signatures as Record<string, string> | null;
       const roleSig = sigs?.[role] ?? profile?.saved_signature ?? "";
       if (roleSig) setSavedSig(roleSig);
-      if (pvData) setPv(pvData as PV);
+      if (pvData) {
+        setPv(pvData as PV);
+        setAccountingCode(pvData.accounting_code ?? "");
+        setOfficeRef(pvData.office_ref ?? "");
+      }
 
       // Load saved signatures for all approvers so they show on the voucher as fallback
       const pvApprovals: { email?: string }[] = pvData?.approvals ?? [];
@@ -663,6 +673,22 @@ export default function PVDetailPage() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
   if (!pv) return <div className="p-8 text-center text-stone-400 text-sm">PV not found</div>;
 
+  async function saveOfficeFields() {
+    if (!pv) return;
+    setOfficeSaving(true);
+    try {
+      await supabase.from("pvs").update({
+        accounting_code: accountingCode.trim(),
+        office_ref: officeRef.trim(),
+      }).eq("id", pv.id);
+      setPv(p => p ? { ...p, accounting_code: accountingCode.trim(), office_ref: officeRef.trim() } : p);
+      setOfficeSaved(true);
+      setTimeout(() => setOfficeSaved(false), 2000);
+    } finally {
+      setOfficeSaving(false);
+    }
+  }
+
   const loa = getLOATier(pv.amount, pv.payment_type);
   const approvals: PVApproval[] = pv.approvals ?? [];
   // Most-recent APPROVED per role (for display — handles re-sign after revert)
@@ -981,6 +1007,47 @@ export default function PVDetailPage() {
                 {actionToast.msg}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Finance Office Fields (Accounting Code + Ref) ────────── */}
+      {user?.isFinanceAdmin && (
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">For Office Use</span>
+              {officeSaved && <span className="text-xs text-green-600 font-medium">Saved</span>}
+            </div>
+            <div className="flex gap-3 flex-wrap items-end">
+              <div className="flex-1 min-w-[140px]">
+                <label className="text-xs text-stone-500 font-medium block mb-1">Ref No</label>
+                <input
+                  type="text"
+                  value={officeRef}
+                  onChange={e => setOfficeRef(e.target.value)}
+                  placeholder={pv.pv_no}
+                  className="w-full text-sm border border-stone-200 rounded-lg px-3 py-1.5 outline-none focus:border-[#4a6da7] bg-white text-stone-900 font-medium placeholder:text-stone-300"
+                />
+              </div>
+              <div className="flex-1 min-w-[140px]">
+                <label className="text-xs text-stone-500 font-medium block mb-1">Accounting Code</label>
+                <input
+                  type="text"
+                  value={accountingCode}
+                  onChange={e => setAccountingCode(e.target.value)}
+                  placeholder="e.g. 6000-1234"
+                  className="w-full text-sm border border-stone-200 rounded-lg px-3 py-1.5 outline-none focus:border-[#4a6da7] bg-white text-stone-900 font-medium placeholder:text-stone-300"
+                />
+              </div>
+              <button
+                onClick={saveOfficeFields}
+                disabled={officeSaving}
+                className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-stone-800 text-white hover:bg-stone-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                {officeSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
         </div>
       )}

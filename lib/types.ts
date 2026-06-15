@@ -99,6 +99,8 @@ export interface PV {
   updated_at: string | null;
   tracking_token: string | null;
   signed_pdf_url: string | null;
+  accounting_code: string;
+  office_ref: string;
 }
 
 export interface PVLineItem {

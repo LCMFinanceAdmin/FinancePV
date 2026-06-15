@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Printer } from "lucide-react";
+import { Printer, Eye, Download, X } from "lucide-react";
 import type { PV, PVApproval, BulkRun } from "@/lib/types";
 import {
   pdf, Document, Page, Text, View, StyleSheet, Image,
@@ -69,9 +69,6 @@ function BatchSummaryDocument({
             <Text style={[st.bold, { fontSize: 13 }]}>
               LUTHERAN CHURCH IN MALAYSIA — BATCH PAYMENT SUMMARY
             </Text>
-            <Text style={[st.bold, { fontSize: 11, fontFamily: "Helvetica" }]}>
-              马来西亚基督教信义会 — 批量付款汇总
-            </Text>
           </View>
           {/* Office-use box right */}
           <View style={[st.border, { width: 145, marginLeft: 8 }]}>
@@ -90,17 +87,17 @@ function BatchSummaryDocument({
         {/* ── Info rows ── */}
         <View style={{ marginBottom: 6 }}>
           <View style={[st.row, { marginBottom: 3 }]}>
-            <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Group 组别:</Text>
+            <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Group:</Text>
             <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
               <Text style={[st.bold, { fontSize: 8 }]}>{run.group_name}</Text>
             </View>
-            <Text style={[st.bold, { width: 100, fontSize: 8, marginLeft: 24 }]}>Run Date 日期:</Text>
+            <Text style={[st.bold, { width: 100, fontSize: 8, marginLeft: 24 }]}>Run Date:</Text>
             <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
               <Text style={{ fontSize: 8 }}>{fmtDate(run.run_date)}</Text>
             </View>
           </View>
           <View style={[st.row, { marginBottom: run.ministry ? 3 : 0 }]}>
-            <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Prepared by 制备者:</Text>
+            <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Prepared by:</Text>
             <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
               <Text style={{ fontSize: 8 }}>{runByName || run.run_by}</Text>
             </View>
@@ -123,7 +120,7 @@ function BatchSummaryDocument({
 
         {/* ── Section heading ── */}
         <Text style={[st.bold, { fontSize: 9, marginBottom: 3 }]}>
-          Payment Details — Individual Transactions 付款详情
+          Payment Details — Individual Transactions
         </Text>
 
         {/* ── Payment table ── */}
@@ -137,13 +134,13 @@ function BatchSummaryDocument({
               <Text style={[st.bold, st.tiny]}>PV No.</Text>
             </View>
             <View style={{ width: COL.payee, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>Payee 收款人</Text>
+              <Text style={[st.bold, st.tiny]}>Payee</Text>
             </View>
             <View style={{ width: COL.bank, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>Bank 银行</Text>
+              <Text style={[st.bold, st.tiny]}>Bank</Text>
             </View>
             <View style={{ width: COL.acct, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
-              <Text style={[st.bold, st.tiny]}>A/C No. 账号</Text>
+              <Text style={[st.bold, st.tiny]}>A/C No.</Text>
             </View>
             <View style={{ width: COL.amt, padding: "3pt 4pt", borderRight: "1pt solid #000", textAlign: "right" }}>
               <Text style={[st.bold, st.tiny]}>Amount</Text>
@@ -210,7 +207,7 @@ function BatchSummaryDocument({
                 </View>
                 {/* GM Verified */}
                 <View style={{ width: COL.sig, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
-                  <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>GM / 总经理</Text>
+                  <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>General Manager</Text>
                   {gm?.signature_data
                     ? <Image src={gm.signature_data} style={{ height: 22, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
                     : <View style={{ height: 22 }} />}
@@ -223,7 +220,7 @@ function BatchSummaryDocument({
                 </View>
                 {/* Signatory */}
                 <View style={{ width: COL.sig, padding: "4pt 6pt" }}>
-                  <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>Signatory / 签署人</Text>
+                  <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>Signatory</Text>
                   {sa?.signature_data
                     ? <Image src={sa.signature_data} style={{ height: 22, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
                     : <View style={{ height: 22 }} />}
@@ -244,7 +241,7 @@ function BatchSummaryDocument({
               width: COL.num + COL.pvno + COL.payee + COL.bank + COL.acct,
               padding: "3pt 6pt", textAlign: "right", borderRight: "1pt solid #000",
             }}>
-              <Text style={[st.bold, st.small]}>Total 总数:</Text>
+              <Text style={[st.bold, st.small]}>Total:</Text>
             </View>
             <View style={{ width: COL.amt, padding: "3pt 4pt", textAlign: "right", borderRight: "1pt solid #000" }}>
               <Text style={[st.bold, st.small]}>RM {fmt(grandTotal)}</Text>
@@ -257,7 +254,7 @@ function BatchSummaryDocument({
         {/* ── Finance signature ── */}
         <View style={{ marginTop: 12 }}>
           <Text style={[st.bold, st.small, { marginBottom: 3 }]}>
-            Prepared by 制备者签名 (Finance Executive):
+            Prepared by (Finance Executive):
           </Text>
           {finSigData
             ? <Image src={finSigData} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
@@ -279,93 +276,133 @@ export default function BulkPVPdfDownload({
 }: {
   run: BulkRun; pvs: PV[]; finSigData: string; runByName: string;
 }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [dlLoading, setDlLoading]     = useState(false);
+  const [error, setError]             = useState<string | null>(null);
   const [logoDataUri, setLogoDataUri] = useState("");
+  const [previewUrl, setPreviewUrl]   = useState<string | null>(null);
 
   useEffect(() => {
     svgToPngDataUri("/lcm-logo.svg", 200).then(setLogoDataUri);
   }, []);
 
-  async function generate() {
-    if (!run || !pvs.length) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const logo = logoDataUri || await svgToPngDataUri("/lcm-logo.svg", 200);
+  const batchFilename = `BATCH-${new Date(run?.run_date ?? Date.now()).getFullYear()}-${(run?.id ?? "").slice(-6).toUpperCase()}`;
 
-      // 1. Generate batch summary page
-      const summaryBlob = await pdf(
-        <BatchSummaryDocument
-          run={run} pvs={pvs} finSigData={finSigData}
-          runByName={runByName} logoDataUri={logo}
-        />
-      ).toBlob();
-      const finalDoc = await PDFDocument.load(await summaryBlob.arrayBuffer());
-
-      // 2. For each PV: add its form page then any attachments
-      for (const pv of pvs) {
-        // PV form page (same as individual PDF download)
-        const pvBlob = await pdf(<PVDocument pv={pv} logoDataUri={logo} />).toBlob();
-        const pvDoc  = await PDFDocument.load(await pvBlob.arrayBuffer());
-        const [pvPage] = await finalDoc.copyPages(pvDoc, [0]);
-        finalDoc.addPage(pvPage);
-
-        // Attachments: supporting docs then payment receipt
-        const attUrls = [
-          ...(pv.attachments ?? []),
-          ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : []),
-        ].filter(Boolean);
-
-        for (const url of attUrls) {
-          const file = await fetchBytes(url);
-          if (!file) continue;
-          const isPdf  = file.contentType.includes("pdf")  || url.toLowerCase().endsWith(".pdf");
-          const isPng  = file.contentType.includes("png")  || url.toLowerCase().endsWith(".png");
-          if (isPdf) {
-            const attDoc = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
-            const pages  = await finalDoc.copyPages(attDoc, attDoc.getPageIndices());
-            pages.forEach(p => finalDoc.addPage(p));
-          } else {
-            const img = isPng
-              ? await finalDoc.embedPng(file.bytes)
-              : await finalDoc.embedJpg(file.bytes);
-            const { width, height } = img.scaleToFit(595, 842);
-            const page = finalDoc.addPage([595, 842]);
-            page.drawImage(img, { x: (595 - width) / 2, y: (842 - height) / 2, width, height });
-          }
+  async function buildBytes(): Promise<ArrayBuffer> {
+    const logo = logoDataUri || await svgToPngDataUri("/lcm-logo.svg", 200);
+    const summaryBlob = await pdf(
+      <BatchSummaryDocument run={run} pvs={pvs} finSigData={finSigData} runByName={runByName} logoDataUri={logo} />
+    ).toBlob();
+    const finalDoc = await PDFDocument.load(await summaryBlob.arrayBuffer());
+    for (const pv of pvs) {
+      const pvBlob = await pdf(<PVDocument pv={pv} logoDataUri={logo} />).toBlob();
+      const pvDoc  = await PDFDocument.load(await pvBlob.arrayBuffer());
+      const [pvPage] = await finalDoc.copyPages(pvDoc, [0]);
+      finalDoc.addPage(pvPage);
+      const attUrls = [...(pv.attachments ?? []), ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : [])].filter(Boolean);
+      for (const url of attUrls) {
+        const file = await fetchBytes(url);
+        if (!file) continue;
+        const isPdf = file.contentType.includes("pdf") || url.toLowerCase().endsWith(".pdf");
+        const isPng = file.contentType.includes("png") || url.toLowerCase().endsWith(".png");
+        if (isPdf) {
+          const attDoc = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
+          const pages  = await finalDoc.copyPages(attDoc, attDoc.getPageIndices());
+          pages.forEach(p => finalDoc.addPage(p));
+        } else {
+          const img = isPng ? await finalDoc.embedPng(file.bytes) : await finalDoc.embedJpg(file.bytes);
+          const { width, height } = img.scaleToFit(595, 842);
+          const page = finalDoc.addPage([595, 842]);
+          page.drawImage(img, { x: (595 - width) / 2, y: (842 - height) / 2, width, height });
         }
       }
+    }
+    const bytes = await finalDoc.save();
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  }
 
-      // 3. Save and download
-      const bytes  = await finalDoc.save();
-      const buf    = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-      const blobUrl = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
-      const year   = new Date(run.run_date).getFullYear();
-      const a      = document.createElement("a");
-      a.href       = blobUrl;
-      a.download   = `BATCH-${year}-${run.id.slice(-6).toUpperCase()}.pdf`;
-      a.click();
-      URL.revokeObjectURL(blobUrl);
-    } catch (err) {
-      console.error("Bulk PDF generation failed:", err);
-      setError("Failed to generate PDF. Please try again.");
+  async function openPreview() {
+    if (!run || !pvs.length) return;
+    setViewLoading(true); setError(null);
+    try {
+      const buf = await buildBytes();
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(URL.createObjectURL(new Blob([buf], { type: "application/pdf" })));
+    } catch {
+      setError("Failed to generate PDF preview.");
     } finally {
-      setLoading(false);
+      setViewLoading(false);
     }
   }
 
+  async function download() {
+    if (!run || !pvs.length) return;
+    setDlLoading(true); setError(null);
+    try {
+      const buf = await buildBytes();
+      const url = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `${batchFilename}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Failed to generate PDF.");
+    } finally {
+      setDlLoading(false);
+    }
+  }
+
+  function closePreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+  }
+
   return (
-    <div className="inline-flex flex-col items-start gap-1">
-      <button
-        onClick={generate}
-        disabled={loading || !pvs.length}
-        className="flex items-center gap-1.5 px-3 py-1.5 border border-stone-300 rounded-lg text-sm text-stone-600 hover:bg-stone-50 disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        <Printer size={14} />
-        {loading ? "Generating PDF…" : "Print / PDF"}
-      </button>
-      {error && <p className="text-xs text-red-600 max-w-xs">{error}</p>}
-    </div>
+    <>
+      {previewUrl && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-stone-900">
+          <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-stone-200 shrink-0">
+            <span className="text-sm font-semibold text-stone-700">{batchFilename}.pdf</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={download}
+                disabled={dlLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors"
+              >
+                <Download size={13} /> {dlLoading ? "Saving…" : "Download"}
+              </button>
+              <button
+                onClick={closePreview}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 transition-colors"
+              >
+                <X size={13} /> Close
+              </button>
+            </div>
+          </div>
+          <iframe src={previewUrl} className="flex-1 w-full border-0" title={batchFilename} />
+        </div>
+      )}
+
+      <div className="inline-flex flex-col items-start gap-1">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={openPreview}
+            disabled={viewLoading || !pvs.length}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-stone-300 rounded-lg text-sm text-stone-600 hover:bg-stone-50 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Eye size={14} />
+            {viewLoading ? "Generating…" : "View PDF"}
+          </button>
+          <button
+            onClick={download}
+            disabled={dlLoading || !pvs.length}
+            title="Download PDF"
+            className="flex items-center justify-center w-8 h-8 border border-stone-300 rounded-lg text-stone-500 hover:bg-stone-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {dlLoading ? <span className="text-[10px]">…</span> : <Download size={14} />}
+          </button>
+        </div>
+        {error && <p className="text-xs text-red-600 max-w-xs">{error}</p>}
+      </div>
+    </>
   );
 }
