@@ -20,6 +20,17 @@ const POPdfButton = dynamic(() => import("@/components/gm/po-pdf").then(m => ({ 
 
 const CLAIMANT_TYPES = ["Pastor", "Lay Leader", "EXCO Member", "Staff", "Other"];
 
+const MALAYSIA_BANKS = [
+  "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
+  "AmBank", "Bank Islam", "Affin Bank", "Alliance Bank",
+  "OCBC Bank Malaysia", "Standard Chartered Malaysia", "HSBC Bank Malaysia",
+  "UOB Malaysia", "Citibank Malaysia", "Bank Rakyat",
+  "Bank Simpanan Nasional (BSN)", "Agro Bank", "Bank Muamalat", "MBSB Bank",
+  "Kuwait Finance House Malaysia", "Al Rajhi Bank Malaysia",
+  "Bank of China (Malaysia)", "ICBC Malaysia",
+  "TNG eWallet (Touch 'n Go)", "Boost", "GrabPay", "ShopeePay",
+];
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -37,6 +48,8 @@ interface GMClaim {
   purpose: string;
   description: string | null;
   attachments: string[];
+  payee_bank: string | null;
+  payee_bank_acct: string | null;
   supplier_name: string | null;
   supplier_address: string | null;
   po_number: string | null;
@@ -185,6 +198,8 @@ function defaultForm() {
     description: "",
     notes: "",
     received_at: new Date().toISOString().slice(0, 10),
+    payee_bank: "",
+    payee_bank_acct: "",
     supplier_name: "",
     supplier_address: "",
     is_fixed_asset: false,
@@ -279,8 +294,16 @@ export default function GMClaimsPage() {
 
       setClaims(claimRows.map((c) => ({ ...c, pv: pvMap[c.pv_id] ?? null })));
 
-      const { data: budgetRows } = await supabase.from("budget_items").select("ministry");
-      const mins = [...new Set((budgetRows ?? []).map((r: { ministry: string }) => r.ministry).filter(Boolean))].sort() as string[];
+      // Collect ministries from budget_items and pvs for a comprehensive list
+      const [{ data: budgetRows }, { data: pvMinRows }] = await Promise.all([
+        supabase.from("budget_items").select("ministry"),
+        supabase.from("pvs").select("ministry").not("ministry", "is", null),
+      ]);
+      const allMins = [
+        ...(budgetRows ?? []).map((r: { ministry: string }) => r.ministry),
+        ...(pvMinRows ?? []).map((r: { ministry: string }) => r.ministry),
+      ];
+      const mins = [...new Set(allMins.filter(Boolean))].sort() as string[];
       setMinistries(mins);
     } finally {
       setLoading(false);
@@ -318,6 +341,8 @@ export default function GMClaimsPage() {
       description: claim.description ?? "",
       notes: claim.notes ?? "",
       received_at: claim.received_at.slice(0, 10),
+      payee_bank: claim.payee_bank ?? "",
+      payee_bank_acct: claim.payee_bank_acct ?? "",
       supplier_name: claim.supplier_name ?? "",
       supplier_address: claim.supplier_address ?? "",
       is_fixed_asset: claim.is_fixed_asset ?? false,
@@ -351,6 +376,8 @@ export default function GMClaimsPage() {
         description: form.description.trim() || null,
         notes: form.notes.trim() || null,
         received_at: new Date(form.received_at).toISOString(),
+        payee_bank: form.payee_bank || null,
+        payee_bank_acct: form.payee_bank_acct.trim() || null,
         supplier_name: form.claim_type === "PURCHASE_ORDER" ? form.supplier_name.trim() || null : null,
         supplier_address: form.claim_type === "PURCHASE_ORDER" ? form.supplier_address.trim() || null : null,
         is_fixed_asset: form.claim_type === "PURCHASE_ORDER" ? form.is_fixed_asset : false,
@@ -533,6 +560,11 @@ export default function GMClaimsPage() {
                         {isPOClaim && claim.supplier_name && (
                           <div className="text-xs text-purple-600 mt-0.5">Supplier: {claim.supplier_name}</div>
                         )}
+                        {(claim.payee_bank || claim.payee_bank_acct) && (
+                          <div className="text-xs text-stone-400 mt-0.5">
+                            {[claim.payee_bank, claim.payee_bank_acct].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-base font-bold text-stone-800">{formatCurrency(claim.amount)}</div>
@@ -670,6 +702,17 @@ export default function GMClaimsPage() {
                         </div>
                       )}
 
+                      {(claim.payee_bank || claim.payee_bank_acct) && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Bank Details</div>
+                          <div className="flex items-center gap-3 text-sm text-stone-600">
+                            {claim.payee_bank && <span className="font-medium">{claim.payee_bank}</span>}
+                            {claim.payee_bank && claim.payee_bank_acct && <span className="text-stone-300">·</span>}
+                            {claim.payee_bank_acct && <span className="font-mono">{claim.payee_bank_acct}</span>}
+                          </div>
+                        </div>
+                      )}
+
                       {claim.attachments?.length > 0 && (
                         <div>
                           <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Attachments</div>
@@ -786,6 +829,25 @@ export default function GMClaimsPage() {
                 onChange={e => setF("claimant_email", e.target.value)}
                 placeholder="optional"
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+            </div>
+
+            {/* Bank details */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Bank</label>
+                <select value={form.payee_bank} onChange={e => setF("payee_bank", e.target.value)}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
+                  <option value="">— Select bank —</option>
+                  {MALAYSIA_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Account Number</label>
+                <input type="text" value={form.payee_bank_acct}
+                  onChange={e => setF("payee_bank_acct", e.target.value)}
+                  placeholder="e.g. 1234567890"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
             </div>
 
             {/* Purchase Order fields */}
