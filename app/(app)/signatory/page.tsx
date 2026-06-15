@@ -328,22 +328,49 @@ export default function SignatoryPage() {
     return { bulkGroups: Object.values(groups), standalones };
   }, [activePvsForTab]);
 
+  // Parse search query — supports amount (exact/range/>/<), date, and keywords
+  function matchesSearch(pv: PVWithBulk, rawSearch: string): boolean {
+    if (!rawSearch) return true;
+    const q = rawSearch.trim();
+
+    // Amount: >500, <2000, 500-2000, or bare number
+    const amountGt = q.match(/^>(\d+(?:\.\d+)?)$/);
+    const amountLt = q.match(/^<(\d+(?:\.\d+)?)$/);
+    const amountRange = q.match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/);
+    const amountExact = q.match(/^(\d+(?:\.\d+)?)$/);
+    if (amountGt) return (pv.amount ?? 0) > parseFloat(amountGt[1]);
+    if (amountLt) return (pv.amount ?? 0) < parseFloat(amountLt[1]);
+    if (amountRange) return (pv.amount ?? 0) >= parseFloat(amountRange[1]) && (pv.amount ?? 0) <= parseFloat(amountRange[2]);
+    if (amountExact) return Math.abs((pv.amount ?? 0) - parseFloat(amountExact[1])) < 0.01;
+
+    // Date: "13 Jun", "Jun 2026", "2026-06-13", etc.
+    const submittedDate = pv.submitted_at ? new Date(pv.submitted_at) : null;
+    if (submittedDate) {
+      const dateStr = submittedDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }).toLowerCase();
+      const isoStr = submittedDate.toISOString().slice(0, 10);
+      if (dateStr.includes(q.toLowerCase()) || isoStr.includes(q)) return true;
+    }
+
+    // Keyword fallback
+    const lq = q.toLowerCase();
+    return !!(pv.pv_no?.toLowerCase().includes(lq) || pv.payee_name?.toLowerCase().includes(lq) ||
+      pv.ministry?.toLowerCase().includes(lq) || pv.purpose?.toLowerCase().includes(lq));
+  }
+
   // Apply search + ministry filter to standalone PVs
   const filteredStandalones = standalones.filter(pv => {
     if (ministryFilter !== "All Ministries" && pv.ministry !== ministryFilter) return false;
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return pv.pv_no?.toLowerCase().includes(q) || pv.payee_name?.toLowerCase().includes(q) ||
-      pv.ministry?.toLowerCase().includes(q) || pv.purpose?.toLowerCase().includes(q);
+    return matchesSearch(pv, search);
   });
 
   const filteredBulkGroups = bulkGroups.filter(g => {
     if (ministryFilter !== "All Ministries" && !g.pvs.some(p => p.ministry === ministryFilter)) return false;
     if (!search) return true;
-    const q = search.toLowerCase();
-    return g.groupName.toLowerCase().includes(q) || g.pvs.some(p =>
-      p.pv_no?.toLowerCase().includes(q) || p.payee_name?.toLowerCase().includes(q) || p.purpose?.toLowerCase().includes(q)
-    );
+    // For bulk groups: match group name, or any PV in the group
+    const q = search.trim();
+    const amountMatch = /^[><!0-9]/.test(q);
+    if (amountMatch) return g.pvs.some(p => matchesSearch(p, q));
+    return g.groupName.toLowerCase().includes(q.toLowerCase()) || g.pvs.some(p => matchesSearch(p, q));
   });
 
   const totalBudget = budgetRows.reduce((s, r) => s + r.estimated_income, 0);
@@ -475,7 +502,7 @@ export default function SignatoryPage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input
             className="w-full border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7]"
-            placeholder="Search by PV no., payee, ministry, purpose…"
+            placeholder="Search by PV no., payee, amount (e.g. >1000, 500-2000), date, purpose…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -646,10 +673,11 @@ export default function SignatoryPage() {
 
             return (
               <div key={group.runId} className="border border-stone-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                <div className="flex items-center gap-3 px-4 py-3">
+                <div className="flex flex-col gap-1 px-4 py-3">
+                  {/* Row 1: expand toggle + BULK badge + group name + PV count */}
                   <button
                     onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
-                    className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity">
+                    className="flex items-center gap-2 min-w-0 text-left hover:opacity-80 transition-opacity">
                     {isExpanded ? <ChevronDown size={14} className="text-stone-400 shrink-0" /> : <ChevronRight size={14} className="text-stone-400 shrink-0" />}
                     <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full shrink-0">
                       <Layers size={10} /> BULK
@@ -657,9 +685,9 @@ export default function SignatoryPage() {
                     <span className="font-semibold text-stone-800 text-sm truncate">{group.groupName}</span>
                     <span className="text-xs text-stone-400 shrink-0">{group.pvs.length} PVs</span>
                   </button>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-sm font-bold text-stone-800">{formatCurrency(groupTotal)}</span>
+                  {/* Row 2: amount + action buttons */}
+                  <div className="flex items-center gap-2 pl-5">
+                    <span className="text-sm font-bold text-stone-800 mr-1">{formatCurrency(groupTotal)}</span>
                     <Link href={`/bulk-pvs/${group.runId}`}
                       className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
                       <ExternalLink size={11} /> View Batch
