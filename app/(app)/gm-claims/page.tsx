@@ -293,7 +293,27 @@ export default function GMClaimsPage() {
           claim_no: claimNoRow,
           created_by_email: user?.email ?? "",
         });
-        showToast("Claim added");
+
+        // Notify all Finance Admins that the GM has logged a new claim
+        const { data: feUsers } = await supabase
+          .from("user_roles")
+          .select("email")
+          .in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
+        if (feUsers?.length) {
+          await supabase.from("notifications").insert(
+            feUsers.map((fe: { email: string }) => ({
+              recipient_email: fe.email,
+              type: "GM_CLAIM",
+              pv_no: claimNoRow,
+              pv_id: null,
+              message: `GM has logged a new claim (${claimNoRow}) from ${payload.claimant_name} — RM ${payload.amount.toFixed(2)} — awaiting PV preparation`,
+              read: false,
+              created_at: new Date().toISOString(),
+            }))
+          );
+        }
+
+        showToast("Claim added — Finance Executive notified");
       }
       setShowModal(false);
       await load();

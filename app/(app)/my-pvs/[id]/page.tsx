@@ -227,6 +227,9 @@ export default function PVDetailPage() {
   const [attachLoading, setAttachLoading] = useState(false);
   const attachInputRef = useRef<HTMLInputElement>(null);
 
+  // GM Claim linked to this PV
+  const [gmClaim, setGmClaim] = useState<{ claim_no: string; claimant_name: string; purpose: string; amount: number; notes: string | null; received_at: string } | null>(null);
+
   // Voucher zoom / scale-to-fit
   const VOUCHER_NATURAL_WIDTH = 680;
   const [autoScale, setAutoScale] = useState(() =>
@@ -297,6 +300,14 @@ export default function PVDetailPage() {
         });
         setApproverSigs(sigsMap);
       }
+
+      // Check if this PV was raised from a GM claim
+      const { data: claimRow } = await supabase
+        .from("gm_claims")
+        .select("claim_no,claimant_name,purpose,amount,notes,received_at")
+        .eq("pv_id", id)
+        .maybeSingle();
+      if (claimRow) setGmClaim(claimRow);
 
       setUser({
         id: authUser.id, email: authUser.email!,
@@ -779,6 +790,37 @@ export default function PVDetailPage() {
           <WorkflowBar pv={pv} />
         </div>
       </div>
+
+      {/* ── GM Instruction banner ─────────────────────────────────── */}
+      {gmClaim && (
+        <div className="print:hidden max-w-4xl mx-auto mt-4 px-4">
+          <div className="flex gap-3 p-3.5 bg-[#4a6da7]/8 border border-[#4a6da7]/30 rounded-xl">
+            <div className="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-[#4a6da7]/15 flex items-center justify-center">
+              <MessageSquare size={14} className="text-[#4a6da7]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-[#4a6da7] uppercase tracking-wide">GM Instruction</span>
+                <span className="text-xs font-mono text-stone-400">{gmClaim.claim_no}</span>
+              </div>
+              <div className="text-sm font-semibold text-stone-800 mt-0.5">
+                Claim from {gmClaim.claimant_name}
+                <span className="ml-2 text-stone-400 font-normal text-xs">received {formatDate(gmClaim.received_at)}</span>
+              </div>
+              <div className="text-xs text-stone-500 mt-0.5">{gmClaim.purpose}</div>
+              {gmClaim.notes && (
+                <div className="mt-1.5 text-xs text-[#4a6da7]/80 bg-[#4a6da7]/5 rounded-lg px-2.5 py-1.5 italic">
+                  GM note: {gmClaim.notes}
+                </div>
+              )}
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="text-sm font-bold text-stone-700">{formatCurrency(gmClaim.amount)}</div>
+              <a href="/gm-claims" className="text-[11px] text-[#4a6da7] hover:underline">View tracker</a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Rejection banner ───────────────────────────────────────── */}
       {isRejected && (
