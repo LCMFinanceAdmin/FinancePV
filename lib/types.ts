@@ -172,6 +172,61 @@ export type LOATier = {
   label: string;
 };
 
+export interface BookingItem {
+  facility_id: string;
+  facility_name: string;
+  rate_label: string;
+  sessions: number;
+  rate_per_session: number;
+  is_concurrent: boolean;
+  subtotal: number;
+}
+
+export interface FacilityBooking {
+  id: string;
+  booking_no: string;
+  booker_name: string;
+  booker_email: string;
+  booker_phone: string;
+  booker_org: string;
+  booker_type: "PUBLIC" | "MEMBER" | "CONGREGATION" | "HQ";
+  event_name: string;
+  start_date: string;
+  start_time: string;
+  end_date: string | null;
+  end_time: string;
+  booking_items: BookingItem[];
+  total_amount: number;
+  status: "ENQUIRY" | "CONFIRMED" | "INVOICED" | "PAID" | "CANCELLED";
+  payment_method: string;
+  payment_ref: string;
+  payment_date: string | null;
+  receipt_no: string;
+  purpose: string;
+  notes: string;
+  internal_notes: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IncomeRecord {
+  id: string;
+  record_no: string;
+  income_type: "ELECTRICITY" | "DONATION" | "OTHER";
+  payer_name: string;
+  payer_org: string;
+  description: string;
+  amount: number;
+  payment_date: string;
+  payment_method: string;
+  payment_ref: string;
+  period_covered: string;
+  notes: string;
+  created_by: string;
+  created_at: string;
+}
+
 export interface BulkRun {
   id: string;
   group_name: string;

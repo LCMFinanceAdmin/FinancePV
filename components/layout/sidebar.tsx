@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid,
   RefreshCw, Users, Building2, Settings, LogOut,
   ChevronRight, Activity, ClipboardCheck, PiggyBank, FlaskConical,
-  ShoppingCart, ClipboardList, CreditCard, Hammer,
+  ShoppingCart, ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -66,6 +66,13 @@ const NAV_SECTIONS = [
     items: [
       { href: "/purchase-requests", label: "Purchase Requests", icon: <ShoppingCart size={16} />, show: () => true },
       { href: "/payments",          label: "Payments",          icon: <CreditCard size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin },
+    ],
+  },
+  {
+    label: "Income & Collections",
+    items: [
+      { href: "/bookings", label: "Facility Bookings", icon: <CalendarDays size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
+      { href: "/income",   label: "Income Records",    icon: <TrendingUp size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
     ],
   },
   {
