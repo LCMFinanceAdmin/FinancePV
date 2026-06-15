@@ -433,7 +433,15 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
       const logo = await getLogoUri();
       const buf = await buildPdfBytes(pv, typeof logo === "string" ? logo : logoDataUri);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(URL.createObjectURL(new Blob([buf], { type: "application/pdf" })));
+      const url = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+      // Mobile browsers can't render PDFs in iframes — open in new tab instead
+      const isMobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 8000);
+      } else {
+        setPreviewUrl(url);
+      }
     } catch {
       setError("Failed to generate PDF preview.");
     } finally {

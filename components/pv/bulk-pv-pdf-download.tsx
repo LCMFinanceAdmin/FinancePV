@@ -327,7 +327,14 @@ export default function BulkPVPdfDownload({
     try {
       const buf = await buildBytes();
       if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(URL.createObjectURL(new Blob([buf], { type: "application/pdf" })));
+      const url = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+      const isMobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 8000);
+      } else {
+        setPreviewUrl(url);
+      }
     } catch {
       setError("Failed to generate PDF preview.");
     } finally {

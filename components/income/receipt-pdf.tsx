@@ -304,7 +304,13 @@ export function ReceiptPdfButton({
     try {
       const blob = await buildBytes();
       const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
+      const isMobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 8000);
+      } else {
+        setPreviewUrl(url);
+      }
     } finally {
       setLoading(false);
     }
