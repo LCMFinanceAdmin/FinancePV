@@ -11,6 +11,17 @@ import {
   Search, Folder, FolderOpen, ChevronUp, FileText, RotateCcw,
 } from "lucide-react";
 
+const MALAYSIA_BANKS = [
+  "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
+  "AmBank", "Bank Islam", "Affin Bank", "Alliance Bank",
+  "OCBC Bank Malaysia", "Standard Chartered Malaysia", "HSBC Bank Malaysia",
+  "UOB Malaysia", "Citibank Malaysia", "Bank Rakyat",
+  "Bank Simpanan Nasional (BSN)", "Agro Bank", "Bank Muamalat", "MBSB Bank",
+  "Kuwait Finance House Malaysia", "Al Rajhi Bank Malaysia",
+  "Bank of China (Malaysia)", "ICBC Malaysia",
+  "TNG eWallet (Touch 'n Go)", "Boost", "GrabPay", "ShopeePay",
+];
+
 const FREQ_LABELS: Record<string, string> = {
   WEEKLY: "Weekly", MONTHLY: "Monthly", QUARTERLY: "Quarterly",
   ANNUAL: "Annual", HALF_YEARLY: "Half-Yearly",
@@ -441,8 +452,9 @@ export default function RecurringPage() {
   // --- Form ---
   function setField(k: string, v: unknown) { setForm(f => ({ ...f, [k]: v })); }
 
-  function openNew() { setForm({ ...BLANK_FORM }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
-  function openNewInGroup(groupName: string) { setForm({ ...BLANK_FORM, group_name: groupName }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  const BAM_DEFAULTS = isBamMode ? { ministry: "Property", pv_label: "" } : {};
+  function openNew() { setForm({ ...BLANK_FORM, ...BAM_DEFAULTS }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function openNewInGroup(groupName: string) { setForm({ ...BLANK_FORM, ...BAM_DEFAULTS, group_name: groupName }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
   function openEdit(item: RecurringPV) {
     setForm({
@@ -789,7 +801,10 @@ export default function RecurringPage() {
                   </select>
                 </Field>
                 <Field label="Bank Name">
-                  <input className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)} placeholder="e.g. Maybank" />
+                  <select className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)}>
+                    <option value="">— Select bank —</option>
+                    {MALAYSIA_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
                 </Field>
                 <Field label="Account No.">
                   <input className={inp} value={form.payee_bank_acct} onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="e.g. 1234 5678 9012" />
@@ -801,12 +816,22 @@ export default function RecurringPage() {
             <div className="px-4 py-3">
               <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Classification</p>
               <div className="grid grid-cols-3 gap-x-3 gap-y-2">
-                <Field label="Ministry">
-                  <select className={inp} value={form.ministry} onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
-                    <option value="">— None —</option>
-                    {ministries.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </Field>
+                {isBamMode ? (
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Ministry</label>
+                    <div className="flex items-center gap-2 px-3 py-2 border border-stone-200 rounded-lg bg-stone-50 text-sm text-stone-600">
+                      Property
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600 font-medium">BAM default</span>
+                    </div>
+                  </div>
+                ) : (
+                  <Field label="Ministry">
+                    <select className={inp} value={form.ministry} onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
+                      <option value="">— None —</option>
+                      {ministries.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </Field>
+                )}
                 <Field label="Department">
                   <input className={inp} value={form.dept} onChange={e => setField("dept", e.target.value)} placeholder="Optional" />
                 </Field>
@@ -817,11 +842,13 @@ export default function RecurringPage() {
                   </select>
                 </Field>
               </div>
-              <div className="mt-2">
-                <Field label="PV Label (optional)">
-                  <input className={inp} value={form.pv_label} onChange={e => setField("pv_label", e.target.value)} placeholder="e.g. LCM - PBB" />
-                </Field>
-              </div>
+              {!isBamMode && (
+                <div className="mt-2">
+                  <Field label="PV Label (optional)">
+                    <input className={inp} value={form.pv_label} onChange={e => setField("pv_label", e.target.value)} placeholder="e.g. LCM - PBB" />
+                  </Field>
+                </div>
+              )}
             </div>
 
             {/* ── Section 4: Purpose & Description ── */}
