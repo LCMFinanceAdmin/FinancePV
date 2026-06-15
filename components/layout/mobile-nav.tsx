@@ -175,8 +175,8 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
                 );
               })}
 
-              {/* Test role switcher */}
-              <div>
+              {/* Test role switcher — admin only */}
+              {user.isTestAdmin && <div>
                 <div className="px-2 mb-1.5 text-[10px] font-bold tracking-widest uppercase text-stone-400">Testing</div>
                 <button
                   onClick={() => setShowSwitcher(s => !s)}
@@ -235,7 +235,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
                     </button>
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
 
             {/* Sign out */}

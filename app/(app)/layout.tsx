@@ -5,6 +5,8 @@ import { MobileNav } from "@/components/layout/mobile-nav";
 import { PushSetup } from "@/components/push-setup";
 import type { UserProfile } from "@/lib/types";
 
+const TEST_ADMIN_EMAILS = ["finance@lcm.org.my", "jermaineaaron1991@gmail.com"];
+
 async function getUserProfile(): Promise<UserProfile | null> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -33,6 +35,7 @@ async function getUserProfile(): Promise<UserProfile | null> {
     isMinistryHead: role === "MINISTRY_HEAD" || ministries.length > 0,
     isGeneralManager: role === "GENERAL_MANAGER",
     isBuildingManager: role === "BUILDING_MANAGER",
+    isTestAdmin: TEST_ADMIN_EMAILS.includes(user.email!),
   };
 }
 

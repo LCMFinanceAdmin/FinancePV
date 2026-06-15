@@ -297,6 +297,7 @@ export default function PVDetailPage() {
         signatoryRole: role, isMinistryHead: role === "MINISTRY_HEAD",
         isGeneralManager: role === "GENERAL_MANAGER",
         isBuildingManager: role === "BUILDING_MANAGER",
+        isTestAdmin: false,
       });
       setLoading(false);
     }

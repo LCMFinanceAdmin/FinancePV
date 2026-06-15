@@ -71,7 +71,7 @@ const NAV_SECTIONS = [
   {
     label: "Testing",
     items: [
-      { href: "/switch-role", label: "Switch Role", icon: <FlaskConical size={16} />, show: () => true },
+      { href: "/switch-role", label: "Switch Role", icon: <FlaskConical size={16} />, show: (u: UserProfile) => u.isTestAdmin },
     ],
   },
 ] satisfies { label: string | null; items: NavItem[] }[];
@@ -172,56 +172,60 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
           {TEST_ROLES.find(r => r.value === user.role)?.label ?? user.role}
         </div>
 
-        {/* ── Test Role Switcher ──────────────────────────────── */}
-        <button
-          onClick={() => setShowRoleSwitcher(s => !s)}
-          className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 transition-colors"
-        >
-          <FlaskConical size={12} />
-          {showRoleSwitcher ? "Hide role switcher" : "Switch role (test)"}
-        </button>
-
-        {showRoleSwitcher && (
-          <div className="space-y-2 pt-1 border-t border-amber-100">
-            <select
-              className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#4a6da7] bg-white"
-              value={selectedRole}
-              onChange={e => { setSelectedRole(e.target.value); setSelectedMinistries([]); }}
+        {/* ── Test Role Switcher (admin only) ────────────────── */}
+        {user.isTestAdmin && (
+          <>
+            <button
+              onClick={() => setShowRoleSwitcher(s => !s)}
+              className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 transition-colors"
             >
-              {TEST_ROLES.map(r => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
+              <FlaskConical size={12} />
+              {showRoleSwitcher ? "Hide role switcher" : "Switch role (test)"}
+            </button>
 
-            {selectedRole === "MINISTRY_HEAD" && (
-              <div className="space-y-1">
-                <div className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">Ministries</div>
-                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                  {availableMinistries.map(m => (
-                    <label key={m} className="flex items-center gap-1 text-xs cursor-pointer text-stone-600">
-                      <input
-                        type="checkbox"
-                        className="accent-[#4a6da7]"
-                        checked={selectedMinistries.includes(m)}
-                        onChange={e => setSelectedMinistries(prev =>
-                          e.target.checked ? [...prev, m] : prev.filter(x => x !== m)
-                        )}
-                      />
-                      {m}
-                    </label>
+            {showRoleSwitcher && (
+              <div className="space-y-2 pt-1 border-t border-amber-100">
+                <select
+                  className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#4a6da7] bg-white"
+                  value={selectedRole}
+                  onChange={e => { setSelectedRole(e.target.value); setSelectedMinistries([]); }}
+                >
+                  {TEST_ROLES.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
                   ))}
-                </div>
+                </select>
+
+                {selectedRole === "MINISTRY_HEAD" && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">Ministries</div>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                      {availableMinistries.map(m => (
+                        <label key={m} className="flex items-center gap-1 text-xs cursor-pointer text-stone-600">
+                          <input
+                            type="checkbox"
+                            className="accent-[#4a6da7]"
+                            checked={selectedMinistries.includes(m)}
+                            onChange={e => setSelectedMinistries(prev =>
+                              e.target.checked ? [...prev, m] : prev.filter(x => x !== m)
+                            )}
+                          />
+                          {m}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={switchRole}
+                  disabled={switching}
+                  className="w-full py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition-colors disabled:opacity-50"
+                >
+                  {switching ? "Switching…" : "Apply Role"}
+                </button>
               </div>
             )}
-
-            <button
-              onClick={switchRole}
-              disabled={switching}
-              className="w-full py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition-colors disabled:opacity-50"
-            >
-              {switching ? "Switching…" : "Apply Role"}
-            </button>
-          </div>
+          </>
         )}
         {/* ─────────────────────────────────────────────────────── */}
 

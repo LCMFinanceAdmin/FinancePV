@@ -40,6 +40,7 @@ export interface UserProfile {
   isMinistryHead: boolean;
   isGeneralManager: boolean;
   isBuildingManager: boolean;
+  isTestAdmin: boolean;
 }
 
 export interface PV {

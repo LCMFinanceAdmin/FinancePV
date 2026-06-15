@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Eye, EyeOff } from "lucide-react";
 
+const TEST_ADMIN_EMAILS = ["finance@lcm.org.my", "jermaineaaron1991@gmail.com"];
+
 const ROLES = [
   { value: "FINANCE_ADMIN",   label: "Finance Executive",  color: "bg-blue-100 text-blue-800 border-blue-200" },
   { value: "FINANCE_ADMIN_2", label: "Accounts Executive", color: "bg-blue-100 text-blue-800 border-blue-200" },
@@ -49,7 +51,11 @@ export default function SwitchRolePage() {
     async function load() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!user) { router.replace("/dashboard"); return; }
+        if (!TEST_ADMIN_EMAILS.includes(user.email ?? "")) {
+          router.replace("/dashboard");
+          return;
+        }
         setEmail(user.email ?? "");
 
         const [{ data: profile }, { data: mins }] = await Promise.all([
