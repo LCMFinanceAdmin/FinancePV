@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid,
   RefreshCw, Users, Building2, Settings, LogOut,
   ChevronRight, Activity, ClipboardCheck, PiggyBank, FlaskConical,
-  ShoppingCart, ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp,
+  ShoppingCart, ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -48,9 +48,10 @@ const NAV_SECTIONS = [
   {
     label: "Approvals",
     items: [
-      { href: "/signatory",   label: "Signatory Queue", icon: <Users size={16} />,        show: (u: UserProfile) => u.isSignatory },
-      { href: "/ministry",    label: "EXCO Queue",      icon: <Building2 size={16} />,    show: (u: UserProfile) => u.isMinistryHead },
+      { href: "/signatory",   label: "Signatory Queue", icon: <Users size={16} />,         show: (u: UserProfile) => u.isSignatory },
+      { href: "/ministry",    label: "EXCO Queue",      icon: <Building2 size={16} />,     show: (u: UserProfile) => u.isMinistryHead },
       { href: "/pr-queue",    label: "PR Queue",        icon: <ClipboardList size={16} />, show: (u: UserProfile) => u.isSignatory || u.isGeneralManager },
+      { href: "/gm-claims",  label: "GM Claims",        icon: <Inbox size={16} />,         show: (u: UserProfile) => u.isGeneralManager || u.isFinanceAdmin },
     ],
   },
   {

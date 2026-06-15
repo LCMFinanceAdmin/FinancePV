@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2,
   FlaskConical, X, ClipboardList, RefreshCw, Settings, Activity,
   ClipboardCheck, PiggyBank, ShoppingCart, CreditCard, Menu, LogOut, Hammer,
-  CalendarDays, TrendingUp,
+  CalendarDays, TrendingUp, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -65,6 +65,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     { href: "/ministry",            label: "EXCO",          icon: <Building2 size={20} />,       show: user.isMinistryHead && !user.isSignatory },
     { href: "/signatory",           label: "Sign Q",        icon: <Users size={20} />,           show: user.isSignatory },
     { href: "/pr-queue",            label: "PR Q",          icon: <ClipboardList size={20} />,   show: user.isSignatory || user.isGeneralManager },
+    { href: "/gm-claims",           label: "Claims",        icon: <Inbox size={20} />,           show: user.isGeneralManager },
     { href: "/budget",              label: "Budget",        icon: <PiggyBank size={20} />,       show: user.isSignatory },
     { href: "/dashboard",           label: "Home",          icon: <LayoutDashboard size={20} />, show: user.isBuildingManager },
     { href: "/submit?type=bam",     label: "Submit BAM",    icon: <Hammer size={20} />,          show: user.isBuildingManager },
@@ -108,9 +109,10 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     {
       label: "Approvals",
       items: [
-        { href: "/signatory", label: "Signatory Queue", icon: <Users size={16} />,        show: user.isSignatory },
-        { href: "/ministry",  label: "EXCO Queue",      icon: <Building2 size={16} />,    show: user.isMinistryHead },
-        { href: "/pr-queue",  label: "PR Queue",        icon: <ClipboardList size={16} />, show: user.isSignatory || user.isGeneralManager },
+        { href: "/signatory",  label: "Signatory Queue", icon: <Users size={16} />,         show: user.isSignatory },
+        { href: "/ministry",   label: "EXCO Queue",      icon: <Building2 size={16} />,     show: user.isMinistryHead },
+        { href: "/pr-queue",   label: "PR Queue",        icon: <ClipboardList size={16} />, show: user.isSignatory || user.isGeneralManager },
+        { href: "/gm-claims",  label: "GM Claims",       icon: <Inbox size={16} />,         show: user.isGeneralManager || user.isFinanceAdmin },
       ],
     },
     {
