@@ -1,13 +1,24 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { PVApproval } from "@/lib/types";
+import type { POLineItem } from "@/components/gm/po-pdf";
 import {
   Plus, X, ChevronDown, ChevronUp, Paperclip, Link2, ExternalLink,
   CheckCircle, Clock, FileText, CreditCard, AlertCircle, Banknote,
+  Package, Trash2,
 } from "lucide-react";
 import Link from "next/link";
+
+const POPdfButton = dynamic(() => import("@/components/gm/po-pdf").then(m => ({ default: m.POPdfButton })), { ssr: false });
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const CLAIMANT_TYPES = ["Pastor", "Lay Leader", "EXCO Member", "Staff", "Other"];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,7 +27,9 @@ import Link from "next/link";
 interface GMClaim {
   id: string;
   claim_no: string;
+  claim_type: "EXPENSE_CLAIM" | "PURCHASE_ORDER";
   claimant_name: string;
+  claimant_type: string | null;
   claimant_email: string | null;
   ministry: string | null;
   project: string | null;
@@ -24,12 +37,17 @@ interface GMClaim {
   purpose: string;
   description: string | null;
   attachments: string[];
+  supplier_name: string | null;
+  supplier_address: string | null;
+  po_number: string | null;
+  line_items: POLineItem[];
+  is_fixed_asset: boolean;
+  asset_description: string | null;
   pv_id: string | null;
   notes: string | null;
   created_by_email: string;
   received_at: string;
   created_at: string;
-  // joined from pvs
   pv?: LinkedPV | null;
 }
 
@@ -48,49 +66,34 @@ interface LinkedPV {
 // ---------------------------------------------------------------------------
 
 type ClaimStage =
-  | "NOT_PREPARED"
-  | "PV_PREPARED"
-  | "VERIFIED"
-  | "PENDING_SIGNATORY"
-  | "PENDING_SECOND_SIGNATORY"
-  | "APPROVED"
-  | "PAID";
+  | "NOT_PREPARED" | "PV_PREPARED" | "VERIFIED"
+  | "PENDING_SIGNATORY" | "PENDING_SECOND_SIGNATORY" | "APPROVED" | "PAID";
 
 function deriveStage(claim: GMClaim): ClaimStage {
   if (!claim.pv_id || !claim.pv) return "NOT_PREPARED";
   const { status, approvals = [], loa_required = 1 } = claim.pv;
   switch (status) {
-    case "SUBMITTED":
-      return "PV_PREPARED";
+    case "SUBMITTED": return "PV_PREPARED";
     case "REVIEWED":
-    case "MINISTRY_VERIFIED":
-      return "VERIFIED";
+    case "MINISTRY_VERIFIED": return "VERIFIED";
     case "PENDING_SIGNATORY": {
-      const sigApprovals = approvals.filter(
-        (a) => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
-      );
-      if (sigApprovals.length >= 1 && sigApprovals.length < loa_required) {
-        return "PENDING_SECOND_SIGNATORY";
-      }
-      return "PENDING_SIGNATORY";
+      const n = approvals.filter(a => ["BISHOP","TREASURER","SECRETARY"].includes(a.role) && a.action === "APPROVED").length;
+      return n >= 1 && n < loa_required ? "PENDING_SECOND_SIGNATORY" : "PENDING_SIGNATORY";
     }
-    case "APPROVED":
-      return "APPROVED";
-    case "PAID":
-      return "PAID";
-    default:
-      return "PV_PREPARED";
+    case "APPROVED": return "APPROVED";
+    case "PAID": return "PAID";
+    default: return "PV_PREPARED";
   }
 }
 
 const STAGE_META: Record<ClaimStage, { label: string; color: string; icon: React.ReactNode; step: number }> = {
-  NOT_PREPARED:           { label: "PV Not Yet Prepared",             color: "bg-stone-100 text-stone-500",        icon: <Clock size={13} />,       step: 0 },
-  PV_PREPARED:            { label: "PV Prepared — Pending Verification", color: "bg-blue-100 text-blue-700",        icon: <FileText size={13} />,    step: 1 },
-  VERIFIED:               { label: "Verified — Pending Signatory",     color: "bg-amber-100 text-amber-700",        icon: <CheckCircle size={13} />, step: 2 },
-  PENDING_SIGNATORY:      { label: "Pending 1st Signatory",            color: "bg-orange-100 text-orange-700",      icon: <AlertCircle size={13} />, step: 3 },
-  PENDING_SECOND_SIGNATORY: { label: "Pending 2nd Signatory",          color: "bg-orange-100 text-orange-700",      icon: <AlertCircle size={13} />, step: 3 },
-  APPROVED:               { label: "Approved — Pending Payment",       color: "bg-green-100 text-green-700",        icon: <Banknote size={13} />,    step: 4 },
-  PAID:                   { label: "Paid",                             color: "bg-green-600 text-white",            icon: <CheckCircle size={13} />, step: 5 },
+  NOT_PREPARED:             { label: "PV Not Yet Prepared",              color: "bg-stone-100 text-stone-500",   icon: <Clock size={13} />,       step: 0 },
+  PV_PREPARED:              { label: "PV Prepared — Pending Verification",color: "bg-blue-100 text-blue-700",    icon: <FileText size={13} />,    step: 1 },
+  VERIFIED:                 { label: "Verified — Pending Signatory",      color: "bg-amber-100 text-amber-700",  icon: <CheckCircle size={13} />, step: 2 },
+  PENDING_SIGNATORY:        { label: "Pending 1st Signatory",             color: "bg-orange-100 text-orange-700",icon: <AlertCircle size={13} />, step: 3 },
+  PENDING_SECOND_SIGNATORY: { label: "Pending 2nd Signatory",             color: "bg-orange-100 text-orange-700",icon: <AlertCircle size={13} />, step: 3 },
+  APPROVED:                 { label: "Approved — Pending Payment",        color: "bg-green-100 text-green-700",  icon: <Banknote size={13} />,    step: 4 },
+  PAID:                     { label: "Paid",                              color: "bg-green-600 text-white",      icon: <CheckCircle size={13} />, step: 5 },
 };
 
 const STAGE_STEPS: { key: ClaimStage; label: string }[] = [
@@ -103,7 +106,7 @@ const STAGE_STEPS: { key: ClaimStage; label: string }[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Progress bar component
+// Progress bar
 // ---------------------------------------------------------------------------
 
 function ProgressBar({ stage }: { stage: ClaimStage }) {
@@ -116,14 +119,10 @@ function ProgressBar({ stage }: { stage: ClaimStage }) {
         const active = currentStep === stepNo && s.key === stage;
         return (
           <div key={s.key} className="flex items-center">
-            {i > 0 && (
-              <div className={`h-0.5 w-6 sm:w-10 ${done ? "bg-green-500" : "bg-stone-200"}`} />
-            )}
+            {i > 0 && <div className={`h-0.5 w-6 sm:w-10 ${done ? "bg-green-500" : "bg-stone-200"}`} />}
             <div className="flex flex-col items-center gap-0.5">
               <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border-2 transition-colors
-                ${done    ? "bg-green-500 border-green-500 text-white"
-                : active  ? "bg-white border-[#4a6da7] text-[#4a6da7]"
-                          : "bg-white border-stone-200 text-stone-300"}`}>
+                ${done ? "bg-green-500 border-green-500 text-white" : active ? "bg-white border-[#4a6da7] text-[#4a6da7]" : "bg-white border-stone-200 text-stone-300"}`}>
                 {done ? "✓" : i + 1}
               </div>
               <span className={`text-[9px] font-medium leading-tight text-center hidden sm:block
@@ -139,23 +138,45 @@ function ProgressBar({ stage }: { stage: ClaimStage }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main page
+// Line item row helper (for PO form)
 // ---------------------------------------------------------------------------
 
-export default function GMClaimsPage() {
-  const supabase = createClient();
-  const [claims, setClaims] = useState<GMClaim[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<{ email: string; role: string } | null>(null);
-  const [toast, setToast] = useState("");
-  const [toastOk, setToastOk] = useState(true);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+function LineItemRow({ item, index, onChange, onRemove }: {
+  item: POLineItem; index: number;
+  onChange: (i: number, field: keyof POLineItem, val: string) => void;
+  onRemove: (i: number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[1fr_48px_80px_80px_28px] gap-1 items-start">
+      <input type="text" value={item.description} placeholder="Description"
+        onChange={e => onChange(index, "description", e.target.value)}
+        className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30" />
+      <input type="number" value={item.qty || ""} placeholder="Qty" min="1"
+        onChange={e => onChange(index, "qty", e.target.value)}
+        className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 text-right" />
+      <input type="number" value={item.unit_price || ""} placeholder="Unit RM" min="0" step="0.01"
+        onChange={e => onChange(index, "unit_price", e.target.value)}
+        className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 text-right" />
+      <div className="border border-stone-100 rounded-lg px-2 py-1.5 text-xs text-right bg-stone-50 text-stone-500">
+        {item.amount > 0 ? formatCurrency(item.amount) : "—"}
+      </div>
+      <button type="button" onClick={() => onRemove(index)}
+        className="mt-1 text-stone-300 hover:text-red-400 transition-colors">
+        <Trash2 size={13} />
+      </button>
+    </div>
+  );
+}
 
-  // Add / Edit modal
-  const [showModal, setShowModal] = useState(false);
-  const [editingClaim, setEditingClaim] = useState<GMClaim | null>(null);
-  const [form, setForm] = useState({
+// ---------------------------------------------------------------------------
+// Default form state
+// ---------------------------------------------------------------------------
+
+function defaultForm() {
+  return {
+    claim_type: "EXPENSE_CLAIM" as "EXPENSE_CLAIM" | "PURCHASE_ORDER",
     claimant_name: "",
+    claimant_type: "",
     claimant_email: "",
     ministry: "",
     project: "",
@@ -164,26 +185,73 @@ export default function GMClaimsPage() {
     description: "",
     notes: "",
     received_at: new Date().toISOString().slice(0, 10),
-  });
+    supplier_name: "",
+    supplier_address: "",
+    is_fixed_asset: false,
+    asset_description: "",
+    line_items: [] as POLineItem[],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
+
+export default function GMClaimsPage() {
+  const supabase = createClient();
+  const [claims, setClaims] = useState<GMClaim[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<{ email: string; role: string; full_name?: string } | null>(null);
+  const [toast, setToast] = useState("");
+  const [toastOk, setToastOk] = useState(true);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [ministries, setMinistries] = useState<string[]>([]);
+
+  const [showModal, setShowModal] = useState(false);
+  const [editingClaim, setEditingClaim] = useState<GMClaim | null>(null);
+  const [form, setForm] = useState(defaultForm());
   const [saving, setSaving] = useState(false);
 
-  // Link PV modal
   const [linkModal, setLinkModal] = useState<GMClaim | null>(null);
   const [pvSearch, setPvSearch] = useState("");
   const [pvOptions, setPvOptions] = useState<{ id: string; pv_no: string; payee_name: string; amount: number }[]>([]);
   const [linking, setLinking] = useState(false);
 
-  // Notes modal
   const [notesModal, setNotesModal] = useState<GMClaim | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
 
-  // Ministries for dropdown
-  const [ministries, setMinistries] = useState<string[]>([]);
-
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
     setTimeout(() => setToast(""), 3500);
+  }
+
+  function setF<K extends keyof ReturnType<typeof defaultForm>>(key: K, val: ReturnType<typeof defaultForm>[K]) {
+    setForm(f => ({ ...f, [key]: val }));
+  }
+
+  // Auto-calculate line item amount and total
+  function updateLineItem(i: number, field: keyof POLineItem, raw: string) {
+    setForm(f => {
+      const items = [...f.line_items];
+      const item = { ...items[i], [field]: field === "description" ? raw : parseFloat(raw) || 0 };
+      item.amount = item.qty * item.unit_price;
+      items[i] = item;
+      const total = items.reduce((s, r) => s + r.amount, 0);
+      return { ...f, line_items: items, amount: total > 0 ? String(total) : f.amount };
+    });
+  }
+
+  function addLineItem() {
+    setForm(f => ({ ...f, line_items: [...f.line_items, { description: "", qty: 1, unit_price: 0, amount: 0 }] }));
+  }
+
+  function removeLineItem(i: number) {
+    setForm(f => {
+      const items = f.line_items.filter((_, idx) => idx !== i);
+      const total = items.reduce((s, r) => s + r.amount, 0);
+      return { ...f, line_items: items, amount: total > 0 ? String(total) : f.amount };
+    });
   }
 
   const load = useCallback(async () => {
@@ -192,66 +260,56 @@ export default function GMClaimsPage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (authUser) {
         const { data: profile } = await supabase.from("user_roles")
-          .select("role").eq("email", authUser.email!).single();
-        setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF" });
+          .select("role,full_name").eq("email", authUser.email!).single();
+        setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF", full_name: profile?.full_name });
       }
 
-      // Load claims with linked PV data
       const { data: claimRows } = await supabase
-        .from("gm_claims")
-        .select("*")
-        .order("received_at", { ascending: false });
+        .from("gm_claims").select("*").order("received_at", { ascending: false });
 
       if (!claimRows) { setClaims([]); return; }
 
-      // Fetch linked PVs
       const pvIds = claimRows.map((c) => c.pv_id).filter(Boolean) as string[];
       let pvMap: Record<string, LinkedPV> = {};
       if (pvIds.length > 0) {
         const { data: pvRows } = await supabase
-          .from("pvs")
-          .select("id,pv_no,status,amount,approvals,loa_required,submitted_at")
-          .in("id", pvIds);
+          .from("pvs").select("id,pv_no,status,amount,approvals,loa_required,submitted_at").in("id", pvIds);
         for (const pv of pvRows ?? []) pvMap[pv.id] = pv;
       }
 
       setClaims(claimRows.map((c) => ({ ...c, pv: pvMap[c.pv_id] ?? null })));
 
-      // Load ministries
       const { data: budgetRows } = await supabase.from("budget_items").select("ministry");
       const mins = [...new Set((budgetRows ?? []).map((r: { ministry: string }) => r.ministry).filter(Boolean))].sort() as string[];
       setMinistries(mins);
     } finally {
       setLoading(false);
     }
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 
-  // Search PVs for link modal
   useEffect(() => {
     if (!linkModal) return;
-    const q = pvSearch.trim();
-    supabase
-      .from("pvs")
-      .select("id,pv_no,payee_name,amount")
-      .ilike("pv_no", `%${q}%`)
+    supabase.from("pvs").select("id,pv_no,payee_name,amount")
+      .ilike("pv_no", `%${pvSearch.trim()}%`)
       .not("status", "in", "(DRAFT,CANCELLED)")
-      .order("submitted_at", { ascending: false })
-      .limit(10)
+      .order("submitted_at", { ascending: false }).limit(10)
       .then(({ data }) => setPvOptions(data ?? []));
-  }, [pvSearch, linkModal]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pvSearch, linkModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openAdd() {
     setEditingClaim(null);
-    setForm({ claimant_name: "", claimant_email: "", ministry: "", project: "", amount: "", purpose: "", description: "", notes: "", received_at: new Date().toISOString().slice(0, 10) });
+    setForm(defaultForm());
     setShowModal(true);
   }
 
   function openEdit(claim: GMClaim) {
     setEditingClaim(claim);
     setForm({
+      claim_type: claim.claim_type ?? "EXPENSE_CLAIM",
       claimant_name: claim.claimant_name,
+      claimant_type: claim.claimant_type ?? "",
       claimant_email: claim.claimant_email ?? "",
       ministry: claim.ministry ?? "",
       project: claim.project ?? "",
@@ -260,18 +318,31 @@ export default function GMClaimsPage() {
       description: claim.description ?? "",
       notes: claim.notes ?? "",
       received_at: claim.received_at.slice(0, 10),
+      supplier_name: claim.supplier_name ?? "",
+      supplier_address: claim.supplier_address ?? "",
+      is_fixed_asset: claim.is_fixed_asset ?? false,
+      asset_description: claim.asset_description ?? "",
+      line_items: claim.line_items ?? [],
     });
     setShowModal(true);
   }
 
   async function saveClaim() {
-    if (!form.claimant_name.trim() || !form.purpose.trim() || !form.amount) {
-      showToast("Claimant name, purpose, and amount are required", false); return;
+    if (!form.claimant_name.trim() || !form.purpose.trim()) {
+      showToast("Claimant name and purpose are required", false); return;
+    }
+    if (form.claim_type === "PURCHASE_ORDER" && !form.supplier_name.trim()) {
+      showToast("Supplier name is required for a Purchase Order", false); return;
+    }
+    if (!form.amount || parseFloat(form.amount) <= 0) {
+      showToast("Please enter a valid amount", false); return;
     }
     setSaving(true);
     try {
       const payload = {
+        claim_type: form.claim_type,
         claimant_name: form.claimant_name.trim(),
+        claimant_type: form.claimant_type || null,
         claimant_email: form.claimant_email.trim() || null,
         ministry: form.ministry || null,
         project: form.project.trim() || null,
@@ -280,6 +351,11 @@ export default function GMClaimsPage() {
         description: form.description.trim() || null,
         notes: form.notes.trim() || null,
         received_at: new Date(form.received_at).toISOString(),
+        supplier_name: form.claim_type === "PURCHASE_ORDER" ? form.supplier_name.trim() || null : null,
+        supplier_address: form.claim_type === "PURCHASE_ORDER" ? form.supplier_address.trim() || null : null,
+        is_fixed_asset: form.claim_type === "PURCHASE_ORDER" ? form.is_fixed_asset : false,
+        asset_description: form.claim_type === "PURCHASE_ORDER" && form.is_fixed_asset ? form.asset_description.trim() || null : null,
+        line_items: form.claim_type === "PURCHASE_ORDER" ? form.line_items : [],
       };
 
       if (editingClaim) {
@@ -288,37 +364,47 @@ export default function GMClaimsPage() {
       } else {
         const { data: { user } } = await supabase.auth.getUser();
         const { data: claimNoRow } = await supabase.rpc("next_claim_no");
+
+        // Generate PO number if this is a Purchase Order
+        let po_number: string | null = null;
+        if (form.claim_type === "PURCHASE_ORDER") {
+          const { data: poNoRow } = await supabase.rpc("next_po_no");
+          po_number = poNoRow;
+        }
+
         await supabase.from("gm_claims").insert({
           ...payload,
           claim_no: claimNoRow,
+          po_number,
           created_by_email: user?.email ?? "",
         });
 
-        // Notify all Finance Admins that the GM has logged a new claim
-        const { data: feUsers } = await supabase
-          .from("user_roles")
-          .select("email")
+        // Notify Finance Admins
+        const { data: feUsers } = await supabase.from("user_roles").select("email")
           .in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
         if (feUsers?.length) {
+          const typeLabel = form.claim_type === "PURCHASE_ORDER" ? "Purchase Order" : "Expense Claim";
           await supabase.from("notifications").insert(
             feUsers.map((fe: { email: string }) => ({
               recipient_email: fe.email,
               type: "GM_CLAIM",
               pv_no: claimNoRow,
               pv_id: null,
-              message: `GM has logged a new claim (${claimNoRow}) from ${payload.claimant_name} — RM ${payload.amount.toFixed(2)} — awaiting PV preparation`,
+              message: `GM logged a ${typeLabel} (${claimNoRow}) from ${payload.claimant_name} — ${formatCurrency(payload.amount)} — awaiting PV preparation`,
               read: false,
               created_at: new Date().toISOString(),
             }))
           );
         }
 
-        showToast("Claim added — Finance Executive notified");
+        showToast(form.claim_type === "PURCHASE_ORDER"
+          ? `Purchase Order ${po_number} created — Finance Executive notified`
+          : "Claim added — Finance Executive notified");
       }
       setShowModal(false);
       await load();
     } catch {
-      showToast("Failed to save claim", false);
+      showToast("Failed to save", false);
     } finally {
       setSaving(false);
     }
@@ -358,17 +444,14 @@ export default function GMClaimsPage() {
   }
 
   const isGM = currentUser?.role === "GENERAL_MANAGER";
-  const isFinanceAdmin = currentUser?.role === "FINANCE_ADMIN" || currentUser?.role === "FINANCE_ADMIN_2";
-  const canEdit = isGM || isFinanceAdmin;
+  const isFinanceAdmin = currentUser?.role === "FINANCE_ADMIN" || (currentUser?.role as string) === "FINANCE_ADMIN_2";
 
-  // Stats
   const total = claims.length;
-  const unprepared = claims.filter((c) => deriveStage(c) === "NOT_PREPARED").length;
-  const inProgress = claims.filter((c) => {
-    const s = deriveStage(c);
-    return s !== "NOT_PREPARED" && s !== "PAID";
-  }).length;
-  const paid = claims.filter((c) => deriveStage(c) === "PAID").length;
+  const unprepared = claims.filter(c => deriveStage(c) === "NOT_PREPARED").length;
+  const inProgress = claims.filter(c => { const s = deriveStage(c); return s !== "NOT_PREPARED" && s !== "PAID"; }).length;
+  const paid = claims.filter(c => deriveStage(c) === "PAID").length;
+
+  const isPO = form.claim_type === "PURCHASE_ORDER";
 
   return (
     <main className="min-h-screen bg-stone-50 pb-28 md:pb-8">
@@ -379,14 +462,15 @@ export default function GMClaimsPage() {
           <div>
             <h1 className="text-xl font-bold text-stone-800">GM Claims Tracker</h1>
             <p className="text-xs text-stone-400 mt-0.5">
-              {isGM ? "Log and track payment claims received directly from EXCO members and Pastors."
-                     : "Claims forwarded by the General Manager for PV preparation."}
+              {isGM
+                ? "Log expense claims from Pastors, Lay Leaders & EXCO, or issue Purchase Orders to suppliers."
+                : "Claims and Purchase Orders forwarded by the General Manager for PV preparation."}
             </p>
           </div>
           {isGM && (
             <button onClick={openAdd}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl bg-[#4a6da7] text-white hover:bg-[#3a5d97] transition-colors shrink-0">
-              <Plus size={15} /> Add Claim
+              <Plus size={15} /> Add
             </button>
           )}
         </div>
@@ -394,10 +478,10 @@ export default function GMClaimsPage() {
         {/* Summary cards */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Total Claims", value: total, color: "text-stone-700" },
-            { label: "Needs PV",     value: unprepared, color: "text-amber-600" },
-            { label: "In Progress",  value: inProgress, color: "text-blue-600" },
-          ].map((s) => (
+            { label: "Total",       value: total,      color: "text-stone-700" },
+            { label: "Needs PV",    value: unprepared, color: "text-amber-600" },
+            { label: "In Progress", value: inProgress, color: "text-blue-600" },
+          ].map(s => (
             <div key={s.label} className="bg-white rounded-xl p-3 shadow-sm border border-stone-100 text-center">
               <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
               <div className="text-[11px] text-stone-400 mt-0.5">{s.label}</div>
@@ -407,32 +491,48 @@ export default function GMClaimsPage() {
 
         {/* Claims list */}
         {loading ? (
-          <div className="text-center py-16 text-stone-400 text-sm">Loading claims…</div>
+          <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
         ) : claims.length === 0 ? (
           <div className="text-center py-16 text-stone-400 text-sm">
-            No claims logged yet.{isGM && ' Tap "Add Claim" to get started.'}
+            No claims logged yet.{isGM && ' Tap "Add" to get started.'}
           </div>
         ) : (
           <div className="space-y-3">
-            {claims.map((claim) => {
+            {claims.map(claim => {
               const stage = deriveStage(claim);
               const meta = STAGE_META[stage];
               const isOpen = expanded.has(claim.id);
+              const isPOClaim = claim.claim_type === "PURCHASE_ORDER";
 
               return (
                 <div key={claim.id} className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
-                  {/* Card header */}
                   <div className="px-4 pt-4 pb-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-mono text-stone-400">{claim.claim_no}</span>
+                          {isPOClaim && (
+                            <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                              <Package size={10} /> PO {claim.po_number}
+                            </span>
+                          )}
+                          {claim.is_fixed_asset && (
+                            <span className="text-[11px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
+                          )}
                           <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${meta.color}`}>
                             {meta.icon} {meta.label}
                           </span>
                         </div>
-                        <div className="font-semibold text-stone-800 mt-1 text-sm">{claim.claimant_name}</div>
+                        <div className="font-semibold text-stone-800 mt-1 text-sm">
+                          {claim.claimant_name}
+                          {claim.claimant_type && (
+                            <span className="ml-1.5 text-xs font-normal text-stone-400">({claim.claimant_type})</span>
+                          )}
+                        </div>
                         <div className="text-xs text-stone-500 truncate">{claim.purpose}</div>
+                        {isPOClaim && claim.supplier_name && (
+                          <div className="text-xs text-purple-600 mt-0.5">Supplier: {claim.supplier_name}</div>
+                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-base font-bold text-stone-800">{formatCurrency(claim.amount)}</div>
@@ -440,7 +540,6 @@ export default function GMClaimsPage() {
                       </div>
                     </div>
 
-                    {/* Ministry / project tags */}
                     {(claim.ministry || claim.project) && (
                       <div className="flex gap-1.5 flex-wrap">
                         {claim.ministry && <span className="text-[11px] px-2 py-0.5 bg-[#4a6da7]/10 text-[#4a6da7] rounded-full font-medium">{claim.ministry}</span>}
@@ -448,19 +547,13 @@ export default function GMClaimsPage() {
                       </div>
                     )}
 
-                    {/* Progress bar */}
-                    <div className="pt-1">
-                      <ProgressBar stage={stage} />
-                    </div>
+                    <div className="pt-1"><ProgressBar stage={stage} /></div>
 
-                    {/* Linked PV info */}
                     {claim.pv && (
                       <div className="flex items-center gap-2 text-xs text-stone-500 bg-stone-50 rounded-lg px-3 py-1.5">
                         <Link2 size={12} className="text-stone-400 shrink-0" />
                         <span>PV:</span>
-                        <Link href={`/my-pvs/${claim.pv.id}`} className="font-semibold text-[#4a6da7] hover:underline">
-                          {claim.pv.pv_no}
-                        </Link>
+                        <Link href={`/my-pvs/${claim.pv.id}`} className="font-semibold text-[#4a6da7] hover:underline">{claim.pv.pv_no}</Link>
                         <span className="text-stone-300">•</span>
                         <span>{formatCurrency(claim.pv.amount)}</span>
                       </div>
@@ -469,7 +562,25 @@ export default function GMClaimsPage() {
 
                   {/* Action bar */}
                   <div className="flex items-center gap-2 px-4 pb-3 flex-wrap">
-                    {/* Finance Admin: prepare / link PV */}
+                    {/* PO PDF button */}
+                    {isPOClaim && claim.po_number && (
+                      <POPdfButton data={{
+                        po_number: claim.po_number,
+                        claim_no: claim.claim_no,
+                        claimant_name: claim.claimant_name,
+                        supplier_name: claim.supplier_name ?? "",
+                        supplier_address: claim.supplier_address ?? undefined,
+                        is_fixed_asset: claim.is_fixed_asset,
+                        asset_description: claim.asset_description ?? undefined,
+                        ministry: claim.ministry ?? undefined,
+                        purpose: claim.purpose,
+                        line_items: claim.line_items ?? [],
+                        received_at: claim.received_at,
+                        notes: claim.notes ?? undefined,
+                        gm_name: currentUser?.full_name,
+                      }} />
+                    )}
+
                     {isFinanceAdmin && stage === "NOT_PREPARED" && (
                       <>
                         <Link
@@ -489,21 +600,18 @@ export default function GMClaimsPage() {
                         <Link2 size={11} /> Change PV
                       </button>
                     )}
-                    {/* View PV button for everyone */}
                     {claim.pv && (
                       <Link href={`/my-pvs/${claim.pv.id}`}
                         className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
                         <ExternalLink size={11} /> View PV
                       </Link>
                     )}
-                    {/* Edit (GM only) */}
                     {isGM && (
                       <button onClick={() => openEdit(claim)}
                         className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 ml-auto">
                         Edit
                       </button>
                     )}
-                    {/* Expand/collapse */}
                     <button
                       onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(claim.id) ? n.delete(claim.id) : n.add(claim.id); return n; })}
                       className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600 ml-auto">
@@ -515,18 +623,53 @@ export default function GMClaimsPage() {
                   {/* Expanded detail */}
                   {isOpen && (
                     <div className="border-t border-stone-100 px-4 py-3 space-y-3 bg-stone-50/60">
+                      {/* PO line items */}
+                      {isPOClaim && (claim.line_items?.length ?? 0) > 0 && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-2">Order Items</div>
+                          <div className="rounded-lg overflow-hidden border border-stone-100">
+                            <div className="grid grid-cols-[1fr_40px_80px_80px] gap-0 bg-stone-100 px-2 py-1">
+                              {["Description","Qty","Unit Price","Amount"].map(h => (
+                                <div key={h} className="text-[10px] font-bold text-stone-500 last:text-right">{h}</div>
+                              ))}
+                            </div>
+                            {claim.line_items.map((item, i) => (
+                              <div key={i} className="grid grid-cols-[1fr_40px_80px_80px] gap-0 px-2 py-1.5 border-t border-stone-50 text-xs">
+                                <div className="text-stone-700">{item.description}</div>
+                                <div className="text-stone-500 text-right">{item.qty}</div>
+                                <div className="text-stone-500 text-right">{formatCurrency(item.unit_price)}</div>
+                                <div className="font-medium text-stone-800 text-right">{formatCurrency(item.amount)}</div>
+                              </div>
+                            ))}
+                            <div className="grid grid-cols-[1fr_80px] px-2 py-1.5 bg-[#4a6da7]/5 border-t border-stone-200">
+                              <div className="text-xs font-bold text-[#4a6da7]">Total</div>
+                              <div className="text-xs font-bold text-[#4a6da7] text-right">{formatCurrency(claim.amount)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {isPOClaim && claim.supplier_address && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Supplier Address</div>
+                          <div className="text-sm text-stone-600 whitespace-pre-wrap">{claim.supplier_address}</div>
+                        </div>
+                      )}
+
                       {claim.description && (
                         <div>
                           <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Description</div>
                           <div className="text-sm text-stone-600">{claim.description}</div>
                         </div>
                       )}
+
                       {claim.claimant_email && (
                         <div>
                           <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Claimant Email</div>
                           <div className="text-sm text-stone-600">{claim.claimant_email}</div>
                         </div>
                       )}
+
                       {claim.attachments?.length > 0 && (
                         <div>
                           <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Attachments</div>
@@ -540,7 +683,7 @@ export default function GMClaimsPage() {
                           </div>
                         </div>
                       )}
-                      {/* Notes section */}
+
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400">GM Notes</div>
@@ -556,20 +699,16 @@ export default function GMClaimsPage() {
                           : <div className="text-xs text-stone-300 italic">No notes</div>}
                       </div>
 
-                      {/* PV status detail */}
                       {claim.pv && (
                         <div>
                           <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">PV Progress</div>
                           <div className="space-y-1">
                             {[
                               { label: "PV No.", value: claim.pv.pv_no },
-                              { label: "PV Status", value: claim.pv.status.replace(/_/g, " ") },
+                              { label: "Status", value: claim.pv.status.replace(/_/g, " ") },
                               { label: "Submitted", value: formatDate(claim.pv.submitted_at) },
-                              {
-                                label: "Signatory Approvals",
-                                value: `${(claim.pv.approvals ?? []).filter((a) => ["BISHOP","TREASURER","SECRETARY"].includes(a.role) && a.action === "APPROVED").length} of ${claim.pv.loa_required ?? 1} required`,
-                              },
-                            ].map((row) => (
+                              { label: "Signatory Approvals", value: `${(claim.pv.approvals ?? []).filter(a => ["BISHOP","TREASURER","SECRETARY"].includes(a.role) && a.action === "APPROVED").length} of ${claim.pv.loa_required ?? 1} required` },
+                            ].map(row => (
                               <div key={row.label} className="flex items-center justify-between text-xs">
                                 <span className="text-stone-400">{row.label}</span>
                                 <span className="font-medium text-stone-700">{row.value}</span>
@@ -577,8 +716,7 @@ export default function GMClaimsPage() {
                             ))}
                           </div>
                           {isFinanceAdmin && claim.pv_id && (
-                            <button onClick={() => unlinkPV(claim.id)}
-                              className="mt-2 text-[11px] text-red-400 hover:text-red-600 hover:underline">
+                            <button onClick={() => unlinkPV(claim.id)} className="mt-2 text-[11px] text-red-400 hover:text-red-600 hover:underline">
                               Unlink PV
                             </button>
                           )}
@@ -592,7 +730,6 @@ export default function GMClaimsPage() {
           </div>
         )}
 
-        {/* Paid count note */}
         {paid > 0 && (
           <div className="flex items-center gap-2 text-xs text-green-600 justify-center pt-1">
             <CreditCard size={13} /> {paid} claim{paid !== 1 ? "s" : ""} fully paid
@@ -602,63 +739,177 @@ export default function GMClaimsPage() {
 
       {/* ── Add / Edit Modal ── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4"
-          onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setShowModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h2 className="font-bold text-stone-800">{editingClaim ? "Edit Claim" : "Add Claim"}</h2>
+              <h2 className="font-bold text-stone-800">{editingClaim ? "Edit" : "Add Claim / Purchase Order"}</h2>
               <button onClick={() => setShowModal(false)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
             </div>
 
-            {[
-              { label: "Claimant Name *", key: "claimant_name", type: "text", placeholder: "Full name of Pastor / EXCO member" },
-              { label: "Claimant Email", key: "claimant_email", type: "email", placeholder: "optional" },
-              { label: "Amount (RM) *", key: "amount", type: "number", placeholder: "0.00" },
-              { label: "Purpose *", key: "purpose", type: "text", placeholder: "Brief purpose of the claim" },
-              { label: "Date Received", key: "received_at", type: "date", placeholder: "" },
-            ].map(({ label, key, type, placeholder }) => (
-              <div key={key}>
-                <label className="block text-xs font-semibold text-stone-600 mb-1">{label}</label>
-                <input
-                  type={type}
-                  value={form[key as keyof typeof form]}
-                  onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                  placeholder={placeholder}
-                  step={type === "number" ? "0.01" : undefined}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30"
-                />
+            {/* Claim type toggle */}
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1.5">Type</label>
+              <div className="flex rounded-xl overflow-hidden border border-stone-200">
+                {(["EXPENSE_CLAIM", "PURCHASE_ORDER"] as const).map(t => (
+                  <button key={t} type="button"
+                    onClick={() => setF("claim_type", t)}
+                    className={`flex-1 py-2 text-xs font-semibold transition-colors
+                      ${form.claim_type === t ? "bg-[#4a6da7] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>
+                    {t === "EXPENSE_CLAIM" ? "Expense Claim" : "Purchase Order / Fixed Asset"}
+                  </button>
+                ))}
               </div>
-            ))}
+            </div>
+
+            {/* Claimant */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Claimant Name *</label>
+                <input type="text" value={form.claimant_name}
+                  onChange={e => setF("claimant_name", e.target.value)}
+                  placeholder="Full name"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Claimant Type</label>
+                <select value={form.claimant_type} onChange={e => setF("claimant_type", e.target.value)}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
+                  <option value="">— Select —</option>
+                  {CLAIMANT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Claimant Email</label>
+              <input type="email" value={form.claimant_email}
+                onChange={e => setF("claimant_email", e.target.value)}
+                placeholder="optional"
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+            </div>
+
+            {/* Purchase Order fields */}
+            {isPO && (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-600 mb-1">Supplier / Vendor Name *</label>
+                  <input type="text" value={form.supplier_name}
+                    onChange={e => setF("supplier_name", e.target.value)}
+                    placeholder="Company or individual name"
+                    className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-600 mb-1">Supplier Address</label>
+                  <textarea rows={2} value={form.supplier_address}
+                    onChange={e => setF("supplier_address", e.target.value)}
+                    placeholder="Street, city, postcode…"
+                    className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="is_fixed_asset" checked={form.is_fixed_asset}
+                    onChange={e => setF("is_fixed_asset", e.target.checked)}
+                    className="accent-[#4a6da7] w-4 h-4" />
+                  <label htmlFor="is_fixed_asset" className="text-sm font-medium text-stone-700 cursor-pointer">
+                    This is a Fixed Asset purchase
+                  </label>
+                </div>
+                {form.is_fixed_asset && (
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-600 mb-1">Asset Description</label>
+                    <input type="text" value={form.asset_description}
+                      onChange={e => setF("asset_description", e.target.value)}
+                      placeholder="e.g. Yamaha Grand Piano, Model C3X"
+                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  </div>
+                )}
+
+                {/* Line items */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-stone-600">Order Items</label>
+                    <button type="button" onClick={addLineItem}
+                      className="flex items-center gap-1 text-xs text-[#4a6da7] hover:underline font-semibold">
+                      <Plus size={12} /> Add item
+                    </button>
+                  </div>
+                  {form.line_items.length === 0 ? (
+                    <div className="text-xs text-stone-300 italic text-center py-2 border border-dashed border-stone-200 rounded-lg">
+                      No items yet — tap "Add item"
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="grid grid-cols-[1fr_48px_80px_80px_28px] gap-1 text-[10px] font-bold text-stone-400 uppercase tracking-wide px-0.5">
+                        <span>Description</span><span className="text-right">Qty</span><span className="text-right">Unit RM</span><span className="text-right">Amount</span><span />
+                      </div>
+                      {form.line_items.map((item, i) => (
+                        <LineItemRow key={i} item={item} index={i} onChange={updateLineItem} onRemove={removeLineItem} />
+                      ))}
+                      <div className="flex justify-end text-xs font-bold text-stone-700 pt-1 border-t border-stone-100">
+                        Total: {formatCurrency(form.line_items.reduce((s, r) => s + r.amount, 0))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Common fields */}
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">
+                {isPO ? "Total Amount (RM) *" : "Amount (RM) *"}
+              </label>
+              <input type="number" value={form.amount}
+                onChange={e => setF("amount", e.target.value)}
+                placeholder="0.00" step="0.01" min="0"
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              {isPO && form.line_items.length > 0 && (
+                <p className="text-[11px] text-stone-400 mt-0.5">Auto-calculated from line items above</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Purpose *</label>
+              <input type="text" value={form.purpose}
+                onChange={e => setF("purpose", e.target.value)}
+                placeholder={isPO ? "Brief description of what is being purchased" : "Brief purpose of the claim"}
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Date {isPO ? "Issued" : "Received"}</label>
+              <input type="date" value={form.received_at}
+                onChange={e => setF("received_at", e.target.value)}
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+            </div>
 
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Ministry</label>
-              <select value={form.ministry} onChange={(e) => setForm((f) => ({ ...f, ministry: e.target.value }))}
+              <select value={form.ministry} onChange={e => setF("ministry", e.target.value)}
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
                 <option value="">— Select ministry —</option>
-                {ministries.map((m) => <option key={m} value={m}>{m}</option>)}
+                {ministries.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Project / Description</label>
-              <textarea rows={3} value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="Additional details about the claim…"
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Additional Notes / Description</label>
+              <textarea rows={2} value={form.description}
+                onChange={e => setF("description", e.target.value)}
+                placeholder="Any additional details…"
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">GM Notes (internal)</label>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">GM Internal Notes</label>
               <textarea rows={2} value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                onChange={e => setF("notes", e.target.value)}
                 placeholder="Internal notes visible to Finance Executive…"
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
             </div>
 
             <button onClick={saveClaim} disabled={saving}
               className="w-full py-2.5 rounded-xl bg-[#4a6da7] text-white text-sm font-semibold hover:bg-[#3a5d97] disabled:opacity-50 transition-colors">
-              {saving ? "Saving…" : editingClaim ? "Save Changes" : "Add Claim"}
+              {saving ? "Saving…" : editingClaim ? "Save Changes" : isPO ? "Create Purchase Order" : "Add Claim"}
             </button>
           </div>
         </div>
@@ -666,43 +917,31 @@ export default function GMClaimsPage() {
 
       {/* ── Link PV Modal ── */}
       {linkModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4"
-          onClick={() => setLinkModal(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4"
-            onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setLinkModal(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="font-bold text-stone-800">Link PV to Claim</h2>
               <button onClick={() => setLinkModal(null)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
             </div>
             <p className="text-xs text-stone-500">
-              Search for the PV that was prepared for <strong>{linkModal.claimant_name}</strong> and select it to link.
+              Search for the PV prepared for <strong>{linkModal.claimant_name}</strong>.
             </p>
-            <input
-              autoFocus
-              type="text"
-              value={pvSearch}
-              onChange={(e) => setPvSearch(e.target.value)}
-              placeholder="Search by PV number (e.g. PV-2026-001)…"
-              className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30"
-            />
+            <input autoFocus type="text" value={pvSearch} onChange={e => setPvSearch(e.target.value)}
+              placeholder="Search by PV number…"
+              className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             <div className="space-y-1.5 max-h-56 overflow-y-auto">
-              {pvOptions.length === 0 ? (
-                <div className="text-xs text-stone-400 text-center py-4">
-                  {pvSearch ? "No PVs found" : "Type a PV number to search"}
-                </div>
-              ) : (
-                pvOptions.map((pv) => (
-                  <button key={pv.id} disabled={linking}
-                    onClick={() => linkPV(linkModal.id, pv.id)}
+              {pvOptions.length === 0
+                ? <div className="text-xs text-stone-400 text-center py-4">{pvSearch ? "No PVs found" : "Type a PV number to search"}</div>
+                : pvOptions.map(pv => (
+                  <button key={pv.id} disabled={linking} onClick={() => linkPV(linkModal.id, pv.id)}
                     className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-stone-100 hover:bg-stone-50 text-sm text-left transition-colors">
                     <div>
                       <div className="font-semibold text-stone-800">{pv.pv_no}</div>
                       <div className="text-xs text-stone-400">{pv.payee_name}</div>
                     </div>
-                    <div className="font-bold text-stone-700 text-sm">{formatCurrency(pv.amount)}</div>
+                    <div className="font-bold text-stone-700">{formatCurrency(pv.amount)}</div>
                   </button>
-                ))
-              )}
+                ))}
             </div>
           </div>
         </div>
@@ -710,17 +949,14 @@ export default function GMClaimsPage() {
 
       {/* ── Notes Modal ── */}
       {notesModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4"
-          onClick={() => setNotesModal(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4"
-            onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setNotesModal(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="font-bold text-stone-800">GM Notes</h2>
               <button onClick={() => setNotesModal(null)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
             </div>
             <p className="text-xs text-stone-500">{notesModal.claimant_name} — {notesModal.claim_no}</p>
-            <textarea rows={5} value={notesDraft}
-              onChange={(e) => setNotesDraft(e.target.value)}
+            <textarea rows={5} value={notesDraft} onChange={e => setNotesDraft(e.target.value)}
               placeholder="Add internal notes about this claim…"
               className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
             <button onClick={saveNotes} disabled={savingNotes}
