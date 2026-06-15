@@ -14,8 +14,9 @@ import Image from "next/image";
 
 const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
 const MINISTRIES = [
-  "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
+  "Mission", "Social Concern", "Education", "Education Desk", "Stewardship", "Orang Asli",
   "Property", "Head Quarters (HQ)", "Reconcile", "Trustees",
+  "Building Asset Management (BAM)",
   "Sisters and Women Fellowship (SWF)", "Young Adult and Youth (YAY)",
 ];
 const ROLE_LABELS: Record<string, string> = {
@@ -157,23 +158,13 @@ function ControlCenterInner() {
     if (!email) return;
     setAssignSaving(true);
     try {
-      const { data: existing } = await supabase
-        .from("user_roles").select("role,ministries,full_name").eq("email", email).single();
-      if (!existing) {
-        // Insert new row — user hasn't logged in yet but we can pre-assign
-        const { error } = await supabase.from("user_roles").insert({
-          email, role: "MINISTRY_HEAD", ministries: [ministry], full_name: email,
-        });
-        if (error) throw new Error(error.message);
-      } else {
-        const current: string[] = existing.ministries ?? [];
-        if (current.includes(ministry)) { showToast("Already assigned to this ministry", false); return; }
-        const { error } = await supabase.from("user_roles").update({
-          role: "MINISTRY_HEAD",
-          ministries: [...current, ministry],
-        }).eq("email", email);
-        if (error) throw new Error(error.message);
-      }
+      const { data, error } = await supabase.rpc("assign_ministry_head", {
+        target_email: email,
+        ministry_name: ministry,
+        action: "add",
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
       showToast(`Assigned ${email} to ${ministry}`);
       setAssigningMinistry(null);
       setAssignEmail("");
@@ -186,13 +177,19 @@ function ControlCenterInner() {
   }
 
   async function removeMinistryAssignment(ministry: string, email: string) {
-    const { data: existing } = await supabase
-      .from("user_roles").select("ministries").eq("email", email).single();
-    if (!existing) return;
-    const updated = (existing.ministries ?? []).filter((m: string) => m !== ministry);
-    await supabase.from("user_roles").update({ ministries: updated }).eq("email", email);
-    showToast(`Removed ${email} from ${ministry}`);
-    await load();
+    try {
+      const { data, error } = await supabase.rpc("assign_ministry_head", {
+        target_email: email,
+        ministry_name: ministry,
+        action: "remove",
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      showToast(`Removed ${email} from ${ministry}`);
+      await load();
+    } catch (err: unknown) {
+      showToast((err as Error).message, false);
+    }
   }
 
   // Build ministry → head map
