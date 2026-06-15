@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
@@ -77,6 +78,8 @@ function isAlreadyRunThisPeriod(item: RecurringPV): boolean {
 
 export default function RecurringPage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const isBamMode = searchParams.get("type") === "bam";
   const [items, setItems] = useState<RecurringPV[]>([]);
   const [loading, setLoading] = useState(true);
   const [isBuildingManager, setIsBuildingManager] = useState(false);
@@ -119,7 +122,7 @@ export default function RecurringPage() {
     setIsBuildingManager(isBM);
 
     let recQuery = supabase.from("recurring_pvs").select("*").order("name");
-    if (isBM) recQuery = recQuery.eq("pv_type", "BAM");
+    recQuery = recQuery.eq("pv_type", isBamMode ? "BAM" : "LCM");
 
     const [{ data: rec }, { data: min }, { data: proj }] = await Promise.all([
       recQuery,
@@ -485,7 +488,7 @@ export default function RecurringPage() {
       term_type: form.term_type, term_end_date: form.term_end_date || null,
       final_payment_note: form.final_payment_note, group_name: form.group_name || "General",
       commenced_date: form.commenced_date || null,
-      pv_type: isBuildingManager ? "BAM" : "LCM",
+      pv_type: isBamMode ? "BAM" : "LCM",
     };
     let error;
     if (form.id) {
@@ -635,10 +638,10 @@ export default function RecurringPage() {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-stone-800">Recurring Expenses</h1>
-            {isBuildingManager && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">BAM</span>}
+            {isBamMode && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">BAM</span>}
           </div>
           <p className="text-sm text-stone-400">
-            {isBuildingManager ? "Building & Event recurring BAM payment templates" : "Scheduled payment voucher templates"}
+            {isBamMode ? "Building & Event recurring BAM payment templates" : "Scheduled payment voucher templates"}
           </p>
         </div>
         <Button size="sm" onClick={showForm ? () => { setShowForm(false); setForm({ ...BLANK_FORM }); } : openNew}>
@@ -728,7 +731,7 @@ export default function RecurringPage() {
           {/* Form header */}
           <div className="px-4 py-3 border-b-4 border-stone-800 bg-stone-800 flex items-center justify-between">
             <p className="text-sm font-bold text-white">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
-            {isBuildingManager && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-400 text-white">BAM</span>}
+            {isBamMode && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-400 text-white">BAM</span>}
           </div>
 
           <div className="divide-y-4 divide-stone-200">
