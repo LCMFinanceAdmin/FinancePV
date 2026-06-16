@@ -219,6 +219,7 @@ export default function BankingPage() {
 
   // FD Report modal
   const [showReport, setShowReport] = useState(false);
+  const [bankReport, setBankReport] = useState<BankAccount | null>(null);
 
   // Cashflow selections
   const [selectedPvIds, setSelectedPvIds] = useState<Set<string>>(new Set());
@@ -946,6 +947,11 @@ export default function BankingPage() {
                         className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
                         <Plus size={11} /> Cert
                       </button>
+                      <button onClick={() => setBankReport(acc)}
+                        className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border border-stone-200 text-stone-400 hover:bg-stone-50"
+                        title="Print bank FD report">
+                        <Printer size={11} />
+                      </button>
                       <button onClick={() => openEditAccount(acc)}
                         className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border border-stone-200 text-stone-400 hover:bg-stone-50">
                         <Pencil size={10} />
@@ -1477,6 +1483,146 @@ export default function BankingPage() {
           </div>
         </div>
       )}
+
+      {/* ── Per-Bank FD Report Modal ── */}
+      {bankReport && (() => {
+        const certs = certsByAccount.get(bankReport.id) ?? [];
+        const reportDate = new Date().toLocaleDateString("en-MY", { day: "2-digit", month: "long", year: "numeric" });
+        const totalPandI = certs.filter(c => c.status !== "WITHDRAWN").reduce((s, c) => {
+          const p = c.is_reissued && c.new_principal ? c.new_principal : c.principal;
+          return s + computePandI(p, c.interest_rate, c.term_months);
+        }, 0);
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col bg-white">
+            {/* Toolbar — hidden on print */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200 print:hidden">
+              <h2 className="font-bold text-stone-800">{bankReport.name} — FD Report</h2>
+              <div className="flex gap-3">
+                <button onClick={() => window.print()}
+                  className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97]">
+                  <Printer size={14} /> Export PDF
+                </button>
+                <button onClick={() => setBankReport(null)} className="text-stone-400 hover:text-stone-600"><X size={20} /></button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 print:p-6">
+              {/* ── Print-only header ── */}
+              <div className="max-w-4xl mx-auto">
+                <table className="w-full text-[12px] border-collapse" style={{ fontFamily: "Arial, sans-serif" }}>
+                  {/* Report header */}
+                  <thead>
+                    <tr>
+                      <td colSpan={12} className="pb-1 text-center">
+                        <div className="text-base font-bold uppercase tracking-widest">Lutheran Church in Malaysia</div>
+                        <div className="text-sm font-semibold uppercase tracking-wide mt-0.5">List of Fixed Deposit (Auto Renewal)</div>
+                        <div className="text-xs text-stone-500 mt-0.5">Report Date: {reportDate}</div>
+                        <div className="text-xs font-semibold text-stone-700 mt-0.5">{bankReport.bank_name}{bankReport.account_no ? ` — Acct No: ${bankReport.account_no}` : ""}</div>
+                        <div className="border-b-2 border-stone-800 mt-3 mb-0" />
+                      </td>
+                    </tr>
+                    <tr className="bg-stone-100 text-center font-bold text-[11px] uppercase">
+                      <th className="border border-stone-300 px-2 py-2">No.</th>
+                      <th className="border border-stone-300 px-2 py-2">Bank</th>
+                      <th className="border border-stone-300 px-2 py-2">Date of Issue</th>
+                      <th className="border border-stone-300 px-2 py-2">FDR</th>
+                      <th className="border border-stone-300 px-2 py-2">Principal</th>
+                      <th className="border border-stone-300 px-2 py-2">Date Reissue</th>
+                      <th className="border border-stone-300 px-2 py-2">FDR (New)</th>
+                      <th className="border border-stone-300 px-2 py-2">Principal (New)</th>
+                      <th className="border border-stone-300 px-2 py-2">Term (Month)</th>
+                      <th className="border border-stone-300 px-2 py-2">Rate (%)</th>
+                      <th className="border border-stone-300 px-2 py-2">Maturity</th>
+                      <th className="border border-stone-300 px-2 py-2">Principal + Interest</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {certs.filter(c => c.status !== "WITHDRAWN").map((cert, i) => {
+                      const pAndI = computePandI(
+                        cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal,
+                        cert.interest_rate, cert.term_months
+                      );
+                      const isMatured = cert.status === "MATURED";
+                      return (
+                        <tr key={cert.id} className={i % 2 === 0 ? "bg-white" : "bg-stone-50"}>
+                          <td className="border border-stone-300 px-2 py-1.5 text-center">{i + 1}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-center font-semibold">{bankReport.bank_name}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-center">{formatDate(cert.date_of_issue)}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-center font-mono">{cert.certificate_no}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-right">{cert.principal.toLocaleString("en-MY", { minimumFractionDigits: 2 })}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-center">{cert.reissue_date ? formatDate(cert.reissue_date) : ""}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-center font-mono">{cert.new_certificate_no ?? ""}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-right">{cert.new_principal ? cert.new_principal.toLocaleString("en-MY", { minimumFractionDigits: 2 }) : ""}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-center">{cert.term_months}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-center">{cert.interest_rate}</td>
+                          <td className={`border border-stone-300 px-2 py-1.5 text-center ${isMatured ? "text-red-600 font-bold" : ""}`}>{formatDate(cert.maturity_date)}</td>
+                          <td className="border border-stone-300 px-2 py-1.5 text-right font-semibold">{pAndI.toLocaleString("en-MY", { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      );
+                    })}
+                    {/* Total row */}
+                    <tr className="bg-stone-100 font-bold">
+                      <td colSpan={11} className="border border-stone-300 px-2 py-2 text-right uppercase text-xs tracking-wide">Total</td>
+                      <td className="border border-stone-300 px-2 py-2 text-right text-green-800">
+                        {totalPandI.toLocaleString("en-MY", { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Withdrawn section */}
+                {certs.some(c => c.status === "WITHDRAWN") && (
+                  <div className="mt-8">
+                    <div className="text-xs font-bold uppercase tracking-wide text-red-700 mb-2">Withdrawn Certificates</div>
+                    <table className="w-full text-[12px] border-collapse">
+                      <thead>
+                        <tr className="bg-red-50 text-center font-bold text-[11px] uppercase">
+                          <th className="border border-stone-300 px-2 py-2">No.</th>
+                          <th className="border border-stone-300 px-2 py-2">FDR</th>
+                          <th className="border border-stone-300 px-2 py-2">Date of Issue</th>
+                          <th className="border border-stone-300 px-2 py-2">Principal</th>
+                          <th className="border border-stone-300 px-2 py-2">Term</th>
+                          <th className="border border-stone-300 px-2 py-2">Rate (%)</th>
+                          <th className="border border-stone-300 px-2 py-2">Maturity</th>
+                          <th className="border border-stone-300 px-2 py-2">P+I</th>
+                          <th className="border border-stone-300 px-2 py-2">Withdrawal Date</th>
+                          <th className="border border-stone-300 px-2 py-2">Amount Credited</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {certs.filter(c => c.status === "WITHDRAWN").map((cert, i) => {
+                          const w = cert.withdrawals?.[0];
+                          const p = cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal;
+                          const pAndI = computePandI(p, cert.interest_rate, cert.term_months);
+                          return (
+                            <tr key={cert.id} className={i % 2 === 0 ? "bg-white" : "bg-red-50/30"}>
+                              <td className="border border-stone-300 px-2 py-1.5 text-center">{i + 1}</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-center font-mono">{cert.certificate_no}</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-center">{formatDate(cert.date_of_issue)}</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-right">{p.toLocaleString("en-MY", { minimumFractionDigits: 2 })}</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-center">{cert.term_months}m</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-center">{cert.interest_rate}%</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-center">{formatDate(cert.maturity_date)}</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-right">{pAndI.toLocaleString("en-MY", { minimumFractionDigits: 2 })}</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-center">{w ? formatDate(w.withdrawal_date) : "—"}</td>
+                              <td className="border border-stone-300 px-2 py-1.5 text-right">{w ? w.amount_credited.toLocaleString("en-MY", { minimumFractionDigits: 2 }) : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="mt-8 text-center text-[10px] text-stone-400 border-t border-stone-200 pt-3 print:mt-6">
+                  Lutheran Church in Malaysia · Finance System · {reportDate}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── FD Report Modal ── */}
       {showReport && (
