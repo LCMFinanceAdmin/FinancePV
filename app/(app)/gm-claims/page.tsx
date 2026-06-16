@@ -56,7 +56,7 @@ interface GMClaim {
   line_items: POLineItem[];
   is_fixed_asset: boolean;
   asset_description: string | null;
-  is_monthly: boolean;
+
   finance_to_gm_at: string | null;
   finance_to_gm_na: boolean;
   gm_verified_at: string | null;
@@ -257,7 +257,6 @@ function defaultForm() {
     is_fixed_asset: false,
     asset_description: "",
     line_items: [] as POLineItem[],
-    is_monthly: false,
     finance_to_gm_na: false,
   };
 }
@@ -401,7 +400,6 @@ export default function GMClaimsPage() {
       is_fixed_asset: claim.is_fixed_asset ?? false,
       asset_description: claim.asset_description ?? "",
       line_items: claim.line_items ?? [],
-      is_monthly: claim.is_monthly ?? false,
       finance_to_gm_na: claim.finance_to_gm_na ?? false,
     });
     setShowModal(true);
@@ -438,7 +436,6 @@ export default function GMClaimsPage() {
         is_fixed_asset: form.claim_type === "PURCHASE_ORDER" ? form.is_fixed_asset : false,
         asset_description: form.claim_type === "PURCHASE_ORDER" && form.is_fixed_asset ? form.asset_description.trim() || null : null,
         line_items: form.claim_type === "PURCHASE_ORDER" ? form.line_items : [],
-        is_monthly: form.is_monthly,
         finance_to_gm_na: form.finance_to_gm_na,
       };
 
@@ -666,9 +663,6 @@ export default function GMClaimsPage() {
                                 <Package size={8} /> PO
                               </span>
                             )}
-                            {claim.is_monthly && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full">Monthly</span>
-                            )}
                             {claim.is_fixed_asset && (
                               <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
                             )}
@@ -681,7 +675,6 @@ export default function GMClaimsPage() {
                         {/* Value */}
                         <td className="px-3 py-2.5 border-r border-stone-100 align-top">
                           <div className="font-bold text-stone-800">{formatCurrency(claim.amount)}</div>
-                          {claim.is_monthly && <div className="text-[10px] text-blue-600 font-semibold">per month</div>}
                         </td>
 
                         {/* Submitted by */}
@@ -833,9 +826,6 @@ export default function GMClaimsPage() {
                               <Package size={10} /> PO {claim.po_number}
                             </span>
                           )}
-                          {claim.is_monthly && (
-                            <span className="text-[11px] font-bold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">Monthly</span>
-                          )}
                           {claim.is_fixed_asset && (
                             <span className="text-[11px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
                           )}
@@ -856,7 +846,6 @@ export default function GMClaimsPage() {
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-base font-bold text-stone-800">{formatCurrency(claim.amount)}</div>
-                        {claim.is_monthly && <div className="text-[10px] text-blue-600 font-semibold">per month</div>}
                         <div className="text-[11px] text-stone-400">{formatDate(claim.received_at)}</div>
                       </div>
                     </div>
@@ -1065,13 +1054,8 @@ export default function GMClaimsPage() {
               </div>
             </div>
 
-            {/* Monthly + N/A toggles */}
+            {/* N/A toggle */}
             <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={form.is_monthly} onChange={e => setF("is_monthly", e.target.checked)}
-                  className="accent-[#4a6da7] w-4 h-4" />
-                <span className="text-sm font-medium text-stone-700">Monthly recurring</span>
-              </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.finance_to_gm_na} onChange={e => setF("finance_to_gm_na", e.target.checked)}
                   className="accent-stone-400 w-4 h-4" />
