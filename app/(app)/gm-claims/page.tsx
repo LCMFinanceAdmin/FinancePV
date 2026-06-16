@@ -158,6 +158,47 @@ function ProgressBar({ stage }: { stage: ClaimStage }) {
 
 
 // ---------------------------------------------------------------------------
+// Inline editable cell
+// ---------------------------------------------------------------------------
+
+function EditCell({ value, type = "text", placeholder, onSave, canEdit, className }: {
+  value: string; type?: "text" | "number" | "textarea"; placeholder?: string;
+  onSave: (v: string) => void; canEdit: boolean; className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  if (!canEdit || !editing) {
+    return (
+      <span
+        className={`block ${canEdit ? "cursor-text hover:bg-blue-50/60 rounded px-0.5 -mx-0.5 transition-colors" : ""} ${className ?? ""}`}
+        onClick={() => { if (canEdit) { setDraft(value); setEditing(true); } }}
+      >
+        {value || <span className="text-stone-300">—</span>}
+      </span>
+    );
+  }
+
+  const save = () => { setEditing(false); if (draft !== value) onSave(draft); };
+  const base = "border border-[#4a6da7] rounded px-1.5 py-0.5 text-xs w-full focus:outline-none bg-white";
+  const kd = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") { setEditing(false); setDraft(value); }
+    if (e.key === "Enter" && type !== "textarea") save();
+  };
+
+  if (type === "textarea") return (
+    <textarea autoFocus rows={2} value={draft} placeholder={placeholder}
+      onChange={e => setDraft(e.target.value)} onBlur={save} onKeyDown={kd}
+      className={base} />
+  );
+  return (
+    <input autoFocus type={type} value={draft} placeholder={placeholder}
+      onChange={e => setDraft(e.target.value)} onBlur={save} onKeyDown={kd}
+      className={base} />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Line item row helper (for PO form)
 // ---------------------------------------------------------------------------
 
@@ -474,6 +515,15 @@ export default function GMClaimsPage() {
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, [field]: value } : c));
   }
 
+  async function updateClaimField(claimId: string, field: string, value: string | number) {
+    const parsed = field === "amount" ? parseFloat(String(value)) || 0 : value;
+    await supabase.from("gm_claims").update({ [field]: parsed, updated_at: new Date().toISOString() }).eq("id", claimId);
+    setClaims(prev => prev.map(c => c.id === claimId ? { ...c, [field]: parsed } : c));
+    if (field === "ministry" && value && !ministries.includes(String(value))) {
+      setMinistries(prev => [...prev, String(value)].sort());
+    }
+  }
+
   async function linkPV(claimId: string, pvId: string) {
     setLinking(true);
     try {
@@ -600,7 +650,7 @@ export default function GMClaimsPage() {
                   <tr className="bg-[#4a6da7] text-white">
                     {[
                       { label: "No.",                              w: "w-10" },
-                      { label: "Date of Submission",               w: "w-28" },
+                      { label: "Date of Submission",               w: "w-20" },
                       { label: "Claims / Payments",                w: "w-52" },
                       { label: "Value (RM)",                       w: "w-28" },
                       { label: "Claimant Name",                    w: "w-36" },
@@ -636,8 +686,11 @@ export default function GMClaimsPage() {
 
                         {/* Claims/Payments */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
-                          <div className="font-semibold text-stone-800 leading-tight">{claim.purpose}</div>
-                          {claim.description && <div className="text-stone-400 text-[10px] mt-0.5 leading-tight">{claim.description}</div>}
+                          <EditCell value={claim.purpose} onSave={v => updateClaimField(claim.id, "purpose", v)}
+                            canEdit={isGM} className="font-semibold text-stone-800 text-xs leading-tight" />
+                          <EditCell value={claim.description ?? ""} placeholder="notes…"
+                            onSave={v => updateClaimField(claim.id, "description", v)} type="textarea"
+                            canEdit={isGM} className="text-stone-600 text-[10px] mt-0.5 leading-tight" />
                           <div className="flex flex-wrap gap-1 mt-1">
                             <span className="text-[10px] font-mono text-stone-400">{claim.claim_no}</span>
                             {isPOClaim && (
@@ -653,19 +706,25 @@ export default function GMClaimsPage() {
 
                         {/* Value */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
-                          <div className="font-bold text-stone-800 tabular-nums">{formatCurrency(claim.amount)}</div>
+                          <EditCell value={String(claim.amount)} type="number"
+                            onSave={v => updateClaimField(claim.id, "amount", v)} canEdit={isGM}
+                            className="font-bold text-stone-800 tabular-nums text-xs" />
+                          {!isGM && <div className="font-bold text-stone-800 tabular-nums text-xs hidden">{formatCurrency(claim.amount)}</div>}
                         </td>
 
                         {/* Claimant Name */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
-                          <div className="font-medium text-stone-800">{claim.claimant_name}</div>
-                          {claim.claimant_type && <div className="text-stone-400 text-[10px] mt-0.5">{claim.claimant_type}</div>}
+                          <EditCell value={claim.claimant_name} onSave={v => updateClaimField(claim.id, "claimant_name", v)}
+                            canEdit={isGM} className="font-medium text-stone-800 text-xs" />
+                          {claim.claimant_type && <div className="text-stone-500 text-[10px] mt-0.5">{claim.claimant_type}</div>}
                           {claim.claimant_email && <div className="text-stone-400 text-[10px]">{claim.claimant_email}</div>}
                         </td>
 
                         {/* Committee/District/Personal */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
-                          <div className="text-stone-700">{claim.ministry ?? "—"}</div>
+                          <EditCell value={claim.ministry ?? ""} placeholder="ministry…"
+                            onSave={v => updateClaimField(claim.id, "ministry", v)}
+                            canEdit={isGM} className="text-stone-700 text-xs" />
                           {claim.project && <div className="text-stone-400 text-[10px] mt-0.5">{claim.project}</div>}
                         </td>
 
@@ -688,20 +747,14 @@ export default function GMClaimsPage() {
                             {isFinanceAdmin && stage === "NOT_PREPARED" && (
                               <Link
                                 href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
-                                className="text-[10px] font-semibold text-blue-600 hover:underline">
-                                Prepare PV
+                                className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] whitespace-nowrap">
+                                <FileText size={9} /> Create PV
                               </Link>
                             )}
                             {isFinanceAdmin && (
                               <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
                                 className="text-[10px] text-stone-400 hover:text-stone-600 text-left">
                                 {claim.pv_id ? "Change PV" : "Link PV"}
-                              </button>
-                            )}
-                            {isGM && (
-                              <button onClick={() => openEdit(claim)}
-                                className="text-[10px] text-stone-500 hover:text-stone-700 text-left">
-                                Edit
                               </button>
                             )}
                             <button onClick={() => shareClaim(claim, stage)}
@@ -845,7 +898,7 @@ export default function GMClaimsPage() {
                         <Link
                           href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
                           className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] transition-colors">
-                          <FileText size={11} /> Prepare PV
+                          <FileText size={11} /> Create PV
                         </Link>
                         <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
                           className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
@@ -864,12 +917,6 @@ export default function GMClaimsPage() {
                         className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
                         <ExternalLink size={11} /> View PV
                       </Link>
-                    )}
-                    {isGM && (
-                      <button onClick={() => openEdit(claim)}
-                        className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 ml-auto">
-                        Edit
-                      </button>
                     )}
                     <button onClick={() => shareClaim(claim, stage)}
                       className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
@@ -970,7 +1017,7 @@ export default function GMClaimsPage() {
       {/* ── Add / Edit Modal ── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 space-y-4 max-h-[96vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="font-bold text-stone-800">{editingClaim ? "Edit" : "Add Claim / Purchase Order"}</h2>
               <button onClick={() => setShowModal(false)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
@@ -992,6 +1039,14 @@ export default function GMClaimsPage() {
             </div>
 
 
+            {/* Date — top of form */}
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Submission</label>
+              <input type="date" value={form.received_at}
+                onChange={e => setF("received_at", e.target.value)}
+                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+            </div>
+
             {/* Claimant */}
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -999,16 +1054,28 @@ export default function GMClaimsPage() {
                 <input type="text" value={form.claimant_name}
                   onChange={e => setF("claimant_name", e.target.value)}
                   placeholder="Full name"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Claimant Type</label>
                 <select value={form.claimant_type} onChange={e => setF("claimant_type", e.target.value)}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
                   <option value="">— Select —</option>
                   {CLAIMANT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
+            </div>
+
+            {/* Ministry — typeable combobox */}
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Ministry / Committee / District</label>
+              <input list="ministry-list" value={form.ministry}
+                onChange={e => setF("ministry", e.target.value)}
+                placeholder="Type or select…"
+                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              <datalist id="ministry-list">
+                {ministries.map(m => <option key={m} value={m} />)}
+              </datalist>
             </div>
 
             <div>
@@ -1016,7 +1083,7 @@ export default function GMClaimsPage() {
               <input type="email" value={form.claimant_email}
                 onChange={e => setF("claimant_email", e.target.value)}
                 placeholder="optional"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
 
             {/* Bank details */}
@@ -1117,22 +1184,6 @@ export default function GMClaimsPage() {
                 onChange={e => setF("purpose", e.target.value)}
                 placeholder={isPO ? "Brief description of what is being purchased" : "Brief purpose of the claim"}
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Submission</label>
-              <input type="date" value={form.received_at}
-                onChange={e => setF("received_at", e.target.value)}
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Ministry / Committee / District</label>
-              <select value={form.ministry} onChange={e => setF("ministry", e.target.value)}
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
-                <option value="">— Select —</option>
-                {ministries.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
             </div>
 
             <div>

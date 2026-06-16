@@ -150,6 +150,7 @@ export default function SubmitPVPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
+  const [claimBanner, setClaimBanner] = useState<{ id: string; claim_no: string; claimant: string } | null>(null);
   const [isTravelClaim, setIsTravelClaim] = useState(false);
   const [travelItems, setTravelItems] = useState<TravelItem[]>([{ ...EMPTY_TRAVEL_ITEM }]);
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
@@ -217,6 +218,27 @@ export default function SubmitPVPage() {
     });
 
     const params = new URLSearchParams(window.location.search);
+
+    // GM Claim pre-fill
+    const claimId = params.get("claim_id");
+    if (claimId) {
+      const claimant = params.get("claim_claimant") ?? "";
+      const ministry = params.get("claim_ministry") ?? "";
+      const amount = parseFloat(params.get("claim_amount") ?? "0") || 0;
+      const purpose = params.get("claim_purpose") ?? "";
+      setClaimBanner({ id: claimId, claim_no: "", claimant });
+      supabase.from("gm_claims").select("claim_no").eq("id", claimId).single().then(({ data }) => {
+        if (data) setClaimBanner(b => b ? { ...b, claim_no: data.claim_no } : b);
+      });
+      setForm(f => ({
+        ...f,
+        ministry: ministry || f.ministry,
+        purpose: purpose || f.purpose,
+        payee_name: claimant || f.payee_name,
+        line_items: amount > 0 ? [{ description: purpose, amount, date: "" }] : f.line_items,
+      }));
+    }
+
     const prId = params.get("pr_id");
     if (prId) {
       supabase.from("purchase_requests").select("*").eq("id", prId).single().then(({ data: pr }) => {
@@ -457,6 +479,11 @@ export default function SubmitPVPage() {
         await supabase.from("purchase_requests").update({
           status: "PV_RAISED", pv_id: result.pv_id, updated_at: new Date().toISOString(),
         }).eq("id", prBanner.id);
+      }
+      if (claimBanner?.id && result.pv_id) {
+        await supabase.from("gm_claims").update({
+          pv_id: result.pv_id, updated_at: new Date().toISOString(),
+        }).eq("id", claimBanner.id);
       }
       setSuccess(`PV ${result.pv_no} submitted successfully!`);
       setForm(EMPTY_FORM);
@@ -952,6 +979,13 @@ export default function SubmitPVPage() {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {claimBanner && (
+            <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
+              <span className="text-green-700 font-semibold shrink-0">📋 {claimBanner.claim_no || "GM Claim"}</span>
+              <span className="text-green-800 flex-1 text-xs">Creating PV for GM Claim — Claimant: <strong>{claimBanner.claimant}</strong></span>
+              <button type="button" onClick={() => setClaimBanner(null)} className="text-green-400 text-xs shrink-0">Clear</button>
+            </div>
+          )}
           {prBanner && (
             <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
               <span className="text-blue-600 font-semibold shrink-0">📋 {prBanner.request_no}</span>
@@ -1054,6 +1088,13 @@ export default function SubmitPVPage() {
         </div>
       )}
 
+      {claimBanner && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
+          <span className="text-green-700 font-semibold shrink-0">📋 {claimBanner.claim_no || "GM Claim"}</span>
+          <span className="text-green-800 flex-1">Creating PV for GM Claim — Claimant: <strong>{claimBanner.claimant}</strong></span>
+          <button type="button" onClick={() => setClaimBanner(null)} className="text-green-400 hover:text-green-600 text-xs">Clear</button>
+        </div>
+      )}
       {prBanner && (
         <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
           <span className="text-blue-600 font-semibold shrink-0">📋 {prBanner.request_no}</span>
