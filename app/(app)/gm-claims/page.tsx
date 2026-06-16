@@ -564,6 +564,7 @@ export default function GMClaimsPage() {
   }
 
   async function updateClaimField(claimId: string, field: string, value: string | number) {
+    if (currentUser?.role !== "GENERAL_MANAGER") return;
     const parsed = field === "amount" ? parseFloat(String(value)) || 0 : value;
     await supabase.from("gm_claims").update({ [field]: parsed, updated_at: new Date().toISOString() }).eq("id", claimId);
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, [field]: parsed } : c));
@@ -606,7 +607,7 @@ export default function GMClaimsPage() {
   }
 
   const isGM = currentUser?.role === "GENERAL_MANAGER";
-  const isFinanceAdmin = currentUser?.role === "FINANCE_ADMIN" || (currentUser?.role as string) === "FINANCE_ADMIN_2";
+  const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(currentUser?.role ?? "");
 
   const total = claims.length;
   const unprepared = claims.filter(c => deriveStage(c) === "NOT_PREPARED").length;

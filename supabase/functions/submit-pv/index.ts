@@ -93,8 +93,9 @@ Deno.serve(async (req) => {
         pv_label:              "BAM",
       };
 
-      const { error: insertErr } = await db.from("pvs").insert(pvRow);
+      const { data: bamPvData, error: insertErr } = await db.from("pvs").insert(pvRow).select("id").single();
       if (insertErr) throw new Error(insertErr.message);
+      const bamPvId = bamPvData?.id ?? null;
 
       // Notify the next reviewer
       if (initialStatus === "BAM_REVIEW") {
@@ -130,7 +131,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      return json({ ok: true, pv_no: pvNo, status: initialStatus });
+      return json({ ok: true, pv_no: pvNo, pv_id: bamPvId, status: initialStatus });
     }
 
     // ── Standard LCM PV flow ─────────────────────────────────────────────
@@ -208,8 +209,9 @@ Deno.serve(async (req) => {
       recurring_id:          d.recurring_id || null,
     };
 
-    const { error: insertErr } = await db.from("pvs").insert(pvRow);
+    const { data: lcmPvData, error: insertErr } = await db.from("pvs").insert(pvRow).select("id").single();
     if (insertErr) throw new Error(insertErr.message);
+    const lcmPvId = lcmPvData?.id ?? null;
 
     // Notify ministry heads if applicable
     if (ministry && initialStatus === "PENDING_HEAD") {
@@ -249,7 +251,7 @@ Deno.serve(async (req) => {
       }) : Promise.resolve(),
     ]);
 
-    return json({ ok: true, pv_no: pvNo, status: initialStatus });
+    return json({ ok: true, pv_no: pvNo, pv_id: lcmPvId, status: initialStatus });
   } catch (err) {
     return json({ error: err.message }, 500);
   }
