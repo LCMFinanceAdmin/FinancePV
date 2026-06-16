@@ -8,7 +8,7 @@ import type { POLineItem } from "@/components/gm/po-pdf";
 import {
   Plus, X, ChevronDown, ChevronUp, Paperclip, Link2, ExternalLink,
   CheckCircle, Clock, FileText, CreditCard, AlertCircle, Banknote,
-  Package, Trash2,
+  Package, Trash2, LayoutList, Table2, Printer,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -56,6 +56,12 @@ interface GMClaim {
   line_items: POLineItem[];
   is_fixed_asset: boolean;
   asset_description: string | null;
+  is_monthly: boolean;
+  finance_to_gm_at: string | null;
+  finance_to_gm_na: boolean;
+  gm_verified_at: string | null;
+  payment_made_at: string | null;
+  claimant_informed_at: string | null;
   pv_id: string | null;
   notes: string | null;
   created_by_email: string;
@@ -100,13 +106,13 @@ function deriveStage(claim: GMClaim): ClaimStage {
 }
 
 const STAGE_META: Record<ClaimStage, { label: string; color: string; icon: React.ReactNode; step: number }> = {
-  NOT_PREPARED:             { label: "PV Not Yet Prepared",              color: "bg-stone-100 text-stone-500",   icon: <Clock size={13} />,       step: 0 },
-  PV_PREPARED:              { label: "PV Prepared — Pending Verification",color: "bg-blue-100 text-blue-700",    icon: <FileText size={13} />,    step: 1 },
-  VERIFIED:                 { label: "Verified — Pending Signatory",      color: "bg-amber-100 text-amber-700",  icon: <CheckCircle size={13} />, step: 2 },
-  PENDING_SIGNATORY:        { label: "Pending 1st Signatory",             color: "bg-orange-100 text-orange-700",icon: <AlertCircle size={13} />, step: 3 },
-  PENDING_SECOND_SIGNATORY: { label: "Pending 2nd Signatory",             color: "bg-orange-100 text-orange-700",icon: <AlertCircle size={13} />, step: 3 },
-  APPROVED:                 { label: "Approved — Pending Payment",        color: "bg-green-100 text-green-700",  icon: <Banknote size={13} />,    step: 4 },
-  PAID:                     { label: "Paid",                              color: "bg-green-600 text-white",      icon: <CheckCircle size={13} />, step: 5 },
+  NOT_PREPARED:             { label: "PV Not Yet Prepared",               color: "bg-stone-100 text-stone-500",    icon: <Clock size={13} />,       step: 0 },
+  PV_PREPARED:              { label: "PV Prepared — Pending Verification", color: "bg-blue-100 text-blue-700",     icon: <FileText size={13} />,    step: 1 },
+  VERIFIED:                 { label: "Verified — Pending Signatory",       color: "bg-amber-100 text-amber-700",   icon: <CheckCircle size={13} />, step: 2 },
+  PENDING_SIGNATORY:        { label: "Pending 1st Signatory",              color: "bg-orange-100 text-orange-700", icon: <AlertCircle size={13} />, step: 3 },
+  PENDING_SECOND_SIGNATORY: { label: "Pending 2nd Signatory",              color: "bg-orange-100 text-orange-700", icon: <AlertCircle size={13} />, step: 3 },
+  APPROVED:                 { label: "Approved — Pending Payment",         color: "bg-green-100 text-green-700",   icon: <Banknote size={13} />,    step: 4 },
+  PAID:                     { label: "Paid",                               color: "bg-green-600 text-white",       icon: <CheckCircle size={13} />, step: 5 },
 };
 
 const STAGE_STEPS: { key: ClaimStage; label: string }[] = [
@@ -147,6 +153,52 @@ function ProgressBar({ stage }: { stage: ClaimStage }) {
         );
       })}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline date cell (for table view)
+// ---------------------------------------------------------------------------
+
+function DateCell({ value, naValue, onSave, canEdit }: {
+  value: string | null;
+  naValue?: boolean;
+  onSave: (v: string | null) => void;
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+
+  const displayText = naValue ? "N/A" : value ? formatDate(value) : "—";
+  const textClass = value ? "text-stone-700" : naValue ? "text-stone-400 italic" : "text-stone-300";
+
+  if (!canEdit) {
+    return <span className={`text-xs ${textClass}`}>{displayText}</span>;
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus type="date" value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => { setEditing(false); if (draft !== (value ?? "")) onSave(draft || null); }}
+        onKeyDown={e => {
+          if (e.key === "Enter") { setEditing(false); onSave(draft || null); }
+          if (e.key === "Escape") { setEditing(false); }
+        }}
+        className="border border-[#4a6da7] rounded px-1 py-0.5 text-xs w-28 focus:outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => { setDraft(value ?? ""); setEditing(true); }}
+      className={`text-xs px-1 py-0.5 rounded hover:bg-blue-50 hover:text-[#4a6da7] transition-colors text-left ${textClass}`}
+      title="Click to set date"
+    >
+      {displayText}
+    </button>
   );
 }
 
@@ -205,6 +257,8 @@ function defaultForm() {
     is_fixed_asset: false,
     asset_description: "",
     line_items: [] as POLineItem[],
+    is_monthly: false,
+    finance_to_gm_na: false,
   };
 }
 
@@ -221,6 +275,7 @@ export default function GMClaimsPage() {
   const [toastOk, setToastOk] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [ministries, setMinistries] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
   const [showModal, setShowModal] = useState(false);
   const [editingClaim, setEditingClaim] = useState<GMClaim | null>(null);
@@ -245,7 +300,6 @@ export default function GMClaimsPage() {
     setForm(f => ({ ...f, [key]: val }));
   }
 
-  // Auto-calculate line item amount and total
   function updateLineItem(i: number, field: keyof POLineItem, raw: string) {
     setForm(f => {
       const items = [...f.line_items];
@@ -280,7 +334,7 @@ export default function GMClaimsPage() {
       }
 
       const { data: claimRows } = await supabase
-        .from("gm_claims").select("*").order("received_at", { ascending: false });
+        .from("gm_claims").select("*").order("received_at", { ascending: true });
 
       if (!claimRows) { setClaims([]); return; }
 
@@ -294,7 +348,6 @@ export default function GMClaimsPage() {
 
       setClaims(claimRows.map((c) => ({ ...c, pv: pvMap[c.pv_id] ?? null })));
 
-      // Collect ministries from budget_items and pvs for a comprehensive list
       const [{ data: budgetRows }, { data: pvMinRows }] = await Promise.all([
         supabase.from("budget_items").select("ministry"),
         supabase.from("pvs").select("ministry").not("ministry", "is", null),
@@ -303,8 +356,7 @@ export default function GMClaimsPage() {
         ...(budgetRows ?? []).map((r: { ministry: string }) => r.ministry),
         ...(pvMinRows ?? []).map((r: { ministry: string }) => r.ministry),
       ];
-      const mins = [...new Set(allMins.filter(Boolean))].sort() as string[];
-      setMinistries(mins);
+      setMinistries([...new Set(allMins.filter(Boolean))].sort() as string[]);
     } finally {
       setLoading(false);
     }
@@ -348,6 +400,8 @@ export default function GMClaimsPage() {
       is_fixed_asset: claim.is_fixed_asset ?? false,
       asset_description: claim.asset_description ?? "",
       line_items: claim.line_items ?? [],
+      is_monthly: claim.is_monthly ?? false,
+      finance_to_gm_na: claim.finance_to_gm_na ?? false,
     });
     setShowModal(true);
   }
@@ -383,6 +437,8 @@ export default function GMClaimsPage() {
         is_fixed_asset: form.claim_type === "PURCHASE_ORDER" ? form.is_fixed_asset : false,
         asset_description: form.claim_type === "PURCHASE_ORDER" && form.is_fixed_asset ? form.asset_description.trim() || null : null,
         line_items: form.claim_type === "PURCHASE_ORDER" ? form.line_items : [],
+        is_monthly: form.is_monthly,
+        finance_to_gm_na: form.finance_to_gm_na,
       };
 
       if (editingClaim) {
@@ -392,7 +448,6 @@ export default function GMClaimsPage() {
         const { data: { user } } = await supabase.auth.getUser();
         const { data: claimNoRow } = await supabase.rpc("next_claim_no");
 
-        // Generate PO number if this is a Purchase Order
         let po_number: string | null = null;
         if (form.claim_type === "PURCHASE_ORDER") {
           const { data: poNoRow } = await supabase.rpc("next_po_no");
@@ -406,7 +461,6 @@ export default function GMClaimsPage() {
           created_by_email: user?.email ?? "",
         });
 
-        // Notify Finance Admins
         const { data: feUsers } = await supabase.from("user_roles").select("email")
           .in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
         if (feUsers?.length) {
@@ -435,6 +489,11 @@ export default function GMClaimsPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function updateClaimDate(claimId: string, field: string, value: string | null) {
+    await supabase.from("gm_claims").update({ [field]: value, updated_at: new Date().toISOString() }).eq("id", claimId);
+    setClaims(prev => prev.map(c => c.id === claimId ? { ...c, [field]: value } : c));
   }
 
   async function linkPV(claimId: string, pvId: string) {
@@ -482,32 +541,54 @@ export default function GMClaimsPage() {
 
   return (
     <main className="min-h-screen bg-stone-50 pb-28 md:pb-8">
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+      <div className={`mx-auto px-4 py-6 space-y-5 ${viewMode === "table" ? "max-w-[1400px]" : "max-w-3xl"}`}>
 
         {/* Header */}
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-xl font-bold text-stone-800">GM Claims Tracker</h1>
+            <h1 className="text-xl font-bold text-stone-800">Claims Requests Processing</h1>
             <p className="text-xs text-stone-400 mt-0.5">
               {isGM
-                ? "Log expense claims from Pastors, Lay Leaders & EXCO, or issue Purchase Orders to suppliers."
+                ? "Track all claims and payments submitted for your verification."
                 : "Claims and Purchase Orders forwarded by the General Manager for PV preparation."}
             </p>
           </div>
-          {isGM && (
-            <button onClick={openAdd}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl bg-[#4a6da7] text-white hover:bg-[#3a5d97] transition-colors shrink-0">
-              <Plus size={15} /> Add
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* View toggle */}
+            <div className="flex rounded-xl overflow-hidden border border-stone-200 bg-white">
+              <button onClick={() => setViewMode("table")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors
+                  ${viewMode === "table" ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
+                <Table2 size={13} /> Table
+              </button>
+              <button onClick={() => setViewMode("cards")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors
+                  ${viewMode === "cards" ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
+                <LayoutList size={13} /> Cards
+              </button>
+            </div>
+            {viewMode === "table" && (
+              <button onClick={() => window.print()}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">
+                <Printer size={13} /> Print
+              </button>
+            )}
+            {isGM && (
+              <button onClick={openAdd}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl bg-[#4a6da7] text-white hover:bg-[#3a5d97] transition-colors">
+                <Plus size={15} /> Add
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           {[
             { label: "Total",       value: total,      color: "text-stone-700" },
             { label: "Needs PV",    value: unprepared, color: "text-amber-600" },
             { label: "In Progress", value: inProgress, color: "text-blue-600" },
+            { label: "Paid",        value: paid,       color: "text-green-600" },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl p-3 shadow-sm border border-stone-100 text-center">
               <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
@@ -516,14 +597,222 @@ export default function GMClaimsPage() {
           ))}
         </div>
 
-        {/* Claims list */}
         {loading ? (
           <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
         ) : claims.length === 0 ? (
           <div className="text-center py-16 text-stone-400 text-sm">
             No claims logged yet.{isGM && ' Tap "Add" to get started.'}
           </div>
+        ) : viewMode === "table" ? (
+
+          /* ── TABLE VIEW ── */
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden print:shadow-none print:border-stone-300">
+            {/* Print header */}
+            <div className="hidden print:block text-center py-4 border-b border-stone-300">
+              <div className="text-base font-bold uppercase tracking-widest">Lutheran Church in Malaysia</div>
+              <div className="text-sm font-semibold uppercase tracking-wide mt-0.5">Claims Requests Processing</div>
+              <div className="text-xs text-stone-500 mt-0.5">
+                {new Date().toLocaleDateString("en-MY", { day: "2-digit", month: "long", year: "numeric" })}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse min-w-[1200px]" style={{ fontFamily: "Arial, sans-serif" }}>
+                <thead>
+                  <tr className="bg-[#4a6da7] text-white">
+                    {[
+                      { label: "No.",               w: "w-10"  },
+                      { label: "Claims / Payments", w: "w-52"  },
+                      { label: "Value (RM)",         w: "w-28"  },
+                      { label: "Submitted By",       w: "w-32"  },
+                      { label: "Committee / District / Personal", w: "w-40" },
+                      { label: "Date of Submission", w: "w-28"  },
+                      { label: "Finance → GM",       w: "w-28"  },
+                      { label: "GM Verified → Finance", w: "w-28" },
+                      { label: "Payment Made",       w: "w-28"  },
+                      { label: "Claimant Informed",  w: "w-28"  },
+                    ].map(col => (
+                      <th key={col.label} className={`${col.w} px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide border-r border-[#3a5d97] last:border-r-0 whitespace-nowrap`}>
+                        {col.label}
+                      </th>
+                    ))}
+                    <th className="w-20 px-2 py-2.5 text-center text-[11px] font-bold uppercase tracking-wide print:hidden">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {claims.map((claim, idx) => {
+                    const stage = deriveStage(claim);
+                    const meta = STAGE_META[stage];
+                    const isPOClaim = claim.claim_type === "PURCHASE_ORDER";
+                    const rowBg = idx % 2 === 0 ? "bg-white" : "bg-stone-50/60";
+                    const isPaid = stage === "PAID";
+
+                    return (
+                      <tr key={claim.id} className={`${rowBg} border-b border-stone-100 hover:bg-blue-50/20 transition-colors ${isPaid ? "opacity-70" : ""}`}>
+                        {/* No. */}
+                        <td className="px-3 py-2.5 text-center text-stone-500 border-r border-stone-100 align-top">
+                          {idx + 1}
+                        </td>
+
+                        {/* Claims/Payments */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top">
+                          <div className="font-semibold text-stone-800 leading-tight">{claim.purpose}</div>
+                          {claim.description && <div className="text-stone-400 text-[10px] mt-0.5 leading-tight">{claim.description}</div>}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            <span className="text-[10px] font-mono text-stone-400">{claim.claim_no}</span>
+                            {isPOClaim && (
+                              <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                                <Package size={8} /> PO
+                              </span>
+                            )}
+                            {claim.is_monthly && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full">Monthly</span>
+                            )}
+                            {claim.is_fixed_asset && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
+                            )}
+                          </div>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-1 ${meta.color}`}>
+                            {meta.icon} {meta.label}
+                          </span>
+                        </td>
+
+                        {/* Value */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top">
+                          <div className="font-bold text-stone-800">{formatCurrency(claim.amount)}</div>
+                          {claim.is_monthly && <div className="text-[10px] text-blue-600 font-semibold">per month</div>}
+                        </td>
+
+                        {/* Submitted by */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top">
+                          <div className="font-medium text-stone-700">{claim.claimant_name}</div>
+                          {claim.claimant_type && <div className="text-stone-400 text-[10px]">{claim.claimant_type}</div>}
+                        </td>
+
+                        {/* Committee/District/Personal */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top">
+                          <div className="text-stone-600">{claim.ministry ?? "—"}</div>
+                          {claim.project && <div className="text-stone-400 text-[10px]">{claim.project}</div>}
+                        </td>
+
+                        {/* Date of submission */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top whitespace-nowrap">
+                          <span className="text-xs text-stone-600">{formatDate(claim.received_at)}</span>
+                        </td>
+
+                        {/* Finance → GM */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top whitespace-nowrap">
+                          {claim.finance_to_gm_na
+                            ? <span className="text-xs text-stone-400 italic">N/A</span>
+                            : <DateCell
+                                value={claim.finance_to_gm_at}
+                                onSave={v => updateClaimDate(claim.id, "finance_to_gm_at", v)}
+                                canEdit={isFinanceAdmin}
+                              />
+                          }
+                        </td>
+
+                        {/* GM Verified → Finance */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top whitespace-nowrap">
+                          <DateCell
+                            value={claim.gm_verified_at}
+                            onSave={v => updateClaimDate(claim.id, "gm_verified_at", v)}
+                            canEdit={isGM}
+                          />
+                        </td>
+
+                        {/* Payment Made */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top whitespace-nowrap">
+                          <DateCell
+                            value={claim.payment_made_at}
+                            onSave={v => updateClaimDate(claim.id, "payment_made_at", v)}
+                            canEdit={isFinanceAdmin}
+                          />
+                        </td>
+
+                        {/* Claimant Informed */}
+                        <td className="px-3 py-2.5 border-r border-stone-100 align-top whitespace-nowrap">
+                          <DateCell
+                            value={claim.claimant_informed_at}
+                            onSave={v => updateClaimDate(claim.id, "claimant_informed_at", v)}
+                            canEdit={isFinanceAdmin}
+                          />
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-2 py-2.5 align-top print:hidden">
+                          <div className="flex flex-col gap-1">
+                            {claim.pv && (
+                              <Link href={`/my-pvs/${claim.pv.id}`}
+                                className="flex items-center gap-1 text-[10px] font-semibold text-[#4a6da7] hover:underline">
+                                <ExternalLink size={9} /> {claim.pv.pv_no}
+                              </Link>
+                            )}
+                            {isFinanceAdmin && stage === "NOT_PREPARED" && (
+                              <Link
+                                href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
+                                className="text-[10px] font-semibold text-blue-600 hover:underline">
+                                Prepare PV
+                              </Link>
+                            )}
+                            {isFinanceAdmin && (
+                              <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
+                                className="text-[10px] text-stone-400 hover:text-stone-600 text-left">
+                                {claim.pv_id ? "Change PV" : "Link PV"}
+                              </button>
+                            )}
+                            {isGM && (
+                              <button onClick={() => openEdit(claim)}
+                                className="text-[10px] text-stone-400 hover:text-stone-600 text-left">
+                                Edit
+                              </button>
+                            )}
+                            {isPOClaim && claim.po_number && (
+                              <POPdfButton data={{
+                                po_number: claim.po_number,
+                                claim_no: claim.claim_no,
+                                claimant_name: claim.claimant_name,
+                                supplier_name: claim.supplier_name ?? "",
+                                supplier_address: claim.supplier_address ?? undefined,
+                                is_fixed_asset: claim.is_fixed_asset,
+                                asset_description: claim.asset_description ?? undefined,
+                                ministry: claim.ministry ?? undefined,
+                                purpose: claim.purpose,
+                                line_items: claim.line_items ?? [],
+                                received_at: claim.received_at,
+                                notes: claim.notes ?? undefined,
+                                gm_name: currentUser?.full_name,
+                              }} />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {/* Empty rows — like the Word doc */}
+                  {Array.from({ length: Math.max(0, 5 - claims.length % 5 === 5 ? 0 : 5 - claims.length % 5) }).map((_, i) => (
+                    <tr key={`empty-${i}`} className={`border-b border-stone-100 ${(claims.length + i) % 2 === 0 ? "bg-white" : "bg-stone-50/60"}`}>
+                      <td className="px-3 py-3 text-center text-stone-300 border-r border-stone-100">{claims.length + i + 1}</td>
+                      {Array.from({ length: 10 }).map((_, j) => (
+                        <td key={j} className="px-3 py-3 border-r border-stone-100 last:border-r-0" />
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Table legend */}
+            <div className="px-4 py-2.5 bg-stone-50 border-t border-stone-200 flex flex-wrap gap-3 text-[11px] text-stone-500 print:hidden">
+              {isFinanceAdmin && <span className="flex items-center gap-1">✏️ You can set: <strong>Finance→GM</strong>, <strong>Payment Made</strong>, <strong>Claimant Informed</strong> dates by clicking the cell</span>}
+              {isGM && <span className="flex items-center gap-1">✏️ You can set: <strong>GM Verified→Finance</strong> date by clicking the cell</span>}
+            </div>
+          </div>
+
         ) : (
+
+          /* ── CARDS VIEW ── */
           <div className="space-y-3">
             {claims.map(claim => {
               const stage = deriveStage(claim);
@@ -543,6 +832,9 @@ export default function GMClaimsPage() {
                               <Package size={10} /> PO {claim.po_number}
                             </span>
                           )}
+                          {claim.is_monthly && (
+                            <span className="text-[11px] font-bold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">Monthly</span>
+                          )}
                           {claim.is_fixed_asset && (
                             <span className="text-[11px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
                           )}
@@ -560,14 +852,10 @@ export default function GMClaimsPage() {
                         {isPOClaim && claim.supplier_name && (
                           <div className="text-xs text-purple-600 mt-0.5">Supplier: {claim.supplier_name}</div>
                         )}
-                        {(claim.payee_bank || claim.payee_bank_acct) && (
-                          <div className="text-xs text-stone-400 mt-0.5">
-                            {[claim.payee_bank, claim.payee_bank_acct].filter(Boolean).join(" · ")}
-                          </div>
-                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-base font-bold text-stone-800">{formatCurrency(claim.amount)}</div>
+                        {claim.is_monthly && <div className="text-[10px] text-blue-600 font-semibold">per month</div>}
                         <div className="text-[11px] text-stone-400">{formatDate(claim.received_at)}</div>
                       </div>
                     </div>
@@ -578,6 +866,23 @@ export default function GMClaimsPage() {
                         {claim.project && <span className="text-[11px] px-2 py-0.5 bg-stone-100 text-stone-500 rounded-full">{claim.project}</span>}
                       </div>
                     )}
+
+                    {/* Workflow dates mini-timeline */}
+                    <div className="grid grid-cols-4 gap-1 pt-1">
+                      {[
+                        { label: "Submitted", value: formatDate(claim.received_at) },
+                        { label: "Finance→GM", value: claim.finance_to_gm_na ? "N/A" : claim.finance_to_gm_at ? formatDate(claim.finance_to_gm_at) : null },
+                        { label: "GM Verified", value: claim.gm_verified_at ? formatDate(claim.gm_verified_at) : null },
+                        { label: "Paid", value: claim.payment_made_at ? formatDate(claim.payment_made_at) : null },
+                      ].map(item => (
+                        <div key={item.label} className={`text-center p-1.5 rounded-lg ${item.value ? "bg-green-50" : "bg-stone-50"}`}>
+                          <div className="text-[9px] uppercase tracking-wide font-bold text-stone-400">{item.label}</div>
+                          <div className={`text-[10px] font-semibold mt-0.5 ${item.value ? "text-green-700" : "text-stone-300"}`}>
+                            {item.value ?? "—"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
 
                     <div className="pt-1"><ProgressBar stage={stage} /></div>
 
@@ -594,7 +899,6 @@ export default function GMClaimsPage() {
 
                   {/* Action bar */}
                   <div className="flex items-center gap-2 px-4 pb-3 flex-wrap">
-                    {/* PO PDF button */}
                     {isPOClaim && claim.po_number && (
                       <POPdfButton data={{
                         po_number: claim.po_number,
@@ -652,10 +956,8 @@ export default function GMClaimsPage() {
                     </button>
                   </div>
 
-                  {/* Expanded detail */}
                   {isOpen && (
                     <div className="border-t border-stone-100 px-4 py-3 space-y-3 bg-stone-50/60">
-                      {/* PO line items */}
                       {isPOClaim && (claim.line_items?.length ?? 0) > 0 && (
                         <div>
                           <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-2">Order Items</div>
@@ -681,13 +983,6 @@ export default function GMClaimsPage() {
                         </div>
                       )}
 
-                      {isPOClaim && claim.supplier_address && (
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Supplier Address</div>
-                          <div className="text-sm text-stone-600 whitespace-pre-wrap">{claim.supplier_address}</div>
-                        </div>
-                      )}
-
                       {claim.description && (
                         <div>
                           <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Description</div>
@@ -695,52 +990,18 @@ export default function GMClaimsPage() {
                         </div>
                       )}
 
-                      {claim.claimant_email && (
+                      {claim.notes && (
                         <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Claimant Email</div>
-                          <div className="text-sm text-stone-600">{claim.claimant_email}</div>
-                        </div>
-                      )}
-
-                      {(claim.payee_bank || claim.payee_bank_acct) && (
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Bank Details</div>
-                          <div className="flex items-center gap-3 text-sm text-stone-600">
-                            {claim.payee_bank && <span className="font-medium">{claim.payee_bank}</span>}
-                            {claim.payee_bank && claim.payee_bank_acct && <span className="text-stone-300">·</span>}
-                            {claim.payee_bank_acct && <span className="font-mono">{claim.payee_bank_acct}</span>}
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400">GM Notes</div>
+                            {isGM && (
+                              <button onClick={() => { setNotesModal(claim); setNotesDraft(claim.notes ?? ""); }}
+                                className="text-[11px] text-[#4a6da7] hover:underline">Edit</button>
+                            )}
                           </div>
+                          <div className="text-sm text-stone-600 whitespace-pre-wrap">{claim.notes}</div>
                         </div>
                       )}
-
-                      {claim.attachments?.length > 0 && (
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Attachments</div>
-                          <div className="flex flex-wrap gap-2">
-                            {claim.attachments.map((url, i) => (
-                              <a key={i} href={url} target="_blank" rel="noreferrer"
-                                className="flex items-center gap-1 text-xs text-[#4a6da7] hover:underline">
-                                <Paperclip size={11} /> Attachment {i + 1}
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400">GM Notes</div>
-                          {isGM && (
-                            <button onClick={() => { setNotesModal(claim); setNotesDraft(claim.notes ?? ""); }}
-                              className="text-[11px] text-[#4a6da7] hover:underline">
-                              {claim.notes ? "Edit" : "Add note"}
-                            </button>
-                          )}
-                        </div>
-                        {claim.notes
-                          ? <div className="text-sm text-stone-600 whitespace-pre-wrap">{claim.notes}</div>
-                          : <div className="text-xs text-stone-300 italic">No notes</div>}
-                      </div>
 
                       {claim.pv && (
                         <div>
@@ -750,7 +1011,6 @@ export default function GMClaimsPage() {
                               { label: "PV No.", value: claim.pv.pv_no },
                               { label: "Status", value: claim.pv.status.replace(/_/g, " ") },
                               { label: "Submitted", value: formatDate(claim.pv.submitted_at) },
-                              { label: "Signatory Approvals", value: `${(claim.pv.approvals ?? []).filter(a => ["BISHOP","TREASURER","SECRETARY"].includes(a.role) && a.action === "APPROVED").length} of ${claim.pv.loa_required ?? 1} required` },
                             ].map(row => (
                               <div key={row.label} className="flex items-center justify-between text-xs">
                                 <span className="text-stone-400">{row.label}</span>
@@ -773,7 +1033,7 @@ export default function GMClaimsPage() {
           </div>
         )}
 
-        {paid > 0 && (
+        {paid > 0 && viewMode === "cards" && (
           <div className="flex items-center gap-2 text-xs text-green-600 justify-center pt-1">
             <CreditCard size={13} /> {paid} claim{paid !== 1 ? "s" : ""} fully paid
           </div>
@@ -802,6 +1062,20 @@ export default function GMClaimsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Monthly + N/A toggles */}
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={form.is_monthly} onChange={e => setF("is_monthly", e.target.checked)}
+                  className="accent-[#4a6da7] w-4 h-4" />
+                <span className="text-sm font-medium text-stone-700">Monthly recurring</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={form.finance_to_gm_na} onChange={e => setF("finance_to_gm_na", e.target.checked)}
+                  className="accent-stone-400 w-4 h-4" />
+                <span className="text-sm font-medium text-stone-500">Finance→GM: N/A</span>
+              </label>
             </div>
 
             {/* Claimant */}
@@ -884,8 +1158,6 @@ export default function GMClaimsPage() {
                       className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
                   </div>
                 )}
-
-                {/* Line items */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-semibold text-stone-600">Order Items</label>
@@ -915,7 +1187,6 @@ export default function GMClaimsPage() {
               </>
             )}
 
-            {/* Common fields */}
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">
                 {isPO ? "Total Amount (RM) *" : "Amount (RM) *"}
@@ -924,13 +1195,10 @@ export default function GMClaimsPage() {
                 onChange={e => setF("amount", e.target.value)}
                 placeholder="0.00" step="0.01" min="0"
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-              {isPO && form.line_items.length > 0 && (
-                <p className="text-[11px] text-stone-400 mt-0.5">Auto-calculated from line items above</p>
-              )}
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Purpose *</label>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Purpose / Claims Description *</label>
               <input type="text" value={form.purpose}
                 onChange={e => setF("purpose", e.target.value)}
                 placeholder={isPO ? "Brief description of what is being purchased" : "Brief purpose of the claim"}
@@ -938,23 +1206,23 @@ export default function GMClaimsPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Date {isPO ? "Issued" : "Received"}</label>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Submission</label>
               <input type="date" value={form.received_at}
                 onChange={e => setF("received_at", e.target.value)}
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Ministry</label>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Ministry / Committee / District</label>
               <select value={form.ministry} onChange={e => setF("ministry", e.target.value)}
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
-                <option value="">— Select ministry —</option>
+                <option value="">— Select —</option>
                 {ministries.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Additional Notes / Description</label>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Additional Notes</label>
               <textarea rows={2} value={form.description}
                 onChange={e => setF("description", e.target.value)}
                 placeholder="Any additional details…"
