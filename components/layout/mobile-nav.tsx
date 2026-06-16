@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2,
   FlaskConical, X, ClipboardList, RefreshCw, Settings, Activity,
   ClipboardCheck, PiggyBank, ShoppingCart, CreditCard, Menu, LogOut, Hammer,
-  CalendarDays, TrendingUp, Inbox,
+  CalendarDays, TrendingUp, Inbox, Landmark,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -120,6 +120,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
       items: [
         { href: "/purchase-requests", label: "Purchase Requests", icon: <ShoppingCart size={16} />, show: true },
         { href: "/payments",          label: "Payments",          icon: <CreditCard size={16} />,   show: user.isFinanceAdmin },
+        { href: "/banking",           label: "Banking",           icon: <Landmark size={16} />,     show: user.isFinanceAdmin || user.isGeneralManager },
       ],
     },
     {
