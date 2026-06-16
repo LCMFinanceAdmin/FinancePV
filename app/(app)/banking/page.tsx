@@ -3,13 +3,14 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
-  Landmark, Plus, X, AlertTriangle, CheckCircle2, Clock,
-  Pencil, RefreshCw, ChevronDown, ChevronRight, Info, TrendingDown,
+  Landmark, Plus, X, AlertTriangle, Clock, Pencil, RefreshCw,
+  ChevronDown, ChevronRight, TrendingDown, FileText, RotateCcw,
+  ArrowDownCircle, TrendingUp, CheckCircle2, Banknote,
 } from "lucide-react";
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 // Types
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface BankAccount {
   id: string;
@@ -22,18 +23,40 @@ interface BankAccount {
   current_balance: number;
   last_updated_at: string;
   last_updated_by: string | null;
-  fd_principal: number | null;
-  fd_interest_rate: number | null;
-  fd_tenure_months: number | null;
-  fd_placement_date: string | null;
-  fd_maturity_date: string | null;
-  fd_renewal_reminder_days: number;
-  fd_cert_no: string | null;
   is_lcm_cashflow_ref: boolean;
   is_bam_cashflow_ref: boolean;
   is_active: boolean;
   sort_order: number;
   notes: string | null;
+}
+
+interface FDCertificate {
+  id: string;
+  account_id: string;
+  date_of_issue: string;
+  certificate_no: string;
+  principal: number;
+  term_months: number;
+  interest_rate: number;
+  maturity_date: string;
+  is_reissued: boolean;
+  reissue_date: string | null;
+  new_certificate_no: string | null;
+  new_principal: number | null;
+  status: "ACTIVE" | "MATURED" | "WITHDRAWN" | "REISSUED";
+  notes: string | null;
+  bank_account?: { id: string; name: string; bank_name: string; account_no: string | null; entity: string };
+  withdrawals?: FDWithdrawal[];
+}
+
+interface FDWithdrawal {
+  id: string;
+  certificate_id: string;
+  withdrawal_date: string;
+  credit_to_account_id: string | null;
+  amount_credited: number;
+  notes: string | null;
+  credit_to_account?: { id: string; name: string; bank_name: string } | null;
 }
 
 interface ApprovedPV {
@@ -46,9 +69,9 @@ interface ApprovedPV {
   purpose: string;
 }
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 // Constants
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
 const ENTITY_LABELS: Record<string, { label: string; color: string }> = {
   LCM:             { label: "LCM",             color: "bg-blue-100 text-blue-700" },
@@ -58,8 +81,6 @@ const ENTITY_LABELS: Record<string, { label: string; color: string }> = {
   GENERAL:         { label: "General",         color: "bg-stone-100 text-stone-600" },
 };
 
-const ENTITY_OPTIONS = ["LCM", "BAM", "LUTHERAN_GARDEN", "STUDY_CENTRE", "GENERAL"];
-
 const BANKS = [
   "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
   "AmBank", "Bank Islam", "Affin Bank", "Alliance Bank",
@@ -68,74 +89,119 @@ const BANKS = [
   "Agro Bank", "Bank Muamalat", "MBSB Bank",
 ];
 
+const TERM_OPTIONS = [1, 3, 6, 9, 12, 24, 36];
+
+const STATUS_STYLE: Record<string, string> = {
+  ACTIVE:    "bg-green-100 text-green-700",
+  MATURED:   "bg-amber-100 text-amber-700",
+  WITHDRAWN: "bg-stone-100 text-stone-500",
+  REISSUED:  "bg-blue-100 text-blue-600",
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function computePandI(principal: number, rate: number, termMonths: number) {
+  return principal + (principal * rate / 100 * termMonths / 12);
+}
+
+function addMonths(dateStr: string, months: number): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
 function daysDiff(dateStr: string): number {
   const d = new Date(dateStr);
   d.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   return Math.ceil((d.getTime() - today.getTime()) / 86400000);
 }
 
-function fdUrgency(days: number): "expired" | "urgent" | "warning" | "notice" | "ok" {
-  if (days < 0) return "expired";
-  if (days <= 14) return "urgent";
-  if (days <= 30) return "warning";
-  if (days <= 60) return "notice";
-  return "ok";
+function urgencyStyle(days: number) {
+  if (days < 0)   return { bg: "bg-red-50 border-red-300",     text: "text-red-700",    label: "OVERDUE" };
+  if (days <= 14)  return { bg: "bg-red-50 border-red-200",     text: "text-red-700",    label: "URGENT" };
+  if (days <= 30)  return { bg: "bg-orange-50 border-orange-200",text:"text-orange-700", label: "SOON" };
+  if (days <= 60)  return { bg: "bg-amber-50 border-amber-200", text: "text-amber-700",  label: "UPCOMING" };
+  return { bg: "bg-stone-50 border-stone-100", text: "text-stone-500", label: "OK" };
 }
 
-const URGENCY_STYLE = {
-  expired: { bg: "bg-red-50 border-red-300",     text: "text-red-700",    badge: "bg-red-500 text-white",     icon: <AlertTriangle size={14} /> },
-  urgent:  { bg: "bg-red-50 border-red-200",     text: "text-red-700",    badge: "bg-red-100 text-red-700",   icon: <AlertTriangle size={14} /> },
-  warning: { bg: "bg-orange-50 border-orange-200",text:"text-orange-700", badge: "bg-orange-100 text-orange-700",icon: <Clock size={14} /> },
-  notice:  { bg: "bg-amber-50 border-amber-200", text: "text-amber-700",  badge: "bg-amber-100 text-amber-700",  icon: <Clock size={14} /> },
-  ok:      { bg: "bg-stone-50 border-stone-100", text: "text-stone-600",  badge: "bg-stone-100 text-stone-500",  icon: <CheckCircle2 size={14} /> },
-};
-
-// ---------------------------------------------------------------------------
-// Default form
-// ---------------------------------------------------------------------------
-
-function blankForm() {
+function blankAccForm() {
   return {
     name: "", bank_name: "", account_type: "CURRENT" as "CURRENT" | "FIXED_DEPOSIT",
     account_no: "", entity: "LCM", purpose: "", notes: "",
+    current_balance: "0",
     is_lcm_cashflow_ref: false, is_bam_cashflow_ref: false,
-    fd_principal: "", fd_interest_rate: "", fd_tenure_months: "",
-    fd_placement_date: "", fd_maturity_date: "", fd_cert_no: "",
-    fd_renewal_reminder_days: "30",
   };
 }
 
-// ---------------------------------------------------------------------------
+function blankCertForm(accountId = "") {
+  return {
+    account_id: accountId,
+    date_of_issue: "", certificate_no: "", principal: "",
+    term_months: "12", interest_rate: "", maturity_date: "",
+    is_reissued: false, reissue_date: "", new_certificate_no: "", new_principal: "",
+    status: "ACTIVE" as FDCertificate["status"],
+    notes: "",
+  };
+}
+
+function blankWithdrawalForm(certId = "") {
+  return {
+    certificate_id: certId,
+    withdrawal_date: "", credit_to_account_id: "", amount_credited: "", notes: "",
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Page
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function BankingPage() {
   const supabase = createClient();
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+
+  const [currentAccounts, setCurrentAccounts] = useState<BankAccount[]>([]);
+  const [fdAccounts, setFdAccounts] = useState<BankAccount[]>([]);
+  const [fdCerts, setFdCerts] = useState<FDCertificate[]>([]);
   const [pvs, setPvs] = useState<ApprovedPV[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"overview" | "cashflow" | "accounts">("overview");
+  const [tab, setTab] = useState<"current" | "fd" | "cashflow">("current");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [toast, setToast] = useState("");
   const [toastOk, setToastOk] = useState(true);
 
-  // Account modal
-  const [showModal, setShowModal] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
-  const [form, setForm] = useState(blankForm());
-  const [saving, setSaving] = useState(false);
+  // Collapsible PV lists per account
+  const [expandedPvAccounts, setExpandedPvAccounts] = useState<Set<string>>(new Set());
+  // Collapsible cert list per FD account
+  const [expandedFdAccounts, setExpandedFdAccounts] = useState<Set<string>>(new Set());
 
-  // Balance update modal
+  // Account modal
+  const [showAccModal, setShowAccModal] = useState(false);
+  const [editingAcc, setEditingAcc] = useState<BankAccount | null>(null);
+  const [accForm, setAccForm] = useState(blankAccForm());
+  const [savingAcc, setSavingAcc] = useState(false);
+
+  // Certificate modal
+  const [showCertModal, setShowCertModal] = useState(false);
+  const [editingCert, setEditingCert] = useState<FDCertificate | null>(null);
+  const [certForm, setCertForm] = useState(blankCertForm());
+  const [savingCert, setSavingCert] = useState(false);
+
+  // Withdrawal modal
+  const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
+  const [editingWithdrawal, setEditingWithdrawal] = useState<FDWithdrawal | null>(null);
+  const [withdrawalForm, setWithdrawalForm] = useState(blankWithdrawalForm());
+  const [savingWithdrawal, setSavingWithdrawal] = useState(false);
+
+  // Balance modal
   const [balanceModal, setBalanceModal] = useState<BankAccount | null>(null);
   const [newBalance, setNewBalance] = useState("");
-  const [balanceNote, setBalanceNote] = useState("");
   const [savingBalance, setSavingBalance] = useState(false);
 
-  // Cashflow: selected PV IDs
+  // Cashflow selections
   const [selectedPvIds, setSelectedPvIds] = useState<Set<string>>(new Set());
-  const [expandedEntity, setExpandedEntity] = useState<Set<string>>(new Set(["LCM", "BAM"]));
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
@@ -148,16 +214,26 @@ export default function BankingPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) setCurrentUserEmail(user.email ?? "");
 
-      const [{ data: accRows }, { data: pvRows }] = await Promise.all([
+      const [accRes, certRes, pvRes] = await Promise.all([
         supabase.from("bank_accounts").select("*").eq("is_active", true).order("sort_order"),
+        supabase.from("fd_certificates").select(`
+          *,
+          bank_account:bank_accounts(id,name,bank_name,account_no,entity),
+          withdrawals:fd_withdrawals(*, credit_to_account:bank_accounts(id,name,bank_name))
+        `).order("date_of_issue", { ascending: false }),
         supabase.from("pvs")
           .select("id,pv_no,payee_name,amount,ministry,pv_type,purpose")
           .eq("status", "APPROVED")
           .order("submitted_at", { ascending: false }),
       ]);
-      setAccounts((accRows ?? []) as BankAccount[]);
-      setPvs((pvRows ?? []) as ApprovedPV[]);
-      setSelectedPvIds(new Set((pvRows ?? []).map((p: { id: string }) => p.id)));
+
+      const allAccounts = (accRes.data ?? []) as BankAccount[];
+      setCurrentAccounts(allAccounts.filter(a => a.account_type === "CURRENT"));
+      setFdAccounts(allAccounts.filter(a => a.account_type === "FIXED_DEPOSIT"));
+      setFdCerts((certRes.data ?? []) as FDCertificate[]);
+      const pvList = (pvRes.data ?? []) as ApprovedPV[];
+      setPvs(pvList);
+      setSelectedPvIds(new Set(pvList.map(p => p.id)));
     } finally {
       setLoading(false);
     }
@@ -165,107 +241,121 @@ export default function BankingPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ---------------------------------------------------------------------------
-  // Derived values
-  // ---------------------------------------------------------------------------
+  // ── Derived ──────────────────────────────────────────────────────────────
 
-  const currentAccounts = accounts.filter(a => a.account_type === "CURRENT");
-  const fdAccounts = accounts.filter(a => a.account_type === "FIXED_DEPOSIT");
+  const totalCurrent = currentAccounts.reduce((s, a) => s + a.current_balance, 0);
+  const totalFD = fdCerts
+    .filter(c => c.status !== "WITHDRAWN")
+    .reduce((s, c) => s + (c.is_reissued && c.new_principal ? c.new_principal : c.principal), 0);
 
-  const totalCurrentBalance = currentAccounts.reduce((s, a) => s + a.current_balance, 0);
-  const totalFdBalance = fdAccounts.reduce((s, a) => s + (a.fd_principal ?? a.current_balance), 0);
-
-  const lcmRef = accounts.find(a => a.is_lcm_cashflow_ref);
-  const bamRef = accounts.find(a => a.is_bam_cashflow_ref);
+  const lcmRef = currentAccounts.find(a => a.is_lcm_cashflow_ref);
+  const bamRef = currentAccounts.find(a => a.is_bam_cashflow_ref);
 
   const lcmPvs = pvs.filter(p => p.pv_type !== "BAM");
   const bamPvs = pvs.filter(p => p.pv_type === "BAM");
+  const selLcm = lcmPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
+  const selBam = bamPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
 
-  const selectedLcmTotal = lcmPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
-  const selectedBamTotal = bamPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
+  // FD certificates grouped by account
+  const certsByAccount = useMemo(() => {
+    const m = new Map<string, FDCertificate[]>();
+    for (const c of fdCerts) {
+      (m.get(c.account_id) ?? (m.set(c.account_id, []), m.get(c.account_id)!)).push(c);
+    }
+    return m;
+  }, [fdCerts]);
 
-  const lcmNetBalance = (lcmRef?.current_balance ?? 0) - selectedLcmTotal;
-  const bamNetBalance = (bamRef?.current_balance ?? 0) - selectedBamTotal;
-
-  // FD alerts: maturity within 90 days
+  // FD renewal alerts (< 90 days from maturity, ACTIVE only)
   const fdAlerts = useMemo(() =>
-    fdAccounts
-      .filter(a => a.fd_maturity_date)
-      .map(a => ({ ...a, days: daysDiff(a.fd_maturity_date!) }))
-      .filter(a => a.days <= 90)
+    fdCerts
+      .filter(c => c.status === "ACTIVE" && c.maturity_date)
+      .map(c => ({ ...c, days: daysDiff(c.maturity_date) }))
+      .filter(c => c.days <= 90)
       .sort((a, b) => a.days - b.days),
-    [fdAccounts]
+    [fdCerts]
   );
 
-  // ---------------------------------------------------------------------------
-  // CRUD
-  // ---------------------------------------------------------------------------
+  // Interest earned / reinvested per year for last 3 years
+  const interestSummary = useMemo(() => {
+    const cur = new Date().getFullYear();
+    return [cur - 2, cur - 1, cur].map(year => {
+      let earned = 0, reinvested = 0;
+      for (const cert of fdCerts) {
+        const effectivePrincipal = cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal;
+        const pAndI = computePandI(effectivePrincipal, cert.interest_rate, cert.term_months);
+        const interest = pAndI - effectivePrincipal;
+        // Withdrawal interest
+        for (const w of cert.withdrawals ?? []) {
+          if (new Date(w.withdrawal_date).getFullYear() === year) {
+            earned += interest;
+          }
+        }
+        // Matured (no withdrawal)
+        if (cert.status === "MATURED" && new Date(cert.maturity_date).getFullYear() === year
+          && (cert.withdrawals ?? []).length === 0) {
+          earned += interest;
+        }
+        // Reissued = reinvested
+        if (cert.is_reissued && cert.reissue_date && new Date(cert.reissue_date).getFullYear() === year) {
+          reinvested += effectivePrincipal;
+        }
+      }
+      return { year, earned, reinvested };
+    });
+  }, [fdCerts]);
 
-  function openAdd() {
-    setEditingAccount(null);
-    setForm(blankForm());
-    setShowModal(true);
+  // ── Account CRUD ──────────────────────────────────────────────────────────
+
+  function openAddAccount(type: "CURRENT" | "FIXED_DEPOSIT" = "CURRENT") {
+    setEditingAcc(null);
+    setAccForm({ ...blankAccForm(), account_type: type });
+    setShowAccModal(true);
   }
 
-  function openEdit(acc: BankAccount) {
-    setEditingAccount(acc);
-    setForm({
-      name: acc.name, bank_name: acc.bank_name,
-      account_type: acc.account_type, account_no: acc.account_no ?? "",
-      entity: acc.entity, purpose: acc.purpose ?? "", notes: acc.notes ?? "",
+  function openEditAccount(acc: BankAccount) {
+    setEditingAcc(acc);
+    setAccForm({
+      name: acc.name, bank_name: acc.bank_name, account_type: acc.account_type,
+      account_no: acc.account_no ?? "", entity: acc.entity,
+      purpose: acc.purpose ?? "", notes: acc.notes ?? "",
+      current_balance: String(acc.current_balance),
       is_lcm_cashflow_ref: acc.is_lcm_cashflow_ref,
       is_bam_cashflow_ref: acc.is_bam_cashflow_ref,
-      fd_principal: acc.fd_principal != null ? String(acc.fd_principal) : "",
-      fd_interest_rate: acc.fd_interest_rate != null ? String(acc.fd_interest_rate) : "",
-      fd_tenure_months: acc.fd_tenure_months != null ? String(acc.fd_tenure_months) : "",
-      fd_placement_date: acc.fd_placement_date?.slice(0, 10) ?? "",
-      fd_maturity_date: acc.fd_maturity_date?.slice(0, 10) ?? "",
-      fd_cert_no: acc.fd_cert_no ?? "",
-      fd_renewal_reminder_days: String(acc.fd_renewal_reminder_days),
     });
-    setShowModal(true);
+    setShowAccModal(true);
   }
 
   async function saveAccount() {
-    if (!form.name.trim() || !form.bank_name) {
+    if (!accForm.name.trim() || !accForm.bank_name) {
       showToast("Account name and bank are required", false); return;
     }
-    setSaving(true);
+    setSavingAcc(true);
     try {
       const payload = {
-        name: form.name.trim(),
-        bank_name: form.bank_name,
-        account_type: form.account_type,
-        account_no: form.account_no.trim() || null,
-        entity: form.entity,
-        purpose: form.purpose.trim() || null,
-        notes: form.notes.trim() || null,
-        is_lcm_cashflow_ref: form.is_lcm_cashflow_ref,
-        is_bam_cashflow_ref: form.is_bam_cashflow_ref,
-        fd_principal: form.fd_principal ? parseFloat(form.fd_principal) : null,
-        fd_interest_rate: form.fd_interest_rate ? parseFloat(form.fd_interest_rate) : null,
-        fd_tenure_months: form.fd_tenure_months ? parseInt(form.fd_tenure_months) : null,
-        fd_placement_date: form.fd_placement_date || null,
-        fd_maturity_date: form.fd_maturity_date || null,
-        fd_cert_no: form.fd_cert_no.trim() || null,
-        fd_renewal_reminder_days: parseInt(form.fd_renewal_reminder_days) || 30,
+        name: accForm.name.trim(), bank_name: accForm.bank_name,
+        account_type: accForm.account_type,
+        account_no: accForm.account_no.trim() || null,
+        entity: accForm.entity, purpose: accForm.purpose.trim() || null,
+        notes: accForm.notes.trim() || null,
+        current_balance: parseFloat(accForm.current_balance) || 0,
+        is_lcm_cashflow_ref: accForm.is_lcm_cashflow_ref,
+        is_bam_cashflow_ref: accForm.is_bam_cashflow_ref,
         updated_at: new Date().toISOString(),
       };
-      if (editingAccount) {
-        await supabase.from("bank_accounts").update(payload).eq("id", editingAccount.id);
+      if (editingAcc) {
+        await supabase.from("bank_accounts").update(payload).eq("id", editingAcc.id);
         showToast("Account updated");
       } else {
         await supabase.from("bank_accounts").insert({ ...payload, sort_order: 99 });
         showToast("Account added");
       }
-      setShowModal(false);
+      setShowAccModal(false);
       await load();
-    } catch {
-      showToast("Failed to save", false);
-    } finally {
-      setSaving(false);
-    }
+    } catch { showToast("Failed to save", false); }
+    finally { setSavingAcc(false); }
   }
+
+  // ── Balance update ────────────────────────────────────────────────────────
 
   async function updateBalance() {
     if (!balanceModal || !newBalance) return;
@@ -275,203 +365,277 @@ export default function BankingPage() {
         current_balance: parseFloat(newBalance),
         last_updated_at: new Date().toISOString(),
         last_updated_by: currentUserEmail,
-        notes: balanceNote.trim() || balanceModal.notes,
         updated_at: new Date().toISOString(),
       }).eq("id", balanceModal.id);
       showToast("Balance updated");
-      setBalanceModal(null);
-      setNewBalance("");
-      setBalanceNote("");
+      setBalanceModal(null); setNewBalance("");
       await load();
-    } catch {
-      showToast("Failed to update balance", false);
-    } finally {
-      setSavingBalance(false);
-    }
+    } catch { showToast("Failed", false); }
+    finally { setSavingBalance(false); }
   }
 
-  // ---------------------------------------------------------------------------
-  // Render helpers
-  // ---------------------------------------------------------------------------
+  // ── Certificate CRUD ──────────────────────────────────────────────────────
 
-  function AccountCard({ acc }: { acc: BankAccount }) {
-    const entity = ENTITY_LABELS[acc.entity] ?? { label: acc.entity, color: "bg-stone-100 text-stone-500" };
-    const isFD = acc.account_type === "FIXED_DEPOSIT";
-    const days = acc.fd_maturity_date ? daysDiff(acc.fd_maturity_date) : null;
-    const urgency = days !== null ? fdUrgency(days) : null;
+  function openAddCert(accountId: string) {
+    setEditingCert(null);
+    setCertForm(blankCertForm(accountId));
+    setShowCertModal(true);
+  }
+
+  function openEditCert(cert: FDCertificate) {
+    setEditingCert(cert);
+    setCertForm({
+      account_id: cert.account_id,
+      date_of_issue: cert.date_of_issue?.slice(0, 10) ?? "",
+      certificate_no: cert.certificate_no,
+      principal: String(cert.principal),
+      term_months: String(cert.term_months),
+      interest_rate: String(cert.interest_rate),
+      maturity_date: cert.maturity_date?.slice(0, 10) ?? "",
+      is_reissued: cert.is_reissued,
+      reissue_date: cert.reissue_date?.slice(0, 10) ?? "",
+      new_certificate_no: cert.new_certificate_no ?? "",
+      new_principal: cert.new_principal != null ? String(cert.new_principal) : "",
+      status: cert.status,
+      notes: cert.notes ?? "",
+    });
+    setShowCertModal(true);
+  }
+
+  async function saveCert() {
+    if (!certForm.account_id || !certForm.date_of_issue || !certForm.certificate_no) {
+      showToast("Account, date and certificate number are required", false); return;
+    }
+    setSavingCert(true);
+    try {
+      const payload = {
+        account_id: certForm.account_id,
+        date_of_issue: certForm.date_of_issue,
+        certificate_no: certForm.certificate_no.trim(),
+        principal: parseFloat(certForm.principal) || 0,
+        term_months: parseInt(certForm.term_months) || 12,
+        interest_rate: parseFloat(certForm.interest_rate) || 0,
+        maturity_date: certForm.maturity_date || addMonths(certForm.date_of_issue, parseInt(certForm.term_months) || 12),
+        is_reissued: certForm.is_reissued,
+        reissue_date: certForm.is_reissued ? (certForm.reissue_date || null) : null,
+        new_certificate_no: certForm.is_reissued ? (certForm.new_certificate_no.trim() || null) : null,
+        new_principal: certForm.is_reissued && certForm.new_principal ? parseFloat(certForm.new_principal) : null,
+        status: certForm.status,
+        notes: certForm.notes.trim() || null,
+        updated_at: new Date().toISOString(),
+      };
+      if (editingCert) {
+        await supabase.from("fd_certificates").update(payload).eq("id", editingCert.id);
+        showToast("Certificate updated");
+      } else {
+        await supabase.from("fd_certificates").insert(payload);
+        showToast("Certificate added");
+      }
+      setShowCertModal(false);
+      await load();
+    } catch { showToast("Failed to save", false); }
+    finally { setSavingCert(false); }
+  }
+
+  // ── Withdrawal CRUD ───────────────────────────────────────────────────────
+
+  function openAddWithdrawal(certId: string) {
+    setEditingWithdrawal(null);
+    setWithdrawalForm(blankWithdrawalForm(certId));
+    setShowWithdrawalModal(true);
+  }
+
+  function openEditWithdrawal(w: FDWithdrawal) {
+    setEditingWithdrawal(w);
+    setWithdrawalForm({
+      certificate_id: w.certificate_id,
+      withdrawal_date: w.withdrawal_date?.slice(0, 10) ?? "",
+      credit_to_account_id: w.credit_to_account_id ?? "",
+      amount_credited: String(w.amount_credited),
+      notes: w.notes ?? "",
+    });
+    setShowWithdrawalModal(true);
+  }
+
+  async function saveWithdrawal() {
+    if (!withdrawalForm.withdrawal_date || !withdrawalForm.amount_credited) {
+      showToast("Withdrawal date and amount are required", false); return;
+    }
+    setSavingWithdrawal(true);
+    try {
+      const payload = {
+        certificate_id: withdrawalForm.certificate_id,
+        withdrawal_date: withdrawalForm.withdrawal_date,
+        credit_to_account_id: withdrawalForm.credit_to_account_id || null,
+        amount_credited: parseFloat(withdrawalForm.amount_credited) || 0,
+        notes: withdrawalForm.notes.trim() || null,
+      };
+      if (editingWithdrawal) {
+        await supabase.from("fd_withdrawals").update(payload).eq("id", editingWithdrawal.id);
+        showToast("Withdrawal updated");
+      } else {
+        await supabase.from("fd_withdrawals").insert(payload);
+        // Mark certificate as WITHDRAWN
+        await supabase.from("fd_certificates").update({ status: "WITHDRAWN", updated_at: new Date().toISOString() })
+          .eq("id", withdrawalForm.certificate_id);
+        showToast("Withdrawal recorded");
+      }
+      setShowWithdrawalModal(false);
+      await load();
+    } catch { showToast("Failed to save", false); }
+    finally { setSavingWithdrawal(false); }
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────────────
+
+  function togglePvAccount(id: string) {
+    setExpandedPvAccounts(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleFdAccount(id: string) {
+    setExpandedFdAccounts(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  // PVs relevant to a current account (only for cashflow-ref accounts)
+  function getPVsForAccount(acc: BankAccount): ApprovedPV[] {
+    if (acc.is_lcm_cashflow_ref) return lcmPvs;
+    if (acc.is_bam_cashflow_ref) return bamPvs;
+    return [];
+  }
+
+  // ── Cert row ──────────────────────────────────────────────────────────────
+
+  function CertRow({ cert }: { cert: FDCertificate }) {
+    const activePrincipal = cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal;
+    const pAndI = computePandI(activePrincipal, cert.interest_rate, cert.term_months);
+    const days = daysDiff(cert.maturity_date);
+    const us = cert.status === "ACTIVE" ? urgencyStyle(days) : null;
+    const activeCertNo = cert.is_reissued && cert.new_certificate_no ? cert.new_certificate_no : cert.certificate_no;
+    const [showW, setShowW] = useState(false);
 
     return (
-      <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${urgency && urgency !== "ok" ? "border-orange-200" : "border-stone-100"}`}>
-        <div className="px-4 py-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
+      <div className="border border-stone-200 rounded-xl overflow-hidden">
+        {/* Certificate header */}
+        <div className="bg-stone-50 px-4 py-3">
+          <div className="flex items-start gap-3 flex-wrap">
+            <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${entity.color}`}>{entity.label}</span>
-                {isFD && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">FD</span>}
-                {acc.is_lcm_cashflow_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-600 text-white font-bold">LCM Ref</span>}
-                {acc.is_bam_cashflow_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-600 text-white font-bold">BAM Ref</span>}
+                <span className="font-mono text-xs font-bold text-stone-700">{activeCertNo}</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[cert.status]}`}>
+                  {cert.status}
+                </span>
+                {cert.is_reissued && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 flex items-center gap-0.5">
+                    <RotateCcw size={9} /> Reissued
+                  </span>
+                )}
               </div>
-              <div className="font-semibold text-stone-800 text-sm mt-1">{acc.name}</div>
-              <div className="text-xs text-stone-400">{acc.bank_name}{acc.account_no ? ` · ${acc.account_no}` : ""}</div>
+              <div className="text-xs text-stone-400 mt-0.5">
+                Issued {formatDate(cert.date_of_issue)}
+                {cert.is_reissued && cert.reissue_date && (
+                  <span className="ml-2 text-blue-500">Reissued {formatDate(cert.reissue_date)}</span>
+                )}
+              </div>
+              {cert.is_reissued && cert.certificate_no !== activeCertNo && (
+                <div className="text-[11px] text-stone-400 mt-0.5">
+                  Original cert: <span className="font-mono">{cert.certificate_no}</span>
+                </div>
+              )}
             </div>
-            <div className="text-right shrink-0">
-              <div className="text-base font-bold text-stone-800">{formatCurrency(isFD && acc.fd_principal ? acc.fd_principal : acc.current_balance)}</div>
-              {isFD && acc.fd_interest_rate && (
-                <div className="text-[11px] text-stone-400">{acc.fd_interest_rate}% p.a.</div>
+            <div className="flex gap-2 shrink-0">
+              <button onClick={() => openEditCert(cert)}
+                className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600 border border-stone-200 rounded-lg px-2 py-1">
+                <Pencil size={10} /> Edit
+              </button>
+              {cert.status !== "WITHDRAWN" && (
+                <button onClick={() => { setShowW(true); openAddWithdrawal(cert.id); }}
+                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 border border-red-100 rounded-lg px-2 py-1">
+                  <ArrowDownCircle size={10} /> Withdraw
+                </button>
               )}
             </div>
           </div>
-
-          {isFD && acc.fd_maturity_date && (
-            <div className={`mt-2 flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 ${days !== null && urgency ? URGENCY_STYLE[urgency].bg + " " + URGENCY_STYLE[urgency].text : "bg-stone-50 text-stone-500"}`}>
-              {urgency ? URGENCY_STYLE[urgency].icon : <Clock size={12} />}
-              <span>
-                Matures {formatDate(acc.fd_maturity_date)}
-                {days !== null && (
-                  <span className="ml-1 font-semibold">
-                    ({days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? "today" : `in ${days} days`})
-                  </span>
-                )}
-              </span>
-              {acc.fd_cert_no && <span className="ml-auto text-stone-400">Cert: {acc.fd_cert_no}</span>}
-            </div>
-          )}
-
-          {isFD && acc.fd_tenure_months && (
-            <div className="mt-1 text-[11px] text-stone-400">
-              {acc.fd_tenure_months}-month tenure{acc.fd_placement_date ? ` · Placed ${formatDate(acc.fd_placement_date)}` : ""}
-            </div>
-          )}
-
-          {!isFD && (
-            <div className="mt-1 text-[11px] text-stone-400">
-              Last updated {acc.last_updated_by ? `by ${acc.last_updated_by.split("@")[0]}` : ""} {formatDate(acc.last_updated_at)}
-            </div>
-          )}
         </div>
 
-        <div className="flex gap-2 px-4 pb-3">
-          <button onClick={() => { setBalanceModal(acc); setNewBalance(String(isFD && acc.fd_principal ? acc.fd_principal : acc.current_balance)); setBalanceNote(""); }}
-            className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] transition-colors">
-            <RefreshCw size={11} /> {isFD ? "Update FD" : "Update Balance"}
-          </button>
-          <button onClick={() => openEdit(acc)}
-            className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50">
-            <Pencil size={11} /> Edit
-          </button>
-          {acc.purpose && (
-            <div className="ml-auto flex items-center gap-1 text-[11px] text-stone-400">
-              <Info size={11} /> <span className="hidden sm:inline">{acc.purpose}</span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  function PVCheckRow({ pv }: { pv: ApprovedPV }) {
-    const checked = selectedPvIds.has(pv.id);
-    return (
-      <label className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-stone-50 cursor-pointer transition-colors">
-        <input type="checkbox" checked={checked}
-          onChange={e => setSelectedPvIds(prev => { const n = new Set(prev); e.target.checked ? n.add(pv.id) : n.delete(pv.id); return n; })}
-          className="accent-[#4a6da7] w-4 h-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-stone-700">{pv.pv_no}</div>
-          <div className="text-xs text-stone-400 truncate">{pv.payee_name} · {pv.ministry}</div>
-        </div>
-        <div className={`text-sm font-bold shrink-0 ${checked ? "text-stone-800" : "text-stone-300"}`}>{formatCurrency(pv.amount)}</div>
-      </label>
-    );
-  }
-
-  function CashflowColumn({ label, refAccount, pvList, selectedTotal, netBalance }: {
-    label: string; refAccount?: BankAccount; pvList: ApprovedPV[];
-    selectedTotal: number; netBalance: number;
-  }) {
-    const allSelected = pvList.every(p => selectedPvIds.has(p.id));
-    const noneSelected = pvList.every(p => !selectedPvIds.has(p.id));
-    const isNegative = netBalance < 0;
-
-    return (
-      <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-stone-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-bold text-stone-800 text-sm">{label}</div>
-              <div className="text-xs text-stone-400">{refAccount ? refAccount.name : "No reference account set"}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[11px] text-stone-400 uppercase tracking-wide">Available</div>
-              <div className="text-base font-bold text-stone-800">{formatCurrency(refAccount?.current_balance ?? 0)}</div>
-            </div>
+        {/* Certificate details grid */}
+        <div className="px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div>
+            <div className="text-stone-400 font-medium uppercase tracking-wide text-[10px]">Principal</div>
+            <div className="font-bold text-stone-800 mt-0.5">{formatCurrency(cert.principal)}</div>
+            {cert.is_reissued && cert.new_principal && cert.new_principal !== cert.principal && (
+              <div className="text-blue-600 font-semibold">New: {formatCurrency(cert.new_principal)}</div>
+            )}
+          </div>
+          <div>
+            <div className="text-stone-400 font-medium uppercase tracking-wide text-[10px]">Term / Rate</div>
+            <div className="font-bold text-stone-800 mt-0.5">{cert.term_months} months</div>
+            <div className="text-stone-500">{cert.interest_rate}% p.a.</div>
+          </div>
+          <div>
+            <div className="text-stone-400 font-medium uppercase tracking-wide text-[10px]">Maturity Date</div>
+            <div className="font-bold text-stone-800 mt-0.5">{formatDate(cert.maturity_date)}</div>
+            {cert.status === "ACTIVE" && us && (
+              <div className={`text-[10px] font-semibold mt-0.5 ${us.text}`}>
+                {days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "Today" : `${days}d left`}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-stone-400 font-medium uppercase tracking-wide text-[10px]">Principal + Interest</div>
+            <div className="font-bold text-green-700 mt-0.5">{formatCurrency(pAndI)}</div>
+            <div className="text-stone-400 text-[10px]">+{formatCurrency(pAndI - activePrincipal)} interest</div>
           </div>
         </div>
 
-        {/* Net balance result */}
-        <div className={`px-4 py-3 border-b border-stone-100 ${isNegative ? "bg-red-50" : "bg-green-50"}`}>
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-stone-600">
-              Net after paying {pvList.filter(p => selectedPvIds.has(p.id)).length} PV{pvList.filter(p => selectedPvIds.has(p.id)).length !== 1 ? "s" : ""}
+        {/* Withdrawal(s) */}
+        {(cert.withdrawals ?? []).map(w => (
+          <div key={w.id} className="border-t border-stone-100 px-4 py-3 bg-red-50">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-red-700">
+                <ArrowDownCircle size={12} /> Withdrawal
+              </div>
+              <button onClick={() => openEditWithdrawal(w)}
+                className="text-[10px] text-stone-400 hover:text-stone-600 flex items-center gap-0.5">
+                <Pencil size={9} /> Edit
+              </button>
             </div>
-            <div className={`text-lg font-bold ${isNegative ? "text-red-600" : "text-green-700"}`}>
-              {isNegative && <TrendingDown size={15} className="inline mr-1" />}
-              {formatCurrency(netBalance)}
-            </div>
-          </div>
-          <div className="flex gap-4 mt-1 text-[11px] text-stone-400">
-            <span>Available: {formatCurrency(refAccount?.current_balance ?? 0)}</span>
-            <span>−</span>
-            <span>Selected: {formatCurrency(selectedTotal)}</span>
-            <span>=</span>
-            <span className={isNegative ? "text-red-500 font-semibold" : "text-green-600 font-semibold"}>Net: {formatCurrency(netBalance)}</span>
-          </div>
-          {isNegative && (
-            <div className="mt-1.5 text-xs text-red-600 font-medium flex items-center gap-1">
-              <AlertTriangle size={11} /> Insufficient funds — deselect some PVs before proceeding
-            </div>
-          )}
-        </div>
-
-        {/* PV list */}
-        <div className="px-2 py-2">
-          {pvList.length === 0 ? (
-            <div className="text-xs text-stone-300 italic text-center py-4">No approved PVs pending payment</div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between px-3 pb-1">
-                <span className="text-[11px] font-bold text-stone-400 uppercase tracking-wide">
-                  {pvList.length} Approved PV{pvList.length !== 1 ? "s" : ""} — {formatCurrency(pvList.reduce((s, p) => s + p.amount, 0))} total
-                </span>
-                <div className="flex gap-2">
-                  {!allSelected && (
-                    <button onClick={() => setSelectedPvIds(prev => { const n = new Set(prev); pvList.forEach(p => n.add(p.id)); return n; })}
-                      className="text-[11px] text-[#4a6da7] hover:underline font-semibold">Select all</button>
-                  )}
-                  {!noneSelected && (
-                    <button onClick={() => setSelectedPvIds(prev => { const n = new Set(prev); pvList.forEach(p => n.delete(p.id)); return n; })}
-                      className="text-[11px] text-stone-400 hover:underline">Clear</button>
-                  )}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <div className="text-stone-400 text-[10px] uppercase tracking-wide">Withdrawal Date</div>
+                <div className="font-semibold text-stone-700 mt-0.5">{formatDate(w.withdrawal_date)}</div>
+              </div>
+              <div>
+                <div className="text-stone-400 text-[10px] uppercase tracking-wide">Amount Credited</div>
+                <div className="font-bold text-stone-800 mt-0.5">{formatCurrency(w.amount_credited)}</div>
+              </div>
+              <div>
+                <div className="text-stone-400 text-[10px] uppercase tracking-wide">Credit To</div>
+                <div className="font-semibold text-stone-700 mt-0.5">
+                  {w.credit_to_account ? `${w.credit_to_account.name} (${w.credit_to_account.bank_name})` : "—"}
                 </div>
               </div>
-              <div className="max-h-64 overflow-y-auto">
-                {pvList.map(pv => <PVCheckRow key={pv.id} pv={pv} />)}
+              <div>
+                <div className="text-stone-400 text-[10px] uppercase tracking-wide">Interest Earned</div>
+                <div className="font-bold text-green-700 mt-0.5">{formatCurrency(w.amount_credited - activePrincipal)}</div>
               </div>
-            </>
-          )}
-        </div>
+            </div>
+            {w.notes && <div className="text-[11px] text-stone-400 mt-1.5 italic">{w.notes}</div>}
+          </div>
+        ))}
+
+        {cert.notes && (
+          <div className="border-t border-stone-100 px-4 py-2 text-[11px] text-stone-400 italic">{cert.notes}</div>
+        )}
       </div>
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   // Render
-  // ---------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <main className="min-h-screen bg-stone-50 pb-28 md:pb-8">
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
@@ -479,63 +643,39 @@ export default function BankingPage() {
             <h1 className="text-xl font-bold text-stone-800 flex items-center gap-2">
               <Landmark size={20} className="text-[#4a6da7]" /> Banking
             </h1>
-            <p className="text-xs text-stone-400 mt-0.5">Track bank balances, Fixed Deposit maturity, and cashflow against approved PVs</p>
+            <p className="text-xs text-stone-400 mt-0.5">Bank accounts, Fixed Deposit certificates, and cashflow tracking</p>
           </div>
-          <button onClick={openAdd}
-            className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl bg-[#4a6da7] text-white hover:bg-[#3a5d97] transition-colors shrink-0">
-            <Plus size={15} /> Add Account
-          </button>
         </div>
 
         {/* Summary cards */}
         {!loading && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: "Total Current", value: formatCurrency(totalCurrentBalance), color: "text-stone-800" },
-              { label: "Total Fixed Deposits", value: formatCurrency(totalFdBalance), color: "text-indigo-700" },
-              { label: "LCM Ref (Public Bank)", value: formatCurrency(lcmRef?.current_balance ?? 0), color: "text-blue-700" },
-              { label: "BAM Ref (Maybank)", value: formatCurrency(bamRef?.current_balance ?? 0), color: "text-green-700" },
-            ].map(s => (
-              <div key={s.label} className="bg-white rounded-xl p-3 shadow-sm border border-stone-100">
-                <div className="text-[11px] text-stone-400 font-medium">{s.label}</div>
-                <div className={`text-lg font-bold mt-0.5 ${s.color}`}>{s.value}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* FD Renewal Alerts */}
-        {fdAlerts.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-xs font-bold uppercase tracking-wide text-stone-400">FD Renewal Alerts</div>
-            {fdAlerts.map(acc => {
-              const urgency = fdUrgency(acc.days);
-              const s = URGENCY_STYLE[urgency];
-              return (
-                <div key={acc.id} className={`flex items-start gap-3 p-3 rounded-xl border ${s.bg}`}>
-                  <span className={s.text}>{s.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-semibold ${s.text}`}>{acc.name} — {acc.bank_name}</div>
-                    <div className={`text-xs ${s.text} opacity-80`}>
-                      {acc.days < 0 ? `Matured ${Math.abs(acc.days)} days ago — renewal overdue`
-                        : acc.days === 0 ? "Matures today — renew immediately"
-                        : `Matures ${formatDate(acc.fd_maturity_date!)} (${acc.days} days)`}
-                      {acc.fd_principal && ` · ${formatCurrency(acc.fd_principal)}`}
-                      {acc.fd_interest_rate && ` @ ${acc.fd_interest_rate}%`}
-                    </div>
-                  </div>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${s.badge}`}>
-                    {urgency === "expired" ? "OVERDUE" : urgency === "urgent" ? "URGENT" : urgency === "warning" ? "SOON" : "UPCOMING"}
-                  </span>
-                </div>
-              );
-            })}
+            <div className="bg-white rounded-xl p-3 shadow-sm border border-stone-100">
+              <div className="text-[11px] text-stone-400 font-medium">Total Current</div>
+              <div className="text-lg font-bold text-stone-800 mt-0.5">{formatCurrency(totalCurrent)}</div>
+              <div className="text-[11px] text-stone-400">{currentAccounts.length} accounts</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 shadow-sm border border-stone-100">
+              <div className="text-[11px] text-stone-400 font-medium">Total FD Principal</div>
+              <div className="text-lg font-bold text-indigo-700 mt-0.5">{formatCurrency(totalFD)}</div>
+              <div className="text-[11px] text-stone-400">{fdCerts.filter(c => c.status !== "WITHDRAWN").length} active certs</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 shadow-sm border border-stone-100">
+              <div className="text-[11px] text-stone-400 font-medium">LCM Ref (Public Bank)</div>
+              <div className="text-lg font-bold text-blue-700 mt-0.5">{formatCurrency(lcmRef?.current_balance ?? 0)}</div>
+              <div className="text-[11px] text-stone-400">{lcmPvs.length} approved PVs pending</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 shadow-sm border border-stone-100">
+              <div className="text-[11px] text-stone-400 font-medium">BAM Ref (Maybank)</div>
+              <div className="text-lg font-bold text-green-700 mt-0.5">{formatCurrency(bamRef?.current_balance ?? 0)}</div>
+              <div className="text-[11px] text-stone-400">{bamPvs.length} approved PVs pending</div>
+            </div>
           </div>
         )}
 
         {/* Tabs */}
         <div className="flex gap-1 bg-stone-100 rounded-xl p-1">
-          {([["overview", "Overview"], ["cashflow", "Cashflow Calculator"], ["accounts", "All Accounts"]] as const).map(([key, label]) => (
+          {([["current", "Current Accounts"], ["fd", "Fixed Deposits"], ["cashflow", "Cashflow"]] as const).map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
               className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors
                 ${tab === key ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"}`}>
@@ -544,129 +684,339 @@ export default function BankingPage() {
           ))}
         </div>
 
-        {/* ── Overview tab ── */}
-        {tab === "overview" && (
-          <div className="space-y-4">
-            {loading ? <div className="text-center py-12 text-stone-400 text-sm">Loading…</div> : (
-              <>
-                {/* Current Accounts */}
-                <div>
-                  <div className="text-xs font-bold uppercase tracking-wide text-stone-400 mb-2">Current Accounts</div>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {currentAccounts.map(acc => <AccountCard key={acc.id} acc={acc} />)}
-                  </div>
-                </div>
-                {/* Fixed Deposits */}
-                {fdAccounts.length > 0 && (
-                  <div>
-                    <div className="text-xs font-bold uppercase tracking-wide text-stone-400 mb-2">Fixed Deposits</div>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {fdAccounts.map(acc => <AccountCard key={acc.id} acc={acc} />)}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
+        {loading && <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>}
 
-        {/* ── Cashflow tab ── */}
-        {tab === "cashflow" && (
+        {/* ── CURRENT ACCOUNTS TAB ── */}
+        {!loading && tab === "current" && (
           <div className="space-y-4">
-            <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
-              <strong>How this works:</strong> Tick the approved PVs you plan to pay. The net balance shows what remains in the reference account after those payments. LCM uses Public Bank; BAM uses the BAM Maybank account.
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold uppercase tracking-wide text-stone-400">
+                {currentAccounts.length} Current Account{currentAccounts.length !== 1 ? "s" : ""}
+              </div>
+              <button onClick={() => openAddAccount("CURRENT")}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#4a6da7] text-white hover:bg-[#3a5d97]">
+                <Plus size={13} /> Add Account
+              </button>
             </div>
 
-            {loading ? <div className="text-center py-12 text-stone-400 text-sm">Loading…</div> : (
-              <div className="grid sm:grid-cols-2 gap-4">
-                <CashflowColumn
-                  label="LCM Cashflow"
-                  refAccount={lcmRef}
-                  pvList={lcmPvs}
-                  selectedTotal={selectedLcmTotal}
-                  netBalance={lcmNetBalance}
-                />
-                <CashflowColumn
-                  label="BAM Cashflow"
-                  refAccount={bamRef}
-                  pvList={bamPvs}
-                  selectedTotal={selectedBamTotal}
-                  netBalance={bamNetBalance}
-                />
+            {currentAccounts.length === 0 && (
+              <div className="text-center py-12 text-stone-400 text-sm bg-white rounded-2xl border border-stone-100">
+                No current accounts yet. Run migration 033 in Supabase or add one manually.
               </div>
             )}
 
-            {/* Combined summary */}
-            {!loading && (lcmPvs.length > 0 || bamPvs.length > 0) && (
-              <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-4">
-                <div className="text-xs font-bold uppercase tracking-wide text-stone-400 mb-3">Combined Summary</div>
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div>
-                    <div className="text-[11px] text-stone-400">Total Approved PVs</div>
-                    <div className="text-base font-bold text-stone-800">{formatCurrency(pvs.reduce((s, p) => s + p.amount, 0))}</div>
-                    <div className="text-[11px] text-stone-400">{pvs.length} PVs</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] text-stone-400">Selected to Pay</div>
-                    <div className="text-base font-bold text-amber-600">{formatCurrency(selectedLcmTotal + selectedBamTotal)}</div>
-                    <div className="text-[11px] text-stone-400">{[...selectedPvIds].length} PVs</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] text-stone-400">Remaining</div>
-                    <div className={`text-base font-bold ${(pvs.reduce((s, p) => s + p.amount, 0) - selectedLcmTotal - selectedBamTotal) < 0 ? "text-red-600" : "text-stone-600"}`}>
-                      {formatCurrency(pvs.reduce((s, p) => s + p.amount, 0) - selectedLcmTotal - selectedBamTotal)}
+            {currentAccounts.map(acc => {
+              const entity = ENTITY_LABELS[acc.entity] ?? { label: acc.entity, color: "bg-stone-100 text-stone-500" };
+              const relPvs = getPVsForAccount(acc);
+              const pvTotal = relPvs.reduce((s, p) => s + p.amount, 0);
+              const isExpanded = expandedPvAccounts.has(acc.id);
+
+              return (
+                <div key={acc.id} className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+                  {/* Account row */}
+                  <div className="px-4 py-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${entity.color}`}>{entity.label}</span>
+                          {acc.is_lcm_cashflow_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-600 text-white font-bold">LCM Ref</span>}
+                          {acc.is_bam_cashflow_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-600 text-white font-bold">BAM Ref</span>}
+                        </div>
+                        <div className="font-semibold text-stone-800 text-sm mt-1">{acc.name}</div>
+                        <div className="text-xs text-stone-400">
+                          {acc.bank_name}
+                          {acc.account_no && <span className="ml-2 font-mono">{acc.account_no}</span>}
+                        </div>
+                        {acc.purpose && <div className="text-[11px] text-stone-400 mt-0.5 italic">{acc.purpose}</div>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xl font-bold text-stone-800">{formatCurrency(acc.current_balance)}</div>
+                        <div className="text-[11px] text-stone-400 mt-0.5">
+                          Updated {acc.last_updated_by ? `by ${acc.last_updated_by.split("@")[0]}` : ""} {formatDate(acc.last_updated_at)}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-stone-400">{pvs.length - [...selectedPvIds].length} PVs</div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 mt-3">
+                      <button onClick={() => { setBalanceModal(acc); setNewBalance(String(acc.current_balance)); }}
+                        className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97]">
+                        <RefreshCw size={11} /> Update Balance
+                      </button>
+                      <button onClick={() => openEditAccount(acc)}
+                        className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50">
+                        <Pencil size={11} /> Edit
+                      </button>
+                      {relPvs.length > 0 && (
+                        <button onClick={() => togglePvAccount(acc.id)}
+                          className="ml-auto flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50">
+                          <FileText size={11} />
+                          {relPvs.length} Pending PV{relPvs.length !== 1 ? "s" : ""} ({formatCurrency(pvTotal)})
+                          {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Approved PVs */}
+                  {isExpanded && relPvs.length > 0 && (
+                    <div className="border-t border-stone-100">
+                      <div className="px-4 py-2 bg-amber-50 text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                        Approved PVs — Committed but not yet paid ({formatCurrency(pvTotal)})
+                      </div>
+                      <div className="divide-y divide-stone-50 max-h-72 overflow-y-auto">
+                        {relPvs.map(pv => (
+                          <div key={pv.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-stone-50">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-bold text-stone-700">{pv.pv_no}</div>
+                              <div className="text-xs text-stone-400 truncate">{pv.payee_name} · {pv.ministry}</div>
+                              <div className="text-[11px] text-stone-400 truncate">{pv.purpose}</div>
+                            </div>
+                            <div className="text-sm font-bold text-stone-800 shrink-0">{formatCurrency(pv.amount)}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="px-4 py-2 bg-stone-50 flex justify-between text-xs">
+                        <span className="text-stone-500">Net balance after payment</span>
+                        <span className={`font-bold ${(acc.current_balance - pvTotal) < 0 ? "text-red-600" : "text-green-700"}`}>
+                          {formatCurrency(acc.current_balance - pvTotal)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })}
           </div>
         )}
 
-        {/* ── Accounts tab ── */}
-        {tab === "accounts" && (
-          <div className="space-y-4">
-            {loading ? <div className="text-center py-12 text-stone-400 text-sm">Loading…</div> : (
-              <>
-                {ENTITY_OPTIONS.map(entity => {
-                  const entityAccounts = accounts.filter(a => a.entity === entity);
-                  if (entityAccounts.length === 0) return null;
-                  const isOpen = expandedEntity.has(entity);
-                  const meta = ENTITY_LABELS[entity];
+        {/* ── FIXED DEPOSITS TAB ── */}
+        {!loading && tab === "fd" && (
+          <div className="space-y-5">
+
+            {/* FD Renewal Alerts */}
+            {fdAlerts.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-bold uppercase tracking-wide text-stone-400">Renewal Alerts</div>
+                {fdAlerts.map(cert => {
+                  const us = urgencyStyle(cert.days);
                   return (
-                    <div key={entity}>
-                      <button
-                        onClick={() => setExpandedEntity(prev => { const n = new Set(prev); n.has(entity) ? n.delete(entity) : n.add(entity); return n; })}
-                        className="flex items-center gap-2 w-full text-left mb-2">
-                        {isOpen ? <ChevronDown size={14} className="text-stone-400" /> : <ChevronRight size={14} className="text-stone-400" />}
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
-                        <span className="text-xs text-stone-400">{entityAccounts.length} account{entityAccounts.length !== 1 ? "s" : ""}</span>
-                        <span className="ml-auto text-xs font-semibold text-stone-500">
-                          {formatCurrency(entityAccounts.reduce((s, a) => s + (a.account_type === "FIXED_DEPOSIT" ? (a.fd_principal ?? a.current_balance) : a.current_balance), 0))}
-                        </span>
-                      </button>
-                      {isOpen && (
-                        <div className="grid sm:grid-cols-2 gap-3 ml-4">
-                          {entityAccounts.map(acc => <AccountCard key={acc.id} acc={acc} />)}
+                    <div key={cert.id} className={`flex items-center gap-3 p-3 rounded-xl border ${us.bg}`}>
+                      <AlertTriangle size={14} className={us.text} />
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-semibold ${us.text}`}>
+                          {cert.bank_account?.name ?? "FD"} — {cert.bank_account?.bank_name}
                         </div>
-                      )}
+                        <div className={`text-xs ${us.text} opacity-80`}>
+                          Cert {cert.is_reissued && cert.new_certificate_no ? cert.new_certificate_no : cert.certificate_no}
+                          {" · "}Principal {formatCurrency(cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal)}
+                          {" · "}Matures {formatDate(cert.maturity_date)}
+                          {cert.days < 0 ? ` (${Math.abs(cert.days)} days overdue)` : cert.days === 0 ? " (today)" : ` (${cert.days} days)`}
+                        </div>
+                      </div>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${us.text} bg-white/60`}>{us.label}</span>
                     </div>
                   );
                 })}
-              </>
+              </div>
             )}
+
+            {/* FD Accounts */}
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold uppercase tracking-wide text-stone-400">
+                {fdAccounts.length} FD Account{fdAccounts.length !== 1 ? "s" : ""}
+              </div>
+              <button onClick={() => openAddAccount("FIXED_DEPOSIT")}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#4a6da7] text-white hover:bg-[#3a5d97]">
+                <Plus size={13} /> Add FD Account
+              </button>
+            </div>
+
+            {fdAccounts.length === 0 && fdCerts.length === 0 && (
+              <div className="text-center py-12 text-stone-400 text-sm bg-white rounded-2xl border border-stone-100">
+                No Fixed Deposit accounts yet. Run migration 033 in Supabase or add one manually.
+              </div>
+            )}
+
+            {fdAccounts.map(acc => {
+              const entity = ENTITY_LABELS[acc.entity] ?? { label: acc.entity, color: "bg-stone-100 text-stone-500" };
+              const certs = certsByAccount.get(acc.id) ?? [];
+              const isExpanded = expandedFdAccounts.has(acc.id);
+              const activeCerts = certs.filter(c => c.status !== "WITHDRAWN" && c.status !== "REISSUED");
+              const totalPrincipal = activeCerts.reduce((s, c) => s + (c.is_reissued && c.new_principal ? c.new_principal : c.principal), 0);
+
+              return (
+                <div key={acc.id} className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 flex items-center gap-3">
+                    <button onClick={() => toggleFdAccount(acc.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                      {isExpanded ? <ChevronDown size={15} className="text-stone-400 shrink-0" /> : <ChevronRight size={15} className="text-stone-400 shrink-0" />}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${entity.color}`}>{entity.label}</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-bold">FD</span>
+                        </div>
+                        <div className="font-semibold text-stone-800 text-sm mt-0.5">{acc.name}</div>
+                        <div className="text-xs text-stone-400">
+                          {acc.bank_name}
+                          {acc.account_no && <span className="ml-2 font-mono">{acc.account_no}</span>}
+                        </div>
+                      </div>
+                    </button>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-bold text-stone-800">{formatCurrency(totalPrincipal)}</div>
+                      <div className="text-[11px] text-stone-400">{activeCerts.length} active cert{activeCerts.length !== 1 ? "s" : ""}</div>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => openAddCert(acc.id)}
+                        className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                        <Plus size={11} /> Cert
+                      </button>
+                      <button onClick={() => openEditAccount(acc)}
+                        className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border border-stone-200 text-stone-400 hover:bg-stone-50">
+                        <Pencil size={10} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="border-t border-stone-100 px-4 py-4 space-y-3">
+                      {certs.length === 0 ? (
+                        <div className="text-xs text-stone-300 italic text-center py-4">
+                          No certificates yet — click + Cert to add one
+                        </div>
+                      ) : (
+                        certs.map(cert => <CertRow key={cert.id} cert={cert} />)
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Interest summary */}
+            {fdCerts.length > 0 && (
+              <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-4">
+                <div className="text-xs font-bold uppercase tracking-wide text-stone-400 mb-3">
+                  Interest Earned / Reinvested
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {interestSummary.map(({ year, earned, reinvested }) => (
+                    <div key={year} className="text-center p-3 bg-stone-50 rounded-xl">
+                      <div className="text-sm font-bold text-stone-600 mb-2">{year}</div>
+                      <div className="text-[11px] text-stone-400">Interest Earned</div>
+                      <div className={`text-sm font-bold mt-0.5 ${earned > 0 ? "text-green-700" : "text-stone-400"}`}>
+                        {formatCurrency(earned)}
+                      </div>
+                      {reinvested > 0 && (
+                        <>
+                          <div className="text-[11px] text-stone-400 mt-2">Reinvested</div>
+                          <div className="text-sm font-bold text-blue-600 mt-0.5">{formatCurrency(reinvested)}</div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── CASHFLOW TAB ── */}
+        {!loading && tab === "cashflow" && (
+          <div className="space-y-4">
+            <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+              Tick the approved PVs you plan to pay. The net balance shows what remains in the reference account after those payments.
+              LCM uses Public Bank Disbursement account; BAM uses the BAM Maybank account.
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              {[
+                { label: "LCM Cashflow", ref: lcmRef, pvList: lcmPvs, selTotal: selLcm },
+                { label: "BAM Cashflow", ref: bamRef, pvList: bamPvs, selTotal: selBam },
+              ].map(({ label, ref, pvList, selTotal }) => {
+                const net = (ref?.current_balance ?? 0) - selTotal;
+                const allSel = pvList.every(p => selectedPvIds.has(p.id));
+                const noneSel = pvList.every(p => !selectedPvIds.has(p.id));
+                return (
+                  <div key={label} className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-stone-100 flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-stone-800 text-sm">{label}</div>
+                        <div className="text-xs text-stone-400">{ref?.name ?? "No reference account"}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[11px] text-stone-400">Available</div>
+                        <div className="text-base font-bold text-stone-800">{formatCurrency(ref?.current_balance ?? 0)}</div>
+                      </div>
+                    </div>
+                    <div className={`px-4 py-3 border-b border-stone-100 ${net < 0 ? "bg-red-50" : "bg-green-50"}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-semibold text-stone-600">
+                          Net after {pvList.filter(p => selectedPvIds.has(p.id)).length} PVs
+                        </div>
+                        <div className={`text-lg font-bold ${net < 0 ? "text-red-600" : "text-green-700"}`}>
+                          {net < 0 && <TrendingDown size={15} className="inline mr-1" />}
+                          {formatCurrency(net)}
+                        </div>
+                      </div>
+                      {net < 0 && (
+                        <div className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <AlertTriangle size={10} /> Insufficient funds
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-2 py-2">
+                      {pvList.length === 0 ? (
+                        <div className="text-xs text-stone-300 italic text-center py-4">No approved PVs pending</div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between px-3 pb-1">
+                            <span className="text-[11px] text-stone-400 font-bold uppercase tracking-wide">
+                              {pvList.length} PV{pvList.length !== 1 ? "s" : ""} — {formatCurrency(pvList.reduce((s,p)=>s+p.amount,0))}
+                            </span>
+                            <div className="flex gap-2">
+                              {!allSel && <button onClick={() => setSelectedPvIds(prev => { const n=new Set(prev); pvList.forEach(p=>n.add(p.id)); return n; })}
+                                className="text-[11px] text-[#4a6da7] hover:underline font-semibold">All</button>}
+                              {!noneSel && <button onClick={() => setSelectedPvIds(prev => { const n=new Set(prev); pvList.forEach(p=>n.delete(p.id)); return n; })}
+                                className="text-[11px] text-stone-400 hover:underline">Clear</button>}
+                            </div>
+                          </div>
+                          <div className="max-h-60 overflow-y-auto">
+                            {pvList.map(pv => (
+                              <label key={pv.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-stone-50 cursor-pointer">
+                                <input type="checkbox" checked={selectedPvIds.has(pv.id)}
+                                  onChange={e => setSelectedPvIds(prev => { const n=new Set(prev); e.target.checked?n.add(pv.id):n.delete(pv.id); return n; })}
+                                  className="accent-[#4a6da7] w-4 h-4 shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-semibold text-stone-700">{pv.pv_no}</div>
+                                  <div className="text-xs text-stone-400 truncate">{pv.payee_name} · {pv.ministry}</div>
+                                </div>
+                                <div className={`text-sm font-bold shrink-0 ${selectedPvIds.has(pv.id) ? "text-stone-800" : "text-stone-300"}`}>
+                                  {formatCurrency(pv.amount)}
+                                </div>
+                              </label>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
 
-      {/* ── Add / Edit Account Modal ── */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      {/* ══ MODALS ══════════════════════════════════════════════════════════════ */}
+
+      {/* Add / Edit Account */}
+      {showAccModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setShowAccModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h2 className="font-bold text-stone-800">{editingAccount ? "Edit Account" : "Add Bank Account"}</h2>
-              <button onClick={() => setShowModal(false)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+              <h2 className="font-bold text-stone-800">{editingAcc ? "Edit Account" : "Add Bank Account"}</h2>
+              <button onClick={() => setShowAccModal(false)}><X size={18} className="text-stone-400" /></button>
             </div>
 
             {/* Type toggle */}
@@ -674,10 +1024,8 @@ export default function BankingPage() {
               <label className="block text-xs font-semibold text-stone-600 mb-1.5">Account Type</label>
               <div className="flex rounded-xl overflow-hidden border border-stone-200">
                 {(["CURRENT", "FIXED_DEPOSIT"] as const).map(t => (
-                  <button key={t} type="button"
-                    onClick={() => setForm(f => ({ ...f, account_type: t }))}
-                    className={`flex-1 py-2 text-xs font-semibold transition-colors
-                      ${form.account_type === t ? "bg-[#4a6da7] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>
+                  <button key={t} onClick={() => setAccForm(f => ({ ...f, account_type: t }))}
+                    className={`flex-1 py-2 text-xs font-semibold transition-colors ${accForm.account_type === t ? "bg-[#4a6da7] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>
                     {t === "CURRENT" ? "Current Account" : "Fixed Deposit"}
                   </button>
                 ))}
@@ -691,8 +1039,8 @@ export default function BankingPage() {
             ].map(({ label, key, placeholder }) => (
               <div key={key}>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">{label}</label>
-                <input type="text" value={form[key as keyof typeof form] as string}
-                  onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                <input type="text" value={accForm[key as keyof typeof accForm] as string}
+                  onChange={e => setAccForm(f => ({ ...f, [key]: e.target.value }))}
                   placeholder={placeholder}
                   className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
@@ -701,16 +1049,16 @@ export default function BankingPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Bank *</label>
-                <select value={form.bank_name} onChange={e => setForm(f => ({ ...f, bank_name: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
+                <select value={accForm.bank_name} onChange={e => setAccForm(f => ({ ...f, bank_name: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   <option value="">— Select —</option>
                   {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Entity</label>
-                <select value={form.entity} onChange={e => setForm(f => ({ ...f, entity: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
+                <select value={accForm.entity} onChange={e => setAccForm(f => ({ ...f, entity: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   <option value="LCM">LCM</option>
                   <option value="BAM">BAM</option>
                   <option value="LUTHERAN_GARDEN">Lutheran Garden</option>
@@ -720,117 +1068,248 @@ export default function BankingPage() {
               </div>
             </div>
 
-            {/* Cashflow reference toggles */}
-            <div className="space-y-2">
-              {[
-                { key: "is_lcm_cashflow_ref", label: "Use as LCM Cashflow Reference account" },
-                { key: "is_bam_cashflow_ref", label: "Use as BAM Cashflow Reference account" },
-              ].map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={form[key as keyof typeof form] as boolean}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))}
-                    className="accent-[#4a6da7] w-4 h-4" />
-                  <span className="text-xs text-stone-600">{label}</span>
-                </label>
-              ))}
-            </div>
-
-            {/* FD-specific fields */}
-            {form.account_type === "FIXED_DEPOSIT" && (
-              <div className="space-y-3 border-t border-stone-100 pt-3">
-                <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">Fixed Deposit Details</div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-stone-600 mb-1">Principal (RM)</label>
-                    <input type="number" value={form.fd_principal} step="0.01" min="0"
-                      onChange={e => setForm(f => ({ ...f, fd_principal: e.target.value }))}
-                      placeholder="0.00"
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-stone-600 mb-1">Interest Rate (% p.a.)</label>
-                    <input type="number" value={form.fd_interest_rate} step="0.0001" min="0"
-                      onChange={e => setForm(f => ({ ...f, fd_interest_rate: e.target.value }))}
-                      placeholder="e.g. 3.75"
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-stone-600 mb-1">Tenure (months)</label>
-                    <input type="number" value={form.fd_tenure_months} min="1"
-                      onChange={e => setForm(f => ({ ...f, fd_tenure_months: e.target.value }))}
-                      placeholder="e.g. 12"
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-stone-600 mb-1">Remind (days before)</label>
-                    <input type="number" value={form.fd_renewal_reminder_days} min="1"
-                      onChange={e => setForm(f => ({ ...f, fd_renewal_reminder_days: e.target.value }))}
-                      placeholder="30"
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-stone-600 mb-1">Placement Date</label>
-                    <input type="date" value={form.fd_placement_date}
-                      onChange={e => setForm(f => ({ ...f, fd_placement_date: e.target.value }))}
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-stone-600 mb-1">Maturity Date</label>
-                    <input type="date" value={form.fd_maturity_date}
-                      onChange={e => setForm(f => ({ ...f, fd_maturity_date: e.target.value }))}
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-stone-600 mb-1">FD Certificate No.</label>
-                  <input type="text" value={form.fd_cert_no}
-                    onChange={e => setForm(f => ({ ...f, fd_cert_no: e.target.value }))}
-                    placeholder="e.g. FD-2024-00123"
-                    className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-                </div>
+            {accForm.account_type === "CURRENT" && (
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Current Balance (RM)</label>
+                <input type="number" value={accForm.current_balance} step="0.01" min="0"
+                  onChange={e => setAccForm(f => ({ ...f, current_balance: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
             )}
 
-            <button onClick={saveAccount} disabled={saving}
+            {accForm.account_type === "CURRENT" && (
+              <div className="space-y-2">
+                {[
+                  { key: "is_lcm_cashflow_ref", label: "Use as LCM Cashflow Reference account (Public Bank)" },
+                  { key: "is_bam_cashflow_ref", label: "Use as BAM Cashflow Reference account (Maybank BAM)" },
+                ].map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={accForm[key as keyof typeof accForm] as boolean}
+                      onChange={e => setAccForm(f => ({ ...f, [key]: e.target.checked }))}
+                      className="accent-[#4a6da7] w-4 h-4" />
+                    <span className="text-xs text-stone-600">{label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <button onClick={saveAccount} disabled={savingAcc}
               className="w-full py-2.5 rounded-xl bg-[#4a6da7] text-white text-sm font-semibold hover:bg-[#3a5d97] disabled:opacity-50">
-              {saving ? "Saving…" : editingAccount ? "Save Changes" : "Add Account"}
+              {savingAcc ? "Saving…" : editingAcc ? "Save Changes" : "Add Account"}
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Update Balance Modal ── */}
+      {/* Add / Edit Certificate */}
+      {showCertModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setShowCertModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-stone-800">{editingCert ? "Edit Certificate" : "Add FD Certificate"}</h2>
+              <button onClick={() => setShowCertModal(false)}><X size={18} className="text-stone-400" /></button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">FD Account *</label>
+              <select value={certForm.account_id} onChange={e => setCertForm(f => ({ ...f, account_id: e.target.value }))}
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                <option value="">— Select FD Account —</option>
+                {fdAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.bank_name})</option>)}
+              </select>
+            </div>
+
+            <div className="text-xs font-bold text-stone-500 uppercase tracking-wide border-t border-stone-100 pt-3">Original Certificate</div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Issue *</label>
+                <input type="date" value={certForm.date_of_issue}
+                  onChange={e => {
+                    const d = e.target.value;
+                    const md = addMonths(d, parseInt(certForm.term_months) || 12);
+                    setCertForm(f => ({ ...f, date_of_issue: d, maturity_date: f.maturity_date || md }));
+                  }}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Certificate No. *</label>
+                <input type="text" value={certForm.certificate_no}
+                  onChange={e => setCertForm(f => ({ ...f, certificate_no: e.target.value }))}
+                  placeholder="e.g. FD-2024-001"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Principal (RM)</label>
+                <input type="number" value={certForm.principal} step="0.01" min="0"
+                  onChange={e => setCertForm(f => ({ ...f, principal: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Term (months)</label>
+                <select value={certForm.term_months}
+                  onChange={e => {
+                    const t = e.target.value;
+                    const md = addMonths(certForm.date_of_issue, parseInt(t) || 12);
+                    setCertForm(f => ({ ...f, term_months: t, maturity_date: md }));
+                  }}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                  {TERM_OPTIONS.map(t => <option key={t} value={t}>{t} month{t !== 1 ? "s" : ""}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Interest Rate (% p.a.)</label>
+                <input type="number" value={certForm.interest_rate} step="0.0001" min="0"
+                  onChange={e => setCertForm(f => ({ ...f, interest_rate: e.target.value }))}
+                  placeholder="e.g. 3.75"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Maturity Date</label>
+                <input type="date" value={certForm.maturity_date}
+                  onChange={e => setCertForm(f => ({ ...f, maturity_date: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+            </div>
+
+            {/* P+I preview */}
+            {certForm.principal && certForm.interest_rate && certForm.term_months && (
+              <div className="p-3 bg-green-50 rounded-xl text-xs text-green-700">
+                Principal + Interest at maturity:{" "}
+                <strong>{formatCurrency(computePandI(parseFloat(certForm.principal)||0, parseFloat(certForm.interest_rate)||0, parseInt(certForm.term_months)||0))}</strong>
+                {" "} (interest: {formatCurrency(computePandI(parseFloat(certForm.principal)||0, parseFloat(certForm.interest_rate)||0, parseInt(certForm.term_months)||0) - (parseFloat(certForm.principal)||0))})
+              </div>
+            )}
+
+            {/* Reissue toggle */}
+            <label className="flex items-center gap-2 cursor-pointer border-t border-stone-100 pt-3">
+              <input type="checkbox" checked={certForm.is_reissued}
+                onChange={e => setCertForm(f => ({ ...f, is_reissued: e.target.checked }))}
+                className="accent-[#4a6da7] w-4 h-4" />
+              <span className="text-xs font-semibold text-stone-700">This certificate was reissued / rolled over</span>
+            </label>
+
+            {certForm.is_reissued && (
+              <div className="space-y-3">
+                <div className="text-xs font-bold text-blue-600 uppercase tracking-wide">Reissue Details</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Reissue</label>
+                    <input type="date" value={certForm.reissue_date}
+                      onChange={e => setCertForm(f => ({ ...f, reissue_date: e.target.value }))}
+                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-600 mb-1">New Certificate No.</label>
+                    <input type="text" value={certForm.new_certificate_no}
+                      onChange={e => setCertForm(f => ({ ...f, new_certificate_no: e.target.value }))}
+                      placeholder="e.g. FD-2025-001"
+                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-stone-600 mb-1">New Principal (RM)</label>
+                    <input type="number" value={certForm.new_principal} step="0.01" min="0"
+                      onChange={e => setCertForm(f => ({ ...f, new_principal: e.target.value }))}
+                      placeholder="Leave blank if same as original principal"
+                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Status</label>
+                <select value={certForm.status} onChange={e => setCertForm(f => ({ ...f, status: e.target.value as FDCertificate["status"] }))}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                  <option value="ACTIVE">Active</option>
+                  <option value="MATURED">Matured</option>
+                  <option value="WITHDRAWN">Withdrawn</option>
+                  <option value="REISSUED">Reissued</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Notes</label>
+                <input type="text" value={certForm.notes} onChange={e => setCertForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Optional notes"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+            </div>
+
+            <button onClick={saveCert} disabled={savingCert}
+              className="w-full py-2.5 rounded-xl bg-[#4a6da7] text-white text-sm font-semibold hover:bg-[#3a5d97] disabled:opacity-50">
+              {savingCert ? "Saving…" : editingCert ? "Save Changes" : "Add Certificate"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Withdrawal */}
+      {showWithdrawalModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setShowWithdrawalModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-stone-800">Record FD Withdrawal</h2>
+              <button onClick={() => setShowWithdrawalModal(false)}><X size={18} className="text-stone-400" /></button>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Withdrawal Date *</label>
+              <input type="date" value={withdrawalForm.withdrawal_date}
+                onChange={e => setWithdrawalForm(f => ({ ...f, withdrawal_date: e.target.value }))}
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Amount Credited (RM) *</label>
+              <input type="number" value={withdrawalForm.amount_credited} step="0.01" min="0"
+                onChange={e => setWithdrawalForm(f => ({ ...f, amount_credited: e.target.value }))}
+                placeholder="Total amount received (principal + interest)"
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Credit To (Current Account)</label>
+              <select value={withdrawalForm.credit_to_account_id}
+                onChange={e => setWithdrawalForm(f => ({ ...f, credit_to_account_id: e.target.value }))}
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                <option value="">— Select account —</option>
+                {currentAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.bank_name})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Notes</label>
+              <input type="text" value={withdrawalForm.notes}
+                onChange={e => setWithdrawalForm(f => ({ ...f, notes: e.target.value }))}
+                placeholder="Optional"
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+            </div>
+            <button onClick={saveWithdrawal} disabled={savingWithdrawal}
+              className="w-full py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
+              {savingWithdrawal ? "Saving…" : "Record Withdrawal"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Update Balance */}
       {balanceModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setBalanceModal(null)}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h2 className="font-bold text-stone-800">
-                {balanceModal.account_type === "FIXED_DEPOSIT" ? "Update FD Details" : "Update Balance"}
-              </h2>
-              <button onClick={() => setBalanceModal(null)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+              <h2 className="font-bold text-stone-800">Update Balance</h2>
+              <button onClick={() => setBalanceModal(null)}><X size={18} className="text-stone-400" /></button>
             </div>
+            <div className="text-sm font-semibold text-stone-700">{balanceModal.name}</div>
+            <div className="text-xs text-stone-400">{balanceModal.bank_name}</div>
             <div>
-              <div className="text-sm font-semibold text-stone-700">{balanceModal.name}</div>
-              <div className="text-xs text-stone-400">{balanceModal.bank_name}</div>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">
-                {balanceModal.account_type === "FIXED_DEPOSIT" ? "Current Balance / Principal (RM)" : "Current Balance (RM)"}
-              </label>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Current Balance (RM)</label>
               <input autoFocus type="number" value={newBalance} step="0.01" min="0"
                 onChange={e => setNewBalance(e.target.value)}
                 placeholder="Enter current balance from bank statement"
                 className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               <p className="text-[11px] text-stone-400 mt-1">
-                Previous: {formatCurrency(balanceModal.account_type === "FIXED_DEPOSIT" && balanceModal.fd_principal ? balanceModal.fd_principal : balanceModal.current_balance)}
-                {" · "}Last updated {formatDate(balanceModal.last_updated_at)}
+                Previous: {formatCurrency(balanceModal.current_balance)} — Updated {formatDate(balanceModal.last_updated_at)}
               </p>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Note (optional)</label>
-              <input type="text" value={balanceNote} onChange={e => setBalanceNote(e.target.value)}
-                placeholder="e.g. As per e-statement 16 Jun 2026"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
             <button onClick={updateBalance} disabled={savingBalance || !newBalance}
               className="w-full py-2.5 rounded-xl bg-[#4a6da7] text-white text-sm font-semibold hover:bg-[#3a5d97] disabled:opacity-50">
