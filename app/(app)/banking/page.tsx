@@ -5,7 +5,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   Landmark, Plus, X, AlertTriangle, Clock, Pencil, RefreshCw,
   ChevronDown, ChevronRight, TrendingDown, FileText, RotateCcw,
-  ArrowDownCircle, TrendingUp, CheckCircle2, Banknote,
+  ArrowDownCircle, TrendingUp, CheckCircle2, Banknote, Printer,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +56,7 @@ interface FDWithdrawal {
   credit_to_account_id: string | null;
   amount_credited: number;
   notes: string | null;
+  interest_by_year?: Record<string, number>;
   credit_to_account?: { id: string; name: string; bank_name: string } | null;
 }
 
@@ -155,6 +156,17 @@ function blankWithdrawalForm(certId = "") {
   };
 }
 
+function blankRenewForm() {
+  return {
+    renewal_date: new Date().toISOString().slice(0, 10),
+    new_certificate_no: "",
+    new_principal: "",
+    term_months: "12",
+    interest_rate: "",
+    new_maturity_date: "",
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,6 +211,14 @@ export default function BankingPage() {
   const [balanceModal, setBalanceModal] = useState<BankAccount | null>(null);
   const [newBalance, setNewBalance] = useState("");
   const [savingBalance, setSavingBalance] = useState(false);
+
+  // Renew modal
+  const [renewCert, setRenewCert] = useState<FDCertificate | null>(null);
+  const [renewForm, setRenewForm] = useState(blankRenewForm());
+  const [savingRenew, setSavingRenew] = useState(false);
+
+  // FD Report modal
+  const [showReport, setShowReport] = useState(false);
 
   // Cashflow selections
   const [selectedPvIds, setSelectedPvIds] = useState<Set<string>>(new Set());
@@ -284,9 +304,11 @@ export default function BankingPage() {
         const effectivePrincipal = cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal;
         const pAndI = computePandI(effectivePrincipal, cert.interest_rate, cert.term_months);
         const interest = pAndI - effectivePrincipal;
-        // Withdrawal interest
+        // Withdrawal interest — use stored per-year breakdown when available
         for (const w of cert.withdrawals ?? []) {
-          if (new Date(w.withdrawal_date).getFullYear() === year) {
+          if (w.interest_by_year && Object.keys(w.interest_by_year).length > 0) {
+            earned += w.interest_by_year[String(year)] ?? 0;
+          } else if (new Date(w.withdrawal_date).getFullYear() === year) {
             earned += interest;
           }
         }
@@ -486,6 +508,47 @@ export default function BankingPage() {
     finally { setSavingWithdrawal(false); }
   }
 
+  // ── Renew certificate ────────────────────────────────────────────────────
+
+  function openRenew(cert: FDCertificate) {
+    const effectivePrincipal = cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal;
+    const pAndI = computePandI(effectivePrincipal, cert.interest_rate, cert.term_months);
+    const renewDate = new Date().toISOString().slice(0, 10);
+    setRenewCert(cert);
+    setRenewForm({
+      renewal_date: renewDate,
+      new_certificate_no: cert.new_certificate_no ?? cert.certificate_no,
+      new_principal: String(Math.round(pAndI * 100) / 100),
+      term_months: String(cert.term_months),
+      interest_rate: String(cert.interest_rate),
+      new_maturity_date: addMonths(cert.maturity_date, cert.term_months),
+    });
+  }
+
+  async function saveRenewal() {
+    if (!renewCert || !renewForm.renewal_date || !renewForm.new_maturity_date) {
+      showToast("Renewal date and new maturity date are required", false); return;
+    }
+    setSavingRenew(true);
+    try {
+      await supabase.from("fd_certificates").update({
+        is_reissued: true,
+        reissue_date: renewForm.renewal_date,
+        new_certificate_no: renewForm.new_certificate_no.trim() || null,
+        new_principal: parseFloat(renewForm.new_principal) || null,
+        term_months: parseInt(renewForm.term_months) || renewCert.term_months,
+        interest_rate: parseFloat(renewForm.interest_rate) || renewCert.interest_rate,
+        maturity_date: renewForm.new_maturity_date,
+        status: "ACTIVE",
+        updated_at: new Date().toISOString(),
+      }).eq("id", renewCert.id);
+      showToast("Certificate renewed — status set to Active");
+      setRenewCert(null);
+      await load();
+    } catch { showToast("Failed to save renewal", false); }
+    finally { setSavingRenew(false); }
+  }
+
   // ── UI helpers ────────────────────────────────────────────────────────────
 
   function togglePvAccount(id: string) {
@@ -541,13 +604,19 @@ export default function BankingPage() {
                 </div>
               )}
             </div>
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+              {cert.status === "MATURED" && (
+                <button onClick={() => openRenew(cert)}
+                  className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-900 border border-green-200 bg-green-50 rounded-lg px-2 py-1">
+                  <RefreshCw size={10} /> Renew
+                </button>
+              )}
               <button onClick={() => openEditCert(cert)}
                 className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600 border border-stone-200 rounded-lg px-2 py-1">
                 <Pencil size={10} /> Edit
               </button>
               {cert.status !== "WITHDRAWN" && (
-                <button onClick={() => { setShowW(true); openAddWithdrawal(cert.id); }}
+                <button onClick={() => { openAddWithdrawal(cert.id); }}
                   className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 border border-red-100 rounded-lg px-2 py-1">
                   <ArrowDownCircle size={10} /> Withdraw
                 </button>
@@ -821,15 +890,21 @@ export default function BankingPage() {
               </div>
             )}
 
-            {/* FD Accounts */}
-            <div className="flex items-center justify-between">
+            {/* FD Accounts header */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-xs font-bold uppercase tracking-wide text-stone-400">
                 {fdAccounts.length} FD Account{fdAccounts.length !== 1 ? "s" : ""}
               </div>
-              <button onClick={() => openAddAccount("FIXED_DEPOSIT")}
-                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#4a6da7] text-white hover:bg-[#3a5d97]">
-                <Plus size={13} /> Add FD Account
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setShowReport(true)}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50">
+                  <Printer size={13} /> FD Report
+                </button>
+                <button onClick={() => openAddAccount("FIXED_DEPOSIT")}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#4a6da7] text-white hover:bg-[#3a5d97]">
+                  <Plus size={13} /> Add FD Account
+                </button>
+              </div>
             </div>
 
             {fdAccounts.length === 0 && fdCerts.length === 0 && (
@@ -1315,6 +1390,283 @@ export default function BankingPage() {
               className="w-full py-2.5 rounded-xl bg-[#4a6da7] text-white text-sm font-semibold hover:bg-[#3a5d97] disabled:opacity-50">
               {savingBalance ? "Saving…" : "Save Balance"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Renew Certificate Modal ── */}
+      {renewCert && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setRenewCert(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-stone-800 flex items-center gap-2"><RefreshCw size={16} className="text-green-600" /> Renew FD Certificate</h2>
+              <button onClick={() => setRenewCert(null)}><X size={18} className="text-stone-400" /></button>
+            </div>
+
+            {/* Current cert summary */}
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs">
+              <div className="font-bold text-amber-800">
+                {renewCert.bank_account?.bank_name} — Cert {renewCert.is_reissued && renewCert.new_certificate_no ? renewCert.new_certificate_no : renewCert.certificate_no}
+              </div>
+              <div className="text-amber-700 mt-0.5">
+                Matured {formatDate(renewCert.maturity_date)} · Principal {formatCurrency(renewCert.is_reissued && renewCert.new_principal ? renewCert.new_principal : renewCert.principal)} · {renewCert.interest_rate}% for {renewCert.term_months} months
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Renewal / Visit Date *</label>
+                <input type="date" value={renewForm.renewal_date}
+                  onChange={e => setRenewForm(f => ({ ...f, renewal_date: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-stone-600 mb-1">New Certificate No. (if changed)</label>
+                <input type="text" value={renewForm.new_certificate_no}
+                  onChange={e => setRenewForm(f => ({ ...f, new_certificate_no: e.target.value }))}
+                  placeholder="Leave blank if same cert number"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">New Principal (RM)</label>
+                <input type="number" value={renewForm.new_principal} step="0.01" min="0"
+                  onChange={e => setRenewForm(f => ({ ...f, new_principal: e.target.value }))}
+                  placeholder="Principal being renewed"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                <p className="text-[10px] text-stone-400 mt-0.5">Pre-filled with previous P+I</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Term (months)</label>
+                <select value={renewForm.term_months}
+                  onChange={e => {
+                    const t = e.target.value;
+                    const newMat = addMonths(renewCert.maturity_date, parseInt(t) || 12);
+                    setRenewForm(f => ({ ...f, term_months: t, new_maturity_date: newMat }));
+                  }}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                  {TERM_OPTIONS.map(t => <option key={t} value={t}>{t} month{t !== 1 ? "s" : ""}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">New Rate (% p.a.)</label>
+                <input type="number" value={renewForm.interest_rate} step="0.0001" min="0"
+                  onChange={e => setRenewForm(f => ({ ...f, interest_rate: e.target.value }))}
+                  placeholder="e.g. 3.75"
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">New Maturity Date *</label>
+                <input type="date" value={renewForm.new_maturity_date}
+                  onChange={e => setRenewForm(f => ({ ...f, new_maturity_date: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                <p className="text-[10px] text-stone-400 mt-0.5">Auto-calculated from old maturity + term</p>
+              </div>
+            </div>
+
+            {renewForm.new_principal && renewForm.interest_rate && renewForm.term_months && (
+              <div className="p-3 bg-green-50 rounded-xl text-xs text-green-700">
+                New P+I at maturity:{" "}
+                <strong>{formatCurrency(computePandI(parseFloat(renewForm.new_principal)||0, parseFloat(renewForm.interest_rate)||0, parseInt(renewForm.term_months)||0))}</strong>
+              </div>
+            )}
+
+            <button onClick={saveRenewal} disabled={savingRenew}
+              className="w-full py-2.5 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+              {savingRenew ? "Saving…" : "Confirm Renewal"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── FD Report Modal ── */}
+      {showReport && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200 print:hidden">
+            <h2 className="font-bold text-stone-800">Fixed Deposit Report — Lutheran Church in Malaysia</h2>
+            <div className="flex gap-3">
+              <button onClick={() => window.print()}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97]">
+                <Printer size={14} /> Print / Export PDF
+              </button>
+              <button onClick={() => setShowReport(false)} className="text-stone-400 hover:text-stone-600"><X size={20} /></button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6 py-5 text-[13px]" id="fd-report">
+            <div className="max-w-5xl mx-auto space-y-8">
+
+              {/* Report header */}
+              <div className="text-center border-b-2 border-stone-800 pb-4">
+                <div className="text-lg font-bold text-stone-800 uppercase tracking-wide">Lutheran Church in Malaysia</div>
+                <div className="text-sm font-semibold text-stone-600 mt-1">Fixed Deposit Report</div>
+                <div className="text-xs text-stone-400 mt-0.5">Generated {new Date().toLocaleDateString("en-MY", { day: "2-digit", month: "long", year: "numeric" })}</div>
+              </div>
+
+              {/* Summary */}
+              <div className="grid grid-cols-4 gap-4 text-center">
+                {[
+                  { label: "Total Active Certs", value: String(fdCerts.filter(c => c.status === "ACTIVE").length) },
+                  { label: "Total Matured", value: String(fdCerts.filter(c => c.status === "MATURED").length) },
+                  { label: "Total Withdrawn", value: String(fdCerts.filter(c => c.status === "WITHDRAWN").length) },
+                  { label: "Total Principal (Active)", value: formatCurrency(fdCerts.filter(c => c.status === "ACTIVE").reduce((s,c) => s + (c.is_reissued && c.new_principal ? c.new_principal : c.principal), 0)) },
+                ].map(s => (
+                  <div key={s.label} className="border border-stone-200 rounded-lg p-3">
+                    <div className="text-[11px] text-stone-400 uppercase tracking-wide">{s.label}</div>
+                    <div className="text-base font-bold text-stone-800 mt-0.5">{s.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Per-bank tables */}
+              {fdAccounts.map(acc => {
+                const certs = certsByAccount.get(acc.id) ?? [];
+                if (certs.length === 0) return null;
+                const entity = ENTITY_LABELS[acc.entity];
+                return (
+                  <div key={acc.id}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${entity?.color ?? "bg-stone-100 text-stone-500"}`}>{entity?.label}</span>
+                      <span className="font-bold text-stone-800">{acc.name}</span>
+                      <span className="text-stone-400 text-xs">— {acc.bank_name}{acc.account_no ? ` (${acc.account_no})` : ""}</span>
+                    </div>
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-stone-100">
+                          <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">No.</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Cert No.</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Date of Issue</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Reissue Date</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-right font-semibold">Principal (RM)</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-center font-semibold">Term</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-center font-semibold">Rate</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Maturity</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-right font-semibold">P+I (RM)</th>
+                          <th className="border border-stone-200 px-2 py-1.5 text-center font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {certs.map((cert, i) => {
+                          const effectivePrincipal = cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal;
+                          const activeCertNo = cert.is_reissued && cert.new_certificate_no ? cert.new_certificate_no : cert.certificate_no;
+                          const pAndI = computePandI(effectivePrincipal, cert.interest_rate, cert.term_months);
+                          const days = daysDiff(cert.maturity_date);
+                          const statusColor = cert.status === "ACTIVE" ? (days <= 7 ? "text-red-600 font-bold" : "text-green-600") :
+                            cert.status === "MATURED" ? "text-amber-600" : "text-stone-400";
+                          return (
+                            <tr key={cert.id} className={i % 2 === 0 ? "bg-white" : "bg-stone-50"}>
+                              <td className="border border-stone-200 px-2 py-1.5 text-stone-500">{i + 1}</td>
+                              <td className="border border-stone-200 px-2 py-1.5 font-mono font-semibold">
+                                {activeCertNo}
+                                {cert.is_reissued && cert.new_certificate_no && (
+                                  <div className="text-[10px] text-stone-400 font-sans">orig: {cert.certificate_no}</div>
+                                )}
+                              </td>
+                              <td className="border border-stone-200 px-2 py-1.5">{formatDate(cert.date_of_issue)}</td>
+                              <td className="border border-stone-200 px-2 py-1.5 text-blue-600">{cert.reissue_date ? formatDate(cert.reissue_date) : "—"}</td>
+                              <td className="border border-stone-200 px-2 py-1.5 text-right font-semibold">{formatCurrency(effectivePrincipal)}</td>
+                              <td className="border border-stone-200 px-2 py-1.5 text-center">{cert.term_months}m</td>
+                              <td className="border border-stone-200 px-2 py-1.5 text-center">{cert.interest_rate}%</td>
+                              <td className="border border-stone-200 px-2 py-1.5">{formatDate(cert.maturity_date)}</td>
+                              <td className="border border-stone-200 px-2 py-1.5 text-right font-semibold text-green-700">{formatCurrency(pAndI)}</td>
+                              <td className={`border border-stone-200 px-2 py-1.5 text-center text-[10px] font-bold ${statusColor}`}>{cert.status}</td>
+                            </tr>
+                          );
+                        })}
+                        {/* Bank subtotal */}
+                        <tr className="bg-stone-100 font-bold">
+                          <td colSpan={4} className="border border-stone-200 px-2 py-1.5 text-right text-stone-600">Subtotal</td>
+                          <td className="border border-stone-200 px-2 py-1.5 text-right">
+                            {formatCurrency(certs.filter(c => c.status !== "WITHDRAWN").reduce((s,c) => s + (c.is_reissued && c.new_principal ? c.new_principal : c.principal), 0))}
+                          </td>
+                          <td colSpan={3} className="border border-stone-200 px-2 py-1.5"></td>
+                          <td className="border border-stone-200 px-2 py-1.5 text-right text-green-700">
+                            {formatCurrency(certs.filter(c => c.status !== "WITHDRAWN").reduce((s,c) => s + computePandI(c.is_reissued && c.new_principal ? c.new_principal : c.principal, c.interest_rate, c.term_months), 0))}
+                          </td>
+                          <td className="border border-stone-200 px-2 py-1.5"></td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    {/* Withdrawals for this bank */}
+                    {certs.some(c => (c.withdrawals ?? []).length > 0) && (
+                      <div className="mt-3">
+                        <div className="text-xs font-bold text-red-700 mb-1">Withdrawals</div>
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-red-50">
+                              <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Cert No.</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Issue/Reissue</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-center font-semibold">Term</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-right font-semibold">Principal</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-center font-semibold">Rate</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Maturity</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-right font-semibold">P+I</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Withdrawal Date</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-left font-semibold">Credit To</th>
+                              <th className="border border-stone-200 px-2 py-1.5 text-right font-semibold">Amount Credited</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {certs.flatMap(cert =>
+                              (cert.withdrawals ?? []).map((w, wi) => {
+                                const effectivePrincipal = cert.is_reissued && cert.new_principal ? cert.new_principal : cert.principal;
+                                const pAndI = computePandI(effectivePrincipal, cert.interest_rate, cert.term_months);
+                                return (
+                                  <tr key={w.id} className={wi % 2 === 0 ? "bg-white" : "bg-red-50/30"}>
+                                    <td className="border border-stone-200 px-2 py-1.5 font-mono font-semibold">{cert.certificate_no}</td>
+                                    <td className="border border-stone-200 px-2 py-1.5">{formatDate(cert.reissue_date ?? cert.date_of_issue)}</td>
+                                    <td className="border border-stone-200 px-2 py-1.5 text-center">{cert.term_months}m</td>
+                                    <td className="border border-stone-200 px-2 py-1.5 text-right">{formatCurrency(effectivePrincipal)}</td>
+                                    <td className="border border-stone-200 px-2 py-1.5 text-center">{cert.interest_rate}%</td>
+                                    <td className="border border-stone-200 px-2 py-1.5">{formatDate(cert.maturity_date)}</td>
+                                    <td className="border border-stone-200 px-2 py-1.5 text-right text-green-700">{formatCurrency(pAndI)}</td>
+                                    <td className="border border-stone-200 px-2 py-1.5">{formatDate(w.withdrawal_date)}</td>
+                                    <td className="border border-stone-200 px-2 py-1.5">{w.credit_to_account ? `${w.credit_to_account.bank_name}` : w.notes ?? "—"}</td>
+                                    <td className="border border-stone-200 px-2 py-1.5 text-right font-semibold">{formatCurrency(w.amount_credited)}</td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Interest earned summary */}
+              <div>
+                <div className="font-bold text-stone-800 mb-3 border-b border-stone-200 pb-2">Interest Earned / Reinvested Summary</div>
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-stone-100">
+                      <th className="border border-stone-200 px-3 py-2 text-left font-semibold">Year</th>
+                      <th className="border border-stone-200 px-3 py-2 text-right font-semibold">Interest Earned (RM)</th>
+                      <th className="border border-stone-200 px-3 py-2 text-right font-semibold">Principal Reinvested (RM)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {interestSummary.map(({ year, earned, reinvested }) => (
+                      <tr key={year} className="bg-white">
+                        <td className="border border-stone-200 px-3 py-2 font-semibold">{year}</td>
+                        <td className="border border-stone-200 px-3 py-2 text-right text-green-700 font-semibold">{formatCurrency(earned)}</td>
+                        <td className="border border-stone-200 px-3 py-2 text-right text-blue-600 font-semibold">{formatCurrency(reinvested)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-stone-100 font-bold">
+                      <td className="border border-stone-200 px-3 py-2">Total</td>
+                      <td className="border border-stone-200 px-3 py-2 text-right text-green-700">{formatCurrency(interestSummary.reduce((s,r)=>s+r.earned,0))}</td>
+                      <td className="border border-stone-200 px-3 py-2 text-right text-blue-600">{formatCurrency(interestSummary.reduce((s,r)=>s+r.reinvested,0))}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="text-center text-xs text-stone-400 border-t border-stone-200 pt-4">
+                LCM Finance System · Printed {new Date().toLocaleString("en-MY")}
+              </div>
+            </div>
           </div>
         </div>
       )}
