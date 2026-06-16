@@ -711,6 +711,9 @@ export default function PVDetailPage() {
   const userHasActed = !!(user?.isSignatory && approvals.some(
     a => a.role === user.role && ["APPROVED", "REJECTED"].includes(a.action)
   ));
+  // Use computed badge status to determine GM action eligibility (handles PENDING with Finance approval)
+  const badgeStatus = computedBadgeStatus(pv);
+  const gmCanAct = !!(user?.isGeneralManager && ["REVIEWED"].includes(badgeStatus) && !gmApproval);
   const headApproval = approvals.find(a =>
     ["MINISTRY_HEAD", "DEPT_HEAD"].includes(a.role) && a.action === "APPROVED"
   ) ?? null;
@@ -989,8 +992,43 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── GM Verification Panel ────────────────────────────────── */}
+      {gmCanAct && (
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
+          <div className="bg-green-50 border border-green-300 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck size={16} className="text-green-700" />
+              <span className="text-sm font-semibold text-green-800">GM Verification</span>
+              <span className="ml-1 text-xs text-stone-500">Finance has reviewed — your sign-off is required before signatories</span>
+            </div>
+            <div className="flex gap-2 flex-wrap items-center">
+              <button
+                onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(!!savedSig); setIsErasing(false); setShowSignModal(true); }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 transition-colors">
+                <CheckCircle size={14} /> Verify & Sign
+              </button>
+              <button
+                onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
+                <XCircle size={14} /> Reject
+              </button>
+              <button
+                onClick={() => { setCommentText(""); setEditingComment(false); setShowCommentModal(true); }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-green-300 text-green-700 text-sm rounded-lg font-medium hover:bg-green-50 transition-colors">
+                <MessageSquare size={14} /> Add Comment
+              </button>
+            </div>
+            {actionToast.msg && (
+              <div className={`mt-2 text-sm font-medium ${actionToast.ok ? "text-green-700" : "text-red-600"}`}>
+                {actionToast.msg}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Signatory Action Panel ────────────────────────────────── */}
-      {user?.isSignatory && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
+      {user?.isSignatory && !user?.isGeneralManager && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -2155,8 +2193,8 @@ export default function PVDetailPage() {
                     approval={gmApproval}
                     pending={!gmApproval}
                     savedSigFallback={gmApproval?.email ? approverSigs[gmApproval.email] : undefined}
-                    onClickSpace={user?.isGeneralManager && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status)
-                      ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setShowSignModal(true); }
+                    onClickSpace={gmCanAct
+                      ? () => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(!!savedSig); setIsErasing(false); setShowSignModal(true); }
                       : undefined}
                   />
                 </div>
