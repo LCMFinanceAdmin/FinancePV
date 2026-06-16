@@ -682,6 +682,7 @@ export default function GMClaimsPage() {
         ) : viewMode === "table" ? (
 
           /* ── TABLE VIEW ── */
+          <>
           <div className="bg-white rounded-2xl border-2 border-gray-400 shadow-sm overflow-hidden print:shadow-none">
             {/* Print header */}
             <div className="hidden print:block text-center py-4 border-b border-gray-400">
@@ -886,6 +887,7 @@ export default function GMClaimsPage() {
               </div>
             );
           })()}
+          </>
 
         ) : (
 
