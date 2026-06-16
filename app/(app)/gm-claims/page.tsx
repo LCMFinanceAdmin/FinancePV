@@ -785,14 +785,20 @@ export default function GMClaimsPage() {
 
                         {/* Status */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
-                          <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
-                            {meta.icon} {meta.label}
-                          </span>
-                          {claim.pv && stage === "PV_PREPARED" && isGM && (
+                          {claim.pv && stage === "PV_PREPARED" && isGM ? (
                             <Link href={`/my-pvs/${claim.pv.id}`}
-                              className="flex items-center gap-1.5 mt-1.5 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 whitespace-nowrap w-fit">
-                              <CheckCircle size={10} /> Verify PV
+                              className="inline-flex flex-col items-start gap-1 group w-fit">
+                              <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
+                                {meta.icon} {meta.label}
+                              </span>
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-green-600 text-white group-hover:bg-green-700 whitespace-nowrap transition-colors">
+                                <CheckCircle size={10} /> Tap to Verify →
+                              </span>
                             </Link>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
+                              {meta.icon} {meta.label}
+                            </span>
                           )}
                           {claim.pv && stage !== "PV_PREPARED" && (
                             <Link href={`/my-pvs/${claim.pv.id}`}
