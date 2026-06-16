@@ -6,6 +6,7 @@ import {
   Landmark, Plus, X, AlertTriangle, Clock, Pencil, RefreshCw,
   ChevronDown, ChevronRight, TrendingDown, FileText, RotateCcw,
   ArrowDownCircle, TrendingUp, CheckCircle2, Banknote, Printer,
+  Upload, Download, Trash2, FolderOpen,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +99,20 @@ const STATUS_STYLE: Record<string, string> = {
   WITHDRAWN: "bg-stone-100 text-stone-500",
   REISSUED:  "bg-blue-100 text-blue-600",
 };
+
+interface BankStatement {
+  id: string;
+  account_id: string;
+  statement_month: string; // "2025-01-01"
+  file_name: string;
+  file_path: string;
+  file_size: number | null;
+  uploaded_by: string | null;
+  uploaded_at: string;
+  notes: string | null;
+}
+
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -221,6 +236,15 @@ export default function BankingPage() {
   const [showReport, setShowReport] = useState(false);
   const [bankReport, setBankReport] = useState<BankAccount | null>(null);
 
+  // Bank Statements
+  const [statements, setStatements] = useState<BankStatement[]>([]);
+  const [expandedStmtAccounts, setExpandedStmtAccounts] = useState<Set<string>>(new Set());
+  const [stmtUploadAcc, setStmtUploadAcc] = useState<BankAccount | null>(null);
+  const [stmtMonth, setStmtMonth] = useState("");
+  const [stmtFile, setStmtFile] = useState<File | null>(null);
+  const [stmtNotes, setStmtNotes] = useState("");
+  const [uploadingStmt, setUploadingStmt] = useState(false);
+
   // Cashflow selections
   const [selectedPvIds, setSelectedPvIds] = useState<Set<string>>(new Set());
 
@@ -235,7 +259,7 @@ export default function BankingPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) setCurrentUserEmail(user.email ?? "");
 
-      const [accRes, certRes, pvRes] = await Promise.all([
+      const [accRes, certRes, pvRes, stmtRes] = await Promise.all([
         supabase.from("bank_accounts").select("*").eq("is_active", true).order("sort_order"),
         supabase.from("fd_certificates").select(`
           *,
@@ -246,6 +270,7 @@ export default function BankingPage() {
           .select("id,pv_no,payee_name,amount,ministry,pv_type,purpose")
           .eq("status", "APPROVED")
           .order("submitted_at", { ascending: false }),
+        supabase.from("bank_statements").select("*").order("statement_month", { ascending: false }),
       ]);
 
       const allAccounts = (accRes.data ?? []) as BankAccount[];
@@ -255,6 +280,7 @@ export default function BankingPage() {
       const pvList = (pvRes.data ?? []) as ApprovedPV[];
       setPvs(pvList);
       setSelectedPvIds(new Set(pvList.map(p => p.id)));
+      setStatements((stmtRes.data ?? []) as BankStatement[]);
     } finally {
       setLoading(false);
     }
@@ -395,6 +421,71 @@ export default function BankingPage() {
       await load();
     } catch { showToast("Failed", false); }
     finally { setSavingBalance(false); }
+  }
+
+  // ── Bank Statements ───────────────────────────────────────────────────────
+
+  function toggleStmtAccount(id: string) {
+    setExpandedStmtAccounts(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function uploadStatement() {
+    if (!stmtUploadAcc || !stmtMonth || !stmtFile) return;
+    setUploadingStmt(true);
+    try {
+      const monthDate = stmtMonth + "-01";
+      const ext = stmtFile.name.split(".").pop();
+      const filePath = `${stmtUploadAcc.id}/${stmtMonth}.${ext}`;
+
+      // Upload to storage
+      const { error: upErr } = await supabase.storage
+        .from("bank-statements")
+        .upload(filePath, stmtFile, { upsert: true });
+      if (upErr) throw upErr;
+
+      // Upsert metadata record
+      const { error: dbErr } = await supabase.from("bank_statements").upsert({
+        account_id: stmtUploadAcc.id,
+        statement_month: monthDate,
+        file_name: stmtFile.name,
+        file_path: filePath,
+        file_size: stmtFile.size,
+        uploaded_by: currentUserEmail,
+        notes: stmtNotes || null,
+      }, { onConflict: "account_id,statement_month" });
+      if (dbErr) throw dbErr;
+
+      showToast("Statement uploaded");
+      setStmtUploadAcc(null); setStmtMonth(""); setStmtFile(null); setStmtNotes("");
+      await load();
+    } catch (e: any) {
+      showToast(e.message ?? "Upload failed", false);
+    } finally {
+      setUploadingStmt(false);
+    }
+  }
+
+  async function downloadStatement(stmt: BankStatement) {
+    const { data, error } = await supabase.storage
+      .from("bank-statements")
+      .createSignedUrl(stmt.file_path, 60);
+    if (error || !data) { showToast("Could not get download link", false); return; }
+    const a = document.createElement("a");
+    a.href = data.signedUrl;
+    a.download = stmt.file_name;
+    a.click();
+  }
+
+  async function deleteStatement(stmt: BankStatement) {
+    if (!confirm(`Delete statement for ${new Date(stmt.statement_month).toLocaleDateString("en-MY", { month: "long", year: "numeric" })}?`)) return;
+    await supabase.storage.from("bank-statements").remove([stmt.file_path]);
+    await supabase.from("bank_statements").delete().eq("id", stmt.id);
+    showToast("Statement deleted");
+    await load();
   }
 
   // ── Certificate CRUD ──────────────────────────────────────────────────────
@@ -808,7 +899,7 @@ export default function BankingPage() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex gap-2 mt-3 flex-wrap">
                       <button onClick={() => { setBalanceModal(acc); setNewBalance(String(acc.current_balance)); }}
                         className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97]">
                         <RefreshCw size={11} /> Update Balance
@@ -817,9 +908,15 @@ export default function BankingPage() {
                         className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50">
                         <Pencil size={11} /> Edit
                       </button>
+                      <button onClick={() => toggleStmtAccount(acc.id)}
+                        className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border ${expandedStmtAccounts.has(acc.id) ? "border-indigo-300 text-indigo-700 bg-indigo-50" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                        <FolderOpen size={11} />
+                        Statements ({statements.filter(s => s.account_id === acc.id).length})
+                        {expandedStmtAccounts.has(acc.id) ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                      </button>
                       {relPvs.length > 0 && (
                         <button onClick={() => togglePvAccount(acc.id)}
-                          className="ml-auto flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50">
+                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50">
                           <FileText size={11} />
                           {relPvs.length} Pending PV{relPvs.length !== 1 ? "s" : ""} ({formatCurrency(pvTotal)})
                           {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -827,6 +924,65 @@ export default function BankingPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Bank Statements Panel */}
+                  {expandedStmtAccounts.has(acc.id) && (() => {
+                    const accStmts = statements.filter(s => s.account_id === acc.id);
+                    const byYear: Record<string, BankStatement[]> = {};
+                    accStmts.forEach(s => {
+                      const yr = s.statement_month.slice(0, 4);
+                      (byYear[yr] ??= []).push(s);
+                    });
+                    return (
+                      <div className="border-t border-indigo-100 bg-indigo-50/40">
+                        <div className="px-4 py-2.5 flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-indigo-700">
+                            Monthly Statements
+                          </span>
+                          <button onClick={() => { setStmtUploadAcc(acc); setStmtMonth(""); setStmtFile(null); setStmtNotes(""); }}
+                            className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                            <Upload size={10} /> Upload
+                          </button>
+                        </div>
+                        {accStmts.length === 0 ? (
+                          <div className="px-4 pb-4 text-xs text-stone-400 italic">No statements uploaded yet.</div>
+                        ) : (
+                          <div className="px-4 pb-3 space-y-3">
+                            {Object.keys(byYear).sort((a, b) => b.localeCompare(a)).map(yr => (
+                              <div key={yr}>
+                                <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1.5">{yr}</div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                  {byYear[yr].sort((a, b) => b.statement_month.localeCompare(a.statement_month)).map(stmt => {
+                                    const mo = parseInt(stmt.statement_month.slice(5, 7)) - 1;
+                                    const kb = stmt.file_size ? Math.round(stmt.file_size / 1024) : null;
+                                    return (
+                                      <div key={stmt.id} className="bg-white border border-stone-200 rounded-xl p-2.5 flex flex-col gap-1.5 group">
+                                        <div className="flex items-center gap-1.5">
+                                          <FileText size={13} className="text-indigo-500 shrink-0" />
+                                          <span className="text-xs font-semibold text-stone-700 truncate">{MONTH_NAMES[mo]} {yr}</span>
+                                        </div>
+                                        {kb && <div className="text-[10px] text-stone-400">{kb} KB</div>}
+                                        <div className="flex gap-1.5 mt-0.5">
+                                          <button onClick={() => downloadStatement(stmt)}
+                                            className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100">
+                                            <Download size={9} /> Download
+                                          </button>
+                                          <button onClick={() => deleteStatement(stmt)}
+                                            className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100">
+                                            <Trash2 size={9} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Approved PVs */}
                   {isExpanded && relPvs.length > 0 && (
@@ -1395,6 +1551,61 @@ export default function BankingPage() {
             <button onClick={updateBalance} disabled={savingBalance || !newBalance}
               className="w-full py-2.5 rounded-xl bg-[#4a6da7] text-white text-sm font-semibold hover:bg-[#3a5d97] disabled:opacity-50">
               {savingBalance ? "Saving…" : "Save Balance"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Upload Statement Modal ── */}
+      {stmtUploadAcc && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setStmtUploadAcc(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-stone-800 flex items-center gap-2"><Upload size={15} className="text-indigo-600" /> Upload Statement</h2>
+              <button onClick={() => setStmtUploadAcc(null)}><X size={18} className="text-stone-400" /></button>
+            </div>
+
+            <div className="text-xs text-stone-500 bg-stone-50 rounded-xl px-3 py-2">
+              <span className="font-semibold text-stone-700">{stmtUploadAcc.name}</span><br />
+              {stmtUploadAcc.bank_name}{stmtUploadAcc.account_no ? ` · ${stmtUploadAcc.account_no}` : ""}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Statement Month *</label>
+              <input type="month" value={stmtMonth} onChange={e => setStmtMonth(e.target.value)}
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">PDF File *</label>
+              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-stone-200 rounded-xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors">
+                {stmtFile ? (
+                  <div className="text-center px-3">
+                    <FileText size={20} className="text-indigo-500 mx-auto mb-1" />
+                    <div className="text-xs font-semibold text-stone-700 truncate max-w-[200px]">{stmtFile.name}</div>
+                    <div className="text-[10px] text-stone-400">{Math.round(stmtFile.size / 1024)} KB</div>
+                  </div>
+                ) : (
+                  <div className="text-center text-stone-400">
+                    <Upload size={18} className="mx-auto mb-1" />
+                    <div className="text-xs">Click to select PDF</div>
+                  </div>
+                )}
+                <input type="file" accept=".pdf,.PDF" className="hidden"
+                  onChange={e => setStmtFile(e.target.files?.[0] ?? null)} />
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Notes (optional)</label>
+              <input type="text" value={stmtNotes} onChange={e => setStmtNotes(e.target.value)}
+                placeholder="e.g. Closing balance RM 50,000"
+                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            </div>
+
+            <button onClick={uploadStatement} disabled={uploadingStmt || !stmtMonth || !stmtFile}
+              className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+              {uploadingStmt ? "Uploading…" : "Upload Statement"}
             </button>
           </div>
         </div>
