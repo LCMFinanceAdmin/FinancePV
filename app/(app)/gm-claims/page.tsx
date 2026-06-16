@@ -158,43 +158,76 @@ function ProgressBar({ stage }: { stage: ClaimStage }) {
 
 
 // ---------------------------------------------------------------------------
-// Inline editable cell
+// Inline editable cells
 // ---------------------------------------------------------------------------
 
-function EditCell({ value, type = "text", placeholder, onSave, canEdit, className }: {
-  value: string; type?: "text" | "number" | "textarea"; placeholder?: string;
-  onSave: (v: string) => void; canEdit: boolean; className?: string;
+function EditCell({ value, displayValue, type = "text", placeholder, onSave, canEdit, className }: {
+  value: string; displayValue?: string; type?: "text" | "number" | "textarea" | "date";
+  placeholder?: string; onSave: (v: string) => void; canEdit: boolean; className?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
+  const shown = displayValue ?? value;
+  const editBase = type === "date" ? value.split("T")[0] : value;
+
   if (!canEdit || !editing) {
     return (
       <span
-        className={`block ${canEdit ? "cursor-text hover:bg-blue-50/60 rounded px-0.5 -mx-0.5 transition-colors" : ""} ${className ?? ""}`}
-        onClick={() => { if (canEdit) { setDraft(value); setEditing(true); } }}
+        onClick={() => { if (canEdit) { setDraft(editBase); setEditing(true); } }}
+        className={`block ${canEdit
+          ? "cursor-pointer border-b border-dashed border-[#4a6da7]/40 hover:border-[#4a6da7] hover:bg-blue-50/50 transition-colors"
+          : ""} ${className ?? ""}`}
+        title={canEdit ? "Click to edit" : undefined}
       >
-        {value || <span className="text-stone-300">—</span>}
+        {shown || <span className="text-stone-300 italic text-[10px]">—</span>}
       </span>
     );
   }
 
-  const save = () => { setEditing(false); if (draft !== value) onSave(draft); };
-  const base = "border border-[#4a6da7] rounded px-1.5 py-0.5 text-xs w-full focus:outline-none bg-white";
+  const save = () => { setEditing(false); if (draft !== editBase) onSave(draft); };
+  const base = "border-2 border-[#4a6da7] rounded px-1.5 py-0.5 text-xs w-full focus:outline-none bg-white shadow-sm";
   const kd = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") { setEditing(false); setDraft(value); }
+    if (e.key === "Escape") { setEditing(false); setDraft(editBase); }
     if (e.key === "Enter" && type !== "textarea") save();
   };
 
   if (type === "textarea") return (
     <textarea autoFocus rows={2} value={draft} placeholder={placeholder}
-      onChange={e => setDraft(e.target.value)} onBlur={save} onKeyDown={kd}
-      className={base} />
+      onChange={e => setDraft(e.target.value)} onBlur={save} onKeyDown={kd} className={base} />
   );
   return (
-    <input autoFocus type={type} value={draft} placeholder={placeholder}
-      onChange={e => setDraft(e.target.value)} onBlur={save} onKeyDown={kd}
-      className={base} />
+    <input autoFocus type={type === "date" ? "date" : type} value={draft} placeholder={placeholder}
+      onChange={e => setDraft(e.target.value)} onBlur={save} onKeyDown={kd} className={base} />
+  );
+}
+
+function SelectCell({ value, options, onSave, canEdit, className }: {
+  value: string; options: string[]; onSave: (v: string) => void; canEdit: boolean; className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  if (!canEdit || !editing) {
+    return (
+      <span
+        onClick={() => canEdit && setEditing(true)}
+        className={`block ${canEdit
+          ? "cursor-pointer border-b border-dashed border-[#4a6da7]/40 hover:border-[#4a6da7] hover:bg-blue-50/50 transition-colors"
+          : ""} ${className ?? ""}`}
+        title={canEdit ? "Click to edit" : undefined}
+      >
+        {value || <span className="text-stone-300 italic text-[10px]">—</span>}
+      </span>
+    );
+  }
+  return (
+    <select autoFocus value={value}
+      onChange={e => { onSave(e.target.value); setEditing(false); }}
+      onBlur={() => setEditing(false)}
+      className="border-2 border-[#4a6da7] rounded px-1 py-0.5 text-xs w-full focus:outline-none bg-white shadow-sm"
+    >
+      <option value="">— Select —</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
   );
 }
 
@@ -295,6 +328,7 @@ export default function GMClaimsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [ministries, setMinistries] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [bankSummary, setBankSummary] = useState<{ name: string; bank_name: string; balance: number; tag: string }[]>([]);
 
   const [showModal, setShowModal] = useState(false);
   const [editingClaim, setEditingClaim] = useState<GMClaim | null>(null);
@@ -368,15 +402,29 @@ export default function GMClaimsPage() {
 
       setClaims(claimRows.map((c) => ({ ...c, pv: pvMap[c.pv_id] ?? null })));
 
-      const [{ data: budgetRows }, { data: pvMinRows }] = await Promise.all([
+      const [{ data: budgetRows }, { data: pvMinRows }, { data: bankRows }] = await Promise.all([
         supabase.from("budget_items").select("ministry"),
         supabase.from("pvs").select("ministry").not("ministry", "is", null),
+        supabase.from("bank_accounts").select("name,bank_name,current_balance,is_lcm_cashflow_ref,is_bam_cashflow_ref,entity")
+          .eq("account_type", "CURRENT").eq("is_active", true),
       ]);
       const allMins = [
         ...(budgetRows ?? []).map((r: { ministry: string }) => r.ministry),
         ...(pvMinRows ?? []).map((r: { ministry: string }) => r.ministry),
       ];
       setMinistries([...new Set(allMins.filter(Boolean))].sort() as string[]);
+
+      if (bankRows) {
+        const summary: { name: string; bank_name: string; balance: number; tag: string }[] = [];
+        const main = bankRows.find((b: { is_lcm_cashflow_ref: boolean }) => b.is_lcm_cashflow_ref);
+        const bam  = bankRows.find((b: { is_bam_cashflow_ref: boolean }) => b.is_bam_cashflow_ref);
+        const pbb  = bankRows.find((b: { bank_name: string; is_lcm_cashflow_ref: boolean }) =>
+          b.bank_name?.toLowerCase().includes("public bank") && !b.is_lcm_cashflow_ref);
+        if (pbb)  summary.push({ name: pbb.name,  bank_name: pbb.bank_name,  balance: pbb.current_balance,  tag: "PBB" });
+        if (main) summary.push({ name: main.name, bank_name: main.bank_name, balance: main.current_balance, tag: "Main A/C" });
+        if (bam)  summary.push({ name: bam.name,  bank_name: bam.bank_name,  balance: bam.current_balance,  tag: "BAM" });
+        setBankSummary(summary);
+      }
     } finally {
       setLoading(false);
     }
@@ -681,7 +729,10 @@ export default function GMClaimsPage() {
 
                         {/* Date of Submission */}
                         <td className="px-3 py-3 border border-gray-300 align-middle whitespace-nowrap">
-                          <span className="text-stone-700 font-medium">{formatDate(claim.received_at)}</span>
+                          <EditCell value={claim.received_at} type="date"
+                            displayValue={formatDate(claim.received_at)}
+                            onSave={v => updateClaimField(claim.id, "received_at", v ? new Date(v).toISOString() : claim.received_at)}
+                            canEdit={isGM} className="text-stone-700 font-medium text-xs" />
                         </td>
 
                         {/* Claims/Payments */}
@@ -707,17 +758,19 @@ export default function GMClaimsPage() {
                         {/* Value */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
                           <EditCell value={String(claim.amount)} type="number"
+                            displayValue={`RM ${Number(claim.amount).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             onSave={v => updateClaimField(claim.id, "amount", v)} canEdit={isGM}
                             className="font-bold text-stone-800 tabular-nums text-xs" />
-                          {!isGM && <div className="font-bold text-stone-800 tabular-nums text-xs hidden">{formatCurrency(claim.amount)}</div>}
                         </td>
 
                         {/* Claimant Name */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
                           <EditCell value={claim.claimant_name} onSave={v => updateClaimField(claim.id, "claimant_name", v)}
                             canEdit={isGM} className="font-medium text-stone-800 text-xs" />
-                          {claim.claimant_type && <div className="text-stone-500 text-[10px] mt-0.5">{claim.claimant_type}</div>}
-                          {claim.claimant_email && <div className="text-stone-400 text-[10px]">{claim.claimant_email}</div>}
+                          <SelectCell value={claim.claimant_type ?? ""} options={CLAIMANT_TYPES}
+                            onSave={v => updateClaimField(claim.id, "claimant_type", v)}
+                            canEdit={isGM} className="text-stone-500 text-[10px] mt-0.5" />
+                          {claim.claimant_email && <div className="text-stone-400 text-[10px] mt-0.5">{claim.claimant_email}</div>}
                         </td>
 
                         {/* Committee/District/Personal */}
@@ -799,9 +852,34 @@ export default function GMClaimsPage() {
 
             {/* Table legend */}
             <div className="px-4 py-2.5 bg-stone-50 border-t-2 border-gray-400 flex flex-wrap gap-3 text-[11px] text-stone-500 print:hidden">
+              {isGM && <span className="flex items-center gap-1 text-[#4a6da7]">✏ Click any cell to edit</span>}
               <span className="flex items-center gap-1"><Share2 size={11} /> Use <strong>Share</strong> to send the PV link and status to the claimant</span>
             </div>
           </div>
+
+          {/* ── Bank Balances + Total Pending ── */}
+          {(() => {
+            const totalPending = claims
+              .filter(c => deriveStage(c) !== "PAID")
+              .reduce((s, c) => s + Number(c.amount), 0);
+            const fmt = (n: number) => `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 print:hidden">
+                {bankSummary.map(acc => (
+                  <div key={acc.tag} className="bg-white rounded-xl border-2 border-gray-300 px-4 py-3">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-stone-400">{acc.tag}</div>
+                    <div className="text-lg font-bold text-stone-800 mt-0.5 tabular-nums">{fmt(acc.balance)}</div>
+                    <div className="text-[10px] text-stone-400 mt-0.5 truncate">{acc.name} · {acc.bank_name}</div>
+                  </div>
+                ))}
+                <div className="bg-[#4a6da7]/5 rounded-xl border-2 border-[#4a6da7]/30 px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-[#4a6da7]">Total Pending</div>
+                  <div className="text-lg font-bold text-[#4a6da7] mt-0.5 tabular-nums">{fmt(totalPending)}</div>
+                  <div className="text-[10px] text-stone-400 mt-0.5">{claims.filter(c => deriveStage(c) !== "PAID").length} claim{claims.filter(c => deriveStage(c) !== "PAID").length !== 1 ? "s" : ""} awaiting payment</div>
+                </div>
+              </div>
+            );
+          })()}
 
         ) : (
 
