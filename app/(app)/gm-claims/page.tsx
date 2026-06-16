@@ -333,9 +333,10 @@ export default function GMClaimsPage() {
         setCurrentUser({ email: authUser.email!, role: profile?.role ?? "STAFF", full_name: profile?.full_name });
       }
 
-      const { data: claimRows } = await supabase
+      const { data: claimRows, error: claimsErr } = await supabase
         .from("gm_claims").select("*").order("received_at", { ascending: true });
 
+      if (claimsErr) console.error("[gm_claims]", claimsErr.code, claimsErr.message, claimsErr.details, claimsErr.hint);
       if (!claimRows) { setClaims([]); return; }
 
       const pvIds = claimRows.map((c) => c.pv_id).filter(Boolean) as string[];
