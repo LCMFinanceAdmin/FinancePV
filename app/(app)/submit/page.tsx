@@ -480,19 +480,39 @@ export default function SubmitPVPage() {
           status: "PV_RAISED", pv_id: result.pv_id, updated_at: new Date().toISOString(),
         }).eq("id", prBanner.id);
       }
-      if (claimBanner?.id && result.pv_id) {
+      // Link GM claim (read directly from URL — more reliable than state)
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlClaimId = urlParams.get("claim_id");
+      if (urlClaimId && result.pv_id) {
         await supabase.from("gm_claims").update({
           pv_id: result.pv_id, updated_at: new Date().toISOString(),
-        }).eq("id", claimBanner.id);
+        }).eq("id", urlClaimId);
+        // Notify GM that PV is ready for verification
+        const claimant = urlParams.get("claim_claimant") ?? "";
+        const { data: gmUsers } = await supabase.from("user_roles").select("email")
+          .eq("role", "GENERAL_MANAGER");
+        if (gmUsers?.length) {
+          await supabase.from("notifications").insert(gmUsers.map((gm: { email: string }) => ({
+            recipient_email: gm.email,
+            type: "GM_CLAIM_PV",
+            pv_no: result.pv_no,
+            pv_id: result.pv_id,
+            message: `PV ${result.pv_no} has been created for ${claimant || "a claimant"}. Please verify and proceed to signatories.`,
+            read: false,
+            created_at: new Date().toISOString(),
+          })));
+        }
       }
       setSuccess(`PV ${result.pv_no} submitted successfully!`);
       setForm(EMPTY_FORM);
       setPrBanner(null);
+      setClaimBanner(null);
       // Revoke all object URLs
       attachments.forEach(a => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
       setAttachments([]);
       clearApplicantCanvas();
-      setTimeout(() => router.push("/my-pvs"), 1500);
+      // Redirect back to GM Claims if came from a claim, otherwise /my-pvs
+      setTimeout(() => router.push(urlClaimId ? "/gm-claims" : "/my-pvs"), 1500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {

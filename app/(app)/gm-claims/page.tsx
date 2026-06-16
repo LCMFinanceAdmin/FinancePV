@@ -786,7 +786,13 @@ export default function GMClaimsPage() {
                           <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
                             {meta.icon} {meta.label}
                           </span>
-                          {claim.pv && (
+                          {claim.pv && stage === "PV_PREPARED" && isGM && (
+                            <Link href={`/my-pvs/${claim.pv.id}`}
+                              className="flex items-center gap-1.5 mt-1.5 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 whitespace-nowrap w-fit">
+                              <CheckCircle size={10} /> Verify PV
+                            </Link>
+                          )}
+                          {claim.pv && stage !== "PV_PREPARED" && (
                             <Link href={`/my-pvs/${claim.pv.id}`}
                               className="flex items-center gap-1 text-[10px] text-[#4a6da7] hover:underline mt-1">
                               <ExternalLink size={9} /> {claim.pv.pv_no}
