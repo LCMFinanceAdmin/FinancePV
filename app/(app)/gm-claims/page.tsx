@@ -452,12 +452,13 @@ export default function GMClaimsPage() {
           po_number = poNoRow;
         }
 
-        await supabase.from("gm_claims").insert({
+        const { error: insertErr } = await supabase.from("gm_claims").insert({
           ...payload,
           claim_no: claimNoRow,
           po_number,
           created_by_email: user?.email ?? "",
         });
+        if (insertErr) { console.error("[gm_claims INSERT]", insertErr.code, insertErr.message, insertErr.details); throw insertErr; }
 
         const { data: feUsers } = await supabase.from("user_roles").select("email")
           .in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
