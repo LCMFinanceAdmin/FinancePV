@@ -430,7 +430,13 @@ export default function GMClaimsPage() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    // Re-fetch user role whenever page regains focus (handles role-switch without page reload)
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
 
   useEffect(() => {
     if (!linkModal) return;
@@ -561,6 +567,16 @@ export default function GMClaimsPage() {
   async function updateClaimDate(claimId: string, field: string, value: string | null) {
     await supabase.from("gm_claims").update({ [field]: value, updated_at: new Date().toISOString() }).eq("id", claimId);
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, [field]: value } : c));
+  }
+
+  async function handleShare(claim: GMClaim, stage: ClaimStage) {
+    handleShare(claim, stage);
+    // GM sharing a PAID claim: stamp claimant_informed_at so the timestamp shows in the table
+    if (currentUser?.role === "GENERAL_MANAGER" && stage === "PAID") {
+      const now = new Date().toISOString();
+      await supabase.from("gm_claims").update({ claimant_informed_at: now, updated_at: now }).eq("id", claim.id);
+      setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, claimant_informed_at: now } : c));
+    }
   }
 
   async function updateClaimField(claimId: string, field: string, value: string | number) {
@@ -719,11 +735,17 @@ export default function GMClaimsPage() {
                     const stage = deriveStage(claim);
                     const meta = STAGE_META[stage];
                     const isPOClaim = claim.claim_type === "PURCHASE_ORDER";
-                    const rowBg = idx % 2 === 0 ? "bg-white" : "bg-blue-50/30";
+                    const pvStatus = claim.pv?.status ?? "";
+                    const isRejectedRow = ["REJECTED", "REJECTED_HEAD"].includes(pvStatus);
+                    const isCancelledRow = pvStatus === "CANCELLED";
                     const isPaid = stage === "PAID";
+                    const rowBg = isPaid ? "bg-green-50"
+                      : isRejectedRow ? "bg-red-50"
+                      : isCancelledRow ? "bg-amber-50"
+                      : idx % 2 === 0 ? "bg-white" : "bg-blue-50/30";
 
                     return (
-                      <tr key={claim.id} className={`${rowBg} hover:bg-blue-50/50 transition-colors ${isPaid ? "opacity-80" : ""}`}>
+                      <tr key={claim.id} className={`${rowBg} transition-colors ${isPaid ? "hover:bg-green-100" : isRejectedRow ? "hover:bg-red-100" : isCancelledRow ? "hover:bg-amber-100" : "hover:bg-blue-50/50"}`}>
                         {/* No. */}
                         <td className="px-3 py-3 text-center text-stone-500 font-medium border border-gray-300 align-middle">
                           {idx + 1}
@@ -806,6 +828,11 @@ export default function GMClaimsPage() {
                               <ExternalLink size={9} /> {claim.pv.pv_no}
                             </Link>
                           )}
+                          {stage === "PAID" && claim.claimant_informed_at && (
+                            <div className="text-[9px] text-green-700 mt-1 flex items-center gap-0.5">
+                              <Share2 size={8} /> Shared {new Date(claim.claimant_informed_at).toLocaleString("en-MY", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
                         </td>
 
                         {/* Actions */}
@@ -824,7 +851,7 @@ export default function GMClaimsPage() {
                                 {claim.pv_id ? "Change PV" : "Link PV"}
                               </button>
                             )}
-                            <button onClick={() => shareClaim(claim, stage)}
+                            <button onClick={() => handleShare(claim, stage)}
                               className="flex items-center gap-1 text-[10px] text-stone-500 hover:text-[#4a6da7] text-left">
                               <Share2 size={10} /> Share
                             </button>
@@ -1011,7 +1038,7 @@ export default function GMClaimsPage() {
                         <ExternalLink size={11} /> View PV
                       </Link>
                     )}
-                    <button onClick={() => shareClaim(claim, stage)}
+                    <button onClick={() => handleShare(claim, stage)}
                       className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
                       <Share2 size={11} /> Share
                     </button>
