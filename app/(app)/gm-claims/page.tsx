@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -360,6 +360,7 @@ export default function GMClaimsPage() {
   const [savingNewRow, setSavingNewRow] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // claim id awaiting confirm
   const [uploadingClaimId, setUploadingClaimId] = useState<string | null>(null);
+  const [openAttachments, setOpenAttachments] = useState<Set<string>>(new Set()); // table-view attachment panel
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
@@ -644,7 +645,10 @@ export default function GMClaimsPage() {
         return;
       }
       setClaims(prev => prev.map(c => c.id === claimId ? { ...c, attachments: updated } : c));
-      showToast("Attachment uploaded");
+      // Auto-expand card and open table attachment panel so the file is immediately visible
+      setExpanded(prev => { const n = new Set(prev); n.add(claimId); return n; });
+      setOpenAttachments(prev => { const n = new Set(prev); n.add(claimId); return n; });
+      showToast("Attachment uploaded — scroll to Documents to view");
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : "Upload failed", false);
     } finally {
@@ -927,7 +931,8 @@ export default function GMClaimsPage() {
                       : idx % 2 === 0 ? "bg-white" : "bg-blue-50/30";
 
                     return (
-                      <tr key={claim.id} id={`claim-row-${claim.id}`} className={`${rowBg} transition-colors ${highlightedClaimId === claim.id ? "ring-2 ring-inset ring-amber-400" : ""} ${isPaid ? "hover:bg-green-100" : isRejectedRow ? "hover:bg-red-100" : isCancelledRow ? "hover:bg-amber-100" : "hover:bg-blue-50/50"}`}>
+                      <Fragment key={claim.id}>
+                      <tr id={`claim-row-${claim.id}`} className={`${rowBg} transition-colors ${highlightedClaimId === claim.id ? "ring-2 ring-inset ring-amber-400" : ""} ${isPaid ? "hover:bg-green-100" : isRejectedRow ? "hover:bg-red-100" : isCancelledRow ? "hover:bg-amber-100" : "hover:bg-blue-50/50"}`}>
                         {/* No. */}
                         <td className="px-3 py-3 text-center text-stone-500 font-medium border border-gray-300 align-middle text-[13px]">
                           {idx + 1}
@@ -1045,8 +1050,15 @@ export default function GMClaimsPage() {
                                 disabled={uploadingClaimId === claim.id}
                                 onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
                               <Paperclip size={11} />
-                              {uploadingClaimId === claim.id ? "Uploading…" : `Attach${claim.attachments?.length ? ` (${claim.attachments.length})` : ""}`}
+                              {uploadingClaimId === claim.id ? "Uploading…" : "Attach"}
                             </label>
+                            {(claim.attachments?.length ?? 0) > 0 && (
+                              <button
+                                onClick={() => setOpenAttachments(prev => { const n = new Set(prev); n.has(claim.id) ? n.delete(claim.id) : n.add(claim.id); return n; })}
+                                className="flex items-center gap-1 text-[13px] text-[#4a6da7] hover:underline">
+                                <Paperclip size={11} /> View ({claim.attachments!.length})
+                              </button>
+                            )}
                             {isGM && (
                               deleteConfirm === claim.id ? (
                                 <div className="flex items-center gap-1 mt-0.5">
@@ -1086,6 +1098,33 @@ export default function GMClaimsPage() {
                           </div>
                         </td>
                       </tr>
+                      {/* Inline attachment viewer — shown when "View (N)" is clicked */}
+                      {openAttachments.has(claim.id) && (claim.attachments?.length ?? 0) > 0 && (
+                        <tr className={rowBg}>
+                          <td colSpan={8} className="px-4 pb-3 pt-1 border border-gray-300">
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-stone-400 mb-2">
+                              <Paperclip size={10} /> Documents ({claim.attachments!.length})
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                              {claim.attachments!.map((url, ai) => {
+                                const fname = url.split("/").pop()?.replace(/^\d+_[a-z0-9]+\./, "file.") ?? `File ${ai + 1}`;
+                                const isImg = /\.(jpg|jpeg|png|webp|heic)$/i.test(url);
+                                return (
+                                  <a key={ai} href={url} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-stone-200 hover:border-[#4a6da7]/40 hover:bg-blue-50 transition-colors max-w-[180px]">
+                                    {isImg
+                                      ? <img src={url} alt={fname} className="w-8 h-8 rounded object-cover border border-stone-200 shrink-0" />
+                                      : <div className="w-8 h-8 rounded border border-stone-200 bg-stone-50 flex items-center justify-center shrink-0"><FileText size={14} className="text-stone-400" /></div>
+                                    }
+                                    <span className="text-[12px] text-[#4a6da7] truncate">{fname}</span>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
 
