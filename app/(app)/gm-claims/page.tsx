@@ -631,12 +631,12 @@ export default function GMClaimsPage() {
     try {
       const ext = file.name.split(".").pop() ?? "bin";
       const path = `gm-claims/${claimId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: uploadErr } = await supabase.storage.from("pv-attachments").upload(path, file);
+      const { error: uploadErr } = await supabase.storage.from("gm-claim-attachments").upload(path, file);
       if (uploadErr) {
         showToast(`Upload failed: ${uploadErr.message}`, false);
         return;
       }
-      const { data: { publicUrl } } = supabase.storage.from("pv-attachments").getPublicUrl(path);
+      const { data: { publicUrl } } = supabase.storage.from("gm-claim-attachments").getPublicUrl(path);
       // Read fresh attachments from DB to avoid stale closure
       const { data: fresh } = await supabase.from("gm_claims").select("attachments").eq("id", claimId).single();
       const updated = [...(fresh?.attachments ?? []), publicUrl];
@@ -665,8 +665,8 @@ export default function GMClaimsPage() {
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, attachments: updated } : c));
     // Best-effort delete from storage
     try {
-      const pathMatch = url.match(/pv-attachments\/(.+)$/);
-      if (pathMatch) await supabase.storage.from("pv-attachments").remove([decodeURIComponent(pathMatch[1])]);
+      const pathMatch = url.match(/gm-claim-attachments\/(.+)$/);
+      if (pathMatch) await supabase.storage.from("gm-claim-attachments").remove([decodeURIComponent(pathMatch[1])]);
     } catch { /* ignore */ }
     showToast("Attachment removed");
   }
