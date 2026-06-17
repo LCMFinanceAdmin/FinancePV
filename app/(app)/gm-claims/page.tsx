@@ -358,6 +358,7 @@ export default function GMClaimsPage() {
   });
   const [newRow, setNewRow] = useState(defaultNewRow);
   const [savingNewRow, setSavingNewRow] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // claim id awaiting confirm
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
@@ -613,6 +614,13 @@ export default function GMClaimsPage() {
     if (field === "ministry" && value && !ministries.includes(String(value))) {
       setMinistries(prev => [...prev, String(value)].sort());
     }
+  }
+
+  async function deleteClaim(claimId: string) {
+    await supabase.from("gm_claims").delete().eq("id", claimId);
+    setDeleteConfirm(null);
+    setClaims(prev => prev.filter(c => c.id !== claimId));
+    showToast("Claim deleted");
   }
 
   async function saveNewRow() {
@@ -986,6 +994,25 @@ export default function GMClaimsPage() {
                               className="flex items-center gap-1 text-[13px] text-stone-500 hover:text-[#4a6da7] text-left">
                               <Share2 size={12} /> Share
                             </button>
+                            {isGM && (
+                              deleteConfirm === claim.id ? (
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <button onClick={() => deleteClaim(claim.id)}
+                                    className="text-[11px] font-bold px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 whitespace-nowrap">
+                                    Confirm
+                                  </button>
+                                  <button onClick={() => setDeleteConfirm(null)}
+                                    className="text-[11px] text-stone-400 hover:text-stone-600">
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button onClick={() => setDeleteConfirm(claim.id)}
+                                  className="flex items-center gap-1 text-[13px] text-red-400 hover:text-red-600 text-left transition-colors">
+                                  <Trash2 size={11} /> Delete
+                                </button>
+                              )
+                            )}
                             {isPOClaim && claim.po_number && (
                               <POPdfButton data={{
                                 po_number: claim.po_number,
