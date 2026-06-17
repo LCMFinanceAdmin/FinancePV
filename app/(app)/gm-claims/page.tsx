@@ -1050,24 +1050,15 @@ export default function GMClaimsPage() {
                               className="flex items-center gap-1 text-[13px] text-stone-500 hover:text-[#4a6da7] text-left">
                               <Share2 size={12} /> Share
                             </button>
-                            {/* Attachments count + upload */}
-                            <label className={`flex items-center gap-1 text-[13px] cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : uploadError?.id === claim.id ? "text-red-500" : "text-stone-500 hover:text-[#4a6da7]"}`}>
-                              <input type="file" className="hidden"
-                                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
-                                disabled={uploadingClaimId === claim.id}
-                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                            {/* Attachments — always-visible toggle */}
+                            <button
+                              onClick={() => setOpenAttachments(prev => { const n = new Set(prev); n.has(claim.id) ? n.delete(claim.id) : n.add(claim.id); return n; })}
+                              className={`flex items-center gap-1 text-[13px] transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : uploadError?.id === claim.id ? "text-red-500" : (claim.attachments?.length ?? 0) > 0 ? "text-[#4a6da7] font-semibold" : "text-stone-500 hover:text-[#4a6da7]"}`}>
                               <Paperclip size={11} />
-                              {uploadingClaimId === claim.id ? "Uploading…" : uploadError?.id === claim.id ? "⚠ Failed — Retry" : "Attach"}
-                            </label>
+                              {uploadingClaimId === claim.id ? "Uploading…" : `Attachments${(claim.attachments?.length ?? 0) > 0 ? ` (${claim.attachments!.length})` : ""}`}
+                            </button>
                             {uploadError?.id === claim.id && (
                               <div className="text-[11px] text-red-600 max-w-[160px] leading-tight">{uploadError.msg}</div>
-                            )}
-                            {(claim.attachments?.length ?? 0) > 0 && (
-                              <button
-                                onClick={() => setOpenAttachments(prev => { const n = new Set(prev); n.has(claim.id) ? n.delete(claim.id) : n.add(claim.id); return n; })}
-                                className="flex items-center gap-1 text-[13px] text-[#4a6da7] hover:underline">
-                                <Eye size={11} /> View ({claim.attachments!.length})
-                              </button>
                             )}
                             {isGM && (
                               deleteConfirm === claim.id ? (
@@ -1108,29 +1099,43 @@ export default function GMClaimsPage() {
                           </div>
                         </td>
                       </tr>
-                      {/* Inline attachment viewer — shown when "View (N)" is clicked */}
-                      {openAttachments.has(claim.id) && (claim.attachments?.length ?? 0) > 0 && (
+                      {/* Inline attachment panel — always shown when toggled */}
+                      {openAttachments.has(claim.id) && (
                         <tr className={rowBg}>
-                          <td colSpan={8} className="px-4 pb-3 pt-1 border border-gray-300">
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-stone-400 mb-2">
-                              <Paperclip size={10} /> Documents ({claim.attachments!.length})
+                          <td colSpan={8} className="px-4 py-3 border border-gray-300 bg-stone-50/60">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-stone-400">
+                                <Paperclip size={10} /> Attachments {(claim.attachments?.length ?? 0) > 0 ? `(${claim.attachments!.length})` : ""}
+                              </div>
+                              <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`}>
+                                <input type="file" className="hidden"
+                                  accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                                  disabled={uploadingClaimId === claim.id}
+                                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                                <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
+                              </label>
                             </div>
-                            <div className="flex flex-wrap gap-3">
-                              {claim.attachments!.map((url, ai) => {
-                                const fname = url.split("/").pop()?.replace(/^\d+_[a-z0-9]+\./, "file.") ?? `File ${ai + 1}`;
-                                const isImg = /\.(jpg|jpeg|png|webp|heic)$/i.test(url);
-                                return (
-                                  <a key={ai} href={url} target="_blank" rel="noopener noreferrer"
-                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-stone-200 hover:border-[#4a6da7]/40 hover:bg-blue-50 transition-colors max-w-[180px]">
-                                    {isImg
-                                      ? <img src={url} alt={fname} className="w-8 h-8 rounded object-cover border border-stone-200 shrink-0" />
-                                      : <div className="w-8 h-8 rounded border border-stone-200 bg-stone-50 flex items-center justify-center shrink-0"><FileText size={14} className="text-stone-400" /></div>
-                                    }
-                                    <span className="text-[12px] text-[#4a6da7] truncate">{fname}</span>
-                                  </a>
-                                );
-                              })}
-                            </div>
+                            {(claim.attachments?.length ?? 0) > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {claim.attachments!.map((url, ai) => {
+                                  const fname = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_[a-z0-9]+\./, "") || `File ${ai + 1}`;
+                                  const isImg = /\.(jpg|jpeg|png|webp|heic|gif)$/i.test(url);
+                                  return (
+                                    <div key={ai} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-stone-200 bg-white hover:border-[#4a6da7]/40 hover:bg-blue-50 transition-colors max-w-[200px]">
+                                      {isImg
+                                        ? <img src={url} alt={fname} className="w-8 h-8 rounded object-cover border border-stone-100 shrink-0" />
+                                        : <div className="w-8 h-8 rounded border border-stone-100 bg-[#4a6da7]/5 flex items-center justify-center shrink-0"><FileText size={14} className="text-[#4a6da7]" /></div>
+                                      }
+                                      <a href={url} target="_blank" rel="noopener noreferrer"
+                                        className="text-[12px] text-[#4a6da7] hover:underline truncate flex-1">{fname}</a>
+                                      <button onClick={() => removeAttachment(claim.id, url)} className="text-stone-300 hover:text-red-500 shrink-0 transition-colors"><X size={11} /></button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-[12px] text-stone-400 italic">No files attached yet — click "Add File" to upload</div>
+                            )}
                           </td>
                         </tr>
                       )}
@@ -1365,24 +1370,15 @@ export default function GMClaimsPage() {
                       className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
                       <Share2 size={11} /> Share
                     </button>
-                    {/* Attachment buttons — View (if files exist) + Attach */}
-                    {(claim.attachments?.length ?? 0) > 0 && (
-                      <button
-                        onClick={() => setViewingAttachments(viewingAttachments === claim.id ? null : claim.id)}
-                        className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50 transition-colors">
-                        <Eye size={11} /> View Attachments ({claim.attachments!.length})
-                      </button>
-                    )}
-                    <label className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : uploadError?.id === claim.id ? "border-red-300 text-red-500 bg-red-50" : "border-stone-200 text-stone-600 hover:bg-stone-50"}`}>
-                      <input type="file" className="hidden"
-                        accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
-                        disabled={uploadingClaimId === claim.id}
-                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                    {/* Single Attachments button — always visible, toggles inline panel */}
+                    <button
+                      onClick={() => setViewingAttachments(viewingAttachments === claim.id ? null : claim.id)}
+                      className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : (claim.attachments?.length ?? 0) > 0 ? "border-[#4a6da7]/40 text-[#4a6da7] bg-blue-50/50 hover:bg-blue-100" : "border-stone-200 text-stone-600 hover:bg-stone-50"}`}>
                       <Paperclip size={11} />
-                      {uploadingClaimId === claim.id ? "Uploading…" : uploadError?.id === claim.id ? "Retry Attach" : "Attach"}
-                    </label>
+                      {uploadingClaimId === claim.id ? "Uploading…" : `Attachments${(claim.attachments?.length ?? 0) > 0 ? ` (${claim.attachments!.length})` : ""}`}
+                    </button>
                     {uploadError?.id === claim.id && (
-                      <div className="w-full mt-1 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 flex items-start gap-1.5">
+                      <div className="w-full text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 flex items-start gap-1.5">
                         <AlertCircle size={11} className="shrink-0 mt-0.5" />
                         <span className="flex-1">{uploadError.msg}</span>
                         <button onClick={() => setUploadError(null)} className="shrink-0 text-red-400 hover:text-red-600"><X size={11} /></button>
@@ -1408,46 +1404,59 @@ export default function GMClaimsPage() {
                     </button>
                   </div>
 
-                  {/* Inline attachment preview panel — shown when "View Attachments" is clicked */}
-                  {viewingAttachments === claim.id && (claim.attachments?.length ?? 0) > 0 && (
+                  {/* Inline attachment panel — always shown when toggled */}
+                  {viewingAttachments === claim.id && (
                     <div className="border-t border-stone-100 bg-stone-50 px-4 py-3">
                       <div className="flex items-center justify-between mb-2.5">
                         <div className="text-[10px] font-bold uppercase tracking-widest text-stone-400 flex items-center gap-1">
-                          <Paperclip size={10} /> Attached Documents ({claim.attachments!.length})
+                          <Paperclip size={10} /> Attachments {(claim.attachments?.length ?? 0) > 0 ? `(${claim.attachments!.length})` : ""}
                         </div>
-                        <button onClick={() => setViewingAttachments(null)} className="text-stone-300 hover:text-stone-500">
-                          <X size={13} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`}>
+                            <input type="file" className="hidden"
+                              accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                              disabled={uploadingClaimId === claim.id}
+                              onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                            <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
+                          </label>
+                          <button onClick={() => setViewingAttachments(null)} className="text-stone-300 hover:text-stone-500">
+                            <X size={13} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        {claim.attachments!.map((url, ai) => {
-                          const fname = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_[a-z0-9]+\./, "file.") || `File ${ai + 1}`;
-                          const isImg = /\.(jpg|jpeg|png|webp|heic)$/i.test(url);
-                          return (
-                            <div key={ai} className="flex items-center gap-3 bg-white rounded-xl border border-stone-200 px-3 py-2 shadow-sm">
-                              {isImg
-                                ? <a href={url} target="_blank" rel="noopener noreferrer">
-                                    <img src={url} alt={fname} className="w-12 h-12 rounded-lg object-cover border border-stone-100 shrink-0 hover:opacity-90 transition-opacity" />
+                      {(claim.attachments?.length ?? 0) > 0 ? (
+                        <div className="space-y-2">
+                          {claim.attachments!.map((url, ai) => {
+                            const fname = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_[a-z0-9]+\./, "") || `File ${ai + 1}`;
+                            const isImg = /\.(jpg|jpeg|png|webp|heic|gif)$/i.test(url);
+                            return (
+                              <div key={ai} className="flex items-center gap-3 bg-white rounded-xl border border-stone-200 px-3 py-2 shadow-sm">
+                                {isImg
+                                  ? <a href={url} target="_blank" rel="noopener noreferrer">
+                                      <img src={url} alt={fname} className="w-12 h-12 rounded-lg object-cover border border-stone-100 shrink-0 hover:opacity-90 transition-opacity" />
+                                    </a>
+                                  : <div className="w-12 h-12 rounded-lg border border-stone-100 bg-[#4a6da7]/5 flex items-center justify-center shrink-0">
+                                      <FileText size={20} className="text-[#4a6da7]" />
+                                    </div>
+                                }
+                                <div className="flex-1 min-w-0">
+                                  <a href={url} target="_blank" rel="noopener noreferrer"
+                                    className="text-sm font-medium text-[#4a6da7] hover:underline truncate block leading-tight">
+                                    {fname}
                                   </a>
-                                : <div className="w-12 h-12 rounded-lg border border-stone-100 bg-[#4a6da7]/5 flex items-center justify-center shrink-0">
-                                    <FileText size={20} className="text-[#4a6da7]" />
-                                  </div>
-                              }
-                              <div className="flex-1 min-w-0">
-                                <a href={url} target="_blank" rel="noopener noreferrer"
-                                  className="text-sm font-medium text-[#4a6da7] hover:underline truncate block leading-tight">
-                                  {fname}
-                                </a>
-                                <div className="text-[11px] text-stone-400 mt-0.5">{isImg ? "Image" : "Document"} · Tap to open</div>
+                                  <div className="text-[11px] text-stone-400 mt-0.5">{isImg ? "Image" : "Document"} · Tap to open</div>
+                                </div>
+                                <button onClick={() => removeAttachment(claim.id, url)}
+                                  className="text-stone-300 hover:text-red-500 shrink-0 transition-colors p-1">
+                                  <X size={14} />
+                                </button>
                               </div>
-                              <button onClick={() => removeAttachment(claim.id, url)}
-                                className="text-stone-300 hover:text-red-500 shrink-0 transition-colors p-1">
-                                <X size={14} />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-[12px] text-stone-400 italic">No files attached yet — click "Add File" above to upload</div>
+                      )}
                     </div>
                   )}
 
