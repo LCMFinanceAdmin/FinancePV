@@ -362,10 +362,12 @@ export default function GMClaimsPage() {
   const [uploadingClaimId, setUploadingClaimId] = useState<string | null>(null);
   const [openAttachments, setOpenAttachments] = useState<Set<string>>(new Set()); // table-view attachment panel
   const [viewingAttachments, setViewingAttachments] = useState<string | null>(null); // card-view inline preview
+  const [uploadError, setUploadError] = useState<{ id: string; msg: string } | null>(null);
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
-    setTimeout(() => setToast(""), 3500);
+    // Errors stay until dismissed; success auto-clears after 4 s
+    if (ok) setTimeout(() => setToast(""), 4000);
   }
 
   function setF<K extends keyof ReturnType<typeof defaultForm>>(key: K, val: ReturnType<typeof defaultForm>[K]) {
@@ -628,30 +630,35 @@ export default function GMClaimsPage() {
 
   async function uploadAttachment(claimId: string, file: File) {
     setUploadingClaimId(claimId);
+    setUploadError(null);
     try {
       const ext = file.name.split(".").pop() ?? "bin";
       const path = `gm-claims/${claimId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const { error: uploadErr } = await supabase.storage.from("gm-claim-attachments").upload(path, file);
       if (uploadErr) {
-        showToast(`Upload failed: ${uploadErr.message}`, false);
+        const msg = `Storage error: ${uploadErr.message}`;
+        setUploadError({ id: claimId, msg });
+        showToast(msg, false);
         return;
       }
       const { data: { publicUrl } } = supabase.storage.from("gm-claim-attachments").getPublicUrl(path);
-      // Read fresh attachments from DB to avoid stale closure
       const { data: fresh } = await supabase.from("gm_claims").select("attachments").eq("id", claimId).single();
       const updated = [...(fresh?.attachments ?? []), publicUrl];
       const { error: dbErr } = await supabase.from("gm_claims").update({ attachments: updated, updated_at: new Date().toISOString() }).eq("id", claimId);
       if (dbErr) {
-        showToast(`Save failed: ${dbErr.message}`, false);
+        const msg = `DB error: ${dbErr.message}`;
+        setUploadError({ id: claimId, msg });
+        showToast(msg, false);
         return;
       }
       setClaims(prev => prev.map(c => c.id === claimId ? { ...c, attachments: updated } : c));
-      // Auto-open the inline attachment preview so the file is immediately visible
       setViewingAttachments(claimId);
       setOpenAttachments(prev => { const n = new Set(prev); n.add(claimId); return n; });
       showToast("Attachment uploaded");
     } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : "Upload failed", false);
+      const msg = e instanceof Error ? e.message : "Upload failed";
+      setUploadError({ id: claimId, msg });
+      showToast(msg, false);
     } finally {
       setUploadingClaimId(null);
     }
@@ -1044,20 +1051,22 @@ export default function GMClaimsPage() {
                               <Share2 size={12} /> Share
                             </button>
                             {/* Attachments count + upload */}
-                            <label className={`flex items-center gap-1 text-[13px] cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : "text-stone-500 hover:text-[#4a6da7]"}`}>
+                            <label className={`flex items-center gap-1 text-[13px] cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : uploadError?.id === claim.id ? "text-red-500" : "text-stone-500 hover:text-[#4a6da7]"}`}>
                               <input type="file" className="hidden"
-                                accept="image/*,application/pdf,.doc,.docx"
-                                capture={undefined}
+                                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
                                 disabled={uploadingClaimId === claim.id}
                                 onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
                               <Paperclip size={11} />
-                              {uploadingClaimId === claim.id ? "Uploading…" : "Attach"}
+                              {uploadingClaimId === claim.id ? "Uploading…" : uploadError?.id === claim.id ? "⚠ Failed — Retry" : "Attach"}
                             </label>
+                            {uploadError?.id === claim.id && (
+                              <div className="text-[11px] text-red-600 max-w-[160px] leading-tight">{uploadError.msg}</div>
+                            )}
                             {(claim.attachments?.length ?? 0) > 0 && (
                               <button
                                 onClick={() => setOpenAttachments(prev => { const n = new Set(prev); n.has(claim.id) ? n.delete(claim.id) : n.add(claim.id); return n; })}
                                 className="flex items-center gap-1 text-[13px] text-[#4a6da7] hover:underline">
-                                <Paperclip size={11} /> View ({claim.attachments!.length})
+                                <Eye size={11} /> View ({claim.attachments!.length})
                               </button>
                             )}
                             {isGM && (
@@ -1364,14 +1373,21 @@ export default function GMClaimsPage() {
                         <Eye size={11} /> View Attachments ({claim.attachments!.length})
                       </button>
                     )}
-                    <label className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "text-stone-600 hover:bg-stone-50"}`}>
+                    <label className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : uploadError?.id === claim.id ? "border-red-300 text-red-500 bg-red-50" : "border-stone-200 text-stone-600 hover:bg-stone-50"}`}>
                       <input type="file" className="hidden"
-                        accept="image/*,application/pdf,.doc,.docx"
+                        accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
                         disabled={uploadingClaimId === claim.id}
                         onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
                       <Paperclip size={11} />
-                      {uploadingClaimId === claim.id ? "Uploading…" : "Attach"}
+                      {uploadingClaimId === claim.id ? "Uploading…" : uploadError?.id === claim.id ? "Retry Attach" : "Attach"}
                     </label>
+                    {uploadError?.id === claim.id && (
+                      <div className="w-full mt-1 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 flex items-start gap-1.5">
+                        <AlertCircle size={11} className="shrink-0 mt-0.5" />
+                        <span className="flex-1">{uploadError.msg}</span>
+                        <button onClick={() => setUploadError(null)} className="shrink-0 text-red-400 hover:text-red-600"><X size={11} /></button>
+                      </div>
+                    )}
                     {isGM && (
                       <button onClick={() => setDeleteConfirm(deleteConfirm === claim.id ? null : claim.id)}
                         className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-100 text-red-400 hover:bg-red-50">
@@ -1816,8 +1832,13 @@ export default function GMClaimsPage() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl text-sm font-medium shadow-lg z-50 ${toastOk ? "bg-green-600 text-white" : "bg-red-500 text-white"}`}>
-          {toast}
+        <div className={`fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium shadow-xl z-50 max-w-sm w-[90vw] ${toastOk ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
+          <span className="flex-1">{toast}</span>
+          {!toastOk && (
+            <button onClick={() => setToast("")} className="shrink-0 text-white/70 hover:text-white">
+              <X size={16} />
+            </button>
+          )}
         </div>
       )}
     </main>
