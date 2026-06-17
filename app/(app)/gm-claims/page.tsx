@@ -8,7 +8,7 @@ import type { POLineItem } from "@/components/gm/po-pdf";
 import {
   Plus, X, ChevronDown, ChevronUp, Paperclip, Link2, ExternalLink,
   CheckCircle, Clock, FileText, CreditCard, AlertCircle, Banknote,
-  Package, Trash2, LayoutList, Table2, Printer, Share2,
+  Package, Trash2, LayoutList, Table2, Printer, Share2, Upload,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -134,8 +134,8 @@ function ProgressBar({ stage }: { stage: ClaimStage }) {
     <div className="flex items-center gap-0">
       {STAGE_STEPS.map((s, i) => {
         const stepNo = STAGE_META[s.key].step;
-        const done = currentStep > stepNo;
-        const active = currentStep === stepNo && s.key === stage;
+        const done = currentStep > stepNo || (stage === "PAID" && s.key === "PAID");
+        const active = currentStep === stepNo && s.key === stage && stage !== "PAID";
         return (
           <div key={s.key} className="flex items-center">
             {i > 0 && <div className={`h-0.5 w-6 sm:w-10 ${done ? "bg-green-500" : "bg-stone-200"}`} />}
@@ -359,6 +359,7 @@ export default function GMClaimsPage() {
   const [newRow, setNewRow] = useState(defaultNewRow);
   const [savingNewRow, setSavingNewRow] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // claim id awaiting confirm
+  const [uploadingClaimId, setUploadingClaimId] = useState<string | null>(null);
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
@@ -621,6 +622,37 @@ export default function GMClaimsPage() {
     setDeleteConfirm(null);
     setClaims(prev => prev.filter(c => c.id !== claimId));
     showToast("Claim deleted");
+  }
+
+  async function uploadAttachment(claimId: string, file: File) {
+    setUploadingClaimId(claimId);
+    try {
+      const ext = file.name.split(".").pop() ?? "bin";
+      const path = `claims/${claimId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: uploadErr } = await supabase.storage.from("gm-claim-attachments").upload(path, file);
+      if (uploadErr) { showToast("Upload failed", false); return; }
+      const { data: { publicUrl } } = supabase.storage.from("gm-claim-attachments").getPublicUrl(path);
+      const claim = claims.find(c => c.id === claimId);
+      const updated = [...(claim?.attachments ?? []), publicUrl];
+      await supabase.from("gm_claims").update({ attachments: updated, updated_at: new Date().toISOString() }).eq("id", claimId);
+      setClaims(prev => prev.map(c => c.id === claimId ? { ...c, attachments: updated } : c));
+      showToast("Attachment uploaded");
+    } finally {
+      setUploadingClaimId(null);
+    }
+  }
+
+  async function removeAttachment(claimId: string, url: string) {
+    const claim = claims.find(c => c.id === claimId);
+    const updated = (claim?.attachments ?? []).filter(a => a !== url);
+    await supabase.from("gm_claims").update({ attachments: updated, updated_at: new Date().toISOString() }).eq("id", claimId);
+    setClaims(prev => prev.map(c => c.id === claimId ? { ...c, attachments: updated } : c));
+    // Best-effort delete from storage
+    try {
+      const pathMatch = url.match(/gm-claim-attachments\/(.+)$/);
+      if (pathMatch) await supabase.storage.from("gm-claim-attachments").remove([pathMatch[1]]);
+    } catch { /* ignore */ }
+    showToast("Attachment removed");
   }
 
   async function saveNewRow() {
@@ -994,6 +1026,16 @@ export default function GMClaimsPage() {
                               className="flex items-center gap-1 text-[13px] text-stone-500 hover:text-[#4a6da7] text-left">
                               <Share2 size={12} /> Share
                             </button>
+                            {/* Attachments count + upload */}
+                            <label className={`flex items-center gap-1 text-[13px] cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : "text-stone-500 hover:text-[#4a6da7]"}`}>
+                              <input type="file" className="hidden"
+                                accept="image/*,application/pdf,.doc,.docx"
+                                capture={undefined}
+                                disabled={uploadingClaimId === claim.id}
+                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                              <Paperclip size={11} />
+                              {uploadingClaimId === claim.id ? "Uploading…" : `Attach${claim.attachments?.length ? ` (${claim.attachments.length})` : ""}`}
+                            </label>
                             {isGM && (
                               deleteConfirm === claim.id ? (
                                 <div className="flex items-center gap-1 mt-0.5">
@@ -1168,6 +1210,9 @@ export default function GMClaimsPage() {
                           )}
                           <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${meta.color}`}>
                             {meta.icon} {meta.label}
+                            {stage === "PAID" && claim.payment_made_at && (
+                              <span className="ml-1 font-normal opacity-80">· {formatDate(claim.payment_made_at)}</span>
+                            )}
                           </span>
                         </div>
                         <div className="font-semibold text-stone-800 mt-1 text-sm">
@@ -1260,6 +1305,26 @@ export default function GMClaimsPage() {
                       className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
                       <Share2 size={11} /> Share
                     </button>
+                    <label className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "text-stone-600 hover:bg-stone-50"}`}>
+                      <input type="file" className="hidden"
+                        accept="image/*,application/pdf,.doc,.docx"
+                        disabled={uploadingClaimId === claim.id}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                      <Paperclip size={11} />
+                      {uploadingClaimId === claim.id ? "Uploading…" : `Attach${claim.attachments?.length ? ` (${claim.attachments.length})` : ""}`}
+                    </label>
+                    {isGM && (
+                      <button onClick={() => setDeleteConfirm(deleteConfirm === claim.id ? null : claim.id)}
+                        className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-100 text-red-400 hover:bg-red-50">
+                        <Trash2 size={11} /> {deleteConfirm === claim.id ? "Cancel" : "Delete"}
+                      </button>
+                    )}
+                    {isGM && deleteConfirm === claim.id && (
+                      <button onClick={() => deleteClaim(claim.id)}
+                        className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700">
+                        Confirm Delete
+                      </button>
+                    )}
                     <button
                       onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(claim.id) ? n.delete(claim.id) : n.add(claim.id); return n; })}
                       className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600 ml-auto">
@@ -1269,18 +1334,20 @@ export default function GMClaimsPage() {
                   </div>
 
                   {isOpen && (
-                    <div className="border-t border-stone-100 px-4 py-3 space-y-3 bg-stone-50/60">
+                    <div className="border-t-2 border-stone-100 divide-y divide-stone-100">
+
+                      {/* Order items */}
                       {isPOClaim && (claim.line_items?.length ?? 0) > 0 && (
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-2">Order Items</div>
+                        <div className="px-4 py-3">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-2">Order Items</div>
                           <div className="rounded-lg overflow-hidden border border-stone-100">
-                            <div className="grid grid-cols-[1fr_40px_80px_80px] gap-0 bg-stone-100 px-2 py-1">
+                            <div className="grid grid-cols-[1fr_40px_80px_80px] bg-stone-100 px-2 py-1">
                               {["Description","Qty","Unit Price","Amount"].map(h => (
                                 <div key={h} className="text-[10px] font-bold text-stone-500 last:text-right">{h}</div>
                               ))}
                             </div>
                             {claim.line_items.map((item, i) => (
-                              <div key={i} className="grid grid-cols-[1fr_40px_80px_80px] gap-0 px-2 py-1.5 border-t border-stone-50 text-xs">
+                              <div key={i} className="grid grid-cols-[1fr_40px_80px_80px] px-2 py-1.5 border-t border-stone-50 text-xs">
                                 <div className="text-stone-700">{item.description}</div>
                                 <div className="text-stone-500 text-right">{item.qty}</div>
                                 <div className="text-stone-500 text-right">{formatCurrency(item.unit_price)}</div>
@@ -1295,43 +1362,88 @@ export default function GMClaimsPage() {
                         </div>
                       )}
 
+                      {/* Description */}
                       {claim.description && (
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Description</div>
-                          <div className="text-sm text-stone-600">{claim.description}</div>
+                        <div className="px-4 py-3">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-1">Description</div>
+                          <div className="text-sm text-stone-600 pl-2 border-l-2 border-stone-200">{claim.description}</div>
                         </div>
                       )}
 
-                      {claim.notes && (
-                        <div>
+                      {/* GM Notes */}
+                      {(claim.notes || isGM) && (
+                        <div className="px-4 py-3">
                           <div className="flex items-center justify-between mb-1">
-                            <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400">GM Notes</div>
+                            <div className="text-[10px] font-bold uppercase tracking-widest text-stone-400">GM Notes</div>
                             {isGM && (
                               <button onClick={() => { setNotesModal(claim); setNotesDraft(claim.notes ?? ""); }}
-                                className="text-[11px] text-[#4a6da7] hover:underline">Edit</button>
+                                className="text-[11px] text-[#4a6da7] hover:underline">{claim.notes ? "Edit" : "+ Add"}</button>
                             )}
                           </div>
-                          <div className="text-sm text-stone-600 whitespace-pre-wrap">{claim.notes}</div>
+                          {claim.notes && <div className="text-sm text-stone-600 whitespace-pre-wrap pl-2 border-l-2 border-stone-200">{claim.notes}</div>}
                         </div>
                       )}
 
+                      {/* Documents */}
+                      <div className="px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-stone-400 flex items-center gap-1">
+                            <Paperclip size={10} /> Documents {claim.attachments?.length ? `(${claim.attachments.length})` : ""}
+                          </div>
+                          <label className={`text-[11px] flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg border border-stone-200 transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : "text-[#4a6da7] hover:bg-blue-50"}`}>
+                            <input type="file" className="hidden"
+                              accept="image/*,application/pdf,.doc,.docx"
+                              disabled={uploadingClaimId === claim.id}
+                              onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                            <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add file"}
+                          </label>
+                        </div>
+                        {claim.attachments?.length ? (
+                          <div className="space-y-1.5 pl-2">
+                            {claim.attachments.map((url, ai) => {
+                              const name = url.split("/").pop()?.replace(/^\d+_[a-z0-9]+\./, "file.") ?? `File ${ai + 1}`;
+                              const isImg = /\.(jpg|jpeg|png|webp|heic)$/i.test(url);
+                              return (
+                                <div key={ai} className="flex items-center gap-2 text-xs">
+                                  {isImg
+                                    ? <img src={url} alt={name} className="w-10 h-10 rounded object-cover border border-stone-200 shrink-0" />
+                                    : <div className="w-10 h-10 rounded border border-stone-200 bg-stone-50 flex items-center justify-center shrink-0"><FileText size={16} className="text-stone-400" /></div>
+                                  }
+                                  <div className="flex-1 min-w-0">
+                                    <a href={url} target="_blank" rel="noopener noreferrer"
+                                      className="text-[#4a6da7] hover:underline truncate block">{name}</a>
+                                  </div>
+                                  <button onClick={() => removeAttachment(claim.id, url)}
+                                    className="text-stone-300 hover:text-red-500 shrink-0 transition-colors">
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-stone-300 italic pl-2">No documents attached</div>
+                        )}
+                      </div>
+
+                      {/* PV Progress */}
                       {claim.pv && (
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">PV Progress</div>
-                          <div className="space-y-1">
+                        <div className="px-4 py-3">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-2">PV Progress</div>
+                          <div className="pl-2 border-l-2 border-[#4a6da7]/20 space-y-1.5">
                             {[
                               { label: "PV No.", value: claim.pv.pv_no },
                               { label: "Status", value: claim.pv.status.replace(/_/g, " ") },
                               { label: "Submitted", value: formatDate(claim.pv.submitted_at) },
                             ].map(row => (
                               <div key={row.label} className="flex items-center justify-between text-xs">
-                                <span className="text-stone-400">{row.label}</span>
-                                <span className="font-medium text-stone-700">{row.value}</span>
+                                <span className="text-stone-400 w-20 shrink-0">{row.label}</span>
+                                <span className="font-semibold text-stone-700">{row.value}</span>
                               </div>
                             ))}
                           </div>
                           {isFinanceAdmin && claim.pv_id && (
-                            <button onClick={() => unlinkPV(claim.id)} className="mt-2 text-[11px] text-red-400 hover:text-red-600 hover:underline">
+                            <button onClick={() => unlinkPV(claim.id)} className="mt-2 ml-2 text-[11px] text-red-400 hover:text-red-600 hover:underline">
                               Unlink PV
                             </button>
                           )}

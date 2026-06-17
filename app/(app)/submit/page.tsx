@@ -42,7 +42,7 @@ interface TravelItem {
 }
 const EMPTY_TRAVEL_ITEM: TravelItem = { date: "", travel_type: "", description: "", from: "", to: "", km: 0, amount: 0 };
 
-interface AttachmentFile { file: File; previewUrl: string; }
+interface AttachmentFile { file: File; previewUrl: string; sourceUrl?: string; name?: string; }
 
 function formatFileSize(b: number) {
   if (b < 1024) return `${b} B`;
@@ -227,8 +227,24 @@ export default function SubmitPVPage() {
       const amount = parseFloat(params.get("claim_amount") ?? "0") || 0;
       const purpose = params.get("claim_purpose") ?? "";
       setClaimBanner({ id: claimId, claim_no: "", claimant });
-      supabase.from("gm_claims").select("claim_no").eq("id", claimId).single().then(({ data }) => {
-        if (data) setClaimBanner(b => b ? { ...b, claim_no: data.claim_no } : b);
+      supabase.from("gm_claims").select("claim_no,attachments").eq("id", claimId).single().then(({ data }) => {
+        if (data) {
+          setClaimBanner(b => b ? { ...b, claim_no: data.claim_no } : b);
+          // Pre-populate attachments from GM claim as URL-backed entries
+          if (data.attachments?.length) {
+            const preloaded: AttachmentFile[] = data.attachments.map((url: string, i: number) => {
+              const rawName = url.split("/").pop() ?? `attachment-${i + 1}`;
+              const name = rawName.replace(/^\d+_[a-z0-9]+\./, "gm-doc.");
+              return {
+                file: new File([], name),
+                name,
+                previewUrl: url,
+                sourceUrl: url,
+              };
+            });
+            setAttachments(preloaded);
+          }
+        }
       });
       setForm(f => ({
         ...f,
@@ -415,9 +431,10 @@ export default function SubmitPVPage() {
     if (displayAmount <= 0) { setError("Please enter at least one line item with an amount."); return; }
     setSubmitting(true);
     try {
-      // Upload attachments to Supabase storage
+      // Upload attachments to Supabase storage (skip pre-populated GM claim files)
       const attachmentUrls: string[] = [];
       for (const att of attachments) {
+        if (att.sourceUrl) { attachmentUrls.push(att.sourceUrl); continue; }
         const ext = att.file.name.split(".").pop() ?? "bin";
         const path = `pvs/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
         const { error: uploadErr } = await supabase.storage.from("pv-attachments").upload(path, att.file);
