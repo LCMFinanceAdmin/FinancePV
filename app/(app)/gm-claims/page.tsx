@@ -347,6 +347,18 @@ export default function GMClaimsPage() {
   const [gmNotifs, setGmNotifs] = useState<{ id: string; message: string; pv_no: string; pv_id: string | null; created_at: string }[]>([]);
   const [highlightedClaimId, setHighlightedClaimId] = useState<string | null>(null);
 
+  const defaultNewRow = () => ({
+    received_at: new Date().toISOString().slice(0, 10),
+    purpose: "",
+    description: "",
+    amount: "",
+    claimant_name: "",
+    claimant_type: "",
+    ministry: "",
+  });
+  const [newRow, setNewRow] = useState(defaultNewRow);
+  const [savingNewRow, setSavingNewRow] = useState(false);
+
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
     setTimeout(() => setToast(""), 3500);
@@ -600,6 +612,71 @@ export default function GMClaimsPage() {
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, [field]: parsed } : c));
     if (field === "ministry" && value && !ministries.includes(String(value))) {
       setMinistries(prev => [...prev, String(value)].sort());
+    }
+  }
+
+  async function saveNewRow() {
+    if (!newRow.claimant_name.trim() || !newRow.purpose.trim()) {
+      showToast("Claimant name and purpose are required", false); return;
+    }
+    if (!newRow.amount || parseFloat(newRow.amount) <= 0) {
+      showToast("Please enter a valid amount", false); return;
+    }
+    setSavingNewRow(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: claimNoRow } = await supabase.rpc("next_claim_no");
+      const payload = {
+        claim_type: "EXPENSE_CLAIM" as const,
+        claimant_name: newRow.claimant_name.trim(),
+        claimant_type: newRow.claimant_type || null,
+        claimant_email: null,
+        ministry: newRow.ministry.trim() || null,
+        project: null,
+        amount: parseFloat(newRow.amount),
+        purpose: newRow.purpose.trim(),
+        description: newRow.description.trim() || null,
+        notes: null,
+        received_at: new Date(newRow.received_at).toISOString(),
+        payee_bank: null,
+        payee_bank_acct: null,
+        supplier_name: null,
+        supplier_address: null,
+        is_fixed_asset: false,
+        asset_description: null,
+        line_items: [],
+        finance_to_gm_na: false,
+      };
+      const { data: newClaim, error: insertErr } = await supabase.from("gm_claims").insert({
+        ...payload,
+        claim_no: claimNoRow,
+        po_number: null,
+        created_by_email: user?.email ?? "",
+      }).select("id").single();
+      if (insertErr) throw insertErr;
+
+      const { data: feUsers } = await supabase.from("user_roles").select("email")
+        .in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
+      if (feUsers?.length) {
+        await supabase.from("notifications").insert(
+          feUsers.map((fe: { email: string }) => ({
+            recipient_email: fe.email,
+            type: "GM_CLAIM_NEW",
+            pv_no: claimNoRow,
+            pv_id: newClaim?.id ?? null,
+            message: `New GM Instruction: Expense Claim (${claimNoRow}) — ${payload.claimant_name} — ${formatCurrency(payload.amount)}`,
+            read: false,
+            created_at: new Date().toISOString(),
+          }))
+        );
+      }
+      setNewRow(defaultNewRow());
+      showToast("Claim added — Finance Executive notified");
+      await load();
+    } catch {
+      showToast("Failed to save", false);
+    } finally {
+      setSavingNewRow(false);
     }
   }
 
@@ -932,6 +1009,66 @@ export default function GMClaimsPage() {
                     );
                   })}
 
+                  {/* Inline add row — GM only */}
+                  {isGM && (
+                    <tr className="bg-blue-50/60 border-t-2 border-[#4a6da7]/30">
+                      <td className="px-2 py-2 text-center border border-gray-300 align-top pt-3">
+                        <span className="text-[11px] text-stone-400">{claims.length + 1}</span>
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 align-top">
+                        <input type="date" value={newRow.received_at}
+                          onChange={e => setNewRow(r => ({ ...r, received_at: e.target.value }))}
+                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white" />
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 align-top">
+                        <input type="text" placeholder="Purpose / Claims description…" value={newRow.purpose}
+                          onChange={e => setNewRow(r => ({ ...r, purpose: e.target.value }))}
+                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
+                        <input type="text" placeholder="Notes (optional)…" value={newRow.description}
+                          onChange={e => setNewRow(r => ({ ...r, description: e.target.value }))}
+                          className="border border-stone-200 rounded px-1.5 py-1 text-[11px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 bg-white text-stone-500" />
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 align-top">
+                        <input type="number" placeholder="0.00" value={newRow.amount}
+                          onChange={e => setNewRow(r => ({ ...r, amount: e.target.value }))}
+                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white text-right font-bold" />
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 align-top">
+                        <input type="text" placeholder="Claimant name…" value={newRow.claimant_name}
+                          onChange={e => setNewRow(r => ({ ...r, claimant_name: e.target.value }))}
+                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
+                        <select value={newRow.claimant_type}
+                          onChange={e => setNewRow(r => ({ ...r, claimant_type: e.target.value }))}
+                          className="border border-stone-200 rounded px-1 py-1 text-[11px] w-full focus:outline-none bg-white text-stone-500">
+                          <option value="">Type…</option>
+                          {CLAIMANT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 align-top">
+                        <input type="text" placeholder="Ministry / Committee…" value={newRow.ministry}
+                          list="ministry-list"
+                          onChange={e => setNewRow(r => ({ ...r, ministry: e.target.value }))}
+                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white" />
+                        <datalist id="ministry-list">
+                          {ministries.map(m => <option key={m} value={m} />)}
+                        </datalist>
+                      </td>
+                      <td className="px-2 py-2 border border-gray-300 align-top text-[11px] text-stone-300 italic">—</td>
+                      <td className="px-2 py-2 border border-gray-300 align-top print:hidden">
+                        <div className="flex flex-col gap-1.5">
+                          <button onClick={saveNewRow} disabled={savingNewRow}
+                            className="flex items-center gap-1 text-[13px] font-bold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] disabled:opacity-50 whitespace-nowrap transition-colors">
+                            <Plus size={11} /> {savingNewRow ? "Saving…" : "Add"}
+                          </button>
+                          <button onClick={() => setNewRow(defaultNewRow())}
+                            className="text-[11px] text-stone-400 hover:text-stone-600">
+                            Clear
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
                   {/* Empty rows */}
                   {Array.from({ length: Math.max(0, 5 - (claims.length % 5 === 0 ? 5 : claims.length % 5)) }).map((_, i) => (
                     <tr key={`empty-${i}`} className={(claims.length + i) % 2 === 0 ? "bg-white" : "bg-blue-50/30"}>
@@ -947,7 +1084,7 @@ export default function GMClaimsPage() {
 
             {/* Table legend */}
             <div className="px-4 py-2.5 bg-stone-50 border-t-2 border-gray-400 flex flex-wrap gap-3 text-[11px] text-stone-500 print:hidden">
-              {isGM && <span className="flex items-center gap-1 text-[#4a6da7]">✏ Click any cell to edit</span>}
+              {isGM && <span className="flex items-center gap-1 text-[#4a6da7]">✏ Click any cell to edit · Fill the last row to add inline</span>}
               <span className="flex items-center gap-1"><Share2 size={11} /> Use <strong>Share</strong> to send the PV link and status to the claimant</span>
             </div>
           </div>

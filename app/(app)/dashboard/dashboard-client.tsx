@@ -8,7 +8,7 @@ import type { PV } from "@/lib/types";
 import {
   FilePlus, Clock, CheckCircle, AlertCircle,
   CheckCircle2, XCircle, RotateCcw, ShieldCheck,
-  Layers, FileText, ChevronDown, ChevronUp,
+  Layers, FileText, ChevronDown, ChevronUp, X, Inbox,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -39,6 +39,9 @@ export default function DashboardPage() {
   const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(userRole);
   const isSignatory    = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"].includes(userRole);
   const needsPin       = ["BISHOP", "TREASURER", "SECRETARY"].includes(userRole);
+
+  // GM Claim notifications (Finance Admin only)
+  const [gmNotifs, setGmNotifs] = useState<{ id: string; message: string; pv_id: string | null; created_at: string }[]>([]);
 
   // Bulk expand
   const [expandedBulk,   setExpandedBulk]   = useState<Set<string>>(new Set());
@@ -95,6 +98,19 @@ export default function DashboardPage() {
         setUserMinistries(profile?.ministries ?? []);
         setPendingCount(pendingResult.count ?? 0);
         setApprovedCount(approvedResult.count ?? 0);
+
+        // Fetch unread GM claim notifications for Finance Admin
+        const role = profile?.role ?? "";
+        if (["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role)) {
+          const { data: notifRows } = await supabase
+            .from("notifications")
+            .select("id,message,pv_id,created_at")
+            .eq("recipient_email", user.email!)
+            .eq("type", "GM_CLAIM_NEW")
+            .eq("read", false)
+            .order("created_at", { ascending: false });
+          setGmNotifs(notifRows ?? []);
+        }
 
         // Auto-expand all bulk runs and eagerly load child PVs
         if (runs.length > 0) {
@@ -288,6 +304,17 @@ export default function DashboardPage() {
     );
   }
 
+  async function dismissGmNotif(id: string) {
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+    setGmNotifs(prev => prev.filter(n => n.id !== id));
+  }
+
+  async function dismissAllGmNotifs() {
+    const ids = gmNotifs.map(n => n.id);
+    await supabase.from("notifications").update({ read: true }).in("id", ids);
+    setGmNotifs([]);
+  }
+
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
@@ -296,6 +323,41 @@ export default function DashboardPage() {
         <h1 className="text-xl font-bold text-stone-800">Welcome, {firstName}</h1>
         <p className="text-sm text-stone-400">Here&apos;s a summary of your payment vouchers</p>
       </div>
+
+      {/* GM Claim notification banners — Finance Admin only */}
+      {isFinanceAdmin && gmNotifs.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
+              <Inbox size={13} />
+              New GM Instructions ({gmNotifs.length})
+            </div>
+            <button onClick={dismissAllGmNotifs}
+              className="text-xs text-stone-400 hover:text-stone-600 underline">
+              Dismiss all
+            </button>
+          </div>
+          {gmNotifs.map(n => (
+            <Link key={n.id} href="/gm-claims"
+              className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 shadow-sm hover:bg-amber-100 transition-colors"
+              onClick={() => dismissGmNotif(n.id)}>
+              <AlertCircle size={15} className="text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-amber-900 leading-snug">{n.message}</div>
+                <div className="text-xs text-amber-600 mt-0.5">
+                  {new Date(n.created_at).toLocaleString("en-MY", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  {" · "}Tap to go to GM Claims
+                </div>
+              </div>
+              <button
+                onClick={e => { e.preventDefault(); e.stopPropagation(); dismissGmNotif(n.id); }}
+                className="text-amber-400 hover:text-amber-700 transition-colors shrink-0 mt-0.5">
+                <X size={14} />
+              </button>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* Toast */}
       {toast.msg && (
