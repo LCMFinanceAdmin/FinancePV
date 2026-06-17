@@ -628,29 +628,40 @@ export default function GMClaimsPage() {
     setUploadingClaimId(claimId);
     try {
       const ext = file.name.split(".").pop() ?? "bin";
-      const path = `claims/${claimId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: uploadErr } = await supabase.storage.from("gm-claim-attachments").upload(path, file);
-      if (uploadErr) { showToast("Upload failed", false); return; }
-      const { data: { publicUrl } } = supabase.storage.from("gm-claim-attachments").getPublicUrl(path);
-      const claim = claims.find(c => c.id === claimId);
-      const updated = [...(claim?.attachments ?? []), publicUrl];
-      await supabase.from("gm_claims").update({ attachments: updated, updated_at: new Date().toISOString() }).eq("id", claimId);
+      const path = `gm-claims/${claimId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: uploadErr } = await supabase.storage.from("pv-attachments").upload(path, file);
+      if (uploadErr) {
+        showToast(`Upload failed: ${uploadErr.message}`, false);
+        return;
+      }
+      const { data: { publicUrl } } = supabase.storage.from("pv-attachments").getPublicUrl(path);
+      // Read fresh attachments from DB to avoid stale closure
+      const { data: fresh } = await supabase.from("gm_claims").select("attachments").eq("id", claimId).single();
+      const updated = [...(fresh?.attachments ?? []), publicUrl];
+      const { error: dbErr } = await supabase.from("gm_claims").update({ attachments: updated, updated_at: new Date().toISOString() }).eq("id", claimId);
+      if (dbErr) {
+        showToast(`Save failed: ${dbErr.message}`, false);
+        return;
+      }
       setClaims(prev => prev.map(c => c.id === claimId ? { ...c, attachments: updated } : c));
       showToast("Attachment uploaded");
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Upload failed", false);
     } finally {
       setUploadingClaimId(null);
     }
   }
 
   async function removeAttachment(claimId: string, url: string) {
-    const claim = claims.find(c => c.id === claimId);
-    const updated = (claim?.attachments ?? []).filter(a => a !== url);
-    await supabase.from("gm_claims").update({ attachments: updated, updated_at: new Date().toISOString() }).eq("id", claimId);
+    const { data: fresh } = await supabase.from("gm_claims").select("attachments").eq("id", claimId).single();
+    const updated = (fresh?.attachments ?? []).filter((a: string) => a !== url);
+    const { error: dbErr } = await supabase.from("gm_claims").update({ attachments: updated, updated_at: new Date().toISOString() }).eq("id", claimId);
+    if (dbErr) { showToast(`Remove failed: ${dbErr.message}`, false); return; }
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, attachments: updated } : c));
     // Best-effort delete from storage
     try {
-      const pathMatch = url.match(/gm-claim-attachments\/(.+)$/);
-      if (pathMatch) await supabase.storage.from("gm-claim-attachments").remove([pathMatch[1]]);
+      const pathMatch = url.match(/pv-attachments\/(.+)$/);
+      if (pathMatch) await supabase.storage.from("pv-attachments").remove([decodeURIComponent(pathMatch[1])]);
     } catch { /* ignore */ }
     showToast("Attachment removed");
   }
