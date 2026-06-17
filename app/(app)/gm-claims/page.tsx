@@ -344,6 +344,9 @@ export default function GMClaimsPage() {
   const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
 
+  const [gmNotifs, setGmNotifs] = useState<{ id: string; message: string; pv_no: string; pv_id: string | null; created_at: string }[]>([]);
+  const [highlightedClaimId, setHighlightedClaimId] = useState<string | null>(null);
+
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
     setTimeout(() => setToast(""), 3500);
@@ -401,6 +404,17 @@ export default function GMClaimsPage() {
       }
 
       setClaims(claimRows.map((c) => ({ ...c, pv: pvMap[c.pv_id] ?? null })));
+
+      // Fetch unread GM_CLAIM_NEW notifications for Finance Exec roles
+      if (authUser) {
+        const { data: notifRows } = await supabase.from("notifications")
+          .select("id,message,pv_no,pv_id,created_at")
+          .eq("recipient_email", authUser.email!)
+          .eq("type", "GM_CLAIM_NEW")
+          .eq("read", false)
+          .order("created_at", { ascending: false });
+        setGmNotifs(notifRows ?? []);
+      }
 
       const [{ data: budgetRows }, { data: pvMinRows }, { data: bankRows }] = await Promise.all([
         supabase.from("budget_items").select("ministry"),
@@ -526,12 +540,12 @@ export default function GMClaimsPage() {
           po_number = poNoRow;
         }
 
-        const { error: insertErr } = await supabase.from("gm_claims").insert({
+        const { data: newClaim, error: insertErr } = await supabase.from("gm_claims").insert({
           ...payload,
           claim_no: claimNoRow,
           po_number,
           created_by_email: user?.email ?? "",
-        });
+        }).select("id").single();
         if (insertErr) { console.error("[gm_claims INSERT]", insertErr.code, insertErr.message, insertErr.details); throw insertErr; }
 
         const { data: feUsers } = await supabase.from("user_roles").select("email")
@@ -541,10 +555,10 @@ export default function GMClaimsPage() {
           await supabase.from("notifications").insert(
             feUsers.map((fe: { email: string }) => ({
               recipient_email: fe.email,
-              type: "GM_CLAIM",
+              type: "GM_CLAIM_NEW",
               pv_no: claimNoRow,
-              pv_id: null,
-              message: `GM logged a ${typeLabel} (${claimNoRow}) from ${payload.claimant_name} — ${formatCurrency(payload.amount)} — awaiting PV preparation`,
+              pv_id: newClaim?.id ?? null,
+              message: `New GM Instruction: ${typeLabel} (${claimNoRow}) — ${payload.claimant_name} — ${formatCurrency(payload.amount)}`,
               read: false,
               created_at: new Date().toISOString(),
             }))
@@ -570,7 +584,7 @@ export default function GMClaimsPage() {
   }
 
   async function handleShare(claim: GMClaim, stage: ClaimStage) {
-    handleShare(claim, stage);
+    shareClaim(claim, stage);
     // GM sharing a PAID claim: stamp claimant_informed_at so the timestamp shows in the table
     if (currentUser?.role === "GENERAL_MANAGER" && stage === "PAID") {
       const now = new Date().toISOString();
@@ -624,6 +638,21 @@ export default function GMClaimsPage() {
 
   const isGM = currentUser?.role === "GENERAL_MANAGER";
   const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(currentUser?.role ?? "");
+
+  async function dismissNotif(id: string, claimId: string | null) {
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+    setGmNotifs(prev => prev.filter(n => n.id !== id));
+    if (claimId) {
+      setHighlightedClaimId(claimId);
+      // Scroll to the row
+      setTimeout(() => {
+        const el = document.getElementById(`claim-row-${claimId}`);
+        if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+        // Remove highlight after 4s
+        setTimeout(() => setHighlightedClaimId(null), 4000);
+      }, 150);
+    }
+  }
 
   const total = claims.length;
   const unprepared = claims.filter(c => deriveStage(c) === "NOT_PREPARED").length;
@@ -690,6 +719,31 @@ export default function GMClaimsPage() {
           ))}
         </div>
 
+        {/* Finance Admin notification banners */}
+        {isFinanceAdmin && gmNotifs.length > 0 && (
+          <div className="space-y-2">
+            {gmNotifs.map(n => (
+              <div key={n.id}
+                className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:bg-amber-100 transition-colors"
+                onClick={() => dismissNotif(n.id, n.pv_id)}>
+                <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold text-amber-900 leading-snug">{n.message}</div>
+                  <div className="text-[11px] text-amber-600 mt-0.5">
+                    {new Date(n.created_at).toLocaleString("en-MY", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {" · "}Tap to view in table
+                  </div>
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); dismissNotif(n.id, null); }}
+                  className="text-amber-400 hover:text-amber-700 transition-colors shrink-0 mt-0.5">
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
         ) : claims.length === 0 ? (
@@ -745,9 +799,9 @@ export default function GMClaimsPage() {
                       : idx % 2 === 0 ? "bg-white" : "bg-blue-50/30";
 
                     return (
-                      <tr key={claim.id} className={`${rowBg} transition-colors ${isPaid ? "hover:bg-green-100" : isRejectedRow ? "hover:bg-red-100" : isCancelledRow ? "hover:bg-amber-100" : "hover:bg-blue-50/50"}`}>
+                      <tr key={claim.id} id={`claim-row-${claim.id}`} className={`${rowBg} transition-colors ${highlightedClaimId === claim.id ? "ring-2 ring-inset ring-amber-400" : ""} ${isPaid ? "hover:bg-green-100" : isRejectedRow ? "hover:bg-red-100" : isCancelledRow ? "hover:bg-amber-100" : "hover:bg-blue-50/50"}`}>
                         {/* No. */}
-                        <td className="px-3 py-3 text-center text-stone-500 font-medium border border-gray-300 align-middle">
+                        <td className="px-3 py-3 text-center text-stone-500 font-medium border border-gray-300 align-middle text-[13px]">
                           {idx + 1}
                         </td>
 
@@ -756,25 +810,25 @@ export default function GMClaimsPage() {
                           <EditCell value={claim.received_at} type="date"
                             displayValue={formatDate(claim.received_at)}
                             onSave={v => updateClaimField(claim.id, "received_at", v ? new Date(v).toISOString() : claim.received_at)}
-                            canEdit={isGM} className="text-stone-700 font-medium text-xs" />
+                            canEdit={isGM} className="text-stone-700 font-medium text-[15px]" />
                         </td>
 
                         {/* Claims/Payments */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
                           <EditCell value={claim.purpose} onSave={v => updateClaimField(claim.id, "purpose", v)}
-                            canEdit={isGM} className="font-semibold text-stone-800 text-xs leading-tight" />
+                            canEdit={isGM} className="font-semibold text-stone-800 text-[15px] leading-tight" />
                           <EditCell value={claim.description ?? ""} placeholder="notes…"
                             onSave={v => updateClaimField(claim.id, "description", v)} type="textarea"
-                            canEdit={isGM} className="text-stone-600 text-[10px] mt-0.5 leading-tight" />
+                            canEdit={isGM} className="text-stone-600 text-[13px] mt-0.5 leading-tight" />
                           <div className="flex flex-wrap gap-1 mt-1">
-                            <span className="text-[10px] font-mono text-stone-400">{claim.claim_no}</span>
+                            <span className="text-[13px] font-mono text-stone-400">{claim.claim_no}</span>
                             {isPOClaim && (
-                              <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">
-                                <Package size={8} /> PO
+                              <span className="flex items-center gap-0.5 text-[13px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                                <Package size={10} /> PO
                               </span>
                             )}
                             {claim.is_fixed_asset && (
-                              <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
+                              <span className="text-[13px] font-semibold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
                             )}
                           </div>
                         </td>
@@ -784,25 +838,25 @@ export default function GMClaimsPage() {
                           <EditCell value={String(claim.amount)} type="number"
                             displayValue={`RM ${Number(claim.amount).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             onSave={v => updateClaimField(claim.id, "amount", v)} canEdit={isGM}
-                            className="font-bold text-stone-800 tabular-nums text-xs" />
+                            className="font-bold text-stone-800 tabular-nums text-[15px]" />
                         </td>
 
                         {/* Claimant Name */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
                           <EditCell value={claim.claimant_name} onSave={v => updateClaimField(claim.id, "claimant_name", v)}
-                            canEdit={isGM} className="font-medium text-stone-800 text-xs" />
+                            canEdit={isGM} className="font-medium text-stone-800 text-[15px]" />
                           <SelectCell value={claim.claimant_type ?? ""} options={CLAIMANT_TYPES}
                             onSave={v => updateClaimField(claim.id, "claimant_type", v)}
-                            canEdit={isGM} className="text-stone-500 text-[10px] mt-0.5" />
-                          {claim.claimant_email && <div className="text-stone-400 text-[10px] mt-0.5">{claim.claimant_email}</div>}
+                            canEdit={isGM} className="text-stone-500 text-[13px] mt-0.5" />
+                          {claim.claimant_email && <div className="text-stone-400 text-[13px] mt-0.5">{claim.claimant_email}</div>}
                         </td>
 
                         {/* Committee/District/Personal */}
                         <td className="px-3 py-3 border border-gray-300 align-middle">
                           <EditCell value={claim.ministry ?? ""} placeholder="ministry…"
                             onSave={v => updateClaimField(claim.id, "ministry", v)}
-                            canEdit={isGM} className="text-stone-700 text-xs" />
-                          {claim.project && <div className="text-stone-400 text-[10px] mt-0.5">{claim.project}</div>}
+                            canEdit={isGM} className="text-stone-700 text-[15px]" />
+                          {claim.project && <div className="text-stone-400 text-[13px] mt-0.5">{claim.project}</div>}
                         </td>
 
                         {/* Status */}
@@ -810,27 +864,27 @@ export default function GMClaimsPage() {
                           {claim.pv && stage === "PV_PREPARED" && isGM ? (
                             <Link href={`/my-pvs/${claim.pv.id}`}
                               className="inline-flex flex-col items-start gap-1 group w-fit">
-                              <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
+                              <span className={`inline-flex items-center gap-1.5 text-[14px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
                                 {meta.icon} {meta.label}
                               </span>
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-green-600 text-white group-hover:bg-green-700 whitespace-nowrap transition-colors">
-                                <CheckCircle size={10} /> Tap to Verify →
+                              <span className="inline-flex items-center gap-1 text-[14px] font-bold px-2.5 py-1 rounded-lg bg-green-600 text-white group-hover:bg-green-700 whitespace-nowrap transition-colors">
+                                <CheckCircle size={12} /> Tap to Verify →
                               </span>
                             </Link>
                           ) : (
-                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
+                            <span className={`inline-flex items-center gap-1.5 text-[14px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
                               {meta.icon} {meta.label}
                             </span>
                           )}
                           {claim.pv && stage !== "PV_PREPARED" && (
                             <Link href={`/my-pvs/${claim.pv.id}`}
-                              className="flex items-center gap-1 text-[10px] text-[#4a6da7] hover:underline mt-1">
-                              <ExternalLink size={9} /> {claim.pv.pv_no}
+                              className="flex items-center gap-1 text-[13px] text-[#4a6da7] hover:underline mt-1">
+                              <ExternalLink size={11} /> {claim.pv.pv_no}
                             </Link>
                           )}
                           {stage === "PAID" && claim.claimant_informed_at && (
-                            <div className="text-[9px] text-green-700 mt-1 flex items-center gap-0.5">
-                              <Share2 size={8} /> Shared {new Date(claim.claimant_informed_at).toLocaleString("en-MY", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            <div className="text-[12px] text-green-700 mt-1 flex items-center gap-0.5">
+                              <Share2 size={10} /> Shared {new Date(claim.claimant_informed_at).toLocaleString("en-MY", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                         </td>
@@ -841,19 +895,19 @@ export default function GMClaimsPage() {
                             {isFinanceAdmin && stage === "NOT_PREPARED" && (
                               <Link
                                 href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
-                                className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] whitespace-nowrap">
-                                <FileText size={9} /> Create PV
+                                className="flex items-center gap-1 text-[13px] font-bold px-2 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] whitespace-nowrap">
+                                <FileText size={11} /> Create PV
                               </Link>
                             )}
                             {isFinanceAdmin && (
                               <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
-                                className="text-[10px] text-stone-400 hover:text-stone-600 text-left">
+                                className="text-[13px] text-stone-400 hover:text-stone-600 text-left">
                                 {claim.pv_id ? "Change PV" : "Link PV"}
                               </button>
                             )}
                             <button onClick={() => handleShare(claim, stage)}
-                              className="flex items-center gap-1 text-[10px] text-stone-500 hover:text-[#4a6da7] text-left">
-                              <Share2 size={10} /> Share
+                              className="flex items-center gap-1 text-[13px] text-stone-500 hover:text-[#4a6da7] text-left">
+                              <Share2 size={12} /> Share
                             </button>
                             {isPOClaim && claim.po_number && (
                               <POPdfButton data={{
