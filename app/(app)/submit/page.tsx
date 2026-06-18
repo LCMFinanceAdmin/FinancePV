@@ -164,6 +164,7 @@ export default function SubmitPVPage() {
   // Attachments
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null);
 
   // Mobile accordion
   const [isMobile, setIsMobile] = useState(false);
@@ -589,18 +590,21 @@ export default function SubmitPVPage() {
           {attachments.map((att, idx) => (
             <div key={idx} className="relative group">
               {(() => {
-                const isImg = /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(att.previewUrl || att.file.name);
-                return isImg && att.previewUrl ? (
-                  <div className="h-20 rounded-xl overflow-hidden border border-stone-200">
+                const url = att.previewUrl || att.sourceUrl;
+                const isImg = /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(url || att.file.name);
+                const active = previewDocUrl === url;
+                return isImg && url ? (
+                  <button type="button" onClick={() => setPreviewDocUrl(active ? null : url)}
+                    className={`h-20 rounded-xl overflow-hidden border w-full transition-colors ${active ? "border-[#4a6da7]" : "border-stone-200"}`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={att.previewUrl} alt={att.name || att.file.name} className="w-full h-full object-cover" />
-                  </div>
+                    <img src={url} alt={att.name || att.file.name} className="w-full h-full object-cover" />
+                  </button>
                 ) : (
-                  <a href={att.previewUrl || undefined} target="_blank" rel="noopener noreferrer"
-                    className="h-20 rounded-xl border border-stone-200 bg-stone-50 flex flex-col items-center justify-center gap-1 px-1 hover:bg-blue-50 hover:border-[#4a6da7]/40 transition-colors block">
+                  <button type="button" onClick={() => url && setPreviewDocUrl(active ? null : url)}
+                    className={`h-20 rounded-xl border w-full flex flex-col items-center justify-center gap-1 px-1 transition-colors ${active ? "border-[#4a6da7] bg-blue-50" : "border-stone-200 bg-stone-50 hover:bg-blue-50 hover:border-[#4a6da7]/40"}`}>
                     <FileIcon size={20} className="text-[#4a6da7]" />
                     <span className="text-[9px] text-stone-500 text-center leading-tight break-all line-clamp-2">{att.name || att.file.name}</span>
-                  </a>
+                  </button>
                 );
               })()}
               <button type="button" onClick={() => removeAttachment(idx)}
@@ -610,6 +614,14 @@ export default function SubmitPVPage() {
               <p className="text-[9px] text-stone-400 mt-0.5 text-center truncate">{att.sourceUrl ? "GM Claim" : formatFileSize(att.file.size)}</p>
             </div>
           ))}
+        </div>
+      )}
+      {previewDocUrl && (
+        <div className="mt-3 rounded-xl border border-[#4a6da7]/30 overflow-hidden bg-stone-50">
+          {/\.(jpg|jpeg|png|webp|gif|heic)$/i.test(previewDocUrl)
+            ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={previewDocUrl} alt="preview" className="max-w-full max-h-96 object-contain mx-auto block" />
+            : <iframe src={previewDocUrl} className="w-full h-96 border-0" title="Document preview" />
+          }
         </div>
       )}
     </div>
