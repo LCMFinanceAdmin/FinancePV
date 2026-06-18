@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
+import { ClaimsPrintModal } from "@/components/gm/claims-print-modal";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -359,6 +360,7 @@ export default function GMClaimsPage() {
   const [newRow, setNewRow] = useState(defaultNewRow);
   const [savingNewRow, setSavingNewRow] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // claim id awaiting confirm
+  const [showPrintModal, setShowPrintModal] = useState(false);
   const [uploadingClaimId, setUploadingClaimId] = useState<string | null>(null);
   const uploadingRef = useRef(false);
   const pickerOpenRef = useRef(false);
@@ -826,6 +828,23 @@ export default function GMClaimsPage() {
 
   return (
     <main className="min-h-screen bg-stone-50 pb-28 md:pb-8">
+      {showPrintModal && (
+        <ClaimsPrintModal
+          claims={claims.map(c => ({
+            claim_no: c.claim_no,
+            purpose: c.purpose,
+            description: c.description,
+            amount: c.amount,
+            claimant_name: c.claimant_name,
+            claimant_type: c.claimant_type,
+            ministry: c.ministry,
+            received_at: c.received_at,
+            pv_id: c.pv_id,
+            status_label: STAGE_META[deriveStage(c)].label,
+          }))}
+          onClose={() => setShowPrintModal(false)}
+        />
+      )}
       <div className={`mx-auto px-4 py-6 space-y-5 ${viewMode === "table" ? "max-w-[1400px]" : "max-w-3xl"}`}>
 
         {/* Header */}
@@ -853,9 +872,9 @@ export default function GMClaimsPage() {
               </button>
             </div>
             {viewMode === "table" && (
-              <button onClick={() => window.print()}
+              <button onClick={() => setShowPrintModal(true)}
                 className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">
-                <Printer size={13} /> Print
+                <Printer size={13} /> Print / PDF
               </button>
             )}
             {isGM && (
