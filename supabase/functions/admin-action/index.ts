@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
           updated_at: now,
         }).eq("id", pv_id);
 
-        // Notify GM
+        // Notify GM (in-app + push)
         const { data: gmUsers } = await db.from("user_roles").select("email").eq("role", "GENERAL_MANAGER");
         if (gmUsers?.length) {
           await db.from("notifications").insert(
@@ -91,6 +91,11 @@ Deno.serve(async (req) => {
               created_at: now,
             }))
           );
+          await sendPushToRoles(db, ["GENERAL_MANAGER"], {
+            title: "BAM PV Awaiting Your Approval",
+            body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) needs your sign-off`,
+            url: "/signatory",
+          });
         }
         return json({ ok: true, status: "GM_REVIEW" });
       }
@@ -121,11 +126,18 @@ Deno.serve(async (req) => {
         approvals: [entry, ...filtered],
         updated_at: now,
       }).eq("id", pv_id);
-      await sendPushToEmails(db, [pv.submitted_by_email], {
-        title: "PV Reviewed by Finance",
-        body: `Your PV ${pv.pv_no} (${formatRM(pv.amount)}) has been reviewed by Finance Executive`,
-        url: "/my-pvs",
-      });
+      await Promise.all([
+        sendPushToEmails(db, [pv.submitted_by_email], {
+          title: "PV Reviewed by Finance",
+          body: `Your PV ${pv.pv_no} (${formatRM(pv.amount)}) has been reviewed by Finance Executive`,
+          url: "/my-pvs",
+        }),
+        sendPushToRoles(db, ["GENERAL_MANAGER"], {
+          title: "PV Awaiting GM Approval",
+          body: `PV ${pv.pv_no} (${formatRM(pv.amount)}) has been reviewed by Finance and needs your approval`,
+          url: "/signatory",
+        }),
+      ]);
       return json({ ok: true, status: "REVIEWED" });
     }
 

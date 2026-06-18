@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Lato } from "next/font/google";
 import "./globals.css";
+import { NotificationSound } from "@/components/NotificationSound";
 
 const lato = Lato({ subsets: ["latin"], weight: ["300", "400", "700"] });
 
@@ -72,6 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: splashScript }} />
 
         {children}
+        <NotificationSound />
       </body>
     </html>
   );
