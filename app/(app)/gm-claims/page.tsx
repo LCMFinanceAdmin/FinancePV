@@ -647,8 +647,8 @@ export default function GMClaimsPage() {
     setUploadError(null);
     setUploadStatus({ id: claimId, step: `Picked: ${file.name} (${(file.size / 1024).toFixed(0)} KB, ${file.type || "unknown type"})`, ok: true });
     try {
-      const ext = file.name.split(".").pop() ?? "bin";
-      const path = `gm-claims/${claimId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const safeName = file.name.replace(/[^\w.\-]/g, "_").slice(0, 80);
+      const path = `gm-claims/${claimId}/${Date.now()}_${safeName}`;
       setUploadStatus({ id: claimId, step: "Step 1/3: Uploading to storage…", ok: true });
       const { error: uploadErr } = await supabase.storage.from("gm-claim-attachments").upload(path, file);
       if (uploadErr) {
@@ -1076,7 +1076,7 @@ export default function GMClaimsPage() {
                             {/* Attachments — always-visible toggle */}
                             <button
                               onClick={() => setOpenAttachments(prev => { const n = new Set(prev); n.has(claim.id) ? n.delete(claim.id) : n.add(claim.id); return n; })}
-                              className={`flex items-center gap-1 text-[13px] transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : uploadError?.id === claim.id ? "text-red-500" : (claim.attachments?.length ?? 0) > 0 ? "text-[#4a6da7] font-semibold" : "text-stone-500 hover:text-[#4a6da7]"}`}>
+                              className={`flex items-center gap-1 text-[11px] transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : uploadError?.id === claim.id ? "text-red-500" : (claim.attachments?.length ?? 0) > 0 ? "text-[#4a6da7] font-semibold" : "text-stone-500 hover:text-[#4a6da7]"}`}>
                               <Paperclip size={11} />
                               {uploadingClaimId === claim.id ? "Uploading…" : `Attachments${(claim.attachments?.length ?? 0) > 0 ? ` (${claim.attachments!.length})` : ""}`}
                             </button>
@@ -1149,7 +1149,8 @@ export default function GMClaimsPage() {
                               <div>
                                 <div className="flex flex-wrap gap-2">
                                   {claim.attachments!.map((url, ai) => {
-                                    const fname = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_[a-z0-9]+\./, "") || `File ${ai + 1}`;
+                                    const rawName = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_/, "").replace(/_/g, " ") || `File ${ai + 1}`;
+                                  const fname = rawName.length > 10 ? rawName.slice(0, 10) + "…" : rawName;
                                     const isImg = /\.(jpg|jpeg|png|webp|heic|gif)$/i.test(url);
                                     const active = previewUrl === url;
                                     return (
@@ -1417,7 +1418,7 @@ export default function GMClaimsPage() {
                     {/* Single Attachments button — always visible, toggles inline panel */}
                     <button
                       onClick={() => setViewingAttachments(viewingAttachments === claim.id ? null : claim.id)}
-                      className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : (claim.attachments?.length ?? 0) > 0 ? "border-[#4a6da7]/40 text-[#4a6da7] bg-blue-50/50 hover:bg-blue-100" : "border-stone-200 text-stone-600 hover:bg-stone-50"}`}>
+                      className={`flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : (claim.attachments?.length ?? 0) > 0 ? "border-[#4a6da7]/40 text-[#4a6da7] bg-blue-50/50 hover:bg-blue-100" : "border-stone-200 text-stone-600 hover:bg-stone-50"}`}>
                       <Paperclip size={11} />
                       {uploadingClaimId === claim.id ? "Uploading…" : `Attachments${(claim.attachments?.length ?? 0) > 0 ? ` (${claim.attachments!.length})` : ""}`}
                     </button>
@@ -1478,7 +1479,8 @@ export default function GMClaimsPage() {
                       {(claim.attachments?.length ?? 0) > 0 ? (
                         <div className="space-y-2">
                           {claim.attachments!.map((url, ai) => {
-                            const fname = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_[a-z0-9]+\./, "") || `File ${ai + 1}`;
+                            const rawName = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_/, "").replace(/_/g, " ") || `File ${ai + 1}`;
+                            const fname = rawName.length > 10 ? rawName.slice(0, 10) + "…" : rawName;
                             const isImg = /\.(jpg|jpeg|png|webp|heic|gif)$/i.test(url);
                             const active = previewUrl === url;
                             return (
@@ -1586,7 +1588,8 @@ export default function GMClaimsPage() {
                         {claim.attachments?.length ? (
                           <div className="space-y-1.5 pl-2">
                             {claim.attachments.map((url, ai) => {
-                              const name = url.split("/").pop()?.replace(/^\d+_[a-z0-9]+\./, "file.") ?? `File ${ai + 1}`;
+                              const rawName = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_/, "").replace(/_/g, " ") || `File ${ai + 1}`;
+                              const name = rawName.length > 10 ? rawName.slice(0, 10) + "…" : rawName;
                               const isImg = /\.(jpg|jpeg|png|webp|heic)$/i.test(url);
                               const active = previewUrl === url;
                               return (
