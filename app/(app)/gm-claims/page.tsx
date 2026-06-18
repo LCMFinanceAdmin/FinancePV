@@ -365,6 +365,7 @@ export default function GMClaimsPage() {
   const lastLoadTimeRef = useRef(0);
   const [openAttachments, setOpenAttachments] = useState<Set<string>>(new Set()); // table-view attachment panel
   const [viewingAttachments, setViewingAttachments] = useState<string | null>(null); // card-view inline preview
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null); // inline file preview
   const [uploadError, setUploadError] = useState<{ id: string; msg: string } | null>(null);
   const [uploadStatus, setUploadStatus] = useState<{ id: string; step: string; ok: boolean } | null>(null);
 
@@ -1145,22 +1146,36 @@ export default function GMClaimsPage() {
                               </div>
                             )}
                             {(claim.attachments?.length ?? 0) > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {claim.attachments!.map((url, ai) => {
-                                  const fname = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_[a-z0-9]+\./, "") || `File ${ai + 1}`;
-                                  const isImg = /\.(jpg|jpeg|png|webp|heic|gif)$/i.test(url);
-                                  return (
-                                    <div key={ai} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-stone-200 bg-white hover:border-[#4a6da7]/40 hover:bg-blue-50 transition-colors max-w-[200px]">
-                                      {isImg
-                                        ? <img src={url} alt={fname} className="w-8 h-8 rounded object-cover border border-stone-100 shrink-0" />
-                                        : <div className="w-8 h-8 rounded border border-stone-100 bg-[#4a6da7]/5 flex items-center justify-center shrink-0"><FileText size={14} className="text-[#4a6da7]" /></div>
-                                      }
-                                      <a href={url} target="_blank" rel="noopener noreferrer"
-                                        className="text-[12px] text-[#4a6da7] hover:underline truncate flex-1">{fname}</a>
-                                      <button onClick={() => removeAttachment(claim.id, url)} className="text-stone-300 hover:text-red-500 shrink-0 transition-colors"><X size={11} /></button>
-                                    </div>
-                                  );
-                                })}
+                              <div>
+                                <div className="flex flex-wrap gap-2">
+                                  {claim.attachments!.map((url, ai) => {
+                                    const fname = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_[a-z0-9]+\./, "") || `File ${ai + 1}`;
+                                    const isImg = /\.(jpg|jpeg|png|webp|heic|gif)$/i.test(url);
+                                    const active = previewUrl === url;
+                                    return (
+                                      <div key={ai} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border transition-colors max-w-[220px] ${active ? "border-[#4a6da7] bg-blue-50" : "border-stone-200 bg-white hover:border-[#4a6da7]/40 hover:bg-blue-50"}`}>
+                                        <button onClick={() => setPreviewUrl(active ? null : url)}
+                                          className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                                          {isImg
+                                            ? <img src={url} alt={fname} className="w-8 h-8 rounded object-cover border border-stone-100 shrink-0" />
+                                            : <div className="w-8 h-8 rounded border border-stone-100 bg-[#4a6da7]/5 flex items-center justify-center shrink-0"><FileText size={14} className="text-[#4a6da7]" /></div>
+                                          }
+                                          <span className="text-[12px] text-[#4a6da7] truncate">{fname}</span>
+                                        </button>
+                                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-stone-300 hover:text-[#4a6da7] shrink-0 transition-colors" title="Open in new tab"><ExternalLink size={11} /></a>
+                                        <button onClick={() => removeAttachment(claim.id, url)} className="text-stone-300 hover:text-red-500 shrink-0 transition-colors"><X size={11} /></button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {previewUrl && claim.attachments!.includes(previewUrl) && (
+                                  <div className="mt-3 rounded-xl border border-[#4a6da7]/30 overflow-hidden bg-stone-50">
+                                    {/\.(jpg|jpeg|png|webp|heic|gif)$/i.test(previewUrl)
+                                      ? <img src={previewUrl} alt="preview" className="max-w-full max-h-80 object-contain mx-auto block" />
+                                      : <iframe src={previewUrl} className="w-full h-80 border-0" title="Document preview" />
+                                    }
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               <div className="text-[12px] text-stone-400 italic">No files attached yet — click "Add File" to upload</div>
@@ -1465,27 +1480,33 @@ export default function GMClaimsPage() {
                           {claim.attachments!.map((url, ai) => {
                             const fname = decodeURIComponent(url.split("/").pop() ?? "").replace(/^\d+_[a-z0-9]+\./, "") || `File ${ai + 1}`;
                             const isImg = /\.(jpg|jpeg|png|webp|heic|gif)$/i.test(url);
+                            const active = previewUrl === url;
                             return (
-                              <div key={ai} className="flex items-center gap-3 bg-white rounded-xl border border-stone-200 px-3 py-2 shadow-sm">
-                                {isImg
-                                  ? <a href={url} target="_blank" rel="noopener noreferrer">
-                                      <img src={url} alt={fname} className="w-12 h-12 rounded-lg object-cover border border-stone-100 shrink-0 hover:opacity-90 transition-opacity" />
-                                    </a>
-                                  : <div className="w-12 h-12 rounded-lg border border-stone-100 bg-[#4a6da7]/5 flex items-center justify-center shrink-0">
-                                      <FileText size={20} className="text-[#4a6da7]" />
-                                    </div>
-                                }
-                                <div className="flex-1 min-w-0">
-                                  <a href={url} target="_blank" rel="noopener noreferrer"
-                                    className="text-sm font-medium text-[#4a6da7] hover:underline truncate block leading-tight">
-                                    {fname}
-                                  </a>
-                                  <div className="text-[11px] text-stone-400 mt-0.5">{isImg ? "Image" : "Document"} · Tap to open</div>
+                              <div key={ai}>
+                                <div className={`flex items-center gap-3 bg-white rounded-xl border px-3 py-2 shadow-sm transition-colors ${active ? "border-[#4a6da7]" : "border-stone-200"}`}>
+                                  <button onClick={() => setPreviewUrl(active ? null : url)} className="shrink-0">
+                                    {isImg
+                                      ? <img src={url} alt={fname} className="w-12 h-12 rounded-lg object-cover border border-stone-100 hover:opacity-90 transition-opacity" />
+                                      : <div className="w-12 h-12 rounded-lg border border-stone-100 bg-[#4a6da7]/5 flex items-center justify-center hover:bg-blue-100 transition-colors">
+                                          <FileText size={20} className="text-[#4a6da7]" />
+                                        </div>
+                                    }
+                                  </button>
+                                  <button onClick={() => setPreviewUrl(active ? null : url)} className="flex-1 min-w-0 text-left">
+                                    <div className="text-sm font-medium text-[#4a6da7] truncate leading-tight">{fname}</div>
+                                    <div className="text-[11px] text-stone-400 mt-0.5">{isImg ? "Image" : "Document"} · Click to {active ? "close" : "preview"}</div>
+                                  </button>
+                                  <a href={url} target="_blank" rel="noopener noreferrer" className="text-stone-300 hover:text-[#4a6da7] shrink-0 transition-colors p-1" title="Open in new tab"><ExternalLink size={13} /></a>
+                                  <button onClick={() => removeAttachment(claim.id, url)} className="text-stone-300 hover:text-red-500 shrink-0 transition-colors p-1"><X size={14} /></button>
                                 </div>
-                                <button onClick={() => removeAttachment(claim.id, url)}
-                                  className="text-stone-300 hover:text-red-500 shrink-0 transition-colors p-1">
-                                  <X size={14} />
-                                </button>
+                                {active && (
+                                  <div className="mt-2 rounded-xl border border-[#4a6da7]/30 overflow-hidden bg-stone-50">
+                                    {isImg
+                                      ? <img src={url} alt={fname} className="max-w-full max-h-80 object-contain mx-auto block" />
+                                      : <iframe src={url} className="w-full h-80 border-0" title="Document preview" />
+                                    }
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -1567,20 +1588,28 @@ export default function GMClaimsPage() {
                             {claim.attachments.map((url, ai) => {
                               const name = url.split("/").pop()?.replace(/^\d+_[a-z0-9]+\./, "file.") ?? `File ${ai + 1}`;
                               const isImg = /\.(jpg|jpeg|png|webp|heic)$/i.test(url);
+                              const active = previewUrl === url;
                               return (
-                                <div key={ai} className="flex items-center gap-2 text-xs">
-                                  {isImg
-                                    ? <img src={url} alt={name} className="w-10 h-10 rounded object-cover border border-stone-200 shrink-0" />
-                                    : <div className="w-10 h-10 rounded border border-stone-200 bg-stone-50 flex items-center justify-center shrink-0"><FileText size={16} className="text-stone-400" /></div>
-                                  }
-                                  <div className="flex-1 min-w-0">
-                                    <a href={url} target="_blank" rel="noopener noreferrer"
-                                      className="text-[#4a6da7] hover:underline truncate block">{name}</a>
+                                <div key={ai}>
+                                  <div className={`flex items-center gap-2 text-xs rounded-lg transition-colors ${active ? "bg-blue-50" : ""}`}>
+                                    <button onClick={() => setPreviewUrl(active ? null : url)} className="shrink-0">
+                                      {isImg
+                                        ? <img src={url} alt={name} className="w-10 h-10 rounded object-cover border border-stone-200" />
+                                        : <div className="w-10 h-10 rounded border border-stone-200 bg-stone-50 flex items-center justify-center hover:bg-blue-100 transition-colors"><FileText size={16} className="text-[#4a6da7]" /></div>
+                                      }
+                                    </button>
+                                    <button onClick={() => setPreviewUrl(active ? null : url)} className="flex-1 min-w-0 text-left text-[#4a6da7] truncate">{name}</button>
+                                    <a href={url} target="_blank" rel="noopener noreferrer" className="text-stone-300 hover:text-[#4a6da7] shrink-0 transition-colors" title="Open in new tab"><ExternalLink size={11} /></a>
+                                    <button onClick={() => removeAttachment(claim.id, url)} className="text-stone-300 hover:text-red-500 shrink-0 transition-colors"><X size={12} /></button>
                                   </div>
-                                  <button onClick={() => removeAttachment(claim.id, url)}
-                                    className="text-stone-300 hover:text-red-500 shrink-0 transition-colors">
-                                    <X size={12} />
-                                  </button>
+                                  {active && (
+                                    <div className="mt-2 rounded-xl border border-[#4a6da7]/30 overflow-hidden bg-stone-50">
+                                      {isImg
+                                        ? <img src={url} alt={name} className="max-w-full max-h-64 object-contain mx-auto block" />
+                                        : <iframe src={url} className="w-full h-64 border-0" title="Document preview" />
+                                      }
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
