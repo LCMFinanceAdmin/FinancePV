@@ -8,7 +8,7 @@ import type { POLineItem } from "@/components/gm/po-pdf";
 import {
   Plus, X, ChevronDown, ChevronUp, Paperclip, Link2, ExternalLink,
   CheckCircle, Clock, FileText, CreditCard, AlertCircle, Banknote,
-  Package, Trash2, LayoutList, Table2, Printer, Share2, Upload, Eye,
+  Package, Trash2, LayoutList, Table2, Printer, Share2, Upload, Eye, Camera,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -1130,14 +1130,23 @@ export default function GMClaimsPage() {
                               <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-stone-400">
                                 <Paperclip size={10} /> Attachments {(claim.attachments?.length ?? 0) > 0 ? `(${claim.attachments!.length})` : ""}
                               </div>
-                              <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`}>
-                                <input type="file" className="hidden"
-                                  accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
-                                  disabled={uploadingClaimId === claim.id}
-                                  onClick={() => { pickerOpenRef.current = true; }}
-                                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
-                                <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
-                              </label>
+                              <div className="flex items-center gap-1">
+                                <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`}>
+                                  <input type="file" className="hidden"
+                                    accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                                    disabled={uploadingClaimId === claim.id}
+                                    onClick={() => { pickerOpenRef.current = true; }}
+                                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                                  <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
+                                </label>
+                                <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`} title="Take Photo">
+                                  <input type="file" accept="image/*" capture="environment" className="hidden"
+                                    disabled={uploadingClaimId === claim.id}
+                                    onClick={() => { pickerOpenRef.current = true; }}
+                                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                                  <Camera size={10} />
+                                </label>
+                              </div>
                             </div>
                             {/* Upload status — shows step-by-step progress or error */}
                             {uploadStatus?.id === claim.id && (
@@ -1457,14 +1466,23 @@ export default function GMClaimsPage() {
                           <Paperclip size={10} /> Attachments {(claim.attachments?.length ?? 0) > 0 ? `(${claim.attachments!.length})` : ""}
                         </div>
                         <div className="flex items-center gap-2">
-                          <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`}>
-                            <input type="file" className="hidden"
-                              accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
-                              disabled={uploadingClaimId === claim.id}
-                              onClick={() => { pickerOpenRef.current = true; }}
-                              onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
-                            <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
-                          </label>
+                          <div className="flex items-center gap-1">
+                            <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`}>
+                              <input type="file" className="hidden"
+                                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                                disabled={uploadingClaimId === claim.id}
+                                onClick={() => { pickerOpenRef.current = true; }}
+                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                              <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
+                            </label>
+                            <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`} title="Take Photo">
+                              <input type="file" accept="image/*" capture="environment" className="hidden"
+                                disabled={uploadingClaimId === claim.id}
+                                onClick={() => { pickerOpenRef.current = true; }}
+                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                              <Camera size={10} />
+                            </label>
+                          </div>
                           <button onClick={() => setViewingAttachments(null)} className="text-stone-300 hover:text-stone-500">
                             <X size={13} />
                           </button>
@@ -1576,14 +1594,23 @@ export default function GMClaimsPage() {
                           <div className="text-[10px] font-bold uppercase tracking-widest text-stone-400 flex items-center gap-1">
                             <Paperclip size={10} /> Documents {claim.attachments?.length ? `(${claim.attachments.length})` : ""}
                           </div>
-                          <label className={`text-[11px] flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg border border-stone-200 transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : "text-[#4a6da7] hover:bg-blue-50"}`}>
-                            <input type="file" className="hidden"
-                              accept="image/*,application/pdf,.doc,.docx"
-                              disabled={uploadingClaimId === claim.id}
-                              onClick={() => { pickerOpenRef.current = true; }}
-                              onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
-                            <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add file"}
-                          </label>
+                          <div className="flex items-center gap-1">
+                            <label className={`text-[11px] flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg border border-stone-200 transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : "text-[#4a6da7] hover:bg-blue-50"}`}>
+                              <input type="file" className="hidden"
+                                accept="image/*,application/pdf,.doc,.docx"
+                                disabled={uploadingClaimId === claim.id}
+                                onClick={() => { pickerOpenRef.current = true; }}
+                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                              <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add file"}
+                            </label>
+                            <label className={`text-[11px] flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg border border-stone-200 transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : "text-[#4a6da7] hover:bg-blue-50"}`} title="Take Photo">
+                              <input type="file" accept="image/*" capture="environment" className="hidden"
+                                disabled={uploadingClaimId === claim.id}
+                                onClick={() => { pickerOpenRef.current = true; }}
+                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
+                              <Camera size={10} />
+                            </label>
+                          </div>
                         </div>
                         {claim.attachments?.length ? (
                           <div className="space-y-1.5 pl-2">
