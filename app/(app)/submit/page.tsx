@@ -233,8 +233,8 @@ export default function SubmitPVPage() {
           // Pre-populate attachments from GM claim as URL-backed entries
           if (data.attachments?.length) {
             const preloaded: AttachmentFile[] = data.attachments.map((url: string, i: number) => {
-              const rawName = url.split("/").pop() ?? `attachment-${i + 1}`;
-              const name = rawName.replace(/^\d+_[a-z0-9]+\./, "gm-doc.");
+              const rawName = decodeURIComponent(url.split("/").pop() ?? "");
+              const name = rawName.replace(/^\d+_/, "").replace(/_/g, " ") || `attachment-${i + 1}`;
               return {
                 file: new File([], name),
                 name,
@@ -588,22 +588,26 @@ export default function SubmitPVPage() {
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {attachments.map((att, idx) => (
             <div key={idx} className="relative group">
-              {att.previewUrl ? (
-                <div className="h-20 rounded-xl overflow-hidden border border-stone-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={att.previewUrl} alt={att.file.name} className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div className="h-20 rounded-xl border border-red-100 bg-red-50 flex flex-col items-center justify-center gap-1 px-1">
-                  <FileIcon size={20} className="text-red-300" />
-                  <span className="text-[9px] text-stone-500 text-center leading-tight break-all line-clamp-2">{att.file.name}</span>
-                </div>
-              )}
+              {(() => {
+                const isImg = /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(att.previewUrl || att.file.name);
+                return isImg && att.previewUrl ? (
+                  <div className="h-20 rounded-xl overflow-hidden border border-stone-200">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={att.previewUrl} alt={att.name || att.file.name} className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <a href={att.previewUrl || undefined} target="_blank" rel="noopener noreferrer"
+                    className="h-20 rounded-xl border border-stone-200 bg-stone-50 flex flex-col items-center justify-center gap-1 px-1 hover:bg-blue-50 hover:border-[#4a6da7]/40 transition-colors block">
+                    <FileIcon size={20} className="text-[#4a6da7]" />
+                    <span className="text-[9px] text-stone-500 text-center leading-tight break-all line-clamp-2">{att.name || att.file.name}</span>
+                  </a>
+                );
+              })()}
               <button type="button" onClick={() => removeAttachment(idx)}
                 className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white shadow border border-stone-200 flex items-center justify-center opacity-0 group-hover:opacity-100 active:opacity-100 transition-opacity z-10">
                 <XIcon size={9} className="text-stone-600" />
               </button>
-              <p className="text-[9px] text-stone-400 mt-0.5 text-center truncate">{formatFileSize(att.file.size)}</p>
+              <p className="text-[9px] text-stone-400 mt-0.5 text-center truncate">{att.sourceUrl ? "GM Claim" : formatFileSize(att.file.size)}</p>
             </div>
           ))}
         </div>
