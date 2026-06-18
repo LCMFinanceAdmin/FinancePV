@@ -361,6 +361,8 @@ export default function GMClaimsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // claim id awaiting confirm
   const [uploadingClaimId, setUploadingClaimId] = useState<string | null>(null);
   const uploadingRef = useRef(false);
+  const pickerOpenRef = useRef(false);
+  const lastLoadTimeRef = useRef(0);
   const [openAttachments, setOpenAttachments] = useState<Set<string>>(new Set()); // table-view attachment panel
   const [viewingAttachments, setViewingAttachments] = useState<string | null>(null); // card-view inline preview
   const [uploadError, setUploadError] = useState<{ id: string; msg: string } | null>(null);
@@ -401,6 +403,7 @@ export default function GMClaimsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    lastLoadTimeRef.current = Date.now();
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (authUser) {
@@ -466,9 +469,15 @@ export default function GMClaimsPage() {
 
   useEffect(() => {
     load();
-    // Re-fetch user role whenever page regains focus (handles role-switch without page reload)
-    // Skip re-fetch while a file upload is in progress — file picker close triggers focus event
-    const onFocus = () => { if (!uploadingRef.current) load(); };
+    const onFocus = () => {
+      // File picker just closed (selected or cancelled) — skip this focus event
+      if (pickerOpenRef.current) { pickerOpenRef.current = false; return; }
+      // Upload is in progress — skip
+      if (uploadingRef.current) return;
+      // Throttle: only re-fetch if last load was > 2 minutes ago (handles role-switch)
+      if (Date.now() - lastLoadTimeRef.current < 2 * 60_000) return;
+      load();
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [load]);
@@ -1124,6 +1133,7 @@ export default function GMClaimsPage() {
                                 <input type="file" className="hidden"
                                   accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
                                   disabled={uploadingClaimId === claim.id}
+                                  onClick={() => { pickerOpenRef.current = true; }}
                                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
                                 <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
                               </label>
@@ -1435,6 +1445,7 @@ export default function GMClaimsPage() {
                             <input type="file" className="hidden"
                               accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
                               disabled={uploadingClaimId === claim.id}
+                              onClick={() => { pickerOpenRef.current = true; }}
                               onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
                             <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
                           </label>
@@ -1546,6 +1557,7 @@ export default function GMClaimsPage() {
                             <input type="file" className="hidden"
                               accept="image/*,application/pdf,.doc,.docx"
                               disabled={uploadingClaimId === claim.id}
+                              onClick={() => { pickerOpenRef.current = true; }}
                               onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
                             <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add file"}
                           </label>
