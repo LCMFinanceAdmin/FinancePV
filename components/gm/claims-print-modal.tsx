@@ -213,11 +213,11 @@ export function ClaimsPrintModal({ claims, onClose }: { claims: PrintClaim[]; on
         </div>
       </div>
 
-      {/* Scrollable A4 preview area */}
-      <div className="flex-1 overflow-auto bg-stone-200 flex justify-center py-8 px-4">
+      {/* Scrollable A4 preview area — overflow-auto without flex-center so mobile can scroll left/right */}
+      <div className="flex-1 overflow-auto bg-stone-200 py-8 px-4">
         {/* A4 paper */}
         <div ref={previewRef}
-          style={{ width: 794, minHeight: 1123, background: "white", boxShadow: "0 4px 32px rgba(0,0,0,0.25)", padding: "48px 44px", fontFamily: "Arial, sans-serif", fontSize: 11, color: "#1a1a1a", flexShrink: 0 }}>
+          style={{ width: 794, minHeight: 1123, background: "white", boxShadow: "0 4px 32px rgba(0,0,0,0.25)", padding: "48px 44px", fontFamily: "Arial, sans-serif", fontSize: 11, color: "#1a1a1a", marginLeft: "auto", marginRight: "auto" }}>
 
           {/* Header */}
           <div style={{ textAlign: "center", borderBottom: "2px solid #2d4e87", paddingBottom: 16, marginBottom: 20 }}>
