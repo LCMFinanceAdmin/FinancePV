@@ -363,6 +363,7 @@ export default function GMClaimsPage() {
   const [openAttachments, setOpenAttachments] = useState<Set<string>>(new Set()); // table-view attachment panel
   const [viewingAttachments, setViewingAttachments] = useState<string | null>(null); // card-view inline preview
   const [uploadError, setUploadError] = useState<{ id: string; msg: string } | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<{ id: string; step: string; ok: boolean } | null>(null);
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
@@ -631,22 +632,28 @@ export default function GMClaimsPage() {
   async function uploadAttachment(claimId: string, file: File) {
     setUploadingClaimId(claimId);
     setUploadError(null);
+    setUploadStatus({ id: claimId, step: `Picked: ${file.name} (${(file.size / 1024).toFixed(0)} KB, ${file.type || "unknown type"})`, ok: true });
     try {
       const ext = file.name.split(".").pop() ?? "bin";
       const path = `gm-claims/${claimId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      setUploadStatus({ id: claimId, step: "Step 1/3: Uploading to storage…", ok: true });
       const { error: uploadErr } = await supabase.storage.from("gm-claim-attachments").upload(path, file);
       if (uploadErr) {
-        const msg = `Storage error: ${uploadErr.message}`;
+        const msg = `Step 1 FAILED — Storage: ${uploadErr.message} (code: ${uploadErr.statusCode ?? "?"})`;
+        setUploadStatus({ id: claimId, step: msg, ok: false });
         setUploadError({ id: claimId, msg });
         showToast(msg, false);
         return;
       }
+      setUploadStatus({ id: claimId, step: "Step 2/3: Getting public URL…", ok: true });
       const { data: { publicUrl } } = supabase.storage.from("gm-claim-attachments").getPublicUrl(path);
+      setUploadStatus({ id: claimId, step: "Step 3/3: Saving to database…", ok: true });
       const { data: fresh } = await supabase.from("gm_claims").select("attachments").eq("id", claimId).single();
       const updated = [...(fresh?.attachments ?? []), publicUrl];
       const { error: dbErr } = await supabase.from("gm_claims").update({ attachments: updated, updated_at: new Date().toISOString() }).eq("id", claimId);
       if (dbErr) {
-        const msg = `DB error: ${dbErr.message}`;
+        const msg = `Step 3 FAILED — DB: ${dbErr.message} (code: ${dbErr.code ?? "?"})`;
+        setUploadStatus({ id: claimId, step: msg, ok: false });
         setUploadError({ id: claimId, msg });
         showToast(msg, false);
         return;
@@ -654,9 +661,11 @@ export default function GMClaimsPage() {
       setClaims(prev => prev.map(c => c.id === claimId ? { ...c, attachments: updated } : c));
       setViewingAttachments(claimId);
       setOpenAttachments(prev => { const n = new Set(prev); n.add(claimId); return n; });
+      setUploadStatus({ id: claimId, step: `✓ Uploaded: ${file.name}`, ok: true });
       showToast("Attachment uploaded");
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Upload failed";
+      const msg = `Exception: ${e instanceof Error ? e.message : String(e)}`;
+      setUploadStatus({ id: claimId, step: msg, ok: false });
       setUploadError({ id: claimId, msg });
       showToast(msg, false);
     } finally {
@@ -1115,6 +1124,12 @@ export default function GMClaimsPage() {
                                 <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
                               </label>
                             </div>
+                            {/* Upload status — shows step-by-step progress or error */}
+                            {uploadStatus?.id === claim.id && (
+                              <div className={`mb-2 text-[11px] px-2 py-1.5 rounded-lg font-medium ${uploadStatus.ok ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                                {uploadStatus.step}
+                              </div>
+                            )}
                             {(claim.attachments?.length ?? 0) > 0 ? (
                               <div className="flex flex-wrap gap-2">
                                 {claim.attachments!.map((url, ai) => {
@@ -1424,6 +1439,12 @@ export default function GMClaimsPage() {
                           </button>
                         </div>
                       </div>
+                      {/* Upload status — shows step-by-step progress or error */}
+                      {uploadStatus?.id === claim.id && (
+                        <div className={`mb-2 text-[11px] px-2 py-1.5 rounded-lg font-medium ${uploadStatus.ok ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                          {uploadStatus.step}
+                        </div>
+                      )}
                       {(claim.attachments?.length ?? 0) > 0 ? (
                         <div className="space-y-2">
                           {claim.attachments!.map((url, ai) => {
