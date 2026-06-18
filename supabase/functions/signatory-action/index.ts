@@ -141,6 +141,11 @@ Deno.serve(async (req) => {
             read: false, created_at: now,
           }))
         );
+        await sendPushToRoles(db, sigRoles, {
+          title: "BAM PV Awaiting Your Signature",
+          body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) approved by GM — please sign`,
+          url: "/signatory",
+        });
       }
       return json({ ok: true, status: "PENDING_SIGNATORY" });
     }
