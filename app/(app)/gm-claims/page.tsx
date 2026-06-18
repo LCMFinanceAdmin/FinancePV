@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -360,6 +360,7 @@ export default function GMClaimsPage() {
   const [savingNewRow, setSavingNewRow] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // claim id awaiting confirm
   const [uploadingClaimId, setUploadingClaimId] = useState<string | null>(null);
+  const uploadingRef = useRef(false);
   const [openAttachments, setOpenAttachments] = useState<Set<string>>(new Set()); // table-view attachment panel
   const [viewingAttachments, setViewingAttachments] = useState<string | null>(null); // card-view inline preview
   const [uploadError, setUploadError] = useState<{ id: string; msg: string } | null>(null);
@@ -466,7 +467,8 @@ export default function GMClaimsPage() {
   useEffect(() => {
     load();
     // Re-fetch user role whenever page regains focus (handles role-switch without page reload)
-    const onFocus = () => load();
+    // Skip re-fetch while a file upload is in progress — file picker close triggers focus event
+    const onFocus = () => { if (!uploadingRef.current) load(); };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [load]);
@@ -630,6 +632,7 @@ export default function GMClaimsPage() {
   }
 
   async function uploadAttachment(claimId: string, file: File) {
+    uploadingRef.current = true;
     setUploadingClaimId(claimId);
     setUploadError(null);
     setUploadStatus({ id: claimId, step: `Picked: ${file.name} (${(file.size / 1024).toFixed(0)} KB, ${file.type || "unknown type"})`, ok: true });
@@ -669,6 +672,7 @@ export default function GMClaimsPage() {
       setUploadError({ id: claimId, msg });
       showToast(msg, false);
     } finally {
+      uploadingRef.current = false;
       setUploadingClaimId(null);
     }
   }
