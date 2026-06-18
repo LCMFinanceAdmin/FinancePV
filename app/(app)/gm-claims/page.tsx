@@ -597,6 +597,15 @@ export default function GMClaimsPage() {
             }))
           );
         }
+        // Push notification to Finance Executives
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!session) return;
+          fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/gm-claim-notify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+            body: JSON.stringify({ claim_no: claimNoRow, claim_type: form.claim_type, claimant_name: payload.claimant_name, amount: payload.amount }),
+          }).catch(() => {});
+        });
 
         showToast(form.claim_type === "PURCHASE_ORDER"
           ? `Purchase Order ${po_number} created — Finance Executive notified`
@@ -758,6 +767,15 @@ export default function GMClaimsPage() {
           }))
         );
       }
+      // Push notification to Finance Executives
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session) return;
+        fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/gm-claim-notify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+          body: JSON.stringify({ claim_no: claimNoRow, claim_type: "EXPENSE_CLAIM", claimant_name: payload.claimant_name, amount: payload.amount }),
+        }).catch(() => {});
+      });
       setNewRow(defaultNewRow());
       showToast("Claim added — Finance Executive notified");
       await load();
