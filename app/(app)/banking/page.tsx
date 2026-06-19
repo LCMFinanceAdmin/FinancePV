@@ -26,6 +26,7 @@ interface BankAccount {
   last_updated_by: string | null;
   is_lcm_cashflow_ref: boolean;
   is_bam_cashflow_ref: boolean;
+  is_lsc_cashflow_ref: boolean;
   is_hle_cashflow_ref: boolean;
   is_active: boolean;
   sort_order: number;
@@ -79,6 +80,7 @@ interface ApprovedPV {
 const ENTITY_LABELS: Record<string, { label: string; color: string }> = {
   LCM:             { label: "LCM",             color: "bg-blue-100 text-blue-700" },
   BAM:             { label: "BAM",             color: "bg-green-100 text-green-700" },
+  LSC:             { label: "LSC",             color: "bg-purple-100 text-purple-700" },
   HLE:             { label: "HLE",             color: "bg-amber-100 text-amber-700" },
   LUTHERAN_GARDEN: { label: "Lutheran Garden", color: "bg-emerald-100 text-emerald-700" },
   STUDY_CENTRE:    { label: "Study Centre",    color: "bg-purple-100 text-purple-700" },
@@ -151,7 +153,7 @@ function blankAccForm() {
     name: "", bank_name: "", account_type: "CURRENT" as "CURRENT" | "FIXED_DEPOSIT",
     account_no: "", entity: "LCM", purpose: "", notes: "",
     current_balance: "0",
-    is_lcm_cashflow_ref: false, is_bam_cashflow_ref: false, is_hle_cashflow_ref: false,
+    is_lcm_cashflow_ref: false, is_bam_cashflow_ref: false, is_lsc_cashflow_ref: false, is_hle_cashflow_ref: false,
   };
 }
 
@@ -299,13 +301,16 @@ export default function BankingPage() {
 
   const lcmRef = currentAccounts.find(a => a.is_lcm_cashflow_ref);
   const bamRef = currentAccounts.find(a => a.is_bam_cashflow_ref);
+  const lscRef = currentAccounts.find(a => a.is_lsc_cashflow_ref);
   const hleRef = currentAccounts.find(a => a.is_hle_cashflow_ref);
 
-  const lcmPvs = pvs.filter(p => !["BAM", "HLE"].includes(p.pv_type));
+  const lcmPvs = pvs.filter(p => !["BAM", "LSC", "HLE"].includes(p.pv_type));
   const bamPvs = pvs.filter(p => p.pv_type === "BAM");
+  const lscPvs = pvs.filter(p => p.pv_type === "LSC");
   const hlePvs = pvs.filter(p => p.pv_type === "HLE");
   const selLcm = lcmPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
   const selBam = bamPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
+  const selLsc = lscPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
   const selHle = hlePvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
 
   // FD certificates grouped by account
@@ -375,6 +380,7 @@ export default function BankingPage() {
       current_balance: String(acc.current_balance),
       is_lcm_cashflow_ref: acc.is_lcm_cashflow_ref,
       is_bam_cashflow_ref: acc.is_bam_cashflow_ref,
+      is_lsc_cashflow_ref: acc.is_lsc_cashflow_ref,
       is_hle_cashflow_ref: acc.is_hle_cashflow_ref,
     });
     setShowAccModal(true);
@@ -395,6 +401,7 @@ export default function BankingPage() {
         current_balance: parseFloat(accForm.current_balance) || 0,
         is_lcm_cashflow_ref: accForm.is_lcm_cashflow_ref,
         is_bam_cashflow_ref: accForm.is_bam_cashflow_ref,
+        is_lsc_cashflow_ref: accForm.is_lsc_cashflow_ref,
         is_hle_cashflow_ref: accForm.is_hle_cashflow_ref,
         updated_at: new Date().toISOString(),
       };
@@ -661,6 +668,7 @@ export default function BankingPage() {
   function getPVsForAccount(acc: BankAccount): ApprovedPV[] {
     if (acc.is_lcm_cashflow_ref) return lcmPvs;
     if (acc.is_bam_cashflow_ref) return bamPvs;
+    if (acc.is_lsc_cashflow_ref) return lscPvs;
     if (acc.is_hle_cashflow_ref) return hlePvs;
     return [];
   }
@@ -818,7 +826,7 @@ export default function BankingPage() {
 
         {/* Summary cards */}
         {!loading && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="bg-white rounded-xl p-3 shadow-sm border border-stone-100">
               <div className="text-[11px] text-stone-400 font-medium">Total Current</div>
               <div className="text-lg font-bold text-stone-800 mt-0.5">{formatCurrency(totalCurrent)}</div>
@@ -838,6 +846,11 @@ export default function BankingPage() {
               <div className="text-[11px] text-stone-400 font-medium">BAM Ref (Maybank)</div>
               <div className="text-lg font-bold text-green-700 mt-0.5">{formatCurrency(bamRef?.current_balance ?? 0)}</div>
               <div className="text-[11px] text-stone-400">{bamPvs.length} approved PVs pending</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 shadow-sm border border-stone-100">
+              <div className="text-[11px] text-stone-400 font-medium">LSC Ref (RHB)</div>
+              <div className="text-lg font-bold text-purple-700 mt-0.5">{formatCurrency(lscRef?.current_balance ?? 0)}</div>
+              <div className="text-[11px] text-stone-400">{lscPvs.length} approved PVs pending</div>
             </div>
             <div className="bg-white rounded-xl p-3 shadow-sm border border-stone-100">
               <div className="text-[11px] text-stone-400 font-medium">HLE Ref (Maybank)</div>
@@ -895,6 +908,7 @@ export default function BankingPage() {
                           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${entity.color}`}>{entity.label}</span>
                           {acc.is_lcm_cashflow_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-600 text-white font-bold">LCM Ref</span>}
                           {acc.is_bam_cashflow_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-600 text-white font-bold">BAM Ref</span>}
+                          {acc.is_lsc_cashflow_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-600 text-white font-bold">LSC Ref</span>}
                           {acc.is_hle_cashflow_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-600 text-white font-bold">HLE Ref</span>}
                         </div>
                         <div className="font-semibold text-stone-800 text-sm mt-1">{acc.name}</div>
@@ -1177,13 +1191,14 @@ export default function BankingPage() {
           <div className="space-y-4">
             <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
               Tick the approved PVs you plan to pay. The net balance shows what remains in the reference account after those payments.
-              LCM uses Public Bank Disbursement account; BAM uses the BAM Maybank account; HLE uses the Highlands Lakeview Maybank account.
+              LCM uses Public Bank; BAM uses Maybank BAM; LSC uses RHB; HLE uses Maybank HLE.
             </div>
 
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
               {[
                 { label: "LCM Cashflow", ref: lcmRef, pvList: lcmPvs, selTotal: selLcm },
                 { label: "BAM Cashflow", ref: bamRef, pvList: bamPvs, selTotal: selBam },
+                { label: "LSC Cashflow", ref: lscRef, pvList: lscPvs, selTotal: selLsc },
                 { label: "HLE Cashflow", ref: hleRef, pvList: hlePvs, selTotal: selHle },
               ].map(({ label, ref, pvList, selTotal }) => {
                 const net = (ref?.current_balance ?? 0) - selTotal;
@@ -1313,6 +1328,7 @@ export default function BankingPage() {
                   className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   <option value="LCM">LCM</option>
                   <option value="BAM">BAM</option>
+                  <option value="LSC">LSC (Luther Study Centre)</option>
                   <option value="HLE">HLE (Highlands Lakeview)</option>
                   <option value="LUTHERAN_GARDEN">Lutheran Garden</option>
                   <option value="STUDY_CENTRE">Study Centre</option>
@@ -1336,6 +1352,7 @@ export default function BankingPage() {
                 {[
                   { key: "is_lcm_cashflow_ref", label: "Use as LCM Cashflow Reference account (Public Bank)" },
                   { key: "is_bam_cashflow_ref", label: "Use as BAM Cashflow Reference account (Maybank BAM)" },
+                  { key: "is_lsc_cashflow_ref", label: "Use as LSC Cashflow Reference account (RHB)" },
                   { key: "is_hle_cashflow_ref", label: "Use as HLE Cashflow Reference account (Maybank HLE)" },
                 ].map(({ key, label }) => (
                   <label key={key} className="flex items-center gap-2 cursor-pointer">
