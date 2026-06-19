@@ -15,6 +15,7 @@ const MINISTRIES = [
   "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
   "Property", "Head Quarters (HQ)", "Reconcile", "Trustees",
   "Sisters and Women Fellowship (SWF)", "Young Adult and Youth (YAY)",
+  "Luther Study Centre",
 ];
 
 const PAYMENT_METHODS = ["Online Transfer", "Cheque", "Cash", "JomPay", "Auto Debit"];
@@ -139,9 +140,13 @@ export default function SubmitPVPage() {
   const supabase = createClient();
 
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
-  const [pvType, setPvType] = useState<"LCM" | "BAM">(() => {
+  const [pvType, setPvType] = useState<"LCM" | "BAM" | "LSC" | "HLE">(() => {
     if (typeof window === "undefined") return "LCM";
-    return new URLSearchParams(window.location.search).get("type") === "bam" ? "BAM" : "LCM";
+    const t = new URLSearchParams(window.location.search).get("type");
+    if (t === "bam") return "BAM";
+    if (t === "lsc") return "LSC";
+    if (t === "hle") return "HLE";
+    return "LCM";
   });
   const [userRole, setUserRole] = useState("");
   const [userMinistries, setUserMinistries] = useState<string[]>([]);
@@ -455,7 +460,7 @@ export default function SubmitPVPage() {
           applicant_email: form.applicant_email,
           pvDate: form.pvDate,
           dept: form.dept,
-          ministry: pvType === "BAM" ? (form.ministry || "Property") : form.ministry,
+          ministry: pvType === "BAM" ? (form.ministry || "Property") : pvType === "LSC" ? "Luther Study Centre" : form.ministry,
           project: form.project,
           payee_name: form.payee_name,
           payment_method: form.payment_method,
@@ -761,17 +766,23 @@ export default function SubmitPVPage() {
 
     // 2: Ministry & Purpose
     <div key="s2" className="space-y-4">
-      <div>
-        <label className={mLabel}>Ministry <span className="text-red-400">*</span></label>
-        <div className="relative">
-          <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.ministry}
-            onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
-            <option value="">— Select ministry —</option>
-            {MINISTRIES.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+      {pvType !== "HLE" && (
+        <div>
+          <label className={mLabel}>Ministry <span className="text-red-400">*</span></label>
+          {pvType === "LSC" ? (
+            <div className={`${mInput} text-stone-500 bg-stone-50`}>Luther Study Centre</div>
+          ) : (
+            <div className="relative">
+              <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.ministry}
+                onChange={e => { setField("ministry", e.target.value); setField("project", ""); }}>
+                <option value="">— Select ministry —</option>
+                {MINISTRIES.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+            </div>
+          )}
         </div>
-      </div>
+      )}
       <div>
         <label className={mLabel}>Project <span className="text-stone-300 font-normal normal-case">(optional)</span></label>
         {form.ministry && projects.length > 0 ? (
@@ -1018,9 +1029,9 @@ export default function SubmitPVPage() {
         <div className="sticky top-0 z-10 bg-white border-b border-stone-100 px-4 py-3 shadow-sm">
           <div className="flex items-center gap-2">
             <h1 className="text-base font-bold text-stone-800">Submit Payment Voucher</h1>
-            {pvType === "BAM" && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">BAM (MAYBANK)</span>
-            )}
+            {pvType === "BAM" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">BAM (MAYBANK)</span>}
+            {pvType === "LSC" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">LSC (RHB)</span>}
+            {pvType === "HLE" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">Highlands (MAYBANK)</span>}
           </div>
           <div className="flex gap-1 mt-2.5">
             {SECTION_TITLES.map((_, i) => (
@@ -1121,23 +1132,29 @@ export default function SubmitPVPage() {
 
       {/* PV Type toggle — Finance Exec can choose; Building Manager is locked to BAM */}
       {canSubmitBAM && (
-        <div className="mb-5 flex gap-2">
+        <div className="mb-5 flex flex-wrap gap-2">
           {!isBuildingManagerRole && (
-            <button
-              type="button"
-              onClick={() => setPvType("LCM")}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "LCM" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}
-            >
+            <button type="button" onClick={() => setPvType("LCM")}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "LCM" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}>
               LCM PV
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => { setPvType("BAM"); setForm(f => ({ ...f, ministry: f.ministry || "Property" })); }}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "BAM" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}
-          >
+          <button type="button" onClick={() => { setPvType("BAM"); setForm(f => ({ ...f, ministry: f.ministry || "Property" })); }}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "BAM" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}>
             BAM PV <span className="text-[10px] opacity-80">(MAYBANK)</span>
           </button>
+          {!isBuildingManagerRole && (
+            <button type="button" onClick={() => { setPvType("LSC"); setForm(f => ({ ...f, ministry: "Luther Study Centre" })); }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "LSC" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}>
+              LSC <span className="text-[10px] opacity-80">(RHB)</span>
+            </button>
+          )}
+          {!isBuildingManagerRole && (
+            <button type="button" onClick={() => { setPvType("HLE"); setForm(f => ({ ...f, ministry: "" })); }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "HLE" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}>
+              Highlands <span className="text-[10px] opacity-80">(MAYBANK)</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -1164,8 +1181,22 @@ export default function SubmitPVPage() {
             <div className="flex items-center gap-3">
               <LutherRose size={70} />
               <div className="hidden sm:block">
-                <div className="text-[10px] font-bold text-stone-600 uppercase tracking-wide">Lutheran Church in Malaysia</div>
-                <div className="text-[9px] text-stone-400">马来西亚基督教信义会</div>
+                {pvType === "HLE" ? (
+                  <>
+                    <div className="text-[10px] font-bold text-stone-600 uppercase tracking-wide">Highlands Lakeview Enterprises Sdn. Bhd.</div>
+                    <div className="text-[9px] text-stone-400">Managed by Lutheran Church in Malaysia</div>
+                  </>
+                ) : pvType === "LSC" ? (
+                  <>
+                    <div className="text-[10px] font-bold text-stone-600 uppercase tracking-wide">Lutheran Church in Malaysia</div>
+                    <div className="text-[9px] text-stone-400">Luther Study Centre</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-[10px] font-bold text-stone-600 uppercase tracking-wide">Lutheran Church in Malaysia</div>
+                    <div className="text-[9px] text-stone-400">马来西亚基督教信义会</div>
+                  </>
+                )}
               </div>
             </div>
             <div className="text-right flex flex-col items-end gap-1">
@@ -1188,15 +1219,42 @@ export default function SubmitPVPage() {
                   <div className="text-[10px] font-bold text-stone-700 border-t border-stone-800 px-2 py-0.5">(MAYBANK)</div>
                 </div>
               )}
+              {pvType === "LSC" && (
+                <div className="border-2 border-stone-800 text-center min-w-[90px]">
+                  <div className="text-2xl font-black text-stone-900 px-3 py-1">LSC</div>
+                  <div className="text-[10px] font-bold text-stone-700 border-t border-stone-800 px-2 py-0.5">(RHB)</div>
+                </div>
+              )}
+              {pvType === "HLE" && (
+                <div className="border-2 border-stone-800 text-center min-w-[90px]">
+                  <div className="text-lg font-black text-stone-900 px-3 py-1 leading-tight">HLE</div>
+                  <div className="text-[10px] font-bold text-stone-700 border-t border-stone-800 px-2 py-0.5">(MAYBANK)</div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Bilingual title */}
           <div className="text-center py-3 border-b-2 border-stone-800 px-4">
-            <p className="text-xs font-bold uppercase tracking-wide leading-relaxed">
-              LUTHERAN CHURCH IN MALAYSIA (REIMBURSEMENT CLAIM FORM / PAYMENT VOUCHER)
-            </p>
-            <p className="text-xs font-bold mt-0.5">马来西亚基督教信义会（费用报销 / 付款凭证表格）</p>
+            {pvType === "HLE" ? (
+              <p className="text-xs font-bold uppercase tracking-wide leading-relaxed">
+                HIGHLANDS LAKEVIEW ENTERPRISES SDN. BHD. (REIMBURSEMENT CLAIM FORM / PAYMENT VOUCHER)
+              </p>
+            ) : pvType === "LSC" ? (
+              <>
+                <p className="text-xs font-bold uppercase tracking-wide leading-relaxed">
+                  LUTHERAN CHURCH IN MALAYSIA — LUTHER STUDY CENTRE (REIMBURSEMENT CLAIM FORM / PAYMENT VOUCHER)
+                </p>
+                <p className="text-xs font-bold mt-0.5">马来西亚基督教信义会 — 路德研究中心（费用报销 / 付款凭证表格）</p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-bold uppercase tracking-wide leading-relaxed">
+                  LUTHERAN CHURCH IN MALAYSIA (REIMBURSEMENT CLAIM FORM / PAYMENT VOUCHER)
+                </p>
+                <p className="text-xs font-bold mt-0.5">马来西亚基督教信义会（费用报销 / 付款凭证表格）</p>
+              </>
+            )}
           </div>
 
           {/* Main form fields */}
@@ -1251,12 +1309,18 @@ export default function SubmitPVPage() {
               </Row>
             )}
 
-            <Row label="Ministry 事工" sublabel="Select ministry / department">
-              <InlineSelect value={form.ministry} onChange={v => { setField("ministry", v); setField("project", ""); }}>
-                <option value="">— Select ministry —</option>
-                {MINISTRIES.map(m => <option key={m} value={m}>{m}</option>)}
-              </InlineSelect>
-            </Row>
+            {pvType !== "HLE" && (
+              <Row label="Ministry 事工" sublabel="Select ministry / department">
+                {pvType === "LSC" ? (
+                  <span className={`${uline} text-stone-500`}>Luther Study Centre</span>
+                ) : (
+                  <InlineSelect value={form.ministry} onChange={v => { setField("ministry", v); setField("project", ""); }}>
+                    <option value="">— Select ministry —</option>
+                    {MINISTRIES.map(m => <option key={m} value={m}>{m}</option>)}
+                  </InlineSelect>
+                )}
+              </Row>
+            )}
 
             <Row label="Project 计划" sublabel="Sub-project or budget code">
               {form.ministry ? (

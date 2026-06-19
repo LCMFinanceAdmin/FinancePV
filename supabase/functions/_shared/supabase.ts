@@ -95,3 +95,33 @@ export async function nextBamPvNo(db: ReturnType<typeof getServiceClient>): Prom
   const seq = String(lastSeq + 1).padStart(3, "0");
   return `${prefix}${seq}`;
 }
+
+export async function nextLscPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `LSC-${year}-`;
+  const { data } = await db
+    .from("pvs")
+    .select("pv_no")
+    .like("pv_no", `${prefix}%`)
+    .order("pv_no", { ascending: false })
+    .limit(1);
+  const lastSeq = data?.[0]?.pv_no
+    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
+    : 0;
+  return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`;
+}
+
+export async function nextHlePvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `HLE-${year}-`;
+  const { data } = await db
+    .from("pvs")
+    .select("pv_no")
+    .like("pv_no", `${prefix}%`)
+    .order("pv_no", { ascending: false })
+    .limit(1);
+  const lastSeq = data?.[0]?.pv_no
+    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
+    : 0;
+  return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`;
+}

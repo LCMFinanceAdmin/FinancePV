@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, getProfileByEmail } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, nextLscPvNo, nextHlePvNo, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
 const BAM_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "BUILDING_MANAGER"];
@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
     const profile = await getProfileByEmail(db, user.email!, "*");
 
     const d = await req.json();
-    const pvType = d.pv_type === "BAM" ? "BAM" : "LCM";
+    const pvType = ["BAM", "LSC", "HLE"].includes(d.pv_type) ? d.pv_type as "BAM" | "LSC" | "HLE" : "LCM";
 
     // ── BAM PV flow ─────────────────────────────────────────────────────
     if (pvType === "BAM") {
@@ -132,6 +132,90 @@ Deno.serve(async (req) => {
       }
 
       return json({ ok: true, pv_no: pvNo, pv_id: bamPvId, status: initialStatus });
+    }
+
+    // ── LSC (RHB) and HLE (Maybank) flows — same approval chain as LCM ──
+    if (pvType === "LSC" || pvType === "HLE") {
+      if (!["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(profile?.role)) {
+        return json({ error: "Finance Executive only" }, 403);
+      }
+      const pvNo = pvType === "LSC" ? await nextLscPvNo(db) : await nextHlePvNo(db);
+      const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+      const now = new Date().toISOString();
+      const amount = Number(d.amount) || 0;
+      const loa = getLOATier(amount, d.payment_type);
+      const applicantEmail = (d.applicant_email || user.email || "").toLowerCase().trim();
+      const ministry = pvType === "LSC" ? "Luther Study Centre" : "";
+
+      const financeEntry = d.finance_signature_data
+        ? [{ role: "FINANCE_ADMIN", email: user.email, name: profile?.full_name || user.email,
+             action: "APPROVED", timestamp: now, remarks: "", signature_data: d.finance_signature_data }]
+        : [];
+
+      const pvRow = {
+        pv_no:                 pvNo,
+        pv_type:               pvType,
+        pv_label:              pvType,
+        date:                  d.pvDate || null,
+        status:                "PENDING",
+        tracking_token:        trackingToken,
+        applicant_name:        d.applicant_name || profile?.full_name || "",
+        applicant_email:       applicantEmail,
+        submitted_by_email:    user.email,
+        submitted_by:          profile?.full_name || user.email,
+        submitted_by_role:     profile?.role,
+        submitted_at:          now,
+        dept:                  d.dept || ministry,
+        ministry,
+        project:               d.project || "",
+        dept_head_name:        "",
+        dept_head_email:       "",
+        head_verified:         "N/A",
+        payee_name:            d.payee_name || "",
+        payment_method:        d.payment_method || "",
+        payee_bank_name:       d.payee_bank_name || "",
+        payee_bank_acct:       d.payee_bank_acct || "",
+        cheque_no:             d.cheque_no || "",
+        biller_code:           d.biller_code || "",
+        ref_no:                d.ref_no || "",
+        purpose:               d.purpose || "",
+        amount,
+        line_items:            d.line_items || [],
+        attachments:           d.attachments || [],
+        sig_applicant_name:    d.sig_applicant_name || "",
+        sig_applicant_confirm: "YES",
+        admin_comment:         "",
+        approvals:             financeEntry,
+        signed_pdf_url:        "",
+        ministry_verified:     "N/A",
+        finance_verified_by:   d.finance_signature_data ? (profile?.full_name || user.email) : "",
+        finance_verified_at:   d.finance_signature_data ? now : null,
+        payment_type:          ["GENERAL", "ASSET_PURCHASE"].includes((d.payment_type || "").toUpperCase()) ? d.payment_type.toUpperCase() : "GENERAL",
+        loa_required:          loa.required,
+        loa_label:             loa.required === 1 ? "Treasurer only (D7 ≤RM30k)" : "Any 2 officers (D7 >RM30k)",
+        exco_resolution_ref:   "",
+        exco_resolution_date:  "",
+      };
+
+      const { data: pvData, error: insertErr } = await db.from("pvs").insert(pvRow).select("id").single();
+      if (insertErr) throw new Error(insertErr.message);
+
+      const entityLabel = pvType === "LSC" ? "LSC" : "Highlands Lakeview";
+      const pvMsg = `${pvNo} · ${d.applicant_name} · ${formatRM(amount)} (${entityLabel})`;
+      await Promise.all([
+        sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+          title: `New ${entityLabel} Payment Voucher`,
+          body: pvMsg,
+          url: "/control-center",
+        }),
+        sendPushToRoles(db, ["GENERAL_MANAGER"], {
+          title: `New ${entityLabel} Payment Voucher`,
+          body: pvMsg,
+          url: "/signatory",
+        }),
+      ]);
+
+      return json({ ok: true, pv_no: pvNo, pv_id: pvData?.id ?? null, status: "PENDING" });
     }
 
     // ── Standard LCM PV flow ─────────────────────────────────────────────
