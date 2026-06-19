@@ -125,6 +125,11 @@ export default function RecurringPage() {
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [groupBulkRuns, setGroupBulkRuns] = useState<Record<string, string>>({}); // group_name → bulk_run_id
+  const [masterRuns, setMasterRuns] = useState<{ id: string; master_name: string; run_date: string; total_amount: number; child_group_names: string[] }[]>([]);
+  const [masterMode, setMasterMode] = useState(false);
+  const [masterSelected, setMasterSelected] = useState<Set<string>>(new Set()); // groupName keys
+  const [masterName, setMasterName] = useState("");
+  const [creatingMaster, setCreatingMaster] = useState(false);
   const [lastPaidMap, setLastPaidMap] = useState<Record<string, { id: string; pv_no: string; paid_at: string }>>({});
   const [confirmModal, setConfirmModal] = useState<{
     title?: string;
@@ -159,17 +164,23 @@ export default function RecurringPage() {
     setMinistries((min ?? []).map((m: { name: string }) => m.name));
     setProjects(proj ?? []);
 
-    // Load most recent bulk run per group
+    // Load most recent bulk run per group (non-master only)
     const { data: bulkRuns } = await supabase
       .from("bulk_pv_runs")
-      .select("id,group_name,run_date")
+      .select("id,group_name,run_date,is_master,master_name,child_group_names,total_amount")
       .order("run_date", { ascending: false });
     if (bulkRuns) {
       const latestByGroup: Record<string, string> = {};
-      for (const br of bulkRuns as { id: string; group_name: string; run_date: string }[]) {
-        if (!latestByGroup[br.group_name]) latestByGroup[br.group_name] = br.id;
+      const masters: typeof masterRuns = [];
+      for (const br of bulkRuns as { id: string; group_name: string; run_date: string; is_master?: boolean; master_name?: string; child_group_names?: string[]; total_amount?: number }[]) {
+        if (br.is_master) {
+          masters.push({ id: br.id, master_name: br.master_name ?? "", run_date: br.run_date, total_amount: br.total_amount ?? 0, child_group_names: br.child_group_names ?? [] });
+        } else {
+          if (!latestByGroup[br.group_name]) latestByGroup[br.group_name] = br.id;
+        }
       }
       setGroupBulkRuns(latestByGroup);
+      setMasterRuns(masters);
     }
 
     // Load last paid PV per recurring item
@@ -435,6 +446,70 @@ export default function RecurringPage() {
     });
   }
 
+  async function createMaster() {
+    if (!masterName.trim() || masterSelected.size < 1) return;
+    setCreatingMaster(true);
+    const groupNames = [...masterSelected];
+    const allPvIds: string[] = [];
+    const allPvNos: string[] = [];
+    let totalAmt = 0;
+
+    for (const gName of groupNames) {
+      const runId = groupBulkRuns[gName];
+      if (runId) {
+        const { data: run } = await supabase.from("bulk_pv_runs").select("pv_ids,pv_nos,total_amount").eq("id", runId).single();
+        if (run) {
+          allPvIds.push(...((run.pv_ids as string[]) || []));
+          allPvNos.push(...((run.pv_nos as string[]) || []));
+          totalAmt += (run.total_amount as number) || 0;
+        }
+      } else {
+        // No bulk run yet — pull from items that have run this period
+        const groupItems = Object.values(byFreq).flatMap(freqGroups => freqGroups[gName] || []);
+        const ranItems = groupItems.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
+        allPvIds.push(...ranItems.map(i => i.current_pv_id!));
+        allPvNos.push(...ranItems.filter(i => i.current_pv_no).map(i => i.current_pv_no!));
+        totalAmt += ranItems.reduce((s, i) => s + i.amount, 0);
+      }
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: master } = await supabase.from("bulk_pv_runs").insert({
+      group_name: `MASTER: ${masterName.trim()}`,
+      run_by: user?.email ?? "",
+      run_date: new Date().toISOString(),
+      pv_ids: allPvIds,
+      pv_nos: allPvNos,
+      total_amount: totalAmt,
+      pv_count: allPvIds.length,
+      ministry: entityTab,
+      is_master: true,
+      child_group_names: groupNames,
+      master_name: masterName.trim(),
+    }).select("id").single();
+
+    if (master?.id) {
+      setMasterRuns(r => [{ id: master.id, master_name: masterName.trim(), run_date: new Date().toISOString(), total_amount: totalAmt, child_group_names: groupNames }, ...r]);
+      setMasterMode(false);
+      setMasterSelected(new Set());
+      setMasterName("");
+      showMsg(`Master "${masterName.trim()}" created (${allPvIds.length} PVs, ${formatCurrency(totalAmt)})`);
+    }
+    setCreatingMaster(false);
+  }
+
+  function deleteMasterRun(id: string, name: string) {
+    setConfirmModal({
+      msg: `Remove Master "${name}"? The individual PVs are not deleted.`,
+      danger: true,
+      onOk: async () => {
+        await supabase.from("bulk_pv_runs").delete().eq("id", id);
+        setMasterRuns(r => r.filter(m => m.id !== id));
+        showMsg("Master removed");
+      },
+    });
+  }
+
   function runFolder(freq: string, groupName: string) {
     const key = `${freq}:${groupName}`;
     const groupItems = byFreq[freq]?.[groupName] ?? [];
@@ -689,9 +764,23 @@ export default function RecurringPage() {
           <h1 className="text-xl font-bold text-stone-800">Recurring Expenses</h1>
           <p className="text-sm text-stone-400">Scheduled payment voucher templates</p>
         </div>
-        <Button size="sm" onClick={showForm ? () => { setShowForm(false); setForm({ ...BLANK_FORM }); } : openNew}>
-          {showForm ? <><X size={14} /> Cancel</> : <><Plus size={14} /> New Recurring</>}
-        </Button>
+        <div className="flex items-center gap-2">
+          {!showForm && (
+            <button
+              onClick={() => { setMasterMode(m => !m); setMasterSelected(new Set()); setMasterName(""); }}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors ${
+                masterMode
+                  ? "bg-violet-600 text-white border-violet-600"
+                  : "border-stone-200 text-stone-600 hover:bg-stone-50"
+              }`}
+            >
+              <FileText size={13} /> {masterMode ? "Cancel Master" : "Create Master"}
+            </button>
+          )}
+          <Button size="sm" onClick={showForm ? () => { setShowForm(false); setForm({ ...BLANK_FORM }); } : openNew}>
+            {showForm ? <><X size={14} /> Cancel</> : <><Plus size={14} /> New Recurring</>}
+          </Button>
+        </div>
       </div>
 
       {/* Entity Tabs */}
@@ -1028,6 +1117,61 @@ export default function RecurringPage() {
         </div>
       )}
 
+      {/* Existing Masters */}
+      {!loading && masterRuns.length > 0 && !search && (
+        <div className="space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">Masters</p>
+          {masterRuns.map(m => (
+            <div key={m.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-violet-200 bg-violet-50/50">
+              <FileText size={13} className="text-violet-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-semibold text-violet-800">{m.master_name}</span>
+                <span className="text-xs text-stone-400 ml-2">{m.child_group_names.join(" + ")}</span>
+              </div>
+              <span className="text-sm font-bold text-violet-700 font-mono whitespace-nowrap">{formatCurrency(m.total_amount)}</span>
+              <a href={`/bulk-pvs/${m.id}`}
+                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors whitespace-nowrap">
+                <FileText size={10} /> View
+              </a>
+              <button onClick={() => deleteMasterRun(m.id, m.master_name)} title="Delete master"
+                className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Master creation sticky bar */}
+      {masterMode && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t-2 border-violet-300 bg-white shadow-xl px-4 py-3 flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-violet-700 mb-1">
+              {masterSelected.size === 0 ? "Select folders to include in Master" : `${masterSelected.size} folder${masterSelected.size > 1 ? "s" : ""} selected: ${[...masterSelected].join(", ")}`}
+            </p>
+            {masterSelected.size > 0 && (
+              <input
+                className="w-full border border-violet-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-violet-500"
+                placeholder="Master name (e.g. Monthly Recurring Jul 2026)"
+                value={masterName}
+                onChange={e => setMasterName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && masterName.trim()) createMaster(); }}
+              />
+            )}
+          </div>
+          {masterSelected.size > 0 && masterName.trim() && (
+            <button onClick={createMaster} disabled={creatingMaster}
+              className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+              <FileText size={14} /> {creatingMaster ? "Creating…" : "Create Master"}
+            </button>
+          )}
+          <button onClick={() => { setMasterMode(false); setMasterSelected(new Set()); setMasterName(""); }}
+            className="p-2 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Frequency sections */}
       {loading ? (
         <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
@@ -1035,8 +1179,45 @@ export default function RecurringPage() {
         <div className="text-center py-16 text-stone-400 text-sm">
           {search ? `No results for "${search}"` : `No recurring expenses for ${entityTab} yet`}
         </div>
+      ) : search ? (
+        /* ── Flat search results view ── */
+        <div className="overflow-x-auto rounded-xl border border-stone-200">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                <th className="py-2.5 pl-3 w-8 text-left"></th>
+                <th className="py-2.5 w-8 text-left">No</th>
+                <th className="py-2.5 text-left">Description</th>
+                <th className="py-2.5 text-left">Payable To</th>
+                <th className="py-2.5 text-left">Duration</th>
+                <th className="py-2.5 text-left">Last Created PV</th>
+                <th className="py-2.5 text-left">Last Paid PV</th>
+                <th className="py-2.5 text-right pr-4">Amount</th>
+                <th className="py-2.5 w-40"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {entityItems.map((item, idx) => (
+                <RecurringRow
+                  key={item.id} item={item} rowNo={idx + 1}
+                  isSelected={selected.has(item.id)}
+                  lastPaid={lastPaidMap[item.id] ?? null}
+                  groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
+                  onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
+                  onEdit={() => openEdit(item)}
+                  onToggleActive={() => toggleActive(item)}
+                  onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
+                  onDelete={() => deleteItem(item.id)}
+                  onReset={() => resetItem(item.id)}
+                  showHistory={historyId === item.id}
+                  batchRunning={batchRunning}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
-        <div className="space-y-8">
+        <div className={`space-y-8 ${masterMode ? "pb-24" : ""}`}>
           {FREQ_ORDER.filter(freq => byFreq[freq]).map(freq => {
             const freqGroups = byFreq[freq];
             const freqTotal = Object.values(freqGroups).flat().length;
@@ -1058,13 +1239,40 @@ export default function RecurringPage() {
                     const collapsed = !expandedGroups.has(key);
                     const isRenaming = renamingGroup === groupName;
                     const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
+                    const isMasterChecked = masterSelected.has(groupName);
                     return (
                       <div key={key}>
-                        {/* Group folder header */}
-                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-stone-100">
-                          <button onClick={() => toggleExpand(freq, groupName)} className="text-stone-400 hover:text-stone-600">
+                        {/* Group folder header — click anywhere to expand */}
+                        <div
+                          className="flex items-center gap-2 mb-2 pb-2 border-b border-stone-100 cursor-pointer hover:bg-stone-50/70 rounded-lg px-1 -mx-1 transition-colors"
+                          onClick={e => {
+                            // Don't toggle when clicking interactive children
+                            const target = e.target as HTMLElement;
+                            if (target.closest("button,a,input,label")) return;
+                            if (!isRenaming) toggleExpand(freq, groupName);
+                          }}
+                        >
+                          {/* Master select checkbox */}
+                          {masterMode && (
+                            <input
+                              type="checkbox"
+                              checked={isMasterChecked}
+                              onChange={e => {
+                                e.stopPropagation();
+                                setMasterSelected(s => {
+                                  const n = new Set(s);
+                                  if (n.has(groupName)) n.delete(groupName);
+                                  else n.add(groupName);
+                                  return n;
+                                });
+                              }}
+                              onClick={e => e.stopPropagation()}
+                              className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer shrink-0"
+                            />
+                          )}
+                          <span className="text-stone-400">
                             {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                          </button>
+                          </span>
                           {collapsed
                             ? <Folder size={14} className="text-amber-500 shrink-0" />
                             : <FolderOpen size={14} className="text-amber-500 shrink-0" />
@@ -1077,28 +1285,29 @@ export default function RecurringPage() {
                               onChange={e => setRenameValue(e.target.value)}
                               onBlur={saveGroupRename}
                               onKeyDown={e => { if (e.key === "Enter") saveGroupRename(); if (e.key === "Escape") setRenamingGroup(null); }}
+                              onClick={e => e.stopPropagation()}
                               className="font-semibold text-stone-700 border-b-2 border-[#4a6da7] outline-none bg-transparent text-sm"
                             />
                           ) : (
-                            <button
+                            <span
                               title="Double-click to rename"
-                              onDoubleClick={() => { setRenamingGroup(groupName); setRenameValue(groupName); }}
-                              className="font-semibold text-stone-700 hover:text-[#4a6da7] text-sm transition-colors"
+                              onDoubleClick={e => { e.stopPropagation(); setRenamingGroup(groupName); setRenameValue(groupName); }}
+                              className="font-semibold text-stone-700 text-sm select-none"
                             >
                               {groupName}
-                            </button>
+                            </span>
                           )}
                           <span className="text-xs text-stone-400 font-normal">({groupItems.length})</span>
 
                           <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
                             {!collapsed && (
-                              <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
+                              <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none" onClick={e => e.stopPropagation()}>
                                 <GroupCheckbox groupItems={groupItems} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
                                 Select all
                               </label>
                             )}
                             {!collapsed && eligible.length > 0 && (
-                              <button onClick={() => runFolder(freq, groupName)}
+                              <button onClick={e => { e.stopPropagation(); runFolder(freq, groupName); }}
                                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors whitespace-nowrap">
                                 <Play size={10} /> Run Folder
                               </button>
@@ -1114,7 +1323,7 @@ export default function RecurringPage() {
                               return (
                                 <>
                                   {hasBulkRun ? (
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                       <a href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
                                         className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap">
                                         <FileText size={10} /> View Bulk PV
@@ -1125,7 +1334,7 @@ export default function RecurringPage() {
                                       </button>
                                     </div>
                                   ) : canCreate ? (
-                                    <button onClick={() => createGroupBulkPV(groupName, groupItems)} disabled={batchRunning}
+                                    <button onClick={e => { e.stopPropagation(); createGroupBulkPV(groupName, groupItems); }} disabled={batchRunning}
                                       className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
                                       <FileText size={10} /> Create Bulk PV{createCount > 0 ? ` (${createCount})` : ""}
                                     </button>
@@ -1321,9 +1530,10 @@ function RecurringCard({ item, isSelected, onToggleSelect, onEdit, onToggleActiv
 }
 
 // --- Recurring Row (table view) ---
-function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
+function RecurringRow({ item, rowNo, isSelected, lastPaid, groupLabel, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
   item: RecurringPV; rowNo: number; isSelected: boolean;
   lastPaid: { id: string; pv_no: string; paid_at: string } | null;
+  groupLabel?: string;
   onToggleSelect: () => void; onEdit: () => void; onToggleActive: () => void;
   onHistory: () => void; onDelete: () => void; onReset: () => void;
   showHistory: boolean; batchRunning: boolean;
@@ -1422,6 +1632,7 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, onToggleSelect, onEdi
             {!item.active && !isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Paused</span>}
             {isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Expired</span>}
             {item.pv_label && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">{item.pv_label}</span>}
+            {groupLabel && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{groupLabel}</span>}
           </div>
         </td>
         <td className="py-2.5 pr-4 text-sm text-stone-600 whitespace-nowrap min-w-[120px]">{item.payee_name}</td>
