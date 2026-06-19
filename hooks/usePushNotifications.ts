@@ -14,7 +14,40 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return buffer;
 }
 
+function playNotificationChime() {
+  try {
+    const ctx = new AudioContext();
+    const notes = [1046.5, 783.99, 880, 659.25]; // C6 G5 A5 E5 — descending chime
+    let startTime = ctx.currentTime;
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t = startTime + i * 0.13;
+      gain.gain.setValueAtTime(0.35, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      osc.start(t);
+      osc.stop(t + 0.6);
+    });
+    setTimeout(() => ctx.close(), 3000);
+  } catch {
+    // Web Audio not available — silently skip
+  }
+}
+
 export function usePushNotifications() {
+  useEffect(() => {
+    // Listen for the service worker "play sound" broadcast
+    function onSwMessage(event: MessageEvent) {
+      if (event.data?.type === "LCM_NOTIFICATION_SOUND") playNotificationChime();
+    }
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", onSwMessage);
+  }, []);
+
   useEffect(() => {
     if (!VAPID_PUBLIC_KEY) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
