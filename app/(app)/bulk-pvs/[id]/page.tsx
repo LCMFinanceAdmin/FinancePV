@@ -1271,8 +1271,12 @@ export default function BulkPVPage() {
         </div>
       )}
 
-      {/* ══ PAGE 1: INDEX ══════════════════════════════════════════════════ */}
-      <div className="bulk-summary-page max-w-6xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
+      {/* ══ PAGE 1: BATCH SUMMARY (one per category for master runs) ════════ */}
+      {(run.is_master && pvGroups.length > 0
+        ? pvGroups
+        : [{ groupName: run.group_name, pvs, total }]
+      ).map((grp, grpIdx) => (
+      <div key={grpIdx} className="bulk-summary-page max-w-6xl mx-auto px-4 py-6 print:p-0 print:max-w-none">
         <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
           <div className="px-10 py-8 print:px-6 print:py-5" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}>
 
@@ -1291,7 +1295,7 @@ export default function BulkPVPage() {
                 </div>
                 <div className="px-2 py-1 flex gap-1">
                   <span className="font-semibold shrink-0">Group:</span>
-                  <span className="font-bold ml-1">{run.group_name}</span>
+                  <span className="font-bold ml-1">{grp.groupName}</span>
                 </div>
               </div>
             </div>
@@ -1310,7 +1314,7 @@ export default function BulkPVPage() {
               <tbody>
                 <tr>
                   <td className="font-bold py-1 pr-1">Group <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>组别</span>:</td>
-                  <td className="border-b border-black py-1 px-1 font-semibold">{run.group_name}</td>
+                  <td className="border-b border-black py-1 px-1 font-semibold">{grp.groupName}</td>
                   <td className="font-bold py-1 px-1">Run Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</td>
                   <td className="border-b border-black py-1 px-1">{fmtDate(run.run_date)}</td>
                 </tr>
@@ -1318,7 +1322,7 @@ export default function BulkPVPage() {
                   <td className="font-bold py-1 pr-1">Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者</span>:</td>
                   <td className="border-b border-black py-1 px-1">{run.run_by}</td>
                   <td className="font-bold py-1 px-1">No. of PVs:</td>
-                  <td className="border-b border-black py-1 px-1 font-semibold">{run.pv_count} voucher{run.pv_count !== 1 ? "s" : ""}</td>
+                  <td className="border-b border-black py-1 px-1 font-semibold">{grp.pvs.length} voucher{grp.pvs.length !== 1 ? "s" : ""}</td>
                 </tr>
                 {run.ministry && (
                   <tr>
@@ -1365,7 +1369,7 @@ export default function BulkPVPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pvs.map((pv, i) => {
+                  {grp.pvs.map((pv, i) => {
                     const approvals: PVApproval[] = pv.approvals ?? [];
                     const gmApproval  = approvals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED") ?? null;
                     const sigApproval = approvals.find(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED") ?? null;
@@ -1423,7 +1427,7 @@ export default function BulkPVPage() {
                       Total <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>总数</span>:
                     </td>
                     <td className="border border-black px-2 py-2 text-right tabular-nums text-[14px]">
-                      {total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                      {grp.total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
                     </td>
                     <td className="border border-black px-2 py-2" colSpan={2} />
                   </tr>
@@ -1465,6 +1469,7 @@ export default function BulkPVPage() {
           </div>
         </div>
       </div>
+      ))}
 
       {/* ══ PAGES 2+: INDIVIDUAL PV VOUCHERS ══════════════════════════════ */}
       {pvs.map((pv, i) => {
