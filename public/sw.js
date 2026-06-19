@@ -44,9 +44,14 @@ self.addEventListener("push", (e) => {
         requireInteraction: true,
       });
 
-      // Tell any open app tabs to play the notification sound
+      // Tell any open app tabs to play the notification sound and show a banner
       const openClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      openClients.forEach((c) => c.postMessage({ type: "LCM_NOTIFICATION_SOUND" }));
+      openClients.forEach((c) => c.postMessage({
+        type: "LCM_NOTIFICATION_SOUND",
+        title: data.title ?? "LCM Finance",
+        body: data.body ?? "",
+        url: data.url ?? "/",
+      }));
     })()
   );
 });

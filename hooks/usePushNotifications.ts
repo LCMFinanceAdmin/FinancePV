@@ -40,9 +40,17 @@ function playNotificationChime() {
 
 export function usePushNotifications() {
   useEffect(() => {
-    // Listen for the service worker "play sound" broadcast
+    // Listen for the service worker "play sound + show banner" broadcast
     function onSwMessage(event: MessageEvent) {
-      if (event.data?.type === "LCM_NOTIFICATION_SOUND") playNotificationChime();
+      if (event.data?.type !== "LCM_NOTIFICATION_SOUND") return;
+      playNotificationChime();
+      window.dispatchEvent(new CustomEvent("lcm-notification", {
+        detail: {
+          title: event.data.title ?? "LCM Finance",
+          body:  event.data.body  ?? "",
+          url:   event.data.url   ?? "/",
+        },
+      }));
     }
     navigator.serviceWorker?.addEventListener("message", onSwMessage);
     return () => navigator.serviceWorker?.removeEventListener("message", onSwMessage);
