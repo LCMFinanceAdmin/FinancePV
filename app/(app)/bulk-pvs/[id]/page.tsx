@@ -335,6 +335,7 @@ export default function BulkPVPage() {
 
   const [run, setRun]                     = useState<BulkRun | null>(null);
   const [pvs, setPvs]                     = useState<PV[]>([]);
+  const [pvGroups, setPvGroups]           = useState<{ groupName: string; pvs: PV[]; total: number }[]>([]);
   const [user, setUser]                   = useState<UserProfile | null>(null);
   const [runByName, setRunByName]         = useState("");
   const [loading, setLoading]             = useState(true);
@@ -385,6 +386,31 @@ export default function BulkPVPage() {
         const { data: pvData } = await supabase.from("pvs").select("*").in("id", pv_ids);
         ordered = pv_ids.map(pid => pvData?.find((p: PV) => p.id === pid)).filter(Boolean) as PV[];
         setPvs(ordered);
+        // For master runs, fetch child bulk runs to build per-category PV groupings
+        if (runData.is_master && (runData.child_group_names ?? []).length > 0) {
+          const { data: childRuns } = await supabase
+            .from("bulk_pv_runs")
+            .select("group_name,pv_ids,total_amount")
+            .in("group_name", runData.child_group_names)
+            .eq("is_master", false)
+            .order("run_date", { ascending: false });
+          if (childRuns) {
+            const seen = new Set<string>();
+            const byGroup: Record<string, { pvs: PV[]; total: number }> = {};
+            for (const cr of childRuns) {
+              if (seen.has(cr.group_name)) continue;
+              seen.add(cr.group_name);
+              byGroup[cr.group_name] = {
+                pvs: ordered.filter(pv => (cr.pv_ids as string[]).includes(pv.id)),
+                total: cr.total_amount,
+              };
+            }
+            const groups = (runData.child_group_names as string[])
+              .filter(n => byGroup[n])
+              .map(n => ({ groupName: n, ...byGroup[n] }));
+            setPvGroups(groups);
+          }
+        }
         // Load saved signatures for all approvers across all PVs
         const allApprovals = ordered.flatMap(p => (p.approvals ?? []) as { email?: string }[]);
         const emails = [...new Set(allApprovals.map(a => a.email).filter(Boolean))] as string[];
@@ -778,6 +804,7 @@ export default function BulkPVPage() {
               <BulkPVPdfDownload
                 run={run} pvs={pvs}
                 finSigData={finSigData} runByName={runByName}
+                pvGroups={pvGroups.length > 0 ? pvGroups : undefined}
               />
             )}
           </div>

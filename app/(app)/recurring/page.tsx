@@ -1142,33 +1142,38 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Master creation sticky bar */}
-      {masterMode && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 border-t-2 border-violet-300 bg-white shadow-xl px-4 py-3 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-violet-700 mb-1">
-              {masterSelected.size === 0 ? "Select folders to include in Master" : `${masterSelected.size} folder${masterSelected.size > 1 ? "s" : ""} selected: ${[...masterSelected].join(", ")}`}
-            </p>
-            {masterSelected.size > 0 && (
+      {/* Inline Master creation panel — sits above frequency sections */}
+      {masterMode && !search && (
+        <div className="rounded-xl border-2 border-violet-300 bg-violet-50 px-4 py-3 space-y-2.5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-violet-800">Create Master Voucher</p>
+              <p className="text-xs text-violet-600 mt-0.5">
+                {masterSelected.size === 0
+                  ? "Check the boxes next to folders below to include them in this master."
+                  : `${masterSelected.size} folder${masterSelected.size > 1 ? "s" : ""} selected: ${[...masterSelected].join(", ")}`}
+              </p>
+            </div>
+            <button onClick={() => { setMasterMode(false); setMasterSelected(new Set()); setMasterName(""); }}
+              className="shrink-0 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-violet-100 transition-colors">
+              <X size={15} />
+            </button>
+          </div>
+          {masterSelected.size > 0 && (
+            <div className="flex items-center gap-2">
               <input
-                className="w-full border border-violet-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-violet-500"
+                className="flex-1 border border-violet-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-violet-500 bg-white"
                 placeholder="Master name (e.g. Monthly Recurring Jul 2026)"
                 value={masterName}
                 onChange={e => setMasterName(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && masterName.trim()) createMaster(); }}
               />
-            )}
-          </div>
-          {masterSelected.size > 0 && masterName.trim() && (
-            <button onClick={createMaster} disabled={creatingMaster}
-              className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors whitespace-nowrap">
-              <FileText size={14} /> {creatingMaster ? "Creating…" : "Create Master"}
-            </button>
+              <button onClick={createMaster} disabled={!masterName.trim() || creatingMaster}
+                className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                <FileText size={14} /> {creatingMaster ? "Creating…" : "Create Master"}
+              </button>
+            </div>
           )}
-          <button onClick={() => { setMasterMode(false); setMasterSelected(new Set()); setMasterName(""); }}
-            className="p-2 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100">
-            <X size={16} />
-          </button>
         </div>
       )}
 
@@ -1217,7 +1222,7 @@ export default function RecurringPage() {
           </table>
         </div>
       ) : (
-        <div className={`space-y-8 ${masterMode ? "pb-24" : ""}`}>
+        <div className="space-y-8">
           {FREQ_ORDER.filter(freq => byFreq[freq]).map(freq => {
             const freqGroups = byFreq[freq];
             const freqTotal = Object.values(freqGroups).flat().length;

@@ -238,4 +238,7 @@ export interface BulkRun {
   pv_count: number;
   ministry: string;
   created_at: string;
+  is_master?: boolean;
+  master_name?: string;
+  child_group_names?: string[];
 }

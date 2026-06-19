@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Printer, Eye, Download, X } from "lucide-react";
+import { Eye, Download, X } from "lucide-react";
 import type { PV, PVApproval, BulkRun } from "@/lib/types";
 import {
   pdf, Document, Page, Text, View, StyleSheet, Image,
@@ -38,7 +38,11 @@ const st = StyleSheet.create({
   small:   { fontSize: 8 },
 });
 
-// ── Batch Summary Page (landscape A4, matches HTML layout) ───────────────
+// Landscape A4: ~841pt wide. With 8mm padding each side (~22.7pt), usable ≈ 796pt.
+// 18 + 68 + 160 + 80 + 115 + 70 + 142.5 + 142.5 = 796pt
+const COL = { num: 18, pvno: 68, payee: 160, bank: 80, acct: 115, amt: 70, sig: 142.5 };
+
+// ── Batch Summary Document ────────────────────────────────────────────────
 function BatchSummaryDocument({
   run, pvs, finSigData, runByName, logoDataUri,
 }: {
@@ -48,29 +52,20 @@ function BatchSummaryDocument({
   const batchRef   = `BATCH-${year}-${run.id.slice(-6).toUpperCase()}`;
   const grandTotal = pvs.reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
-  // Landscape A4: ~841pt wide. With 8mm padding each side (~22.7pt), usable ≈ 796pt.
-  // Columns: 18 + 68 + 160 + 80 + 115 + 70 + 142.5 + 142.5 = 796pt
-  const COL = { num: 18, pvno: 68, payee: 160, bank: 80, acct: 115, amt: 70, sig: 142.5 };
-
   return (
     <Document title={`Batch ${run.group_name}`}>
       <Page size="A4" orientation="landscape" style={[st.page, { padding: "8mm" }]}>
 
-        {/* ── Header: logo + centered title + office-use box ── */}
+        {/* ── Header ── */}
         <View style={[st.row, { marginBottom: 6, alignItems: "flex-start" }]}>
-          {/* Logo left */}
           <View style={{ width: 50 }}>
-            {logoDataUri
-              ? <Image src={logoDataUri} style={{ width: 44, height: 44 }} />
-              : null}
+            {logoDataUri ? <Image src={logoDataUri} style={{ width: 44, height: 44 }} /> : null}
           </View>
-          {/* Centered titles */}
           <View style={{ flex: 1, alignItems: "center" }}>
             <Text style={[st.bold, { fontSize: 13 }]}>
               LUTHERAN CHURCH IN MALAYSIA — BATCH PAYMENT SUMMARY
             </Text>
           </View>
-          {/* Office-use box right */}
           <View style={[st.border, { width: 145, marginLeft: 8 }]}>
             <View style={{ padding: "3pt 6pt", borderBottom: "1pt solid #000" }}>
               <Text style={[st.bold, st.tiny]}>For Office Use Only:</Text>
@@ -123,12 +118,18 @@ function BatchSummaryDocument({
           Payment Details — Individual Transactions
         </Text>
 
-        {/* ── Payment table ── */}
-        <View style={st.border}>
-          {/* Header row */}
-          <View style={[st.row, st.hdrBg]}>
-            <View style={{ width: COL.num,  padding: "3pt 2pt", borderRight: "1pt solid #000", textAlign: "center" }}>
-              <Text style={[st.bold, st.tiny]}>#</Text>
+        {/* ── Payment table ──
+            Each row has wrap={false} so it moves intact to the next page rather
+            than being split mid-row. Borders are per-row (no outer wrapper) so
+            the table continues cleanly across page breaks.                      */}
+        <View>
+          {/* Header — all 4 borders */}
+          <View style={[st.row, st.hdrBg, {
+            borderTop: "1pt solid #000", borderLeft: "1pt solid #000",
+            borderRight: "1pt solid #000", borderBottom: "1pt solid #000",
+          }]} wrap={false}>
+            <View style={{ width: COL.num,  padding: "3pt 2pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+              <Text style={[st.bold, st.tiny, st.center]}>#</Text>
             </View>
             <View style={{ width: COL.pvno, padding: "3pt 4pt", borderRight: "1pt solid #000" }}>
               <Text style={[st.bold, st.tiny]}>PV No.</Text>
@@ -156,7 +157,7 @@ function BatchSummaryDocument({
             </View>
           </View>
 
-          {/* Data rows */}
+          {/* Data rows — left/right/bottom borders; no top (avoids double lines) */}
           {pvs.map((pv, i) => {
             const approvals: PVApproval[] = pv.approvals ?? [];
             const gm = approvals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
@@ -170,21 +171,21 @@ function BatchSummaryDocument({
                 : BANK_ABBR[(pv.payee_bank_name ?? "").toLowerCase().trim()] ?? pv.payee_bank_name ?? "";
             const acctNo = pv.payment_method?.toLowerCase() === "jompay"
               ? `Biller: ${pv.biller_code ?? ""}  Ref: ${pv.ref_no ?? ""}`
-              : pv.cheque_no
-                ? pv.cheque_no
-                : pv.payee_bank_acct ?? "";
+              : pv.cheque_no ? pv.cheque_no : pv.payee_bank_acct ?? "";
             const isPaid = pv.status === "PAID";
 
             return (
-              <View key={pv.id} style={[st.row, { borderTop: "1pt solid #000" }]}>
+              <View key={pv.id} style={[st.row, {
+                borderLeft: "1pt solid #000",
+                borderRight: "1pt solid #000",
+                borderBottom: "1pt solid #000",
+              }]} wrap={false}>
                 <View style={{ width: COL.num, padding: "4pt 2pt", borderRight: "1pt solid #000", textAlign: "center" }}>
                   <Text style={st.tiny}>{i + 1}</Text>
                 </View>
                 <View style={{ width: COL.pvno, padding: "4pt 4pt", borderRight: "1pt solid #000" }}>
                   <Text style={[st.bold, st.tiny, { color: "#4a6da7" }]}>{pv.pv_no}</Text>
-                  {isPaid
-                    ? <Text style={[st.tiny, { color: "#16a34a", fontFamily: "Helvetica-Bold" }]}>PAID</Text>
-                    : null}
+                  {isPaid ? <Text style={[st.tiny, { color: "#16a34a", fontFamily: "Helvetica-Bold" }]}>PAID</Text> : null}
                 </View>
                 <View style={{ width: COL.payee, padding: "4pt 4pt", borderRight: "1pt solid #000" }}>
                   <Text style={st.tiny}>{pv.payee_name ?? ""}</Text>
@@ -199,13 +200,10 @@ function BatchSummaryDocument({
                   <Text style={[st.bold, { fontSize: 8 }]}>{fmt(pv.amount ?? 0)}</Text>
                   {isPaid && (
                     <View style={{ border: "1pt solid #16a34a", borderRadius: 2, padding: "1pt 3pt", marginTop: 2 }}>
-                      <Text style={[st.tiny, { color: "#16a34a", textAlign: "center" }]}>
-                        PAID · {fmtDate(pv.paid_at)}
-                      </Text>
+                      <Text style={[st.tiny, { color: "#16a34a", textAlign: "center" }]}>PAID · {fmtDate(pv.paid_at)}</Text>
                     </View>
                   )}
                 </View>
-                {/* GM Verified */}
                 <View style={{ width: COL.sig, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
                   <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>General Manager</Text>
                   {gm?.signature_data
@@ -218,7 +216,6 @@ function BatchSummaryDocument({
                     <View style={{ borderBottom: "0.5pt solid #aaa", height: 1 }} />
                   </View>
                 </View>
-                {/* Signatory */}
                 <View style={{ width: COL.sig, padding: "4pt 6pt" }}>
                   <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>Signatory</Text>
                   {sa?.signature_data
@@ -236,7 +233,12 @@ function BatchSummaryDocument({
           })}
 
           {/* Total row */}
-          <View style={[st.row, { borderTop: "1pt solid #000", backgroundColor: "#f8f8f8" }]}>
+          <View style={[st.row, {
+            borderLeft: "1pt solid #000",
+            borderRight: "1pt solid #000",
+            borderBottom: "1pt solid #000",
+            backgroundColor: "#f8f8f8",
+          }]} wrap={false}>
             <View style={{
               width: COL.num + COL.pvno + COL.payee + COL.bank + COL.acct,
               padding: "3pt 6pt", textAlign: "right", borderRight: "1pt solid #000",
@@ -253,9 +255,7 @@ function BatchSummaryDocument({
 
         {/* ── Finance signature ── */}
         <View style={{ marginTop: 12 }}>
-          <Text style={[st.bold, st.small, { marginBottom: 3 }]}>
-            Prepared by (Finance Executive):
-          </Text>
+          <Text style={[st.bold, st.small, { marginBottom: 3 }]}>Prepared by (Finance Executive):</Text>
           {finSigData
             ? <Image src={finSigData} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
             : <View style={{ height: 40 }} />}
@@ -270,11 +270,196 @@ function BatchSummaryDocument({
   );
 }
 
+// ── Master Voucher Cover Page ─────────────────────────────────────────────
+// Page 1 of a Master PDF: one row per payment category with wet-ink sig boxes.
+function MasterCoverPage({
+  run, pvGroups, finSigData, runByName, logoDataUri,
+}: {
+  run: BulkRun;
+  pvGroups: { groupName: string; pvs: PV[]; total: number }[];
+  finSigData: string;
+  runByName: string;
+  logoDataUri?: string;
+}) {
+  const year       = new Date(run.run_date).getFullYear();
+  const masterRef  = `MASTER-${year}-${run.id.slice(-6).toUpperCase()}`;
+  const masterName = run.master_name ?? run.group_name;
+  const grandTotal = pvGroups.reduce((s, g) => s + g.total, 0);
+  const totalPvs   = pvGroups.reduce((s, g) => s + g.pvs.length, 0);
+  // 20 + 200 + 70 + 100 + 203 + 203 = 796pt
+  const MC = { num: 20, cat: 200, cnt: 70, amt: 100, sig: 203 };
+
+  return (
+    <Page size="A4" orientation="landscape" style={[st.page, { padding: "8mm" }]}>
+
+      {/* ── Header ── */}
+      <View style={[st.row, { marginBottom: 6, alignItems: "flex-start" }]}>
+        <View style={{ width: 50 }}>
+          {logoDataUri && <Image src={logoDataUri} style={{ width: 44, height: 44 }} />}
+        </View>
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <Text style={[st.bold, { fontSize: 13 }]}>
+            LUTHERAN CHURCH IN MALAYSIA — MASTER PAYMENT VOUCHER
+          </Text>
+          <Text style={{ fontSize: 8, color: "#555", marginTop: 1 }}>
+            马来西亚基督教信义会 — 综合付款凭单
+          </Text>
+        </View>
+        <View style={[st.border, { width: 145, marginLeft: 8 }]}>
+          <View style={{ padding: "3pt 6pt", borderBottom: "1pt solid #000" }}>
+            <Text style={[st.bold, st.tiny]}>For Office Use Only:</Text>
+          </View>
+          <View style={{ padding: "3pt 6pt", borderBottom: "1pt solid #000" }}>
+            <Text style={st.tiny}><Text style={st.bold}>Master Ref: </Text>{masterRef}</Text>
+          </View>
+          <View style={{ padding: "3pt 6pt" }}>
+            <Text style={st.tiny}><Text style={st.bold}>Master: </Text>{masterName}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── Info rows ── */}
+      <View style={{ marginBottom: 6 }}>
+        <View style={[st.row, { marginBottom: 3 }]}>
+          <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Master Name:</Text>
+          <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
+            <Text style={[st.bold, { fontSize: 8 }]}>{masterName}</Text>
+          </View>
+          <Text style={[st.bold, { width: 120, fontSize: 8, marginLeft: 24 }]}>Run Date:</Text>
+          <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
+            <Text style={{ fontSize: 8 }}>{fmtDate(run.run_date)}</Text>
+          </View>
+        </View>
+        <View style={st.row}>
+          <Text style={[st.bold, { width: 130, fontSize: 8 }]}>Prepared by:</Text>
+          <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
+            <Text style={{ fontSize: 8 }}>{runByName || run.run_by}</Text>
+          </View>
+          <Text style={[st.bold, { width: 120, fontSize: 8, marginLeft: 24 }]}>Total Vouchers:</Text>
+          <View style={{ flex: 1, borderBottom: "1pt solid #555" }}>
+            <Text style={[st.bold, { fontSize: 8 }]}>
+              {totalPvs} voucher{totalPvs !== 1 ? "s" : ""} across {pvGroups.length} categor{pvGroups.length === 1 ? "y" : "ies"}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── Section heading ── */}
+      <Text style={[st.bold, { fontSize: 9, marginBottom: 4 }]}>
+        Payment Categories Summary — 付款类别汇总
+      </Text>
+
+      {/* ── Categories table ── */}
+      <View>
+        {/* Header */}
+        <View style={[st.row, st.hdrBg, {
+          borderTop: "1pt solid #000", borderLeft: "1pt solid #000",
+          borderRight: "1pt solid #000", borderBottom: "1pt solid #000",
+        }]} wrap={false}>
+          <View style={{ width: MC.num, padding: "4pt 2pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+            <Text style={[st.bold, st.tiny, st.center]}>#</Text>
+          </View>
+          <View style={{ width: MC.cat, padding: "4pt 6pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+            <Text style={[st.bold, st.tiny]}>Payment Category</Text>
+          </View>
+          <View style={{ width: MC.cnt, padding: "4pt 4pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+            <Text style={[st.bold, st.tiny, st.center]}>No. of PVs</Text>
+          </View>
+          <View style={{ width: MC.amt, padding: "4pt 4pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+            <Text style={[st.bold, st.tiny, { textAlign: "right" }]}>Total (RM)</Text>
+          </View>
+          <View style={{ width: MC.sig, padding: "4pt 6pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+            <Text style={[st.bold, st.tiny, st.center]}>Verified by General Manager</Text>
+          </View>
+          <View style={{ width: MC.sig, padding: "4pt 6pt", justifyContent: "center" }}>
+            <Text style={[st.bold, st.tiny, st.center]}>Approved by Signatory</Text>
+          </View>
+        </View>
+
+        {/* Category rows — tall for wet-ink signatures */}
+        {pvGroups.map((g, i) => (
+          <View key={g.groupName} style={[st.row, {
+            borderLeft: "1pt solid #000",
+            borderRight: "1pt solid #000",
+            borderBottom: "1pt solid #000",
+            minHeight: 62,
+          }]} wrap={false}>
+            <View style={{ width: MC.num, padding: "4pt 2pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+              <Text style={[st.tiny, st.center]}>{i + 1}</Text>
+            </View>
+            <View style={{ width: MC.cat, padding: "4pt 6pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+              <Text style={[st.bold, { fontSize: 8 }]}>{g.groupName}</Text>
+            </View>
+            <View style={{ width: MC.cnt, padding: "4pt 4pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+              <Text style={[st.tiny, st.center]}>{g.pvs.length}</Text>
+            </View>
+            <View style={{ width: MC.amt, padding: "4pt 4pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
+              <Text style={[st.bold, { fontSize: 8, textAlign: "right" }]}>{fmt(g.total)}</Text>
+            </View>
+            <View style={{ width: MC.sig, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
+              <View style={{ flex: 1 }} />
+              <View style={{ borderTop: "0.5pt solid #aaa", paddingTop: 3 }}>
+                <Text style={st.tiny}>Name: _______________________</Text>
+                <View style={{ height: 3 }} />
+                <Text style={st.tiny}>Date:  _______________________</Text>
+              </View>
+            </View>
+            <View style={{ width: MC.sig, padding: "4pt 6pt" }}>
+              <View style={{ flex: 1 }} />
+              <View style={{ borderTop: "0.5pt solid #aaa", paddingTop: 3 }}>
+                <Text style={st.tiny}>Name: _______________________</Text>
+                <View style={{ height: 3 }} />
+                <Text style={st.tiny}>Date:  _______________________</Text>
+              </View>
+            </View>
+          </View>
+        ))}
+
+        {/* Grand total row */}
+        <View style={[st.row, {
+          borderLeft: "1pt solid #000",
+          borderRight: "1pt solid #000",
+          borderBottom: "1pt solid #000",
+          backgroundColor: "#f0f0f0",
+        }]} wrap={false}>
+          <View style={{ width: MC.num + MC.cat + MC.cnt, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
+            <Text style={[st.bold, st.small, { textAlign: "right" }]}>TOTAL:</Text>
+          </View>
+          <View style={{ width: MC.amt, padding: "4pt 4pt", borderRight: "1pt solid #000" }}>
+            <Text style={[st.bold, st.small, { textAlign: "right" }]}>RM {fmt(grandTotal)}</Text>
+          </View>
+          <View style={{ width: MC.sig, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
+            <Text style={st.tiny}>{totalPvs} voucher{totalPvs !== 1 ? "s" : ""} in total</Text>
+          </View>
+          <View style={{ width: MC.sig, padding: "4pt 6pt" }}><Text>{" "}</Text></View>
+        </View>
+      </View>
+
+      {/* ── Finance signature ── */}
+      <View style={{ marginTop: 12 }}>
+        <Text style={[st.bold, st.small, { marginBottom: 3 }]}>Prepared by (Finance Executive):</Text>
+        {finSigData
+          ? <Image src={finSigData} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
+          : <View style={{ height: 40 }} />}
+        <View style={[st.borderT, { paddingTop: 3, flexDirection: "row", gap: 30 }]}>
+          <Text style={st.tiny}>Name: <Text style={st.bold}>{runByName || run.run_by}</Text></Text>
+          <Text style={st.tiny}>Date: <Text style={st.bold}>{fmtDate(run.run_date)}</Text></Text>
+        </View>
+      </View>
+
+    </Page>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 export default function BulkPVPdfDownload({
-  run, pvs, finSigData, runByName,
+  run, pvs, finSigData, runByName, pvGroups,
 }: {
-  run: BulkRun; pvs: PV[]; finSigData: string; runByName: string;
+  run: BulkRun;
+  pvs: PV[];
+  finSigData: string;
+  runByName: string;
+  pvGroups?: { groupName: string; pvs: PV[]; total: number }[];
 }) {
   const [viewLoading, setViewLoading] = useState(false);
   const [dlLoading, setDlLoading]     = useState(false);
@@ -286,10 +471,78 @@ export default function BulkPVPdfDownload({
     svgToPngDataUri("/lcm-logo.svg", 200).then(setLogoDataUri);
   }, []);
 
-  const batchFilename = `BATCH-${new Date(run?.run_date ?? Date.now()).getFullYear()}-${(run?.id ?? "").slice(-6).toUpperCase()}`;
+  const isMaster = !!run?.is_master && !!pvGroups?.length;
+  const masterName = run?.master_name ?? run?.group_name ?? "";
+  const batchFilename = isMaster
+    ? `MASTER-${new Date(run?.run_date ?? Date.now()).getFullYear()}-${(run?.id ?? "").slice(-6).toUpperCase()}`
+    : `BATCH-${new Date(run?.run_date ?? Date.now()).getFullYear()}-${(run?.id ?? "").slice(-6).toUpperCase()}`;
 
   async function buildBytes(): Promise<ArrayBuffer> {
     const logo = logoDataUri || await svgToPngDataUri("/lcm-logo.svg", 200);
+
+    if (isMaster && pvGroups) {
+      // Page 1: master cover with categories summary
+      const coverBlob = await pdf(
+        <Document title={masterName}>
+          <MasterCoverPage
+            run={run} pvGroups={pvGroups}
+            finSigData={finSigData} runByName={runByName} logoDataUri={logo}
+          />
+        </Document>
+      ).toBlob();
+      const finalDoc = await PDFDocument.load(await coverBlob.arrayBuffer());
+
+      // Next pages: per-category batch summaries
+      for (const group of pvGroups) {
+        const groupRun: BulkRun = {
+          ...run,
+          group_name: group.groupName,
+          pv_count: group.pvs.length,
+          total_amount: group.total,
+        };
+        const batchBlob = await pdf(
+          <BatchSummaryDocument
+            run={groupRun} pvs={group.pvs}
+            finSigData={finSigData} runByName={runByName} logoDataUri={logo}
+          />
+        ).toBlob();
+        const batchDoc = await PDFDocument.load(await batchBlob.arrayBuffer());
+        const pages = await finalDoc.copyPages(batchDoc, batchDoc.getPageIndices());
+        pages.forEach(p => finalDoc.addPage(p));
+      }
+
+      // Remaining pages: individual PV vouchers ordered by category
+      for (const group of pvGroups) {
+        for (const pv of group.pvs) {
+          const pvBlob = await pdf(<PVDocument pv={pv} logoDataUri={logo} />).toBlob();
+          const pvDoc  = await PDFDocument.load(await pvBlob.arrayBuffer());
+          const [pvPage] = await finalDoc.copyPages(pvDoc, [0]);
+          finalDoc.addPage(pvPage);
+          const attUrls = [...(pv.attachments ?? []), ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : [])].filter(Boolean);
+          for (const url of attUrls) {
+            const file = await fetchBytes(url);
+            if (!file) continue;
+            const isPdfFile = file.contentType.includes("pdf") || url.toLowerCase().endsWith(".pdf");
+            const isPng = file.contentType.includes("png") || url.toLowerCase().endsWith(".png");
+            if (isPdfFile) {
+              const attDoc = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
+              const attPages = await finalDoc.copyPages(attDoc, attDoc.getPageIndices());
+              attPages.forEach(p => finalDoc.addPage(p));
+            } else {
+              const img = isPng ? await finalDoc.embedPng(file.bytes) : await finalDoc.embedJpg(file.bytes);
+              const { width, height } = img.scaleToFit(595, 842);
+              const page = finalDoc.addPage([595, 842]);
+              page.drawImage(img, { x: (595 - width) / 2, y: (842 - height) / 2, width, height });
+            }
+          }
+        }
+      }
+
+      const bytes = await finalDoc.save();
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    }
+
+    // Regular batch PDF
     const summaryBlob = await pdf(
       <BatchSummaryDocument run={run} pvs={pvs} finSigData={finSigData} runByName={runByName} logoDataUri={logo} />
     ).toBlob();
@@ -303,12 +556,12 @@ export default function BulkPVPdfDownload({
       for (const url of attUrls) {
         const file = await fetchBytes(url);
         if (!file) continue;
-        const isPdf = file.contentType.includes("pdf") || url.toLowerCase().endsWith(".pdf");
+        const isPdfFile = file.contentType.includes("pdf") || url.toLowerCase().endsWith(".pdf");
         const isPng = file.contentType.includes("png") || url.toLowerCase().endsWith(".png");
-        if (isPdf) {
+        if (isPdfFile) {
           const attDoc = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
-          const pages  = await finalDoc.copyPages(attDoc, attDoc.getPageIndices());
-          pages.forEach(p => finalDoc.addPage(p));
+          const attPages = await finalDoc.copyPages(attDoc, attDoc.getPageIndices());
+          attPages.forEach(p => finalDoc.addPage(p));
         } else {
           const img = isPng ? await finalDoc.embedPng(file.bytes) : await finalDoc.embedJpg(file.bytes);
           const { width, height } = img.scaleToFit(595, 842);
@@ -370,17 +623,12 @@ export default function BulkPVPdfDownload({
           <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-stone-200 shrink-0">
             <span className="text-sm font-semibold text-stone-700">{batchFilename}.pdf</span>
             <div className="flex items-center gap-2">
-              <button
-                onClick={download}
-                disabled={dlLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors"
-              >
+              <button onClick={download} disabled={dlLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors">
                 <Download size={13} /> {dlLoading ? "Saving…" : "Download"}
               </button>
-              <button
-                onClick={closePreview}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 transition-colors"
-              >
+              <button onClick={closePreview}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 transition-colors">
                 <X size={13} /> Close
               </button>
             </div>
@@ -391,20 +639,13 @@ export default function BulkPVPdfDownload({
 
       <div className="inline-flex flex-col items-start gap-1">
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={openPreview}
-            disabled={viewLoading || !pvs.length}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-stone-300 rounded-lg text-sm text-stone-600 hover:bg-stone-50 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
+          <button onClick={openPreview} disabled={viewLoading || !pvs.length}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-stone-300 rounded-lg text-sm text-stone-600 hover:bg-stone-50 disabled:opacity-60 disabled:cursor-not-allowed">
             <Eye size={14} />
-            {viewLoading ? "Generating…" : "View PDF"}
+            {viewLoading ? "Generating…" : isMaster ? "View Master PDF" : "View PDF"}
           </button>
-          <button
-            onClick={download}
-            disabled={dlLoading || !pvs.length}
-            title="Download PDF"
-            className="flex items-center justify-center w-8 h-8 border border-stone-300 rounded-lg text-stone-500 hover:bg-stone-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
+          <button onClick={download} disabled={dlLoading || !pvs.length} title="Download PDF"
+            className="flex items-center justify-center w-8 h-8 border border-stone-300 rounded-lg text-stone-500 hover:bg-stone-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
             {dlLoading ? <span className="text-[10px]">…</span> : <Download size={14} />}
           </button>
         </div>
