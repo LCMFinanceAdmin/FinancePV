@@ -27,6 +27,18 @@ const FREQ_LABELS: Record<string, string> = {
   ANNUAL: "Annual", HALF_YEARLY: "Half-Yearly",
 };
 const FREQ_OPTIONS = ["WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL", "HALF_YEARLY"];
+const FREQ_ORDER = ["MONTHLY", "QUARTERLY", "HALF_YEARLY", "ANNUAL", "WEEKLY"];
+const FREQ_DISPLAY: Record<string, string> = {
+  MONTHLY: "Monthly", QUARTERLY: "Quarterly", HALF_YEARLY: "Bi-Annual", ANNUAL: "Yearly", WEEKLY: "Weekly",
+};
+
+type EntityKey = "LCM" | "BAM" | "LSC" | "HLE";
+const ENTITY_TABS: { key: EntityKey; label: string; color: string; textColor: string; borderColor: string; badgeBg: string; badgeText: string }[] = [
+  { key: "LCM", label: "LCM",  color: "bg-[#4a6da7]", textColor: "text-[#4a6da7]", borderColor: "border-[#4a6da7]", badgeBg: "bg-blue-100", badgeText: "text-blue-700" },
+  { key: "BAM", label: "BAM",  color: "bg-green-600",  textColor: "text-green-600",  borderColor: "border-green-600",  badgeBg: "bg-green-100", badgeText: "text-green-700" },
+  { key: "LSC", label: "LSC",  color: "bg-purple-600", textColor: "text-purple-600", borderColor: "border-purple-600", badgeBg: "bg-purple-100", badgeText: "text-purple-700" },
+  { key: "HLE", label: "HLE",  color: "bg-amber-500",  textColor: "text-amber-600",  borderColor: "border-amber-500",  badgeBg: "bg-amber-100", badgeText: "text-amber-700" },
+];
 const PAYMENT_METHODS = ["Bank transfer", "JomPAY", "Online Transfer", "Cheque", "Cash", "Auto Debit", "Other"];
 
 interface LineItem { description: string; amount: number; }
@@ -46,6 +58,7 @@ interface RecurringPV {
 }
 
 const BLANK_FORM = {
+  pv_type: "LCM" as EntityKey,
   name: "", frequency: "MONTHLY", next_due: "", active: true,
   payee_name: "", payee_bank_name: "", payee_bank_acct: "",
   payment_method: "Bank transfer", amount: 0,
@@ -90,7 +103,10 @@ function isAlreadyRunThisPeriod(item: RecurringPV): boolean {
 export default function RecurringPage() {
   const supabase = createClient();
   const searchParams = useSearchParams();
-  const isBamMode = searchParams.get("type") === "bam";
+  const initialTab = (searchParams.get("type")?.toUpperCase() as EntityKey | null);
+  const [entityTab, setEntityTab] = useState<EntityKey>(
+    initialTab && ["LCM","BAM","LSC","HLE"].includes(initialTab) ? initialTab : "LCM"
+  );
   const [items, setItems] = useState<RecurringPV[]>([]);
   const [loading, setLoading] = useState(true);
   const [isBuildingManager, setIsBuildingManager] = useState(false);
@@ -132,8 +148,7 @@ export default function RecurringPage() {
     const isBM = profile?.role === "BUILDING_MANAGER";
     setIsBuildingManager(isBM);
 
-    let recQuery = supabase.from("recurring_pvs").select("*").order("name");
-    recQuery = recQuery.eq("pv_type", isBamMode ? "BAM" : "LCM");
+    const recQuery = supabase.from("recurring_pvs").select("*").order("name");
 
     const [{ data: rec }, { data: min }, { data: proj }] = await Promise.all([
       recQuery,
@@ -180,8 +195,10 @@ export default function RecurringPage() {
 
   useEffect(() => { load(); }, []);
 
-  // --- Derived: filter + group ---
-  const filtered = items.filter(item => {
+  // --- Derived: filter by entity + search, then group by freq → groupName ---
+  const entityItems = items.filter(item => {
+    const pvType = ((item as RecurringPV & { pv_type?: string }).pv_type || "LCM") as EntityKey;
+    if (pvType !== entityTab) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -194,19 +211,21 @@ export default function RecurringPage() {
     );
   });
 
-  const groups: Record<string, RecurringPV[]> = {};
-  filtered.forEach(item => {
+  const byFreq: Record<string, Record<string, RecurringPV[]>> = {};
+  entityItems.forEach(item => {
+    const freq = item.frequency || "MONTHLY";
     const g = item.group_name || "General";
-    if (!groups[g]) groups[g] = [];
-    groups[g].push(item);
+    if (!byFreq[freq]) byFreq[freq] = {};
+    if (!byFreq[freq][g]) byFreq[freq][g] = [];
+    byFreq[freq][g].push(item);
   });
-  const groupNames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
 
-  const overdue = items.filter(i => i.active && i.next_due && new Date(i.next_due) < new Date() && !isAlreadyRunThisPeriod(i));
+  const overdue = entityItems.filter(i => i.active && i.next_due && new Date(i.next_due) < new Date() && !isAlreadyRunThisPeriod(i));
 
   // --- Group management ---
-  function toggleExpand(g: string) {
-    setExpandedGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
+  function toggleExpand(freq: string, groupName: string) {
+    const key = `${freq}:${groupName}`;
+    setExpandedGroups(s => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   }
 
   async function doResetItems(ids: string[]) {
@@ -326,13 +345,12 @@ export default function RecurringPage() {
     });
   }
 
-  async function createGroupBulkPV(groupName: string) {
-    const allGroupItems = groups[groupName] ?? [];
+  async function createGroupBulkPV(groupName: string, groupItems: RecurringPV[]) {
     // Use selected items in this group, or fall back to all already-ran items
-    const selectedInGroup = allGroupItems.filter(i => selected.has(i.id));
+    const selectedInGroup = groupItems.filter(i => selected.has(i.id));
     const toInclude = selectedInGroup.length > 0
       ? selectedInGroup
-      : allGroupItems.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
+      : groupItems.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
 
     if (!toInclude.length) {
       showMsg("Select at least one PV to include in the Bulk PV", false);
@@ -417,13 +435,11 @@ export default function RecurringPage() {
     });
   }
 
-  function runFolder(groupName: string) {
-    const groupItems = groups[groupName] ?? [];
-    // Only select items not expired and not already run this period
+  function runFolder(freq: string, groupName: string) {
+    const key = `${freq}:${groupName}`;
+    const groupItems = byFreq[freq]?.[groupName] ?? [];
     const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
-    // Expand the folder so user can see / deselect
-    setExpandedGroups(s => { const n = new Set(s); n.add(groupName); return n; });
-    // Select all eligible items in this folder
+    setExpandedGroups(s => { const n = new Set(s); n.add(key); return n; });
     setSelected(s => { const n = new Set(s); eligible.forEach(i => n.add(i.id)); return n; });
   }
 
@@ -431,8 +447,15 @@ export default function RecurringPage() {
     if (!renamingGroup || !renameValue.trim() || renameValue === renamingGroup) {
       setRenamingGroup(null); return;
     }
-    await supabase.from("recurring_pvs").update({ group_name: renameValue.trim() }).eq("group_name", renamingGroup);
-    setItems(is => is.map(i => i.group_name === renamingGroup ? { ...i, group_name: renameValue.trim() } : i));
+    await supabase.from("recurring_pvs")
+      .update({ group_name: renameValue.trim() })
+      .eq("group_name", renamingGroup)
+      .eq("pv_type", entityTab);
+    setItems(is => is.map(i =>
+      i.group_name === renamingGroup && ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab
+        ? { ...i, group_name: renameValue.trim() }
+        : i
+    ));
     setRenamingGroup(null);
   }
 
@@ -452,13 +475,28 @@ export default function RecurringPage() {
   // --- Form ---
   function setField(k: string, v: unknown) { setForm(f => ({ ...f, [k]: v })); }
 
-  const BAM_DEFAULTS = isBamMode ? { ministry: "Property", pv_label: "" } : {};
-  function openNew() { setForm({ ...BLANK_FORM, ...BAM_DEFAULTS }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
-  function openNewInGroup(groupName: string) { setForm({ ...BLANK_FORM, ...BAM_DEFAULTS, group_name: groupName }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function entityDefaults(tab: EntityKey) {
+    if (tab === "BAM") return { pv_type: "BAM" as EntityKey, ministry: "Property", pv_label: "" };
+    if (tab === "LSC") return { pv_type: "LSC" as EntityKey, ministry: "" };
+    if (tab === "HLE") return { pv_type: "HLE" as EntityKey, ministry: "" };
+    return { pv_type: "LCM" as EntityKey };
+  }
+
+  function openNew() {
+    setForm({ ...BLANK_FORM, ...entityDefaults(entityTab) });
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function openNewInGroup(freq: string, groupName: string) {
+    setForm({ ...BLANK_FORM, ...entityDefaults(entityTab), group_name: groupName, frequency: freq });
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   function openEdit(item: RecurringPV) {
+    const pvType = ((item as RecurringPV & { pv_type?: string }).pv_type || "LCM") as EntityKey;
     setForm({
-      id: item.id, name: item.name, frequency: item.frequency,
+      id: item.id, pv_type: pvType, name: item.name, frequency: item.frequency,
       next_due: item.next_due ?? "", active: item.active,
       payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
       payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
@@ -500,7 +538,7 @@ export default function RecurringPage() {
       term_type: form.term_type, term_end_date: form.term_end_date || null,
       final_payment_note: form.final_payment_note, group_name: form.group_name || "General",
       commenced_date: form.commenced_date || null,
-      pv_type: isBamMode ? "BAM" : "LCM",
+      pv_type: form.pv_type || entityTab,
     };
     let error;
     if (form.id) {
@@ -640,7 +678,7 @@ export default function RecurringPage() {
     }
   }
 
-  const existingGroups = [...new Set(items.map(i => i.group_name || "General"))].sort();
+  const existingGroups = [...new Set(entityItems.map(i => i.group_name || "General"))].sort();
   const filteredProjects = projects.filter(p => !form.ministry || p.ministry === form.ministry);
 
   return (
@@ -648,17 +686,34 @@ export default function RecurringPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-stone-800">Recurring Expenses</h1>
-            {isBamMode && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">BAM</span>}
-          </div>
-          <p className="text-sm text-stone-400">
-            {isBamMode ? "Building & Event recurring BAM payment templates" : "Scheduled payment voucher templates"}
-          </p>
+          <h1 className="text-xl font-bold text-stone-800">Recurring Expenses</h1>
+          <p className="text-sm text-stone-400">Scheduled payment voucher templates</p>
         </div>
         <Button size="sm" onClick={showForm ? () => { setShowForm(false); setForm({ ...BLANK_FORM }); } : openNew}>
           {showForm ? <><X size={14} /> Cancel</> : <><Plus size={14} /> New Recurring</>}
         </Button>
+      </div>
+
+      {/* Entity Tabs */}
+      <div className="flex gap-0 border-b border-stone-200">
+        {ENTITY_TABS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => { setEntityTab(tab.key); setSearch(""); }}
+            className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px ${
+              entityTab === tab.key
+                ? `${tab.borderColor} ${tab.textColor}`
+                : "border-transparent text-stone-400 hover:text-stone-600 hover:border-stone-300"
+            }`}
+          >
+            {tab.label}
+            {entityTab === tab.key && overdue.length > 0 && (
+              <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                {overdue.length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Search */}
@@ -743,10 +798,39 @@ export default function RecurringPage() {
           {/* Form header */}
           <div className="px-4 py-3 border-b-4 border-stone-800 bg-stone-800 flex items-center justify-between">
             <p className="text-sm font-bold text-white">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
-            {isBamMode && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-400 text-white">BAM</span>}
+            {(() => {
+              const tab = ENTITY_TABS.find(t => t.key === form.pv_type);
+              return tab ? (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tab.badgeBg} ${tab.badgeText}`}>{tab.label}</span>
+              ) : null;
+            })()}
           </div>
 
           <div className="divide-y-4 divide-stone-200">
+
+            {/* ── Section 0: Entity ── */}
+            {!form.id && (
+              <div className="px-4 py-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Entity</p>
+                <div className="flex gap-2">
+                  {ENTITY_TABS.map(tab => (
+                    <button key={tab.key} type="button"
+                      onClick={() => {
+                        const defs = entityDefaults(tab.key);
+                        setForm(f => ({ ...f, ...defs }));
+                      }}
+                      className={`px-3 py-1.5 text-xs rounded-lg font-semibold border transition-colors ${
+                        form.pv_type === tab.key
+                          ? `${tab.color} text-white border-transparent`
+                          : "border-stone-200 text-stone-500 hover:border-stone-300 bg-white"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ── Section 1: Template Setup ── */}
             <div className="px-4 py-3">
@@ -816,12 +900,28 @@ export default function RecurringPage() {
             <div className="px-4 py-3">
               <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Classification</p>
               <div className="grid grid-cols-3 gap-x-3 gap-y-2">
-                {isBamMode ? (
+                {form.pv_type === "BAM" ? (
                   <div>
                     <label className="block text-xs font-medium text-stone-500 mb-1">Ministry</label>
                     <div className="flex items-center gap-2 px-3 py-2 border border-stone-200 rounded-lg bg-stone-50 text-sm text-stone-600">
                       Property
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600 font-medium">BAM default</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">BAM</span>
+                    </div>
+                  </div>
+                ) : form.pv_type === "LSC" ? (
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Entity</label>
+                    <div className="flex items-center gap-2 px-3 py-2 border border-stone-200 rounded-lg bg-stone-50 text-sm text-stone-600">
+                      Luther Study Centre
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">LSC</span>
+                    </div>
+                  </div>
+                ) : form.pv_type === "HLE" ? (
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Entity</label>
+                    <div className="flex items-center gap-2 px-3 py-2 border border-stone-200 rounded-lg bg-stone-50 text-sm text-stone-600">
+                      Highlands Lakeview
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">HLE</span>
                     </div>
                   </div>
                 ) : (
@@ -842,7 +942,7 @@ export default function RecurringPage() {
                   </select>
                 </Field>
               </div>
-              {!isBamMode && (
+              {form.pv_type === "LCM" && (
                 <div className="mt-2">
                   <Field label="PV Label (optional)">
                     <input className={inp} value={form.pv_label} onChange={e => setField("pv_label", e.target.value)} placeholder="e.g. LCM - PBB" />
@@ -928,139 +1028,163 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Groups */}
+      {/* Frequency sections */}
       {loading ? (
         <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
-      ) : filtered.length === 0 ? (
+      ) : entityItems.length === 0 ? (
         <div className="text-center py-16 text-stone-400 text-sm">
-          {search ? `No results for "${search}"` : "No recurring expenses set up yet"}
+          {search ? `No results for "${search}"` : `No recurring expenses for ${entityTab} yet`}
         </div>
       ) : (
-        <div className="space-y-6">
-          {groupNames.map(groupName => {
-            const groupItems = groups[groupName];
-            const collapsed = !expandedGroups.has(groupName);
-            const isRenaming = renamingGroup === groupName;
-            const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
-            const allGroupSel = eligible.length > 0 && eligible.every(i => selected.has(i.id));
-            const someGroupSel = eligible.some(i => selected.has(i.id));
+        <div className="space-y-8">
+          {FREQ_ORDER.filter(freq => byFreq[freq]).map(freq => {
+            const freqGroups = byFreq[freq];
+            const freqTotal = Object.values(freqGroups).flat().length;
+            const tab = ENTITY_TABS.find(t => t.key === entityTab)!;
             return (
-              <div key={groupName}>
-                {/* Group header */}
-                <div className="flex items-center gap-2 mb-3 pb-2 border-b-2 border-stone-100">
-                  <button onClick={() => toggleExpand(groupName)} className="text-stone-400 hover:text-stone-600">
-                    {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                  </button>
-                  {collapsed
-                    ? <Folder size={15} className="text-amber-500" />
-                    : <FolderOpen size={15} className="text-amber-500" />
-                  }
-
-                  {isRenaming ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={e => setRenameValue(e.target.value)}
-                      onBlur={saveGroupRename}
-                      onKeyDown={e => { if (e.key === "Enter") saveGroupRename(); if (e.key === "Escape") setRenamingGroup(null); }}
-                      className="font-bold text-stone-700 border-b-2 border-[#4a6da7] outline-none bg-transparent text-sm"
-                    />
-                  ) : (
-                    <button
-                      title="Double-click to rename"
-                      onDoubleClick={() => { setRenamingGroup(groupName); setRenameValue(groupName); }}
-                      className="font-bold text-stone-700 hover:text-[#4a6da7] text-sm transition-colors"
-                    >
-                      {groupName}
-                    </button>
-                  )}
-                  <span className="text-xs text-stone-400 font-normal">({groupItems.length})</span>
-
-                  <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-                    {!collapsed && (
-                      <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
-                        <GroupCheckbox groupItems={groupItems} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
-                        Select all
-                      </label>
-                    )}
-                    {(() => {
-                      const hasBulkRun = !!groupBulkRuns[groupName];
-                      const selectedInGroup = groupItems.filter(i => selected.has(i.id));
-                      const ranWithoutBulk = !hasBulkRun && groupItems.some(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
-                      const canCreate = selectedInGroup.length > 0 || ranWithoutBulk;
-                      const createCount = selectedInGroup.length > 0
-                        ? selectedInGroup.length
-                        : groupItems.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id).length;
-                      return (
-                        <>
-                          {hasBulkRun ? (
-                            <div className="flex items-center gap-1">
-                              <a href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
-                                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap">
-                                <FileText size={10} /> View Bulk PV
-                              </a>
-                              <button onClick={() => deleteBulkRun(groupName)} title="Remove bulk PV record"
-                                className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          ) : canCreate ? (
-                            <button onClick={() => createGroupBulkPV(groupName)} disabled={batchRunning}
-                              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
-                              <FileText size={10} /> Create Bulk PV{createCount > 0 ? ` (${createCount})` : ""}
-                            </button>
-                          ) : null}
-                        </>
-                      );
-                    })()}
-                  </div>
+              <div key={freq}>
+                {/* Frequency section header */}
+                <div className="flex items-center gap-2 mb-4">
+                  <div className={`w-1 h-5 rounded-full ${tab.color}`} />
+                  <h2 className="text-sm font-bold text-stone-700">{FREQ_DISPLAY[freq]}</h2>
+                  <span className="text-xs text-stone-400">({freqTotal})</span>
                 </div>
 
-                {/* Table view */}
-                {!collapsed && (
-                  <div className="overflow-x-auto rounded-xl border border-stone-200">
-                    <table className="w-full text-sm border-collapse">
-                      <thead>
-                        <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                          <th className="py-2.5 pl-3 w-8 text-left"></th>
-                          <th className="py-2.5 w-8 text-left">No</th>
-                          <th className="py-2.5 text-left">Description</th>
-                          <th className="py-2.5 text-left">Payable To</th>
-                          <th className="py-2.5 text-left">Duration</th>
-                          <th className="py-2.5 text-left">Last Created PV</th>
-                          <th className="py-2.5 text-left">Last Paid PV</th>
-                          <th className="py-2.5 text-right pr-4">Amount</th>
-                          <th className="py-2.5 w-40"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-stone-100">
-                        {groupItems.map((item, idx) => (
-                          <RecurringRow
-                            key={item.id} item={item} rowNo={idx + 1}
-                            isSelected={selected.has(item.id)}
-                            lastPaid={lastPaidMap[item.id] ?? null}
-                            onToggleSelect={() => {
-                              setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
-                            }}
-                            onEdit={() => openEdit(item)}
-                            onToggleActive={() => toggleActive(item)}
-                            onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
-                            onDelete={() => deleteItem(item.id)}
-                            onReset={() => resetItem(item.id)}
-                            showHistory={historyId === item.id}
-                            batchRunning={batchRunning}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                    <div className="border-t border-stone-200 px-4 py-2.5 bg-stone-50/50">
-                      <button onClick={() => openNewInGroup(groupName)}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5a8e] transition-colors">
-                        <Plus size={13} /> Add Expense
-                      </button>
-                    </div>
-                  </div>
-                )}
+                {/* Group folders within this frequency */}
+                <div className="space-y-4 pl-3">
+                  {Object.keys(freqGroups).sort((a, b) => a.localeCompare(b)).map(groupName => {
+                    const groupItems = freqGroups[groupName];
+                    const key = `${freq}:${groupName}`;
+                    const collapsed = !expandedGroups.has(key);
+                    const isRenaming = renamingGroup === groupName;
+                    const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
+                    return (
+                      <div key={key}>
+                        {/* Group folder header */}
+                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-stone-100">
+                          <button onClick={() => toggleExpand(freq, groupName)} className="text-stone-400 hover:text-stone-600">
+                            {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                          </button>
+                          {collapsed
+                            ? <Folder size={14} className="text-amber-500 shrink-0" />
+                            : <FolderOpen size={14} className="text-amber-500 shrink-0" />
+                          }
+
+                          {isRenaming ? (
+                            <input
+                              autoFocus
+                              value={renameValue}
+                              onChange={e => setRenameValue(e.target.value)}
+                              onBlur={saveGroupRename}
+                              onKeyDown={e => { if (e.key === "Enter") saveGroupRename(); if (e.key === "Escape") setRenamingGroup(null); }}
+                              className="font-semibold text-stone-700 border-b-2 border-[#4a6da7] outline-none bg-transparent text-sm"
+                            />
+                          ) : (
+                            <button
+                              title="Double-click to rename"
+                              onDoubleClick={() => { setRenamingGroup(groupName); setRenameValue(groupName); }}
+                              className="font-semibold text-stone-700 hover:text-[#4a6da7] text-sm transition-colors"
+                            >
+                              {groupName}
+                            </button>
+                          )}
+                          <span className="text-xs text-stone-400 font-normal">({groupItems.length})</span>
+
+                          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+                            {!collapsed && (
+                              <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
+                                <GroupCheckbox groupItems={groupItems} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
+                                Select all
+                              </label>
+                            )}
+                            {!collapsed && eligible.length > 0 && (
+                              <button onClick={() => runFolder(freq, groupName)}
+                                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors whitespace-nowrap">
+                                <Play size={10} /> Run Folder
+                              </button>
+                            )}
+                            {(() => {
+                              const hasBulkRun = !!groupBulkRuns[groupName];
+                              const selectedInGroup = groupItems.filter(i => selected.has(i.id));
+                              const ranWithoutBulk = !hasBulkRun && groupItems.some(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
+                              const canCreate = selectedInGroup.length > 0 || ranWithoutBulk;
+                              const createCount = selectedInGroup.length > 0
+                                ? selectedInGroup.length
+                                : groupItems.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id).length;
+                              return (
+                                <>
+                                  {hasBulkRun ? (
+                                    <div className="flex items-center gap-1">
+                                      <a href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
+                                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap">
+                                        <FileText size={10} /> View Bulk PV
+                                      </a>
+                                      <button onClick={() => deleteBulkRun(groupName)} title="Remove bulk PV record"
+                                        className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  ) : canCreate ? (
+                                    <button onClick={() => createGroupBulkPV(groupName, groupItems)} disabled={batchRunning}
+                                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                                      <FileText size={10} /> Create Bulk PV{createCount > 0 ? ` (${createCount})` : ""}
+                                    </button>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+
+                        {/* Table view */}
+                        {!collapsed && (
+                          <div className="overflow-x-auto rounded-xl border border-stone-200">
+                            <table className="w-full text-sm border-collapse">
+                              <thead>
+                                <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                                  <th className="py-2.5 pl-3 w-8 text-left"></th>
+                                  <th className="py-2.5 w-8 text-left">No</th>
+                                  <th className="py-2.5 text-left">Description</th>
+                                  <th className="py-2.5 text-left">Payable To</th>
+                                  <th className="py-2.5 text-left">Duration</th>
+                                  <th className="py-2.5 text-left">Last Created PV</th>
+                                  <th className="py-2.5 text-left">Last Paid PV</th>
+                                  <th className="py-2.5 text-right pr-4">Amount</th>
+                                  <th className="py-2.5 w-40"></th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-stone-100">
+                                {groupItems.map((item, idx) => (
+                                  <RecurringRow
+                                    key={item.id} item={item} rowNo={idx + 1}
+                                    isSelected={selected.has(item.id)}
+                                    lastPaid={lastPaidMap[item.id] ?? null}
+                                    onToggleSelect={() => {
+                                      setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
+                                    }}
+                                    onEdit={() => openEdit(item)}
+                                    onToggleActive={() => toggleActive(item)}
+                                    onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
+                                    onDelete={() => deleteItem(item.id)}
+                                    onReset={() => resetItem(item.id)}
+                                    showHistory={historyId === item.id}
+                                    batchRunning={batchRunning}
+                                  />
+                                ))}
+                              </tbody>
+                            </table>
+                            <div className="border-t border-stone-200 px-4 py-2.5 bg-stone-50/50">
+                              <button onClick={() => openNewInGroup(freq, groupName)}
+                                className="flex items-center gap-1.5 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5a8e] transition-colors">
+                                <Plus size={13} /> Add Expense
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
           })}
