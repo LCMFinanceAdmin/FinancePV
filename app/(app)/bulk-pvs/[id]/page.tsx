@@ -351,6 +351,7 @@ export default function BulkPVPage() {
   // Signing state
   const [showSignModal, setShowSignModal]   = useState(false);
   const [signingPvId, setSigningPvId]       = useState<string | null>(null);
+  const [masterSignRole, setMasterSignRole] = useState<"GM" | "SIG" | null>(null);
   const [signatureData, setSignatureData]   = useState("");
   const [savedSig, setSavedSig]             = useState("");
   const [finSigData, setFinSigData]         = useState(""); // Finance Executive's sig for display
@@ -586,16 +587,80 @@ export default function BulkPVPage() {
 
   function openSignModal(pvId: string) {
     setSigningPvId(pvId);
-    setSignatureData("");
+    setMasterSignRole(null);
+    setSignatureData(savedSig || "");
     setPin("");
     setPinError("");
     setCanvasActive(false);
     setIsErasing(false);
     setSigMode("draw");
     setShowSignModal(true);
+    if (savedSig && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d")!;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      img.src = savedSig;
+      setCanvasActive(true);
+    }
+  }
+
+  function openMasterSignModal(role: "GM" | "SIG") {
+    setMasterSignRole(role);
+    setSigningPvId(null);
+    setSignatureData(savedSig || "");
+    setPin(""); setPinError("");
+    setCanvasActive(false); setIsErasing(false);
+    setSigMode("draw");
+    setShowSignModal(true);
+    if (savedSig && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d")!;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      img.src = savedSig;
+      setCanvasActive(true);
+    }
+  }
+
+  async function submitMasterSign() {
+    if (!masterSignRole || !user || !run) return;
+    setSignLoading(true);
+    try {
+      const approval: PVApproval = {
+        role: user.role,
+        name: user.full_name,
+        email: user.email,
+        action: "APPROVED",
+        timestamp: new Date().toISOString(),
+        remarks: "",
+        signature_data: signatureData || undefined,
+      };
+      const existing = ((run.approvals ?? []) as PVApproval[]).filter(a => a.role !== user.role);
+      const updated = [...existing, approval];
+      const { error } = await supabase.from("bulk_pv_runs").update({ approvals: updated }).eq("id", run.id);
+      if (error) throw new Error(error.message);
+      if (saveSigForNext && signatureData) {
+        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
+        setSavedSig(signatureData);
+      }
+      setRun(prev => prev ? { ...prev, approvals: updated } : prev);
+      setMasterSignRole(null);
+      setShowSignModal(false);
+      setSignatureData(""); setPin("");
+      setActionToast({ msg: "Master voucher signed successfully", ok: true });
+      setTimeout(() => setActionToast({ msg: "", ok: true }), 4000);
+    } catch (e: unknown) {
+      setActionToast({ msg: (e as Error).message, ok: false });
+    } finally {
+      setSignLoading(false);
+    }
   }
 
   async function submitSign() {
+    if (masterSignRole !== null) { await submitMasterSign(); return; }
     if (!signingPvId || !user) return;
     setSignLoading(true);
     setPinError("");
@@ -730,6 +795,9 @@ export default function BulkPVPage() {
   const approvedPvs = pvs.filter(p => p.status === "APPROVED");
   const isGM        = user?.role === "GENERAL_MANAGER";
   const isSig       = ["BISHOP", "TREASURER", "SECRETARY"].includes(user?.role ?? "");
+  const masterApprovals = (run.approvals ?? []) as PVApproval[];
+  const masterGMApproval  = masterApprovals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED") ?? null;
+  const masterSigApproval = masterApprovals.find(a => ["BISHOP","TREASURER","SECRETARY"].includes(a.role) && a.action === "APPROVED") ?? null;
   const requiresPin = isSig;
 
   const signingPv = pvs.find(p => p.id === signingPvId);
@@ -810,6 +878,118 @@ export default function BulkPVPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Master Payment Voucher Cover ── */}
+      {run.is_master && pvGroups.length > 0 && (
+        <div className="max-w-6xl mx-auto px-4 mt-5 print:hidden">
+          <div className="bg-white rounded-xl border-2 border-violet-200 overflow-hidden shadow-sm">
+            {/* Header */}
+            <div className="bg-violet-50 border-b border-violet-200 px-5 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-violet-400 mb-0.5">Master Payment Voucher</p>
+                <p className="text-base font-bold text-violet-900">{run.master_name ?? run.group_name}</p>
+              </div>
+              <div className="text-right text-xs text-stone-500 space-y-0.5">
+                <p><span className="font-semibold">Master Ref:</span> MASTER-{new Date(run.run_date).getFullYear()}-{run.id.slice(-6).toUpperCase()}</p>
+                <p><span className="font-semibold">Run Date:</span> {fmtDate(run.run_date)}</p>
+                <p><span className="font-semibold">Prepared by:</span> {runByName || run.run_by}</p>
+              </div>
+            </div>
+
+            {/* Categories table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-stone-50 border-b-2 border-stone-200 text-[11px] font-bold uppercase tracking-wide text-stone-600">
+                    <th className="py-2.5 px-3 text-left w-8">#</th>
+                    <th className="py-2.5 px-3 text-left">Payment Category</th>
+                    <th className="py-2.5 px-3 text-center w-24">No. of PVs</th>
+                    <th className="py-2.5 px-3 text-right w-36">Total (RM)</th>
+                    <th className="py-2.5 px-4 text-center min-w-[210px] border-l border-stone-200">Verified by GM</th>
+                    <th className="py-2.5 px-4 text-center min-w-[210px] border-l border-stone-200">Approved by Signatory</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pvGroups.map((g, i) => (
+                    <tr key={g.groupName} className="border-b border-stone-100">
+                      <td className="py-3 px-3 text-xs text-stone-400">{i + 1}</td>
+                      <td className="py-3 px-3 font-semibold text-stone-800">{g.groupName}</td>
+                      <td className="py-3 px-3 text-center text-xs text-stone-600">{g.pvs.length}</td>
+                      <td className="py-3 px-3 text-right font-bold text-stone-800 tabular-nums">
+                        {g.total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                      </td>
+                      {/* GM sig cell — same signature for all rows */}
+                      <td
+                        className={`py-3 px-4 border-l border-stone-100 ${isGM && !masterGMApproval ? "cursor-pointer hover:bg-indigo-50 group" : ""}`}
+                        onClick={isGM && !masterGMApproval ? () => openMasterSignModal("GM") : undefined}
+                      >
+                        <div className="text-[10px] text-stone-500 mb-1 flex items-center justify-between">
+                          <span>GM / 总经理</span>
+                          {isGM && !masterGMApproval && <span className="text-[9px] text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Click to sign</span>}
+                        </div>
+                        {masterGMApproval?.signature_data
+                          ? <img src={masterGMApproval.signature_data} className="h-7 object-contain object-left" alt="GM sig" />
+                          : <div className={`h-7 border-b ${isGM && !masterGMApproval ? "border-indigo-300 border-dashed" : "border-stone-200"}`} />}
+                        <div className="flex items-center gap-1 text-[10px] mt-1">
+                          <span className="font-semibold whitespace-nowrap">Name:</span>
+                          <span className="flex-1 border-b border-stone-200 text-stone-700 truncate">{masterGMApproval?.name ?? ""}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[10px] mt-0.5">
+                          <span className="font-semibold whitespace-nowrap">Date:</span>
+                          <span className="flex-1 border-b border-stone-200 text-stone-700">{masterGMApproval ? fmtDate(masterGMApproval.timestamp) : ""}</span>
+                        </div>
+                      </td>
+                      {/* Signatory sig cell — same signature for all rows */}
+                      <td
+                        className={`py-3 px-4 border-l border-stone-100 ${isSig && !masterSigApproval ? "cursor-pointer hover:bg-purple-50 group" : ""}`}
+                        onClick={isSig && !masterSigApproval ? () => openMasterSignModal("SIG") : undefined}
+                      >
+                        <div className="text-[10px] text-stone-500 mb-1 flex items-center justify-between">
+                          <span>Signatory / 签署人</span>
+                          {isSig && !masterSigApproval && <span className="text-[9px] text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity">Click to sign</span>}
+                        </div>
+                        {masterSigApproval?.signature_data
+                          ? <img src={masterSigApproval.signature_data} className="h-7 object-contain object-left" alt="Sig" />
+                          : <div className={`h-7 border-b ${isSig && !masterSigApproval ? "border-purple-300 border-dashed" : "border-stone-200"}`} />}
+                        <div className="flex items-center gap-1 text-[10px] mt-1">
+                          <span className="font-semibold whitespace-nowrap">Name:</span>
+                          <span className="flex-1 border-b border-stone-200 text-stone-700 truncate">{masterSigApproval?.name ?? ""}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[10px] mt-0.5">
+                          <span className="font-semibold whitespace-nowrap">Date:</span>
+                          <span className="flex-1 border-b border-stone-200 text-stone-700">{masterSigApproval ? fmtDate(masterSigApproval.timestamp) : ""}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-stone-50 border-t-2 border-stone-200 font-bold text-stone-800">
+                    <td colSpan={3} className="py-2.5 px-3 text-right text-xs">TOTAL:</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">
+                      RM {pvGroups.reduce((s, g) => s + g.total, 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                    </td>
+                    <td colSpan={2} className="py-2.5 px-4 text-xs font-normal text-stone-400">
+                      {pvGroups.reduce((s, g) => s + g.pvs.length, 0)} vouchers in total
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Finance Executive signature */}
+            <div className="border-t border-stone-100 px-5 py-3 flex items-center gap-4 flex-wrap">
+              <span className="text-xs font-semibold text-stone-600">Prepared by (Finance Executive):</span>
+              {finSigData && <img src={finSigData} className="h-8 object-contain" alt="fin sig" />}
+              <span className="text-xs text-stone-700">
+                <span className="font-semibold">Name:</span> {runByName || run.run_by}
+                &nbsp;|&nbsp;
+                <span className="font-semibold">Date:</span> {fmtDate(run.run_date)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Finance Executive Actions */}
       {user?.isFinanceAdmin && (pendingPvs.length > 0 || reviewedPvs.length > 0 || approvedPvs.length > 0) && (

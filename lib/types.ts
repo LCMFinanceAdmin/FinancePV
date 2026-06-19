@@ -241,4 +241,5 @@ export interface BulkRun {
   is_master?: boolean;
   master_name?: string;
   child_group_names?: string[];
+  approvals?: PVApproval[];
 }

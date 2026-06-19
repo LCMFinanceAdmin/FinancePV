@@ -288,6 +288,9 @@ function MasterCoverPage({
   const totalPvs   = pvGroups.reduce((s, g) => s + g.pvs.length, 0);
   // 20 + 200 + 70 + 100 + 203 + 203 = 796pt
   const MC = { num: 20, cat: 200, cnt: 70, amt: 100, sig: 203 };
+  const masterApprovals = (run.approvals ?? []) as PVApproval[];
+  const gmApproval  = masterApprovals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
+  const sigApproval = masterApprovals.find(a => ["BISHOP","TREASURER","SECRETARY"].includes(a.role) && a.action === "APPROVED");
 
   return (
     <Page size="A4" orientation="landscape" style={[st.page, { padding: "8mm" }]}>
@@ -396,20 +399,26 @@ function MasterCoverPage({
             <View style={{ width: MC.amt, padding: "4pt 4pt", borderRight: "1pt solid #000", justifyContent: "center" }}>
               <Text style={[st.bold, { fontSize: 8, textAlign: "right" }]}>{fmt(g.total)}</Text>
             </View>
+            {/* GM sig — shows digital sig if signed, blank lines if not */}
             <View style={{ width: MC.sig, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
-              <View style={{ flex: 1 }} />
+              {gmApproval?.signature_data
+                ? <Image src={gmApproval.signature_data} style={{ height: 28, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
+                : <View style={{ flex: 1 }} />}
               <View style={{ borderTop: "0.5pt solid #aaa", paddingTop: 3 }}>
-                <Text style={st.tiny}>Name: _______________________</Text>
+                <Text style={st.tiny}>Name: <Text style={st.bold}>{gmApproval?.name ?? "_______________________"}</Text></Text>
                 <View style={{ height: 3 }} />
-                <Text style={st.tiny}>Date:  _______________________</Text>
+                <Text style={st.tiny}>Date:  <Text style={st.bold}>{gmApproval ? fmtDate(gmApproval.timestamp) : "_______________________"}</Text></Text>
               </View>
             </View>
+            {/* Signatory sig — shows digital sig if signed, blank lines if not */}
             <View style={{ width: MC.sig, padding: "4pt 6pt" }}>
-              <View style={{ flex: 1 }} />
+              {sigApproval?.signature_data
+                ? <Image src={sigApproval.signature_data} style={{ height: 28, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
+                : <View style={{ flex: 1 }} />}
               <View style={{ borderTop: "0.5pt solid #aaa", paddingTop: 3 }}>
-                <Text style={st.tiny}>Name: _______________________</Text>
+                <Text style={st.tiny}>Name: <Text style={st.bold}>{sigApproval?.name ?? "_______________________"}</Text></Text>
                 <View style={{ height: 3 }} />
-                <Text style={st.tiny}>Date:  _______________________</Text>
+                <Text style={st.tiny}>Date:  <Text style={st.bold}>{sigApproval ? fmtDate(sigApproval.timestamp) : "_______________________"}</Text></Text>
               </View>
             </View>
           </View>
