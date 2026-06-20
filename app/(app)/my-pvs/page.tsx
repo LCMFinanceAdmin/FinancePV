@@ -98,7 +98,7 @@ export default function MyPVsPage() {
             if (filter !== "ALL") q = q.in("status", STATUS_MAP[filter]);
             return q;
           })(),
-          supabase.from("bulk_pv_runs").select("*").eq("run_by", user.email).order("run_date", { ascending: false }),
+          supabase.from("bulk_pv_runs").select("id,group_name,run_by,run_date,pv_count,total_amount,ministry,pv_ids").eq("run_by", user.email).order("run_date", { ascending: false }),
           supabase.from("user_roles").select("role,ministries").eq("email", user.email).single(),
         ]);
 

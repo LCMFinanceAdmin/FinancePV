@@ -77,7 +77,8 @@ export default function DashboardPage() {
             .eq("submitted_by_email", user.email)
             .order("submitted_at", { ascending: false })
             .limit(5),
-          supabase.from("bulk_pv_runs").select("*")
+          supabase.from("bulk_pv_runs")
+            .select("id,group_name,run_by,run_date,pv_count,total_amount,ministry,pv_ids,is_master,child_group_names")
             .eq("run_by", user.email)
             .order("run_date", { ascending: false })
             .limit(5),
@@ -100,35 +101,37 @@ export default function DashboardPage() {
         setPendingCount(pendingResult.count ?? 0);
         setApprovedCount(approvedResult.count ?? 0);
 
-        // Fetch unread GM claim notifications for Finance Admin
         const role = profile?.role ?? "";
-        if (["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role)) {
-          const { data: notifRows } = await supabase
-            .from("notifications")
-            .select("id,message,pv_id,created_at")
-            .eq("recipient_email", user.email!)
-            .eq("type", "GM_CLAIM_NEW")
-            .eq("read", false)
-            .order("created_at", { ascending: false });
-          setGmNotifs(notifRows ?? []);
-        }
+        const isFinAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role);
+        const allPvIds = runs.flatMap(r => r.pv_ids ?? []);
+        if (runs.length > 0) setExpandedBulk(new Set(runs.map(r => r.id)));
 
-        // Auto-expand all bulk runs and eagerly load child PVs
-        if (runs.length > 0) {
-          setExpandedBulk(new Set(runs.map(r => r.id)));
-          const allPvIds = runs.flatMap(r => r.pv_ids ?? []);
-          if (allPvIds.length > 0) {
-            const { data: childPvData } = await supabase
-              .from("pvs")
-              .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type,approvals")
-              .in("id", allPvIds)
-              .order("pv_no");
-            const pvsByRun: Record<string, Partial<PV>[]> = {};
-            for (const r of runs) {
-              pvsByRun[r.id] = (childPvData ?? []).filter((p: Partial<PV>) => (r.pv_ids ?? []).includes(p.id!));
-            }
-            setBulkPVs(pvsByRun);
+        // Run secondary fetches in parallel
+        const [notifResult, childPvResult] = await Promise.all([
+          isFinAdmin
+            ? supabase.from("notifications")
+                .select("id,message,pv_id,created_at")
+                .eq("recipient_email", user.email!)
+                .eq("type", "GM_CLAIM_NEW")
+                .eq("read", false)
+                .order("created_at", { ascending: false })
+            : Promise.resolve({ data: null }),
+          allPvIds.length > 0
+            ? supabase.from("pvs")
+                .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,payment_type,approvals")
+                .in("id", allPvIds)
+                .order("pv_no")
+            : Promise.resolve({ data: null }),
+        ]);
+
+        if (notifResult.data) setGmNotifs(notifResult.data);
+
+        if (childPvResult.data && runs.length > 0) {
+          const pvsByRun: Record<string, Partial<PV>[]> = {};
+          for (const r of runs) {
+            pvsByRun[r.id] = childPvResult.data.filter((p: Partial<PV>) => (r.pv_ids ?? []).includes(p.id!));
           }
+          setBulkPVs(pvsByRun);
         }
       } finally {
         setLoading(false);

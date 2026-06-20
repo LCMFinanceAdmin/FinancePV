@@ -235,25 +235,29 @@ export default function SignatoryPage() {
     setActing(true);
     try {
       const session = (await supabase.auth.getSession()).data.session;
-      let successCount = 0;
-      let lastError = "";
-      for (const pvId of pinModal.pvIds) {
-        const body: Record<string, unknown> = { pv_id: pvId, action: pinModal.action, remarks, pin };
-        if (pinModal.action === "APPROVED" && savedSig) body.signature_data = savedSig;
-        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-          body: JSON.stringify(body),
-        });
-        const result = await res.json();
-        if (res.ok) successCount++;
-        else lastError = result.error ?? "Action failed";
-      }
+      const results = await Promise.all(
+        pinModal.pvIds.map(async pvId => {
+          const body: Record<string, unknown> = { pv_id: pvId, action: pinModal.action, remarks, pin };
+          if (pinModal.action === "APPROVED" && savedSig) body.signature_data = savedSig;
+          const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/signatory-action`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+            body: JSON.stringify(body),
+          });
+          const result = await res.json();
+          return { ok: res.ok, error: result.error as string | undefined };
+        })
+      );
+      const successCount = results.filter(r => r.ok).length;
+      const lastError = results.find(r => !r.ok)?.error ?? "";
       setPinModal(null);
-      if (successCount > 0)
+      if (successCount > 0) {
         showToast(`${successCount} PV${successCount > 1 ? "s" : ""} ${pinModal.action === "APPROVED" ? "approved" : "rejected"} successfully`);
+        // Optimistically remove acted-on PVs from the queue
+        setPvs(prev => prev.filter(pv => !pinModal.pvIds.includes(pv.id!)));
+      }
       if (lastError) showToast(lastError, false);
-      await load();
+      if (successCount === 0) await load();
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Action failed", false);
     } finally {
