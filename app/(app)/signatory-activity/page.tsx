@@ -83,7 +83,8 @@ export default function SignatoryActivityPage() {
   useEffect(() => {
     async function load() {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
         if (!user) return;
 
         const [{ data: profile }, { data: pvData }, { data: bulkData }] = await Promise.all([

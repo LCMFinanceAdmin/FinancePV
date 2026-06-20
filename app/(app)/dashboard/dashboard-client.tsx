@@ -68,7 +68,8 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
         if (!user) return;
 
         const [pvResult, bulkResult, profileResult, pendingResult, approvedResult] = await Promise.all([

@@ -408,7 +408,8 @@ export default function GMClaimsPage() {
     setLoading(true);
     lastLoadTimeRef.current = Date.now();
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const authUser = session?.user;
       if (authUser) {
         const { data: profile } = await supabase.from("user_roles")
           .select("role,full_name").eq("email", authUser.email!).single();
