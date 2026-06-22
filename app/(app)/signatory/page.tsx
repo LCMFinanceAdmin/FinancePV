@@ -23,7 +23,7 @@ interface PinModal { pvIds: string[]; action: "APPROVED" | "REJECTED"; }
 interface MinistryPopup { ministry: string; pvAmount: number; }
 interface BulkRun { id: string; group_name: string; pv_ids: string[]; total_amount: number; is_master?: boolean; child_group_names?: string[]; }
 
-type PVWithBulk = Partial<PV> & { bulk_run_id?: string; bulk_group?: string };
+type PVWithBulk = Partial<PV> & { bulk_run_id?: string; bulk_group?: string; master_run_id?: string; master_name?: string };
 
 const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
 
@@ -99,23 +99,36 @@ export default function SignatoryPage() {
         if (roleSig) setSavedSig(roleSig);
       }
 
-      // Map each PV to its bulk run. Masters consolidate their child runs, so
-      // apply child/standalone runs first, then let masters override — a PV
-      // that belongs to a master groups under the master, not its child batch.
+      // Hierarchy: Master → Bulk PV (child batch) → individual PV.
+      // Map each PV to its CHILD bulk run (LMB, Allowances, …); separately
+      // record which master, if any, that child batch rolls up into.
       const allRuns = (bulkData ?? []) as BulkRun[];
+      const masters = allRuns.filter(r => r.is_master);
+      const childGroupToMaster: Record<string, { id: string; name: string }> = {};
+      for (const m of masters) {
+        const mname = m.group_name.replace(/^MASTER:\s*/i, "");
+        for (const cn of (m.child_group_names ?? [])) childGroupToMaster[cn] = { id: m.id, name: mname };
+      }
       const bulkMap: Record<string, BulkRun> = {};
       for (const run of allRuns.filter(r => !r.is_master)) {
         for (const pvId of run.pv_ids) bulkMap[pvId] = run;
       }
-      for (const run of allRuns.filter(r => r.is_master)) {
-        for (const pvId of run.pv_ids) bulkMap[pvId] = run;
+      // Fallback: PVs that only exist in a master record (no child batch found)
+      for (const m of masters) {
+        for (const pvId of m.pv_ids) if (!bulkMap[pvId]) bulkMap[pvId] = m;
       }
 
-      const withBulk: PVWithBulk[] = (pvData ?? []).map(pv => ({
-        ...pv,
-        bulk_run_id: bulkMap[pv.id]?.id,
-        bulk_group: bulkMap[pv.id]?.group_name,
-      }));
+      const withBulk: PVWithBulk[] = (pvData ?? []).map(pv => {
+        const run = bulkMap[pv.id];
+        const master = run && !run.is_master ? childGroupToMaster[run.group_name] : undefined;
+        return {
+          ...pv,
+          bulk_run_id: run?.id,
+          bulk_group: run?.group_name,
+          master_run_id: master?.id,
+          master_name: master?.name,
+        };
+      });
 
       setPvs(withBulk);
 
@@ -328,11 +341,11 @@ export default function SignatoryPage() {
   [statusFilter, pendingPvsAll, pendingSignatoryPvsAll, approvedPvsAll, paidPvsAll]);
 
   const { bulkGroups, standalones } = useMemo(() => {
-    const groups: Record<string, { runId: string; groupName: string; pvs: PVWithBulk[] }> = {};
+    const groups: Record<string, { runId: string; groupName: string; pvs: PVWithBulk[]; masterRunId?: string; masterName?: string }> = {};
     const standalones: PVWithBulk[] = [];
     for (const pv of activePvsForTab) {
       if (pv.bulk_run_id && pv.bulk_group) {
-        if (!groups[pv.bulk_run_id]) groups[pv.bulk_run_id] = { runId: pv.bulk_run_id, groupName: pv.bulk_group, pvs: [] };
+        if (!groups[pv.bulk_run_id]) groups[pv.bulk_run_id] = { runId: pv.bulk_run_id, groupName: pv.bulk_group, pvs: [], masterRunId: pv.master_run_id, masterName: pv.master_name };
         groups[pv.bulk_run_id].pvs.push(pv);
       } else standalones.push(pv);
     }
@@ -383,6 +396,17 @@ export default function SignatoryPage() {
     if (amountMatch) return g.pvs.some(p => matchesSearch(p, q));
     return g.groupName.toLowerCase().includes(q.toLowerCase()) || g.pvs.some(p => matchesSearch(p, q));
   });
+
+  // Roll child bulk batches up under their master (Master → Bulk → PVs).
+  type BulkGroup = typeof filteredBulkGroups[number];
+  const masterContainersMap: Record<string, { masterRunId: string; masterName: string; groups: BulkGroup[] }> = {};
+  const orphanBulkGroups: BulkGroup[] = [];
+  for (const g of filteredBulkGroups) {
+    if (g.masterRunId) {
+      (masterContainersMap[g.masterRunId] ??= { masterRunId: g.masterRunId, masterName: g.masterName ?? "", groups: [] }).groups.push(g);
+    } else orphanBulkGroups.push(g);
+  }
+  const masterContainers = Object.values(masterContainersMap);
 
   const totalBudget = budgetRows.reduce((s, r) => s + r.estimated_income, 0);
   const totalSpent  = budgetRows.reduce((s, r) => s + r.spent, 0);
@@ -489,6 +513,66 @@ export default function SignatoryPage() {
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // A single Bulk PV batch card (green) — its individual PVs expand inside.
+  // Reused both standalone and nested inside a Master container.
+  function renderBulkGroup(group: BulkGroup) {
+    const isExpanded = expandedBulk.has(group.runId);
+    const groupTotal = group.pvs.reduce((s, p) => s + (p.amount ?? 0), 0);
+    const groupIds = group.pvs.map(p => p.id!);
+    const allGroupActed = currentUser && group.pvs.every(pv =>
+      (pv.approvals ?? []).some((a: { email?: string; role?: string; action: string }) =>
+        ["APPROVED", "REJECTED"].includes(a.action) &&
+        (a.email === currentUser.email || a.role === currentUser.role)
+      )
+    );
+
+    return (
+      <div key={group.runId} className="border border-stone-200 rounded-xl overflow-hidden bg-white shadow-sm">
+        <div className="flex flex-col gap-1 px-4 py-3">
+          {/* Row 1: expand toggle + BULK badge + group name + PV count */}
+          <button
+            onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
+            className="flex items-center gap-2 min-w-0 text-left hover:opacity-80 transition-opacity">
+            {isExpanded ? <ChevronDown size={14} className="text-stone-400 shrink-0" /> : <ChevronRight size={14} className="text-stone-400 shrink-0" />}
+            <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 bg-green-100 text-green-700">
+              <Layers size={10} /> BULK
+            </span>
+            <span className="font-semibold text-stone-800 text-sm truncate">{group.groupName}</span>
+            <span className="text-xs text-stone-400 shrink-0">{group.pvs.length} PVs</span>
+          </button>
+          {/* Row 2: amount + action buttons */}
+          <div className="flex items-center gap-2 pl-5">
+            <span className="text-sm font-bold text-stone-800 mr-1">{formatCurrency(groupTotal)}</span>
+            <Link href={`/bulk-pvs/${group.runId}`}
+              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
+              <ExternalLink size={11} /> View Batch
+            </Link>
+            {isSignatoryUser && (<>
+              <button onClick={() => openPin(groupIds, "APPROVED")}
+                disabled={!!allGroupActed}
+                className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-100 text-stone-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>
+                <CheckCircle size={11} /> Approve All
+              </button>
+              <button onClick={() => openPin(groupIds, "REJECTED")}
+                disabled={!!allGroupActed}
+                className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-100 text-stone-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600 text-white"}`}>
+                <XCircle size={11} /> Reject All
+              </button>
+            </>)}
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div className="divide-y divide-stone-100">
+            {group.pvs.map(pv => (
+              <PVCard key={pv.id} pv={pv} compact />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -670,68 +754,46 @@ export default function SignatoryPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {/* ── Bulk groups ── */}
-          {filteredBulkGroups.map(group => {
-            const isExpanded = expandedBulk.has(group.runId);
-            const isMaster = /^MASTER:\s*/i.test(group.groupName);
-            const displayName = isMaster ? group.groupName.replace(/^MASTER:\s*/i, "") : group.groupName;
-            const groupTotal = group.pvs.reduce((s, p) => s + (p.amount ?? 0), 0);
-            const groupIds = group.pvs.map(p => p.id!);
-            const allGroupActed = currentUser && group.pvs.every(pv =>
-              (pv.approvals ?? []).some((a: { email?: string; role?: string; action: string }) =>
-                ["APPROVED", "REJECTED"].includes(a.action) &&
-                (a.email === currentUser.email || a.role === currentUser.role)
-              )
-            );
-
+          {/* ── Master containers (Master → Bulk PVs → individual PVs) ── */}
+          {masterContainers.map(mc => {
+            const isExpanded = expandedBulk.has(mc.masterRunId);
+            const masterTotal = mc.groups.reduce((s, g) => s + g.pvs.reduce((a, p) => a + (p.amount ?? 0), 0), 0);
+            const masterPvCount = mc.groups.reduce((s, g) => s + g.pvs.length, 0);
             return (
-              <div key={group.runId} className="border border-stone-200 rounded-xl overflow-hidden bg-white shadow-sm">
+              <div key={mc.masterRunId} className="border-2 border-violet-200 rounded-xl overflow-hidden bg-violet-50/30 shadow-sm">
                 <div className="flex flex-col gap-1 px-4 py-3">
-                  {/* Row 1: expand toggle + BULK badge + group name + PV count */}
+                  {/* Row 1: expand toggle + MASTER badge + name + batch/PV count */}
                   <button
-                    onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
+                    onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(mc.masterRunId) ? n.delete(mc.masterRunId) : n.add(mc.masterRunId); return n; })}
                     className="flex items-center gap-2 min-w-0 text-left hover:opacity-80 transition-opacity">
-                    {isExpanded ? <ChevronDown size={14} className="text-stone-400 shrink-0" /> : <ChevronRight size={14} className="text-stone-400 shrink-0" />}
-                    <span className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                      isMaster ? "bg-violet-100 text-violet-700" : "bg-green-100 text-green-700"
-                    }`}>
-                      <Layers size={10} /> {isMaster ? "MASTER" : "BULK"}
+                    {isExpanded ? <ChevronDown size={14} className="text-violet-400 shrink-0" /> : <ChevronRight size={14} className="text-violet-400 shrink-0" />}
+                    <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 bg-violet-100 text-violet-700">
+                      <Layers size={10} /> MASTER
                     </span>
-                    <span className="font-semibold text-stone-800 text-sm truncate">{displayName}</span>
-                    <span className="text-xs text-stone-400 shrink-0">{group.pvs.length} PVs</span>
+                    <span className="font-semibold text-stone-800 text-sm truncate">{mc.masterName}</span>
+                    <span className="text-xs text-stone-400 shrink-0">{mc.groups.length} batches · {masterPvCount} PVs</span>
                   </button>
-                  {/* Row 2: amount + action buttons */}
+                  {/* Row 2: amount + view master */}
                   <div className="flex items-center gap-2 pl-5">
-                    <span className="text-sm font-bold text-stone-800 mr-1">{formatCurrency(groupTotal)}</span>
-                    <Link href={`/bulk-pvs/${group.runId}`}
-                      className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
-                      <ExternalLink size={11} /> View Batch
+                    <span className="text-sm font-bold text-violet-800 mr-1">{formatCurrency(masterTotal)}</span>
+                    <Link href={`/bulk-pvs/${mc.masterRunId}`}
+                      className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-violet-200 bg-white hover:bg-violet-50 text-violet-700 transition-colors">
+                      <ExternalLink size={11} /> View Master
                     </Link>
-                    {isSignatoryUser && (<>
-                      <button onClick={() => openPin(groupIds, "APPROVED")}
-                        disabled={!!allGroupActed}
-                        className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-100 text-stone-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>
-                        <CheckCircle size={11} /> Approve All
-                      </button>
-                      <button onClick={() => openPin(groupIds, "REJECTED")}
-                        disabled={!!allGroupActed}
-                        className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-100 text-stone-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600 text-white"}`}>
-                        <XCircle size={11} /> Reject All
-                      </button>
-                    </>)}
                   </div>
                 </div>
 
                 {isExpanded && (
-                  <div className="divide-y divide-stone-100">
-                    {group.pvs.map(pv => (
-                      <PVCard key={pv.id} pv={pv} compact />
-                    ))}
+                  <div className="pl-4 pr-2 pb-2 space-y-2 border-l-2 border-violet-200 ml-4">
+                    {mc.groups.map(group => renderBulkGroup(group))}
                   </div>
                 )}
               </div>
             );
           })}
+
+          {/* ── Standalone Bulk PV batches (not part of a master) ── */}
+          {orphanBulkGroups.map(group => renderBulkGroup(group))}
 
           {/* ── Standalone PVs ── */}
           {filteredStandalones.map(pv => (
