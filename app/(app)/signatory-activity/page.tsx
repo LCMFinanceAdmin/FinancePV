@@ -46,7 +46,7 @@ interface PendingPV {
   paid_at?: string; payment_method?: string;
   bulk_run_id?: string; bulk_group?: string;
 }
-interface BulkRun { id: string; group_name: string; pv_ids: string[]; total_amount: number; pv_count: number; }
+interface BulkRun { id: string; group_name: string; pv_ids: string[]; total_amount: number; pv_count: number; is_master?: boolean; child_group_names?: string[]; }
 
 export default function SignatoryActivityPage() {
   const supabase = createClient();
@@ -93,7 +93,7 @@ export default function SignatoryActivityPage() {
             .select("id,pv_no,payee_name,amount,ministry,dept,purpose,status,loa_required,approvals,submitted_at,paid_at,payment_method")
             .in("status", ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY", "APPROVED", "PAID"])
             .order("submitted_at", { ascending: false }),
-          supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount,pv_count"),
+          supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount,pv_count,is_master,child_group_names"),
         ]);
 
         const role = profile?.role ?? "";
@@ -102,8 +102,14 @@ export default function SignatoryActivityPage() {
         setIsFinanceAdmin(["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role));
         setIsSignatory(SIGNATORY_ROLES.includes(role));
 
+        // Masters consolidate their child runs: apply child/standalone runs
+        // first, then let masters override so PVs group under the master.
+        const allRuns = (bulkData ?? []) as BulkRun[];
         const bulkMap: Record<string, BulkRun> = {};
-        for (const br of (bulkData ?? []) as BulkRun[]) {
+        for (const br of allRuns.filter(r => !r.is_master)) {
+          for (const pvId of br.pv_ids) bulkMap[pvId] = br;
+        }
+        for (const br of allRuns.filter(r => r.is_master)) {
           for (const pvId of br.pv_ids) bulkMap[pvId] = br;
         }
 
@@ -429,6 +435,8 @@ export default function SignatoryActivityPage() {
           {/* Bulk groups */}
           {bulkGroups.map(group => {
             const expanded   = expandedBulk.has(group.runId);
+            const isMaster   = /^MASTER:\s*/i.test(group.groupName);
+            const displayName = isMaster ? group.groupName.replace(/^MASTER:\s*/i, "") : group.groupName;
             const groupCanAct = group.pvs.some(pv => isSignatory && !hasSigned(pv));
             const groupTotal  = group.pvs.reduce((s, p) => s + p.amount, 0);
             return (
@@ -437,10 +445,12 @@ export default function SignatoryActivityPage() {
                   onClick={() => setExpandedBulk(s => { const n = new Set(s); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-stone-50 transition-colors">
                   {expanded ? <ChevronDown size={15} className="text-stone-400 shrink-0" /> : <ChevronRight size={15} className="text-stone-400 shrink-0" />}
-                  <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full shrink-0">
-                    <Layers size={10} /> BULK
+                  <span className={`flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                    isMaster ? "bg-violet-100 text-violet-700" : "bg-green-100 text-green-700"
+                  }`}>
+                    <Layers size={10} /> {isMaster ? "MASTER" : "BULK"}
                   </span>
-                  <span className="font-semibold text-stone-800 text-sm">{group.groupName}</span>
+                  <span className="font-semibold text-stone-800 text-sm">{displayName}</span>
                   <span className="text-xs text-stone-400">{group.pvs.length} PVs</span>
                   <div className="ml-auto flex items-center gap-3">
                     <Link

@@ -21,7 +21,7 @@ interface BudgetSummary {
 
 interface PinModal { pvIds: string[]; action: "APPROVED" | "REJECTED"; }
 interface MinistryPopup { ministry: string; pvAmount: number; }
-interface BulkRun { id: string; group_name: string; pv_ids: string[]; total_amount: number; }
+interface BulkRun { id: string; group_name: string; pv_ids: string[]; total_amount: number; is_master?: boolean; child_group_names?: string[]; }
 
 type PVWithBulk = Partial<PV> & { bulk_run_id?: string; bulk_group?: string };
 
@@ -85,7 +85,7 @@ export default function SignatoryPage() {
           .select("id,pv_no,pv_type,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
           .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED", "APPROVED", "PAID", "GM_REVIEW"])
           .order("submitted_at", { ascending: false }),
-        supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount"),
+        supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount,is_master,child_group_names"),
       ]);
 
       if (authUser) {
@@ -99,8 +99,15 @@ export default function SignatoryPage() {
         if (roleSig) setSavedSig(roleSig);
       }
 
+      // Map each PV to its bulk run. Masters consolidate their child runs, so
+      // apply child/standalone runs first, then let masters override — a PV
+      // that belongs to a master groups under the master, not its child batch.
+      const allRuns = (bulkData ?? []) as BulkRun[];
       const bulkMap: Record<string, BulkRun> = {};
-      for (const run of (bulkData ?? []) as BulkRun[]) {
+      for (const run of allRuns.filter(r => !r.is_master)) {
+        for (const pvId of run.pv_ids) bulkMap[pvId] = run;
+      }
+      for (const run of allRuns.filter(r => r.is_master)) {
         for (const pvId of run.pv_ids) bulkMap[pvId] = run;
       }
 
@@ -666,6 +673,8 @@ export default function SignatoryPage() {
           {/* ── Bulk groups ── */}
           {filteredBulkGroups.map(group => {
             const isExpanded = expandedBulk.has(group.runId);
+            const isMaster = /^MASTER:\s*/i.test(group.groupName);
+            const displayName = isMaster ? group.groupName.replace(/^MASTER:\s*/i, "") : group.groupName;
             const groupTotal = group.pvs.reduce((s, p) => s + (p.amount ?? 0), 0);
             const groupIds = group.pvs.map(p => p.id!);
             const allGroupActed = currentUser && group.pvs.every(pv =>
@@ -683,10 +692,12 @@ export default function SignatoryPage() {
                     onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
                     className="flex items-center gap-2 min-w-0 text-left hover:opacity-80 transition-opacity">
                     {isExpanded ? <ChevronDown size={14} className="text-stone-400 shrink-0" /> : <ChevronRight size={14} className="text-stone-400 shrink-0" />}
-                    <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full shrink-0">
-                      <Layers size={10} /> BULK
+                    <span className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                      isMaster ? "bg-violet-100 text-violet-700" : "bg-green-100 text-green-700"
+                    }`}>
+                      <Layers size={10} /> {isMaster ? "MASTER" : "BULK"}
                     </span>
-                    <span className="font-semibold text-stone-800 text-sm truncate">{group.groupName}</span>
+                    <span className="font-semibold text-stone-800 text-sm truncate">{displayName}</span>
                     <span className="text-xs text-stone-400 shrink-0">{group.pvs.length} PVs</span>
                   </button>
                   {/* Row 2: amount + action buttons */}
