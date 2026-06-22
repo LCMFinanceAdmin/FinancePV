@@ -125,11 +125,15 @@ export default function RecurringPage() {
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [groupBulkRuns, setGroupBulkRuns] = useState<Record<string, string>>({}); // group_name → bulk_run_id
-  const [masterRuns, setMasterRuns] = useState<{ id: string; master_name: string; run_date: string; total_amount: number; child_group_names: string[] }[]>([]);
+  const [masterRuns, setMasterRuns] = useState<{ id: string; master_name: string; group_name: string; run_date: string; total_amount: number; child_group_names: string[]; pv_ids: string[]; paid_at: string | null; pvStatuses: string[] }[]>([]);
   const [masterMode, setMasterMode] = useState(false);
   const [masterSelected, setMasterSelected] = useState<Set<string>>(new Set()); // groupName keys
   const [masterName, setMasterName] = useState("");
   const [creatingMaster, setCreatingMaster] = useState(false);
+  const [masterView, setMasterView] = useState<"active" | "history">("active");
+  const [renamingMaster, setRenamingMaster] = useState<string | null>(null); // master id
+  const [renameMasterValue, setRenameMasterValue] = useState("");
+  const [markingPaid, setMarkingPaid] = useState<string | null>(null); // master id
   const [lastPaidMap, setLastPaidMap] = useState<Record<string, { id: string; pv_no: string; paid_at: string }>>({});
   const [confirmModal, setConfirmModal] = useState<{
     title?: string;
@@ -167,19 +171,29 @@ export default function RecurringPage() {
     // Load most recent bulk run per group (non-master only)
     const { data: bulkRuns } = await supabase
       .from("bulk_pv_runs")
-      .select("id,group_name,run_date,is_master,master_name,child_group_names,total_amount")
+      .select("id,group_name,run_date,is_master,master_name,child_group_names,total_amount,pv_ids,paid_at")
       .order("run_date", { ascending: false });
     if (bulkRuns) {
       const latestByGroup: Record<string, string> = {};
       const masters: typeof masterRuns = [];
-      for (const br of bulkRuns as { id: string; group_name: string; run_date: string; is_master?: boolean; master_name?: string; child_group_names?: string[]; total_amount?: number }[]) {
+      for (const br of bulkRuns as { id: string; group_name: string; run_date: string; is_master?: boolean; master_name?: string; child_group_names?: string[]; total_amount?: number; pv_ids?: string[]; paid_at?: string | null }[]) {
         if (br.is_master) {
-          masters.push({ id: br.id, master_name: br.master_name ?? "", run_date: br.run_date, total_amount: br.total_amount ?? 0, child_group_names: br.child_group_names ?? [] });
+          masters.push({ id: br.id, master_name: br.master_name ?? "", group_name: br.group_name, run_date: br.run_date, total_amount: br.total_amount ?? 0, child_group_names: br.child_group_names ?? [], pv_ids: br.pv_ids ?? [], paid_at: br.paid_at ?? null, pvStatuses: [] });
         } else {
           if (!latestByGroup[br.group_name]) latestByGroup[br.group_name] = br.id;
         }
       }
       setGroupBulkRuns(latestByGroup);
+
+      // Fetch child PV statuses for each master to drive the progress badge
+      const allMasterPvIds = [...new Set(masters.flatMap(m => m.pv_ids))];
+      if (allMasterPvIds.length > 0) {
+        const { data: pvRows } = await supabase
+          .from("pvs").select("id,status").in("id", allMasterPvIds);
+        const statusById: Record<string, string> = {};
+        for (const p of (pvRows ?? []) as { id: string; status: string }[]) statusById[p.id] = p.status;
+        for (const m of masters) m.pvStatuses = m.pv_ids.map(id => statusById[id]).filter(Boolean);
+      }
       setMasterRuns(masters);
     }
 
@@ -489,7 +503,7 @@ export default function RecurringPage() {
     }).select("id").single();
 
     if (master?.id) {
-      setMasterRuns(r => [{ id: master.id, master_name: masterName.trim(), run_date: new Date().toISOString(), total_amount: totalAmt, child_group_names: groupNames }, ...r]);
+      setMasterRuns(r => [{ id: master.id, master_name: masterName.trim(), group_name: `MASTER: ${masterName.trim()}`, run_date: new Date().toISOString(), total_amount: totalAmt, child_group_names: groupNames, pv_ids: allPvIds, paid_at: null, pvStatuses: [] }, ...r]);
       setMasterMode(false);
       setMasterSelected(new Set());
       setMasterName("");
@@ -508,6 +522,55 @@ export default function RecurringPage() {
         showMsg("Master removed");
       },
     });
+  }
+
+  async function saveMasterRename(id: string) {
+    const name = renameMasterValue.trim();
+    if (!name) { setRenamingMaster(null); return; }
+    const { error } = await supabase.from("bulk_pv_runs")
+      .update({ master_name: name, group_name: `MASTER: ${name}` })
+      .eq("id", id);
+    if (error) { showMsg(error.message, false); return; }
+    setMasterRuns(r => r.map(m => m.id === id ? { ...m, master_name: name, group_name: `MASTER: ${name}` } : m));
+    setRenamingMaster(null);
+    showMsg("Master renamed");
+  }
+
+  function markMasterPaid(id: string, name: string) {
+    setConfirmModal({
+      msg: `Mark Master "${name}" as paid? It will move to the History tab.`,
+      onOk: async () => {
+        setMarkingPaid(id);
+        const { data: { user } } = await supabase.auth.getUser();
+        const paidAt = new Date().toISOString();
+        const { error } = await supabase.from("bulk_pv_runs")
+          .update({ paid_at: paidAt, paid_by: user?.email ?? "" })
+          .eq("id", id);
+        setMarkingPaid(null);
+        if (error) { showMsg(error.message, false); return; }
+        setMasterRuns(r => r.map(m => m.id === id ? { ...m, paid_at: paidAt } : m));
+        showMsg("Master marked as paid — moved to History");
+      },
+    });
+  }
+
+  // Aggregate approval stage for a master, derived from its child PV statuses.
+  // Shows the bottleneck (least-advanced) stage so Finance sees what's outstanding.
+  function masterStage(m: { paid_at: string | null; pvStatuses: string[] }): { label: string; cls: string } {
+    if (m.paid_at) return { label: "Paid", cls: "bg-green-100 text-green-700" };
+    const all = m.pvStatuses;
+    if (all.length === 0) return { label: "No PVs", cls: "bg-stone-100 text-stone-500" };
+    const dead = ["REJECTED", "REJECTED_HEAD", "CANCELLED"];
+    const rejected = all.filter(s => dead.includes(s)).length;
+    const active = all.filter(s => !dead.includes(s));
+    if (active.length === 0) return { label: "Rejected", cls: "bg-red-100 text-red-600" };
+    const suffix = rejected > 0 ? ` · ${rejected} rejected` : "";
+    if (active.every(s => s === "PAID")) return { label: `All PVs Paid${suffix}`, cls: "bg-green-100 text-green-700" };
+    if (active.every(s => ["APPROVED", "PAID"].includes(s))) return { label: `Approved · Awaiting Payment${suffix}`, cls: "bg-emerald-100 text-emerald-700" };
+    const reviewStates = ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "GM_REVIEW", "FINANCE_REVIEW", "BAM_REVIEW"];
+    if (active.some(s => reviewStates.includes(s))) return { label: `Pending Review${suffix}`, cls: "bg-amber-100 text-amber-700" };
+    if (active.some(s => s === "PENDING_SIGNATORY")) return { label: `Pending Signatory${suffix}`, cls: "bg-purple-100 text-purple-700" };
+    return { label: `In Progress${suffix}`, cls: "bg-amber-100 text-amber-700" };
   }
 
   function runFolder(freq: string, groupName: string) {
@@ -1117,18 +1180,70 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Existing Masters */}
-      {!loading && masterRuns.length > 0 && !search && (
+      {/* Existing Masters — Active / History tabs */}
+      {!loading && masterRuns.length > 0 && !search && (() => {
+        const visibleMasters = masterRuns.filter(m => masterView === "active" ? !m.paid_at : !!m.paid_at);
+        const activeCount = masterRuns.filter(m => !m.paid_at).length;
+        const historyCount = masterRuns.filter(m => !!m.paid_at).length;
+        return (
         <div className="space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">Masters</p>
-          {masterRuns.map(m => (
-            <div key={m.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-violet-200 bg-violet-50/50">
-              <FileText size={13} className="text-violet-500 shrink-0" />
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">Masters</p>
+            <div className="inline-flex rounded-lg border border-violet-200 overflow-hidden text-xs font-semibold">
+              <button onClick={() => setMasterView("active")}
+                className={`px-3 py-1 transition-colors ${masterView === "active" ? "bg-violet-600 text-white" : "bg-white text-violet-700 hover:bg-violet-50"}`}>
+                Active{activeCount > 0 ? ` (${activeCount})` : ""}
+              </button>
+              <button onClick={() => setMasterView("history")}
+                className={`flex items-center gap-1 px-3 py-1 transition-colors ${masterView === "history" ? "bg-violet-600 text-white" : "bg-white text-violet-700 hover:bg-violet-50"}`}>
+                <History size={11} /> History{historyCount > 0 ? ` (${historyCount})` : ""}
+              </button>
+            </div>
+          </div>
+
+          {visibleMasters.length === 0 ? (
+            <p className="text-xs text-stone-400 px-1 py-3">
+              {masterView === "active" ? "No active masters." : "No paid masters yet — mark a master as paid to move it here."}
+            </p>
+          ) : visibleMasters.map(m => {
+            const stage = masterStage(m);
+            const isRenaming = renamingMaster === m.id;
+            return (
+            <div key={m.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${m.paid_at ? "border-stone-200 bg-stone-50" : "border-violet-200 bg-violet-50/50"}`}>
+              <FileText size={13} className={`shrink-0 ${m.paid_at ? "text-stone-400" : "text-violet-500"}`} />
               <div className="flex-1 min-w-0">
-                <span className="text-sm font-semibold text-violet-800">{m.master_name}</span>
-                <span className="text-xs text-stone-400 ml-2">{m.child_group_names.join(" + ")}</span>
+                {isRenaming ? (
+                  <div className="flex items-center gap-1.5">
+                    <input autoFocus value={renameMasterValue}
+                      onChange={e => setRenameMasterValue(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") saveMasterRename(m.id); if (e.key === "Escape") setRenamingMaster(null); }}
+                      className="flex-1 min-w-0 border border-violet-300 rounded-lg px-2 py-1 text-sm outline-none focus:border-violet-500 bg-white" />
+                    <button onClick={() => saveMasterRename(m.id)} title="Save" className="p-0.5 text-green-600 hover:text-green-700 shrink-0"><CheckCircle2 size={16} /></button>
+                    <button onClick={() => setRenamingMaster(null)} title="Cancel" className="p-0.5 text-stone-400 hover:text-stone-600 shrink-0"><X size={16} /></button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-sm font-semibold truncate ${m.paid_at ? "text-stone-700" : "text-violet-800"}`}>{m.master_name}</span>
+                    <button onClick={() => { setRenamingMaster(m.id); setRenameMasterValue(m.master_name); }} title="Rename master"
+                      className="p-0.5 text-stone-400 hover:text-violet-600 shrink-0"><Pencil size={11} /></button>
+                    <span className="text-xs text-stone-400 ml-1 truncate">{m.child_group_names.join(" + ")}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-1">
+                  <a href={`/bulk-pvs/${m.id}`} title="View approval progress"
+                    className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity ${stage.cls}`}>
+                    <RefreshCw size={9} /> {stage.label}
+                  </a>
+                  {m.paid_at && <span className="text-[10px] text-stone-400">Paid {formatDate(m.paid_at)}</span>}
+                </div>
               </div>
-              <span className="text-sm font-bold text-violet-700 font-mono whitespace-nowrap">{formatCurrency(m.total_amount)}</span>
+              <span className={`text-sm font-bold font-mono whitespace-nowrap ${m.paid_at ? "text-stone-600" : "text-violet-700"}`}>{formatCurrency(m.total_amount)}</span>
+              {!m.paid_at && (
+                <button onClick={() => markMasterPaid(m.id, m.master_name)} disabled={markingPaid === m.id} title="Mark as paid"
+                  className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                  <CheckCircle2 size={11} /> {markingPaid === m.id ? "…" : "Mark Paid"}
+                </button>
+              )}
               <a href={`/bulk-pvs/${m.id}`}
                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors whitespace-nowrap">
                 <FileText size={10} /> View
@@ -1138,9 +1253,11 @@ export default function RecurringPage() {
                 <Trash2 size={13} />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
-      )}
+        );
+      })()}
 
       {/* Inline Master creation panel — sits above frequency sections */}
       {masterMode && !search && (
