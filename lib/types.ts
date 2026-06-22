@@ -227,6 +227,57 @@ export interface IncomeRecord {
   created_at: string;
 }
 
+// ─── Payroll ────────────────────────────────────────────────────────────────
+
+export type EmploymentType = "PERMANENT" | "CONTRACT";
+export type PostingType = "CHURCH" | "OFFICE" | "OTHER";
+export type PayrollEmployeeStatus = "ACTIVE" | "RESIGNED";
+
+export interface PayrollEmployee {
+  id: string;
+  emp_no: string;
+  full_name: string;
+  ic_no: string;
+  dob: string | null;
+  designation: string;
+  employment_type: EmploymentType;
+  is_pastor: boolean;
+  prior_experience_years: number;
+  is_orang_asli: boolean;
+  date_commenced: string | null;
+  posting_type: PostingType;
+  church_name: string;
+  department: string;
+  marital_status: string;
+  spouse_working: boolean;
+  children_under_18: number;
+  children_in_college: number;
+  epf_voluntary_ee_amount: number;
+  revised_note: string;
+  employer_tax_ref: string;
+  bank_name: string;
+  bank_acct: string;
+  status: PayrollEmployeeStatus;
+  resigned_date: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PayrollSalary {
+  id: string;
+  employee_id: string;
+  effective_from: string;
+  base_salary: number;
+  stm_allowance: number;
+  experience_bonus: number;
+  increment_carried: number;
+  increment_current: number;
+  reason: string;
+  created_by: string;
+  created_at: string;
+}
+
 export interface BulkRun {
   id: string;
   group_name: string;

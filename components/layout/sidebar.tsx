@@ -7,6 +7,7 @@ import {
   RefreshCw, Users, Building2, Settings, LogOut,
   ChevronRight, Activity, ClipboardCheck, PiggyBank, FlaskConical,
   ShoppingCart, ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -75,6 +76,12 @@ const NAV_SECTIONS = [
     items: [
       { href: "/bookings", label: "Facility Bookings", icon: <CalendarDays size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
       { href: "/income",   label: "Income Records",    icon: <TrendingUp size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
+    ],
+  },
+  {
+    label: "Payroll",
+    items: [
+      { href: "/payroll", label: "Payroll", icon: <Wallet size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager },
     ],
   },
   {
