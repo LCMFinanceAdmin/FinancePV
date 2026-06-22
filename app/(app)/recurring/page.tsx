@@ -1208,6 +1208,10 @@ export default function RecurringPage() {
           ) : visibleMasters.map(m => {
             const stage = masterStage(m);
             const isRenaming = renamingMaster === m.id;
+            // Only allow marking paid once every (non-rejected) child PV is approved or paid
+            const activeStatuses = m.pvStatuses.filter(s => !["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(s));
+            const canMarkPaid = activeStatuses.length > 0 && activeStatuses.every(s => ["APPROVED", "PAID"].includes(s));
+            const pendingCount = activeStatuses.filter(s => !["APPROVED", "PAID"].includes(s)).length;
             return (
             <div key={m.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${m.paid_at ? "border-stone-200 bg-stone-50" : "border-violet-200 bg-violet-50/50"}`}>
               <FileText size={13} className={`shrink-0 ${m.paid_at ? "text-stone-400" : "text-violet-500"}`} />
@@ -1239,8 +1243,9 @@ export default function RecurringPage() {
               </div>
               <span className={`text-sm font-bold font-mono whitespace-nowrap ${m.paid_at ? "text-stone-600" : "text-violet-700"}`}>{formatCurrency(m.total_amount)}</span>
               {!m.paid_at && (
-                <button onClick={() => markMasterPaid(m.id, m.master_name)} disabled={markingPaid === m.id} title="Mark as paid"
-                  className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                <button onClick={() => markMasterPaid(m.id, m.master_name)} disabled={markingPaid === m.id || !canMarkPaid}
+                  title={canMarkPaid ? "Mark as paid" : `${pendingCount} PV${pendingCount !== 1 ? "s" : ""} not yet approved — all PVs must be approved before marking paid`}
+                  className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap ${canMarkPaid ? "bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" : "bg-stone-100 text-stone-400 cursor-not-allowed"}`}>
                   <CheckCircle2 size={11} /> {markingPaid === m.id ? "…" : "Mark Paid"}
                 </button>
               )}
