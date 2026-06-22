@@ -35,6 +35,7 @@ const STATUS_MAP: Record<FilterStatus, string[]> = {
 interface BulkRun {
   id: string; group_name: string; run_by: string; run_date: string;
   pv_count: number; total_amount: number; ministry: string; pv_ids: string[];
+  is_master?: boolean; child_group_names?: string[];
 }
 
 type RejectCtx = "admin" | "ministry";
@@ -99,7 +100,7 @@ export default function MyPVsPage() {
             if (filter !== "ALL") q = q.in("status", STATUS_MAP[filter]);
             return q;
           })(),
-          supabase.from("bulk_pv_runs").select("id,group_name,run_by,run_date,pv_count,total_amount,ministry,pv_ids").eq("run_by", user.email).order("run_date", { ascending: false }),
+          supabase.from("bulk_pv_runs").select("id,group_name,run_by,run_date,pv_count,total_amount,ministry,pv_ids,is_master,child_group_names").eq("run_by", user.email).order("run_date", { ascending: false }),
           supabase.from("user_roles").select("role,ministries").eq("email", user.email).single(),
         ]);
 
@@ -541,9 +542,17 @@ export default function MyPVsPage() {
             const isExpanded  = expandedBulk.has(run.id);
             const loadingPVs  = loadingBulkPVs[run.id];
             const visible     = visibleBulkPVs(run.id);
+            const childGroupNames = new Set(
+              bulkRuns.filter(r => r.is_master).flatMap(r => r.child_group_names ?? [])
+            );
+            const isChild  = !run.is_master && childGroupNames.has(run.group_name);
+            const isMaster = !!run.is_master;
+            const displayName = isMaster
+              ? (run.group_name.replace(/^MASTER:\s*/i, "") || run.group_name)
+              : run.group_name;
 
             return (
-              <div key={run.id} className="bg-white border border-stone-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
+              <div key={run.id} className={`bg-white border border-stone-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow${isChild ? " ml-3 border-l-2 border-l-violet-200" : ""}`}>
                 {/* Bulk run header */}
                 <button
                   className="w-full text-left px-4 py-3.5 flex items-start justify-between gap-3 hover:bg-stone-50 transition-colors"
@@ -551,13 +560,15 @@ export default function MyPVsPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
-                        <FileText size={10} /> BULK
+                      <span className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
+                        isMaster ? "bg-violet-100 text-violet-700" : "bg-green-100 text-green-700"
+                      }`}>
+                        <FileText size={10} /> {isMaster ? "MASTER" : "BULK"}
                       </span>
-                      <span className="text-xs font-semibold text-stone-600">{run.group_name}</span>
+                      <span className="text-xs font-semibold text-stone-600">{displayName}</span>
                       <span className="text-xs text-stone-400">{run.pv_count} PV{run.pv_count !== 1 ? "s" : ""}</span>
                     </div>
-                    <div className="text-sm font-medium text-stone-800">{run.group_name} — Batch Payment</div>
+                    <div className="text-sm font-medium text-stone-800">{displayName} — Batch Payment</div>
                     {run.ministry && <div className="text-xs text-stone-400 mt-0.5">{run.ministry}</div>}
                     <div className="text-xs text-stone-400 mt-0.5">{formatDate(run.run_date)}</div>
                   </div>
