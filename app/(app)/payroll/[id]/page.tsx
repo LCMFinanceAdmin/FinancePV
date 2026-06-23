@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, type CalcLine } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import type { PayrollEmployee, PayrollSalary } from "@/lib/types";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -58,6 +58,14 @@ export default function PayrollEmployeePage() {
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
   const [pcb, setPcb] = useState<number[]>(Array(13).fill(0)); // 0-11 = months, 12 = 13th month
+  const [rates, setRates] = useState<RateConfig | undefined>(undefined);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("payroll_statutory_rates").select("*").eq("year", year).maybeSingle();
+      setRates((data as RateConfig) ?? undefined);
+    })();
+  }, [supabase, year]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,11 +87,15 @@ export default function PayrollEmployeePage() {
   const posting = emp.posting_type === "CHURCH" ? emp.church_name
     : emp.posting_type === "OFFICE" ? emp.department : "—";
 
-  // Computed yearly grid (Phase 2): 12 months + 13th month, current salary basis.
-  // Increment timing per month arrives in Phase 3; persistence with runs in Phase 5.
-  const gross = current ? grossOf(current) : 0;
+  // Computed yearly grid: 12 months + 13th month, with increment timing & editable rates.
+  // Current-year increment takes effect in Jan (joined before July) or July (joined after July).
+  // Persistence with runs arrives in Phase 5.
+  const fullGross = current ? grossOf(current) : 0;
+  const currentIncrement = current ? Number(current.increment_current) : 0;
+  const effMonth = incrementEffectiveMonth(emp.date_commenced);
+  const grossForMonth = (m: number) => fullGross - currentIncrement + (m >= effMonth ? currentIncrement : 0);
   const monthLines: CalcLine[] = current ? MONTHS.map((_, i) => calcLine({
-    gross,
+    gross: grossForMonth(i + 1),
     age: ageAt(emp.dob, year, i + 1),
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
@@ -91,10 +103,11 @@ export default function PayrollEmployeePage() {
     manualPcb: pcb[i] || 0,
     eplDeduction: 0,
     is13thMonth: false,
+    rates,
   })) : [];
   // Orang Asli are excluded from the 13th month.
   const thirteenth: CalcLine | null = current && !emp.is_orang_asli ? calcLine({
-    gross,
+    gross: fullGross,
     age: ageAt(emp.dob, year, 12),
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
@@ -102,6 +115,7 @@ export default function PayrollEmployeePage() {
     manualPcb: pcb[12] || 0,
     eplDeduction: 0,
     is13thMonth: true,
+    rates,
   }) : null;
   const allLines = thirteenth ? [...monthLines, thirteenth] : monthLines;
   const sum = (pick: (l: CalcLine) => number) => allLines.reduce((s, l) => s + pick(l), 0);
@@ -273,8 +287,10 @@ export default function PayrollEmployeePage() {
               </table>
             </div>
             <p className="text-[11px] text-stone-400 mt-3">
-              EPF / SOCSO / EIS are auto-calculated; <span className="font-semibold">PCB is entered manually</span> per month (click a PCB cell).
-              All months use the current salary for now — increment timing arrives in Phase 3, and figures are saved when a payroll run is generated (Phase 5).
+              EPF / SOCSO / EIS auto-calculated from the {rates ? year : "default"} rate table (<Link href="/payroll/rates" className="text-[#4a6da7] hover:underline">edit rates</Link>);
+              <span className="font-semibold"> PCB entered manually</span> per month (click a PCB cell).
+              Current-year increment takes effect from <span className="font-semibold">{MONTHS[effMonth - 1]}</span> (joined {effMonth === 1 ? "before" : "after"} July).
+              Figures are saved when a payroll run is generated (Phase 5).
             </p>
           </>
         )}

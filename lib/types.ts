@@ -268,6 +268,17 @@ export interface PayrollEmployee {
   updated_at: string;
 }
 
+export interface PayrollStatutoryRates {
+  year: number;
+  epf_ee_under60: number; epf_er_under60: number;
+  epf_ee_over60: number; epf_er_over60: number;
+  epf_ee_orang_asli: number; epf_er_orang_asli: number;
+  socso_ee: number; socso_er: number; socso_er_over60: number; socso_ceiling: number;
+  eis_rate: number; eis_ceiling: number;
+  updated_by: string;
+  updated_at: string;
+}
+
 export interface PayrollSalary {
   id: string;
   employee_id: string;

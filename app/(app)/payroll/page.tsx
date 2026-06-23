@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X } from "lucide-react";
+import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType } from "@/lib/types";
@@ -356,12 +356,17 @@ export default function PayrollPage() {
           <h1 className="text-2xl font-bold text-stone-800 flex items-center gap-2"><Wallet size={22} className="text-[#4a6da7]" /> Payroll</h1>
           <p className="text-sm text-stone-500 mt-0.5">Employee salary records & yearly sheets</p>
         </div>
-        {canEdit && (
-          <button onClick={() => { setModalEmp(null); setShowModal(true); }}
-            className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] transition-colors shrink-0">
-            <Plus size={16} /> Add Employee
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <Link href="/payroll/rates" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-stone-50 transition-colors">
+            <Percent size={15} /> Rates
+          </Link>
+          {canEdit && (
+            <button onClick={() => { setModalEmp(null); setShowModal(true); }}
+              className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] transition-colors">
+              <Plus size={16} /> Add Employee
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Search + status filter */}
