@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, ChevronDown, ChevronUp, Trash2, CheckCircle,
-  FileText, DollarSign, XCircle, AlertCircle,
+  FileText, DollarSign, XCircle, AlertCircle, Share2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile, FacilityBooking, BookingItem } from "@/lib/types";
@@ -673,6 +673,7 @@ export default function BookingsPage() {
   const [tab, setTab]           = useState<FacilityBooking["status"] | "ALL">("ALL");
   const [showNew, setShowNew]   = useState(false);
   const [view, setView]         = useState<"list" | "calendar">("list");
+  const [copied, setCopied]     = useState(false);
 
   async function loadUser() {
     const { data: { user: au } } = await supabase.auth.getUser();
@@ -731,6 +732,14 @@ export default function BookingsPage() {
           <p className="text-sm text-stone-500 mt-0.5">Manage venue bookings and facility rentals</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {canCreate && (
+            <button
+              onClick={() => { navigator.clipboard?.writeText(`${location.origin}/book`); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 text-stone-600 text-sm font-medium hover:bg-stone-50 transition-colors"
+              title="Copy the public booking form link to share">
+              <Share2 size={15} /> {copied ? "Copied!" : "Public link"}
+            </button>
+          )}
           <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden text-sm font-medium">
             <button onClick={() => setView("list")} className={`px-3 py-2 transition-colors ${view === "list" ? "bg-[#4a6da7] text-white" : "text-stone-600 hover:bg-stone-50"}`}>List</button>
             <button onClick={() => setView("calendar")} className={`px-3 py-2 transition-colors ${view === "calendar" ? "bg-[#4a6da7] text-white" : "text-stone-600 hover:bg-stone-50"}`}>Calendar</button>
