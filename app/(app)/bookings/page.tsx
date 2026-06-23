@@ -12,6 +12,7 @@ import {
 } from "@/lib/facilities";
 import { ReceiptPdfButton } from "@/components/income/receipt-pdf";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
+import { AttachmentPreview } from "@/components/attachment-preview";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -506,8 +507,28 @@ function BookingCard({ booking, user, onRefresh }: CardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showPay, setShowPay]   = useState(false);
   const [acting, setActing]     = useState(false);
+  const [previewIdx, setPreviewIdx] = useState<number | null>(null);
+  const [reclassifying, setReclassifying] = useState(false);
 
   const canAct = user.isFinanceAdmin || user.isBuildingManager;
+
+  // BEM reclassifies a booking's payer category (e.g. for public submissions where
+  // the applicant didn't know how to categorise) — re-prices all facility lines.
+  async function reclassify(newType: PricingTier) {
+    if (newType === booking.booker_type) return;
+    setReclassifying(true);
+    const items = booking.booking_items.map(it => {
+      const def = FACILITIES.find(f => f.id === it.facility_id);
+      const rate = def ? getRate(def, newType, it.is_concurrent) : it.rate_per_session;
+      return { ...it, rate_per_session: rate, subtotal: rate * it.sessions };
+    });
+    const total = items.reduce((s, it) => s + it.subtotal, 0);
+    await supabase.from("facility_bookings")
+      .update({ booker_type: newType, booking_items: items, total_amount: total, updated_at: new Date().toISOString() })
+      .eq("id", booking.id);
+    setReclassifying(false);
+    onRefresh();
+  }
 
   async function transition(newStatus: FacilityBooking["status"]) {
     setActing(true);
@@ -562,6 +583,21 @@ function BookingCard({ booking, user, onRefresh }: CardProps) {
               {booking.booker_email && <div><span className="text-stone-400 text-xs">Email</span><div>{booking.booker_email}</div></div>}
               {booking.booker_phone && <div><span className="text-stone-400 text-xs">Phone</span><div>{booking.booker_phone}</div></div>}
               {booking.purpose && <div className="col-span-2"><span className="text-stone-400 text-xs">Purpose</span><div>{booking.purpose}</div></div>}
+              <div className="col-span-2">
+                <span className="text-stone-400 text-xs">Payer Category</span>
+                {canAct && !["PAID", "CANCELLED"].includes(booking.status) ? (
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <select value={booking.booker_type} disabled={reclassifying}
+                      onChange={e => reclassify(e.target.value as PricingTier)}
+                      className="border border-stone-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-[#4a6da7]">
+                      {(["PUBLIC", "MEMBER", "CONGREGATION", "HQ"] as PricingTier[]).map(t => <option key={t} value={t}>{TIER_LABELS[t]}</option>)}
+                    </select>
+                    <span className="text-[11px] text-stone-400">{reclassifying ? "Updating rates…" : "Changing this re-prices the booking"}</span>
+                  </div>
+                ) : (
+                  <div className="font-medium">{TIER_LABELS[booking.booker_type]}</div>
+                )}
+              </div>
             </div>
 
             {/* Facility line items */}
@@ -603,10 +639,10 @@ function BookingCard({ booking, user, onRefresh }: CardProps) {
                 <span className="text-stone-400 text-xs">Scanned Form (signed &amp; stamped)</span>
                 <div className="flex flex-wrap gap-2 mt-1">
                   {booking.attachments.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                    <button key={i} onClick={() => setPreviewIdx(i)}
                       className="inline-flex items-center gap-1 text-xs text-[#4a6da7] hover:underline border border-stone-200 rounded-lg px-2 py-1">
-                      <FileText size={12} /> Form {i + 1}
-                    </a>
+                      <FileText size={12} /> Preview Form {i + 1}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -658,6 +694,10 @@ function BookingCard({ booking, user, onRefresh }: CardProps) {
           onClose={() => setShowPay(false)}
           onPaid={() => { setShowPay(false); onRefresh(); }}
         />
+      )}
+
+      {previewIdx !== null && (
+        <AttachmentPreview urls={booking.attachments} startIndex={previewIdx} onClose={() => setPreviewIdx(null)} />
       )}
     </>
   );
