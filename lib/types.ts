@@ -6,6 +6,7 @@ export type UserRole =
   | "SECRETARY"
   | "MINISTRY_HEAD"
   | "BUILDING_MANAGER"
+  | "BAM_COMMITTEE"
   | "STAFF";
 
 export type PVStatus =
@@ -20,6 +21,7 @@ export type PVStatus =
   | "REJECTED_HEAD"
   | "CANCELLED"
   // BAM PV statuses
+  | "BAM_COMMITTEE_REVIEW" // waiting for BAM Committee PIC verification (BM-created PVs)
   | "BAM_REVIEW"      // waiting for Building Manager review
   | "FINANCE_REVIEW"  // waiting for Finance Executive review
   | "GM_REVIEW";      // waiting for General Manager approval
@@ -40,6 +42,7 @@ export interface UserProfile {
   isMinistryHead: boolean;
   isGeneralManager: boolean;
   isBuildingManager: boolean;
+  isBamCommittee?: boolean;
   isTestAdmin: boolean;
 }
 

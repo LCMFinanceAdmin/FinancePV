@@ -59,7 +59,7 @@ export default function BamQueuePage() {
       .from("pvs")
       .select("id,pv_no,status,amount,payee_name,ministry,purpose,submitted_at,submitted_by,submitted_by_email,line_items")
       .eq("pv_type", "BAM")
-      .in("status", ["BAM_REVIEW", "FINANCE_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY", "APPROVED", "PAID", "REJECTED"])
+      .in("status", ["BAM_COMMITTEE_REVIEW", "BAM_REVIEW", "FINANCE_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY", "APPROVED", "PAID", "REJECTED"])
       .order("submitted_at", { ascending: false });
 
     setPvs((data ?? []) as BAMPv[]);
@@ -69,14 +69,13 @@ export default function BamQueuePage() {
   useEffect(() => { load(); }, [load]);
 
   const isBuildingManager = userRole === "BUILDING_MANAGER";
-  const pendingPvs = pvs.filter(p =>
+  const isBamCommittee = userRole === "BAM_COMMITTEE";
+  const isPending = (p: BAMPv) =>
+    (isBamCommittee && p.status === "BAM_COMMITTEE_REVIEW") ||
     (isBuildingManager && p.status === "BAM_REVIEW") ||
-    (isFinanceAdmin && p.status === "FINANCE_REVIEW")
-  );
-  const otherPvs = pvs.filter(p =>
-    !((isBuildingManager && p.status === "BAM_REVIEW") ||
-      (isFinanceAdmin && p.status === "FINANCE_REVIEW"))
-  );
+    (isFinanceAdmin && p.status === "FINANCE_REVIEW");
+  const pendingPvs = pvs.filter(isPending);
+  const otherPvs = pvs.filter(p => !isPending(p));
 
   async function submitAction() {
     if (!actionPv || !actionType) return;
@@ -108,6 +107,7 @@ export default function BamQueuePage() {
 
   function statusBadge(status: string) {
     const map: Record<string, { label: string; color: string }> = {
+      BAM_COMMITTEE_REVIEW: { label: "Awaiting BAM Committee", color: "bg-orange-100 text-orange-700" },
       BAM_REVIEW:        { label: "Awaiting BM Review",      color: "bg-orange-100 text-orange-700" },
       FINANCE_REVIEW:    { label: "Finance Review",           color: "bg-blue-100 text-blue-700" },
       GM_REVIEW:         { label: "GM Approval",              color: "bg-purple-100 text-purple-700" },

@@ -33,9 +33,9 @@ Deno.serve(async (req) => {
       const applicantEmail = (d.applicant_email || user.email || "").toLowerCase().trim();
       const isBuildingManager = profile?.role === "BUILDING_MANAGER";
 
-      // BM submitting → skip BAM_REVIEW, go straight to FE review
-      // FE submitting → BM must review first
-      const initialStatus = isBuildingManager ? "FINANCE_REVIEW" : "BAM_REVIEW";
+      // BM submitting → must first be verified by a BAM Committee PIC
+      // FE submitting → Building Manager must review first
+      const initialStatus = isBuildingManager ? "BAM_COMMITTEE_REVIEW" : "BAM_REVIEW";
 
       // Submitter auto-signs their approval entry
       const submitterEntry = {
@@ -114,16 +114,16 @@ Deno.serve(async (req) => {
           );
         }
       } else {
-        // FINANCE_REVIEW — notify Finance Exec
-        const { data: feUsers } = await db.from("user_roles").select("email").in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
-        if (feUsers?.length) {
+        // BAM_COMMITTEE_REVIEW — notify BAM Committee PIC(s)
+        const { data: bcUsers } = await db.from("user_roles").select("email").eq("role", "BAM_COMMITTEE");
+        if (bcUsers?.length) {
           await db.from("notifications").insert(
-            feUsers.map((fe: { email: string }) => ({
-              recipient_email: fe.email,
-              type: "BAM_FINANCE_REVIEW",
+            bcUsers.map((bc: { email: string }) => ({
+              recipient_email: bc.email,
+              type: "BAM_COMMITTEE_REVIEW",
               pv_no: pvNo,
               pv_id: null,
-              message: `BAM PV ${pvNo} (${formatRM(amount)}) submitted by Building Manager — requires your finance review`,
+              message: `BAM PV ${pvNo} (${formatRM(amount)}) submitted by Building/Event Manager — requires BAM Committee verification`,
               read: false,
               created_at: now,
             }))

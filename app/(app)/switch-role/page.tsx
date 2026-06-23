@@ -15,6 +15,7 @@ const ROLES = [
   { value: "SECRETARY",       label: "Secretary",          color: "bg-teal-100 text-teal-800 border-teal-200" },
   { value: "MINISTRY_HEAD",    label: "EXCO Member",           color: "bg-amber-100 text-amber-800 border-amber-200" },
   { value: "BUILDING_MANAGER", label: "Building/Event Manager", color: "bg-orange-100 text-orange-800 border-orange-200" },
+  { value: "BAM_COMMITTEE",    label: "BAM Committee PIC",      color: "bg-orange-100 text-orange-800 border-orange-200" },
   { value: "STAFF",            label: "Staff",                  color: "bg-stone-100 text-stone-600 border-stone-200" },
 ];
 

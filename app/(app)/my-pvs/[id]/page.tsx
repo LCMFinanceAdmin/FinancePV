@@ -903,8 +903,45 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── BAM Committee PIC Verification Panel (BM-created BAM PVs) ───── */}
+      {user?.isBamCommittee && pv.pv_type === "BAM" && pv.status === "BAM_COMMITTEE_REVIEW" && (
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck size={16} className="text-orange-600" />
+              <span className="text-sm font-semibold text-orange-800">BAM Committee Verification</span>
+              <span className="ml-auto text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">BAM PV</span>
+            </div>
+            <p className="text-sm text-stone-600 mb-3">Verify this BAM PV created by the Building/Event Manager before it proceeds to the Finance Executive.</p>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={async () => {
+                  if (!confirm("Verify this BAM PV and send to Finance Executive?")) return;
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/bam-action`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+                    body: JSON.stringify({ pv_id: pv.id, action: "APPROVE" }),
+                  });
+                  const json = await res.json();
+                  if (res.ok) { setPv(p => p ? { ...p, status: "FINANCE_REVIEW" } : p); }
+                  else alert(json.error);
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 transition-colors">
+                <CheckCircle2 size={14} /> Verify BAM PV
+              </button>
+              <button
+                onClick={() => setShowRejectModal(true)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
+                <XCircle size={14} /> Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Finance Executive Action Panel ─────────────────────────────── */}
-      {user?.isFinanceAdmin && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD", "BAM_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY"].includes(pv.status) && (
+      {user?.isFinanceAdmin && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD", "BAM_COMMITTEE_REVIEW", "BAM_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -1289,7 +1326,10 @@ export default function PVDetailPage() {
             <div className="flex gap-2 mt-4">
               <button onClick={async () => {
                 if (!rejectRemarks.trim()) return;
-                if (user?.isBuildingManager && pv.pv_type === "BAM" && pv.status === "BAM_REVIEW") {
+                const isBamReviewReject =
+                  (user?.isBuildingManager && pv.status === "BAM_REVIEW") ||
+                  (user?.isBamCommittee && pv.status === "BAM_COMMITTEE_REVIEW");
+                if (pv.pv_type === "BAM" && isBamReviewReject) {
                   const { data: { session } } = await supabase.auth.getSession();
                   const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/bam-action`, {
                     method: "POST",

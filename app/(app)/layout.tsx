@@ -36,6 +36,7 @@ async function getUserProfile(): Promise<UserProfile | null> {
     isMinistryHead: role === "MINISTRY_HEAD" || ministries.length > 0,
     isGeneralManager: role === "GENERAL_MANAGER",
     isBuildingManager: role === "BUILDING_MANAGER",
+    isBamCommittee: role === "BAM_COMMITTEE",
     isTestAdmin: TEST_ADMIN_EMAILS.includes(user.email!),
   };
 }

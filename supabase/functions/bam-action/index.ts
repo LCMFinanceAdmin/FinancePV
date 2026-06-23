@@ -12,7 +12,8 @@ Deno.serve(async (req) => {
 
     const db = getServiceClient();
     const profile = await getProfileByEmail(db, user.email!);
-    if (profile?.role !== "BUILDING_MANAGER") return json({ error: "Building Manager only" }, 403);
+    const role = profile?.role;
+    if (role !== "BUILDING_MANAGER" && role !== "BAM_COMMITTEE") return json({ error: "Building Manager or BAM Committee only" }, 403);
 
     const { pv_id, action, remarks, signature_data } = await req.json();
     if (!["APPROVE", "REJECT"].includes(action)) return json({ error: "Invalid action" }, 400);
@@ -21,11 +22,17 @@ Deno.serve(async (req) => {
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
     if (pv.pv_type !== "BAM") return json({ error: "Not a BAM PV" }, 400);
-    if (pv.status !== "BAM_REVIEW") return json({ error: "BAM PV is not awaiting Building Manager review" }, 400);
+
+    // BAM Committee verifies BM-created PVs; Building Manager reviews FE-created PVs.
+    const isCommitteeStage = pv.status === "BAM_COMMITTEE_REVIEW";
+    const isBmStage = pv.status === "BAM_REVIEW";
+    if (isCommitteeStage && role !== "BAM_COMMITTEE") return json({ error: "Only the BAM Committee can verify this PV" }, 403);
+    if (isBmStage && role !== "BUILDING_MANAGER") return json({ error: "Only the Building Manager can review this PV" }, 403);
+    if (!isCommitteeStage && !isBmStage) return json({ error: "BAM PV is not awaiting your review" }, 400);
 
     const now = new Date().toISOString();
     const entry = {
-      role: "BUILDING_MANAGER",
+      role,
       email: user.email,
       name: profile?.full_name || user.email,
       action: action === "APPROVE" ? "APPROVED" : "REJECTED",
@@ -69,12 +76,13 @@ Deno.serve(async (req) => {
       }).eq("id", pv_id);
 
       // Notify submitter
+      const rejecterLabel = role === "BAM_COMMITTEE" ? "BAM Committee" : "Building Manager";
       await db.from("notifications").insert({
         recipient_email: pv.submitted_by_email,
         type: "PV_REJECTED",
         pv_no: pv.pv_no,
         pv_id,
-        message: `BAM PV ${pv.pv_no} was rejected by Building Manager: ${remarks}`,
+        message: `BAM PV ${pv.pv_no} was rejected by ${rejecterLabel}: ${remarks}`,
         read: false,
         created_at: now,
       });
