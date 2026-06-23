@@ -828,7 +828,7 @@ export default function RecurringPage() {
           <p className="text-sm text-stone-400">Scheduled payment voucher templates</p>
         </div>
         <div className="flex items-center gap-2">
-          {!showForm && (
+          {!showForm && entityTab === "LCM" && (
             <button
               onClick={() => { setMasterMode(m => !m); setMasterSelected(new Set()); setMasterName(""); }}
               className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors ${
@@ -1181,7 +1181,7 @@ export default function RecurringPage() {
       )}
 
       {/* Existing Masters — Active / History tabs */}
-      {!loading && masterRuns.length > 0 && !search && (() => {
+      {!loading && entityTab === "LCM" && masterRuns.length > 0 && !search && (() => {
         const visibleMasters = masterRuns.filter(m => masterView === "active" ? !m.paid_at : !!m.paid_at);
         const activeCount = masterRuns.filter(m => !m.paid_at).length;
         const historyCount = masterRuns.filter(m => !!m.paid_at).length;
@@ -1265,7 +1265,7 @@ export default function RecurringPage() {
       })()}
 
       {/* Inline Master creation panel — sits above frequency sections */}
-      {masterMode && !search && (
+      {masterMode && entityTab === "LCM" && !search && (
         <div className="rounded-xl border-2 border-violet-300 bg-violet-50 px-4 py-3 space-y-2.5">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1380,7 +1380,7 @@ export default function RecurringPage() {
                           }}
                         >
                           {/* Master select checkbox */}
-                          {masterMode && (
+                          {masterMode && entityTab === "LCM" && (
                             <input
                               type="checkbox"
                               checked={isMasterChecked}
