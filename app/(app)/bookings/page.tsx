@@ -11,6 +11,7 @@ import {
   type PricingTier,
 } from "@/lib/facilities";
 import { ReceiptPdfButton } from "@/components/income/receipt-pdf";
+import { BookingCalendar } from "@/components/bookings/booking-calendar";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -671,6 +672,7 @@ export default function BookingsPage() {
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState<FacilityBooking["status"] | "ALL">("ALL");
   const [showNew, setShowNew]   = useState(false);
+  const [view, setView]         = useState<"list" | "calendar">("list");
 
   async function loadUser() {
     const { data: { user: au } } = await supabase.auth.getUser();
@@ -721,24 +723,35 @@ export default function BookingsPage() {
   const canCreate = user && (user.isFinanceAdmin || user.isBuildingManager);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+    <div className={`${view === "calendar" ? "max-w-6xl" : "max-w-3xl"} mx-auto px-4 py-6 space-y-5`}>
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-stone-800">Facility Bookings</h1>
           <p className="text-sm text-stone-500 mt-0.5">Manage venue bookings and facility rentals</p>
         </div>
-        {canCreate && (
-          <button
-            onClick={() => setShowNew(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4a6da7] hover:bg-[#3a5a8f] text-white text-sm font-medium transition-colors shrink-0"
-          >
-            <Plus size={16} /> New Booking
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden text-sm font-medium">
+            <button onClick={() => setView("list")} className={`px-3 py-2 transition-colors ${view === "list" ? "bg-[#4a6da7] text-white" : "text-stone-600 hover:bg-stone-50"}`}>List</button>
+            <button onClick={() => setView("calendar")} className={`px-3 py-2 transition-colors ${view === "calendar" ? "bg-[#4a6da7] text-white" : "text-stone-600 hover:bg-stone-50"}`}>Calendar</button>
+          </div>
+          {canCreate && (
+            <button
+              onClick={() => setShowNew(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4a6da7] hover:bg-[#3a5a8f] text-white text-sm font-medium transition-colors"
+            >
+              <Plus size={16} /> New Booking
+            </button>
+          )}
+        </div>
       </div>
 
+      {view === "calendar" && (
+        <BookingCalendar bookings={bookings} onSelect={(b) => { setView("list"); setTab(b.status); }} />
+      )}
+
       {/* Status tabs */}
+      {view === "list" && (<>
       <div className="flex gap-1 overflow-x-auto pb-1">
         {STATUS_TABS.map(t => (
           <button
@@ -783,6 +796,8 @@ export default function BookingsPage() {
             <BookingCard key={b.id} booking={b} user={user!} onRefresh={loadBookings} />
           ))}
         </div>
+      )}
+      </>
       )}
 
       {/* Rate reference card */}
