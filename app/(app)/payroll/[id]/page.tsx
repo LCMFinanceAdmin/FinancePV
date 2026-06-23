@@ -6,7 +6,8 @@ import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2 } fro
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
-import type { PayrollEmployee, PayrollSalary } from "@/lib/types";
+import { installmentForMonth } from "@/lib/payroll/loan";
+import type { PayrollEmployee, PayrollSalary, EmployeeLoan } from "@/lib/types";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -55,6 +56,7 @@ export default function PayrollEmployeePage() {
   const supabase = createClient();
   const [emp, setEmp] = useState<PayrollEmployee | null>(null);
   const [salaries, setSalaries] = useState<PayrollSalary[]>([]);
+  const [loans, setLoans] = useState<EmployeeLoan[]>([]);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
   const [pcb, setPcb] = useState<number[]>(Array(13).fill(0)); // 0-11 = months, 12 = 13th month
@@ -69,12 +71,14 @@ export default function PayrollEmployeePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: e }, { data: s }] = await Promise.all([
+    const [{ data: e }, { data: s }, { data: ln }] = await Promise.all([
       supabase.from("payroll_employees").select("*").eq("id", id).single(),
       supabase.from("payroll_salary").select("*").eq("employee_id", id).order("effective_from", { ascending: false }).order("created_at", { ascending: false }),
+      supabase.from("employee_loans").select("*").eq("employee_id", id).eq("status", "ACTIVE"),
     ]);
     setEmp(e as PayrollEmployee);
     setSalaries((s as PayrollSalary[]) ?? []);
+    setLoans((ln as EmployeeLoan[]) ?? []);
     setLoading(false);
   }, [supabase, id]);
 
@@ -94,6 +98,7 @@ export default function PayrollEmployeePage() {
   const currentIncrement = current ? Number(current.increment_current) : 0;
   const effMonth = incrementEffectiveMonth(emp.date_commenced);
   const grossForMonth = (m: number) => fullGross - currentIncrement + (m >= effMonth ? currentIncrement : 0);
+  const eplForMonth = (m: number) => loans.reduce((s, ln) => s + installmentForMonth(ln, year, m), 0);
   const monthLines: CalcLine[] = current ? MONTHS.map((_, i) => calcLine({
     gross: grossForMonth(i + 1),
     age: ageAt(emp.dob, year, i + 1),
@@ -101,7 +106,7 @@ export default function PayrollEmployeePage() {
     isOrangAsli: emp.is_orang_asli,
     voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
     manualPcb: pcb[i] || 0,
-    eplDeduction: 0,
+    eplDeduction: eplForMonth(i + 1),
     is13thMonth: false,
     rates,
   })) : [];

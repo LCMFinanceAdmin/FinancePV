@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent } from "lucide-react";
+import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent, HandCoins } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType } from "@/lib/types";
@@ -357,6 +357,9 @@ export default function PayrollPage() {
           <p className="text-sm text-stone-500 mt-0.5">Employee salary records & yearly sheets</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <Link href="/payroll/loans" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-stone-50 transition-colors">
+            <HandCoins size={15} /> Loans
+          </Link>
           <Link href="/payroll/rates" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-stone-50 transition-colors">
             <Percent size={15} /> Rates
           </Link>

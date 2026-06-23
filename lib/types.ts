@@ -294,6 +294,37 @@ export interface PayrollSalary {
   created_at: string;
 }
 
+export type LoanStatus = "PENDING" | "ACTIVE" | "SETTLED" | "REJECTED" | "CANCELLED";
+
+export interface EmployeeLoan {
+  id: string;
+  loan_no: string;
+  employee_id: string;
+  principal: number;
+  monthly_installment: number;
+  term_months: number;
+  final_installment: number;
+  start_month: string | null;
+  purpose: string;
+  agreement_url: string;
+  status: LoanStatus;
+  approvals: PVApproval[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LoanRepayment {
+  id: string;
+  loan_id: string;
+  payroll_run_id: string | null;
+  year: number;
+  month: number;
+  amount: number;
+  balance_after: number;
+  created_at: string;
+}
+
 export interface BulkRun {
   id: string;
   group_name: string;
