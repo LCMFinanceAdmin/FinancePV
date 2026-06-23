@@ -156,6 +156,7 @@ export default function RecurringPage() {
       : { data: null };
     const isBM = profile?.role === "BUILDING_MANAGER";
     setIsBuildingManager(isBM);
+    if (isBM) setEntityTab("BAM"); // BEM works only with BAM recurring expenses
 
     const recQuery = supabase.from("recurring_pvs").select("*").order("name");
 
@@ -848,7 +849,7 @@ export default function RecurringPage() {
 
       {/* Entity Tabs */}
       <div className="flex gap-0 border-b border-stone-200">
-        {ENTITY_TABS.map(tab => (
+        {(isBuildingManager ? ENTITY_TABS.filter(t => t.key === "BAM") : ENTITY_TABS).map(tab => (
           <button
             key={tab.key}
             onClick={() => { setEntityTab(tab.key); setSearch(""); }}
