@@ -2,12 +2,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2 } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { installmentForMonth } from "@/lib/payroll/loan";
-import type { PayrollEmployee, PayrollSalary, EmployeeLoan } from "@/lib/types";
+import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile } from "@/lib/types";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -61,6 +61,8 @@ export default function PayrollEmployeePage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [pcb, setPcb] = useState<number[]>(Array(13).fill(0)); // 0-11 = months, 12 = 13th month
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
+  const [canEdit, setCanEdit] = useState(false);
+  const [showRevision, setShowRevision] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -68,6 +70,15 @@ export default function PayrollEmployeePage() {
       setRates((data as RateConfig) ?? undefined);
     })();
   }, [supabase, year]);
+
+  useEffect(() => {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const { data } = await supabase.from("user_roles").select("role").eq("email", session.user.email).single();
+      setCanEdit(["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(data?.role ?? ""));
+    })();
+  }, [supabase]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,8 +134,22 @@ export default function PayrollEmployeePage() {
   const allLines = thirteenth ? [...monthLines, thirteenth] : monthLines;
   const sum = (pick: (l: CalcLine) => number) => allLines.reduce((s, l) => s + pick(l), 0);
 
+  function exportCsv() {
+    const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SOCSO ER", "EIS EE", "EIS ER", "EPL", "Net", "Total LCM"];
+    const line = (label: string, l: CalcLine) => [label, l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction, l.net, l.totalLcmPayment];
+    const rows: (string | number)[][] = monthLines.map((l, i) => line(MONTHS[i], l));
+    if (thirteenth) rows.push(line("13th MTH", thirteenth));
+    rows.push(["ANNUAL", sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), sum(l => l.net), sum(l => l.totalLcmPayment)]);
+    const csv = [head, ...rows].map(r => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${emp!.full_name.replace(/\s+/g, "_")}_${year}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+    <div className="max-w-5xl mx-auto px-4 py-6 space-y-5 print:py-2">
       <Link href="/payroll" className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-700">
         <ArrowLeft size={15} /> Back to Payroll
       </Link>
@@ -186,7 +211,10 @@ export default function PayrollEmployeePage() {
       <div className="bg-white border border-stone-200 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5"><Table2 size={15} className="text-[#4a6da7]" /> Yearly Sheet — {year}</h2>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 print:hidden">
+            <button onClick={exportCsv} title="Export to Excel (CSV)" className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600"><Download size={13} /> CSV</button>
+            <button onClick={() => window.print()} title="Print / Save as PDF" className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600"><Printer size={13} /> Print</button>
+            <span className="w-1" />
             <button onClick={() => setYear(y => y - 1)} className="px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50">‹</button>
             <span className="text-sm font-semibold text-stone-700 w-12 text-center">{year}</span>
             <button onClick={() => setYear(y => y + 1)} className="px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50">›</button>
@@ -301,7 +329,14 @@ export default function PayrollEmployeePage() {
 
       {/* Salary revision history + difference analysis */}
       <div className="bg-white border border-stone-200 rounded-2xl p-5">
-        <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5 mb-3"><Clock size={15} className="text-[#4a6da7]" /> Revision History</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5"><Clock size={15} className="text-[#4a6da7]" /> Revision History</h2>
+          {canEdit && (
+            <button onClick={() => setShowRevision(true)} className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5c8f] print:hidden">
+              <Plus size={13} /> Add Revision
+            </button>
+          )}
+        </div>
         {salaries.length === 0 ? (
           <p className="text-sm text-stone-400">No revisions yet.</p>
         ) : (
@@ -354,6 +389,89 @@ export default function PayrollEmployeePage() {
             })}
           </div>
         )}
+      </div>
+
+      {showRevision && current && (
+        <RevisionModal employeeId={emp.id} latest={current} onClose={() => setShowRevision(false)} onSaved={() => { setShowRevision(false); load(); }} />
+      )}
+    </div>
+  );
+}
+
+function RevisionModal({ employeeId, latest, onClose, onSaved }: {
+  employeeId: string; latest: PayrollSalary; onClose: () => void; onSaved: () => void;
+}) {
+  const supabase = createClient();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [reason, setReason] = useState("");
+  const [vals, setVals] = useState({
+    base_salary: String(latest.base_salary),
+    increment_carried: String(latest.increment_carried),
+    increment_current: String(latest.increment_current),
+    experience_bonus: String(latest.experience_bonus),
+    family_allowance: String(latest.family_allowance),
+    stm_allowance: String(latest.stm_allowance),
+  });
+
+  async function save() {
+    setError(""); setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error: e } = await supabase.from("payroll_salary").insert({
+        employee_id: employeeId,
+        effective_from: effectiveFrom,
+        base_salary: parseFloat(vals.base_salary) || 0,
+        increment_carried: parseFloat(vals.increment_carried) || 0,
+        increment_current: parseFloat(vals.increment_current) || 0,
+        experience_bonus: parseFloat(vals.experience_bonus) || 0,
+        family_allowance: parseFloat(vals.family_allowance) || 0,
+        stm_allowance: parseFloat(vals.stm_allowance) || 0,
+        reason: reason.trim() || "Salary revision",
+        created_by: session?.user?.email ?? "",
+      });
+      if (e) throw new Error(e.message);
+      onSaved();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSaving(false); }
+  }
+
+  const fields: { key: keyof typeof vals; label: string }[] = [
+    { key: "base_salary", label: "Base salary (commencement)" },
+    { key: "increment_carried", label: "Increment (carried)" },
+    { key: "increment_current", label: "Increment (current year)" },
+    { key: "experience_bonus", label: "Experience bonus" },
+    { key: "family_allowance", label: "Family allowance" },
+    { key: "stm_allowance", label: "STM / allowance" },
+  ];
+  const inputCls = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  const labelCls = "block text-xs font-semibold text-stone-600 mb-1";
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+          <h2 className="text-base font-bold text-stone-800">Add Salary Revision</h2>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          <p className="text-[11px] text-stone-400">Creates a new salary version (keeps full history). Prefilled from the current values.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className={labelCls}>Effective From</label><input type="date" className={inputCls} value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)} /></div>
+            <div><label className={labelCls}>Reason</label><input className={inputCls} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Annual increment 2026" /></div>
+            {fields.map(f => (
+              <div key={f.key}><label className={labelCls}>{f.label}</label>
+                <input type="number" className={inputCls} value={vals[f.key]} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))} /></div>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-2 px-5 py-4 border-t border-stone-200">
+          <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">{saving ? "Saving…" : "Save Revision"}</button>
+          <button onClick={onClose} className="px-5 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">Cancel</button>
+        </div>
       </div>
     </div>
   );

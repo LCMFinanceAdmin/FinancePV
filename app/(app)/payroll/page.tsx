@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent, HandCoins, CalendarClock } from "lucide-react";
+import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent, HandCoins, CalendarClock, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType } from "@/lib/types";
@@ -71,6 +71,8 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [taxRef, setTaxRef] = useState(existing?.employer_tax_ref ?? "");
   const [bankName, setBankName] = useState(existing?.bank_name ?? "");
   const [bankAcct, setBankAcct] = useState(existing?.bank_acct ?? "");
+  const [status, setStatus] = useState(existing?.status ?? "ACTIVE");
+  const [resignedDate, setResignedDate] = useState(existing?.resigned_date ?? "");
 
   // initial salary (create only)
   const [baseSalary, setBaseSalary] = useState("");
@@ -118,6 +120,8 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         employer_tax_ref: taxRef.trim(),
         bank_name: bankName.trim(),
         bank_acct: bankAcct.trim(),
+        status,
+        resigned_date: status === "RESIGNED" ? (resignedDate || null) : null,
       };
 
       const baseAmt = parseFloat(baseSalary) || 0;
@@ -246,6 +250,26 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
               <div><label className={labelCls}>Bank Account</label><input className={inputCls} value={bankAcct} onChange={e => setBankAcct(e.target.value)} /></div>
             </div>
           </div>
+
+          {/* Lifecycle (edit only) */}
+          {isEdit && (
+            <div className="border-t border-stone-100 pt-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Employment Status</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Status</label>
+                  <select className={inputCls} value={status} onChange={e => setStatus(e.target.value as "ACTIVE" | "RESIGNED")}>
+                    <option value="ACTIVE">Active</option>
+                    <option value="RESIGNED">Resigned</option>
+                  </select>
+                </div>
+                {status === "RESIGNED" && (
+                  <div><label className={labelCls}>Resignation Date</label><input type="date" className={inputCls} value={resignedDate ?? ""} onChange={e => setResignedDate(e.target.value)} /></div>
+                )}
+              </div>
+              <p className="text-[11px] text-stone-400 mt-1">Resigned employees are excluded from new payroll runs.</p>
+            </div>
+          )}
 
           {/* Initial salary (create only) */}
           {!isEdit && (
@@ -420,6 +444,12 @@ export default function PayrollPage() {
                 <div className="text-sm font-bold text-stone-700">{formatCurrency(salaryByEmp[e.id] ?? 0)}</div>
                 <div className="text-[10px] text-stone-400">gross / month</div>
               </div>
+              {canEdit && (
+                <button onClick={ev => { ev.preventDefault(); ev.stopPropagation(); setModalEmp(e); setShowModal(true); }}
+                  title="Edit employee" className="shrink-0 p-1.5 rounded-lg text-stone-400 hover:text-[#4a6da7] hover:bg-stone-100 transition-colors">
+                  <Pencil size={14} />
+                </button>
+              )}
               <ChevronRight size={15} className="text-stone-300 shrink-0" />
             </Link>
           ))}
