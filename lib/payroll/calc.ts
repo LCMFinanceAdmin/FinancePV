@@ -79,6 +79,31 @@ export function incrementEffectiveMonth(dateCommenced: string | null): number {
   return joinMonth < 7 ? 1 : 7;
 }
 
+// Agreed salary components that build up the gross.
+export interface SalaryComponents {
+  base_salary: number;
+  stm_allowance: number;
+  experience_bonus: number;
+  family_allowance: number;
+  increment_carried: number;
+  increment_current: number;
+}
+
+// Full gross = base + carried increment + current increment + experience + family + STM.
+export function fullGross(s: SalaryComponents): number {
+  return Number(s.base_salary) + Number(s.increment_carried) + Number(s.increment_current)
+    + Number(s.experience_bonus) + Number(s.family_allowance) + Number(s.stm_allowance);
+}
+
+// Gross for a given month, applying increment timing (current-year increment only
+// from its effective month). The 13th month always uses the full gross.
+export function grossForMonth(s: SalaryComponents, dateCommenced: string | null, month: number, is13th: boolean): number {
+  const full = fullGross(s);
+  if (is13th) return full;
+  const eff = incrementEffectiveMonth(dateCommenced);
+  return month >= eff ? full : full - Number(s.increment_current);
+}
+
 // KWSP contribution-schedule approximation: round wage up to the next RM20 band,
 // apply the rate, then round the contribution up to the next ringgit.
 function epfContribution(gross: number, rate: number): number {

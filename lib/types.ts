@@ -294,6 +294,51 @@ export interface PayrollSalary {
   created_at: string;
 }
 
+export type PayrollRunStatus = "DRAFT" | "FINALIZED" | "PAID";
+export type PayrollVoucherKind = "SALARY" | "EPF" | "SOCSO" | "EIS" | "PCB";
+
+export interface PayrollRun {
+  id: string;
+  year: number;
+  month: number; // 1-12, or 13 = 13th month
+  status: PayrollRunStatus;
+  total_gross: number;
+  total_net: number;
+  total_employer: number;
+  total_lcm: number;
+  created_by: string;
+  finalized_at: string | null;
+  created_at: string;
+}
+
+export interface PayrollLine {
+  id: string;
+  run_id: string;
+  employee_id: string;
+  employee_name: string;
+  gross: number;
+  pcb: number;
+  epf_ee: number; epf_er: number;
+  socso_ee: number; socso_er: number;
+  eis_ee: number; eis_er: number;
+  epl: number;
+  net: number;
+  total_lcm: number;
+  created_at: string;
+}
+
+export interface PayrollVoucher {
+  id: string;
+  run_id: string;
+  kind: PayrollVoucherKind;
+  payee: string;
+  total_amount: number;
+  status: "PENDING" | "PAID";
+  paid_at: string | null;
+  payment_ref: string;
+  created_at: string;
+}
+
 export type LoanStatus = "PENDING" | "ACTIVE" | "SETTLED" | "REJECTED" | "CANCELLED";
 
 export interface EmployeeLoan {

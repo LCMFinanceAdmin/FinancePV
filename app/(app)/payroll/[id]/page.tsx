@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { installmentForMonth } from "@/lib/payroll/loan";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan } from "@/lib/types";
 
@@ -94,13 +94,11 @@ export default function PayrollEmployeePage() {
   // Computed yearly grid: 12 months + 13th month, with increment timing & editable rates.
   // Current-year increment takes effect in Jan (joined before July) or July (joined after July).
   // Persistence with runs arrives in Phase 5.
-  const fullGross = current ? grossOf(current) : 0;
-  const currentIncrement = current ? Number(current.increment_current) : 0;
+  const fullGrossVal = current ? grossOf(current) : 0;
   const effMonth = incrementEffectiveMonth(emp.date_commenced);
-  const grossForMonth = (m: number) => fullGross - currentIncrement + (m >= effMonth ? currentIncrement : 0);
   const eplForMonth = (m: number) => loans.reduce((s, ln) => s + installmentForMonth(ln, year, m), 0);
   const monthLines: CalcLine[] = current ? MONTHS.map((_, i) => calcLine({
-    gross: grossForMonth(i + 1),
+    gross: grossForMonth(current, emp.date_commenced, i + 1, false),
     age: ageAt(emp.dob, year, i + 1),
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
@@ -112,7 +110,7 @@ export default function PayrollEmployeePage() {
   })) : [];
   // Orang Asli are excluded from the 13th month.
   const thirteenth: CalcLine | null = current && !emp.is_orang_asli ? calcLine({
-    gross: fullGross,
+    gross: fullGrossVal,
     age: ageAt(emp.dob, year, 12),
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
