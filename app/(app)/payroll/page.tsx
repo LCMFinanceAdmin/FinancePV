@@ -12,16 +12,38 @@ function postingLabel(e: PayrollEmployee): string {
   return "—";
 }
 
+// Malaysian banks for the Bank Name dropdown (free text still allowed)
+const BANKS = [
+  "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank", "AmBank",
+  "Bank Islam", "Bank Rakyat", "Affin Bank", "Alliance Bank", "Bank Simpanan Nasional (BSN)",
+  "OCBC Bank", "HSBC Bank", "Standard Chartered", "UOB Bank", "Bank Muamalat", "Agrobank", "MBSB Bank",
+];
+
+// Marital-status options encode spouse-working for the Married variants.
+const MARITAL_OPTIONS: { value: string; marital: string; spouseWorking: boolean }[] = [
+  { value: "Single", marital: "Single", spouseWorking: false },
+  { value: "Married (spouse working)", marital: "Married", spouseWorking: true },
+  { value: "Married (spouse not working)", marital: "Married", spouseWorking: false },
+  { value: "Divorced", marital: "Divorced", spouseWorking: false },
+  { value: "Widow / Widower", marital: "Widow / Widower", spouseWorking: false },
+];
+function maritalValueOf(marital: string, spouseWorking: boolean): string {
+  if (marital === "Married") return spouseWorking ? "Married (spouse working)" : "Married (spouse not working)";
+  const found = MARITAL_OPTIONS.find(o => o.marital === marital);
+  return found?.value ?? "";
+}
+
 // ─── Add / Edit employee modal ──────────────────────────────────────────────
 
 interface EmpModalProps {
   user: UserProfile;
   existing: PayrollEmployee | null;
+  departments: string[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
+function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpModalProps) {
   const supabase = createClient();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -33,18 +55,19 @@ function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
   const [designation, setDesignation] = useState(existing?.designation ?? "");
   const [employmentType, setEmploymentType] = useState<EmploymentType>(existing?.employment_type ?? "PERMANENT");
   const [isPastor, setIsPastor] = useState(existing?.is_pastor ?? false);
+  const [isStaff, setIsStaff] = useState(existing?.is_staff ?? false);
   const [priorExp, setPriorExp] = useState(String(existing?.prior_experience_years ?? 0));
   const [isOrangAsli, setIsOrangAsli] = useState(existing?.is_orang_asli ?? false);
   const [dateCommenced, setDateCommenced] = useState(existing?.date_commenced ?? "");
   const [postingType, setPostingType] = useState<PostingType>(existing?.posting_type ?? "OFFICE");
   const [churchName, setChurchName] = useState(existing?.church_name ?? "");
   const [department, setDepartment] = useState(existing?.department ?? "");
-  const [marital, setMarital] = useState(existing?.marital_status ?? "");
-  const [spouseWorking, setSpouseWorking] = useState(existing?.spouse_working ?? false);
+  const [maritalValue, setMaritalValue] = useState(maritalValueOf(existing?.marital_status ?? "", existing?.spouse_working ?? false));
   const [childrenUnder18, setChildrenUnder18] = useState(String(existing?.children_under_18 ?? 0));
   const [childrenCollege, setChildrenCollege] = useState(String(existing?.children_in_college ?? 0));
   const [voluntaryEpf, setVoluntaryEpf] = useState(String(existing?.epf_voluntary_ee_amount ?? 0));
-  const [revisedNote, setRevisedNote] = useState(existing?.revised_note ?? "");
+  const [epfNo, setEpfNo] = useState(existing?.epf_no ?? "");
+  const [tin, setTin] = useState(existing?.tin ?? "");
   const [taxRef, setTaxRef] = useState(existing?.employer_tax_ref ?? "");
   const [bankName, setBankName] = useState(existing?.bank_name ?? "");
   const [bankAcct, setBankAcct] = useState(existing?.bank_acct ?? "");
@@ -63,6 +86,7 @@ function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
     setError("");
     setSaving(true);
     try {
+      const maritalOpt = MARITAL_OPTIONS.find(o => o.value === maritalValue);
       const payload = {
         full_name: fullName.trim(),
         ic_no: icNo.trim(),
@@ -70,18 +94,20 @@ function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
         designation: designation.trim(),
         employment_type: employmentType,
         is_pastor: isPastor,
+        is_staff: isStaff,
         prior_experience_years: parseInt(priorExp) || 0,
         is_orang_asli: isOrangAsli,
         date_commenced: dateCommenced || null,
         posting_type: postingType,
         church_name: postingType === "CHURCH" ? churchName.trim() : "",
         department: postingType === "OFFICE" ? department.trim() : "",
-        marital_status: marital.trim(),
-        spouse_working: spouseWorking,
+        marital_status: maritalOpt?.marital ?? "",
+        spouse_working: maritalOpt?.spouseWorking ?? false,
         children_under_18: parseInt(childrenUnder18) || 0,
         children_in_college: parseInt(childrenCollege) || 0,
         epf_voluntary_ee_amount: parseFloat(voluntaryEpf) || 0,
-        revised_note: revisedNote.trim(),
+        epf_no: epfNo.trim(),
+        tin: tin.trim(),
         employer_tax_ref: taxRef.trim(),
         bank_name: bankName.trim(),
         bank_acct: bankAcct.trim(),
@@ -145,8 +171,9 @@ function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
                 <option value="CONTRACT">Contract</option>
               </select>
             </div>
-            <div className="flex items-end gap-4 pb-1">
+            <div className="flex items-end gap-4 pb-1 flex-wrap">
               <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isPastor} onChange={e => setIsPastor(e.target.checked)} /> Pastor</label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isStaff} onChange={e => setIsStaff(e.target.checked)} /> Staff</label>
               <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isOrangAsli} onChange={e => setIsOrangAsli(e.target.checked)} /> Orang Asli</label>
             </div>
             {isPastor && (
@@ -167,7 +194,13 @@ function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
                 </select>
               </div>
               {postingType === "CHURCH" && <div><label className={labelCls}>Church</label><input className={inputCls} value={churchName} onChange={e => setChurchName(e.target.value)} /></div>}
-              {postingType === "OFFICE" && <div><label className={labelCls}>Department</label><input className={inputCls} value={department} onChange={e => setDepartment(e.target.value)} /></div>}
+              {postingType === "OFFICE" && (
+                <div>
+                  <label className={labelCls}>Department</label>
+                  <input className={inputCls} list="dept-options" value={department} onChange={e => setDepartment(e.target.value)} placeholder="Select or type…" />
+                  <datalist id="dept-options">{departments.map(d => <option key={d} value={d} />)}</datalist>
+                </div>
+              )}
             </div>
           </div>
 
@@ -175,8 +208,14 @@ function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
           <div className="border-t border-stone-100 pt-3">
             <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Tax / LHDN</p>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className={labelCls}>Marital Status</label><input className={inputCls} value={marital} onChange={e => setMarital(e.target.value)} placeholder="Single / Married" /></div>
-              <div className="flex items-end pb-2"><label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={spouseWorking} onChange={e => setSpouseWorking(e.target.checked)} /> Spouse working</label></div>
+              <div>
+                <label className={labelCls}>Marital Status</label>
+                <select className={inputCls} value={maritalValue} onChange={e => setMaritalValue(e.target.value)}>
+                  <option value="">—</option>
+                  {MARITAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.value}</option>)}
+                </select>
+              </div>
+              <div /> {/* spacer */}
               <div><label className={labelCls}>Children under 18</label><input type="number" className={inputCls} value={childrenUnder18} onChange={e => setChildrenUnder18(e.target.value)} /></div>
               <div><label className={labelCls}>Children in college</label><input type="number" className={inputCls} value={childrenCollege} onChange={e => setChildrenCollege(e.target.value)} /></div>
             </div>
@@ -184,12 +223,17 @@ function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
 
           {/* EPF / bank */}
           <div className="border-t border-stone-100 pt-3">
-            <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">EPF & Payout</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">EPF, Tax & Payout</p>
             <div className="grid grid-cols-2 gap-3">
+              <div><label className={labelCls}>EPF No.</label><input className={inputCls} value={epfNo} onChange={e => setEpfNo(e.target.value)} /></div>
               <div><label className={labelCls}>Voluntary EPF (RM, fixed)</label><input type="number" className={inputCls} value={voluntaryEpf} onChange={e => setVoluntaryEpf(e.target.value)} /></div>
-              <div><label className={labelCls}>Revised note</label><input className={inputCls} value={revisedNote} onChange={e => setRevisedNote(e.target.value)} placeholder="e.g. 1 JAN 2013 (EPF 13% + 3%)" /></div>
+              <div><label className={labelCls}>TIN (Tax)</label><input className={inputCls} value={tin} onChange={e => setTin(e.target.value)} placeholder="Tax identification no." /></div>
               <div><label className={labelCls}>Employer Tax Ref</label><input className={inputCls} value={taxRef} onChange={e => setTaxRef(e.target.value)} /></div>
-              <div><label className={labelCls}>Bank Name</label><input className={inputCls} value={bankName} onChange={e => setBankName(e.target.value)} /></div>
+              <div>
+                <label className={labelCls}>Bank Name</label>
+                <input className={inputCls} list="bank-options" value={bankName} onChange={e => setBankName(e.target.value)} placeholder="Select or type…" />
+                <datalist id="bank-options">{BANKS.map(b => <option key={b} value={b} />)}</datalist>
+              </div>
               <div><label className={labelCls}>Bank Account</label><input className={inputCls} value={bankAcct} onChange={e => setBankAcct(e.target.value)} /></div>
             </div>
           </div>
@@ -200,7 +244,7 @@ function EmployeeModal({ user, existing, onClose, onSaved }: EmpModalProps) {
               <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Initial Salary Components</p>
               <div className="grid grid-cols-3 gap-3">
                 <div><label className={labelCls}>Base Salary</label><input type="number" className={inputCls} value={baseSalary} onChange={e => setBaseSalary(e.target.value)} /></div>
-                <div><label className={labelCls}>STM / Allowance</label><input type="number" className={inputCls} value={stm} onChange={e => setStm(e.target.value)} /></div>
+                <div><label className={labelCls}>STM / Allowance <span className="font-normal text-stone-400">(if applicable)</span></label><input type="number" className={inputCls} value={stm} onChange={e => setStm(e.target.value)} /></div>
                 <div><label className={labelCls}>Experience Bonus</label><input type="number" className={inputCls} value={experienceBonus} onChange={e => setExperienceBonus(e.target.value)} /></div>
                 <div><label className={labelCls}>Increment (carried)</label><input type="number" className={inputCls} value={incrementCarried} onChange={e => setIncrementCarried(e.target.value)} /></div>
                 <div><label className={labelCls}>Increment (current)</label><input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} /></div>
@@ -355,6 +399,7 @@ export default function PayrollPage() {
 
       {showModal && user && (
         <EmployeeModal user={user} existing={modalEmp}
+          departments={[...new Set(employees.map(e => e.department).filter(Boolean))].sort()}
           onClose={() => setShowModal(false)}
           onSaved={() => { setShowModal(false); loadEmployees(); }} />
       )}

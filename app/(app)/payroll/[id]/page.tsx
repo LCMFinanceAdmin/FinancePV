@@ -87,6 +87,7 @@ export default function PayrollEmployeePage() {
           </div>
           <div className="flex items-center gap-2">
             {emp.is_pastor && <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">Pastor</span>}
+            {emp.is_staff && <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-medium">Staff</span>}
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${emp.employment_type === "CONTRACT" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{emp.employment_type === "CONTRACT" ? "Contract" : "Permanent"}</span>
             {emp.is_orang_asli && <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">Orang Asli</span>}
             {emp.status === "RESIGNED" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Resigned {fmtDate(emp.resigned_date)}</span>}
@@ -100,10 +101,11 @@ export default function PayrollEmployeePage() {
           <Field label="Posting" value={`${emp.posting_type === "CHURCH" ? "Church" : emp.posting_type === "OFFICE" ? "Office" : "Other"} — ${posting || "—"}`} />
           <Field label="Marital Status" value={`${emp.marital_status || "—"}${emp.marital_status ? (emp.spouse_working ? " · spouse working" : " · spouse not working") : ""}`} />
           <Field label="Children (<18 / college)" value={`${emp.children_under_18} / ${emp.children_in_college}`} />
+          <Field label="EPF No." value={emp.epf_no || "—"} />
           <Field label="Voluntary EPF" value={emp.epf_voluntary_ee_amount ? formatCurrency(emp.epf_voluntary_ee_amount) : "—"} />
+          <Field label="TIN (Tax)" value={emp.tin || "—"} />
           <Field label="Employer Tax Ref" value={emp.employer_tax_ref || "—"} />
           <Field label="Bank" value={emp.bank_name ? `${emp.bank_name} · ${emp.bank_acct}` : "—"} />
-          {emp.revised_note && <Field label="Revised" value={emp.revised_note} />}
         </div>
       </div>
 

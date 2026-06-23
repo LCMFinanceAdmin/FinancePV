@@ -242,6 +242,7 @@ export interface PayrollEmployee {
   designation: string;
   employment_type: EmploymentType;
   is_pastor: boolean;
+  is_staff: boolean;
   prior_experience_years: number;
   is_orang_asli: boolean;
   date_commenced: string | null;
@@ -253,6 +254,8 @@ export interface PayrollEmployee {
   children_under_18: number;
   children_in_college: number;
   epf_voluntary_ee_amount: number;
+  epf_no: string;
+  tin: string;
   revised_note: string;
   employer_tax_ref: string;
   bank_name: string;
