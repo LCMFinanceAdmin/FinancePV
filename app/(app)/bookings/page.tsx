@@ -158,6 +158,7 @@ function NewBookingModal({ user, onClose, onSaved }: NewBookingModalProps) {
   const [purpose, setPurpose]       = useState("");
   const [notes, setNotes]           = useState("");
   const [internalNotes, setInternal] = useState("");
+  const [files, setFiles]           = useState<File[]>([]);
 
   // Line items
   function defaultItem(tier: PricingTier): BookingItem {
@@ -198,6 +199,16 @@ function NewBookingModal({ user, onClose, onSaved }: NewBookingModalProps) {
     setError("");
     setSaving(true);
     try {
+      // Upload any scanned forms first.
+      const attachments: string[] = [];
+      for (const f of files) {
+        const path = `${Date.now()}-${f.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+        const { error: upErr } = await supabase.storage.from("booking-forms").upload(path, f);
+        if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+        const { data: { publicUrl } } = supabase.storage.from("booking-forms").getPublicUrl(path);
+        attachments.push(publicUrl);
+      }
+
       const { data: bkNo } = await supabase.rpc("next_booking_no");
       const { error: e } = await supabase.from("facility_bookings").insert({
         booking_no:    bkNo,
@@ -216,6 +227,7 @@ function NewBookingModal({ user, onClose, onSaved }: NewBookingModalProps) {
         purpose:       purpose.trim(),
         notes:         notes.trim(),
         internal_notes: internalNotes.trim(),
+        attachments,
         status:        "ENQUIRY",
         created_by:    user.email,
       });
@@ -355,6 +367,25 @@ function NewBookingModal({ user, onClose, onSaved }: NewBookingModalProps) {
                 <textarea rows={2} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none" value={internalNotes} onChange={e => setInternal(e.target.value)} />
               </div>
             </div>
+          </section>
+
+          {/* Signed/stamped form */}
+          <section>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-1">Scanned Booking Form</h3>
+            <p className="text-xs text-stone-400 mb-2">Upload the form signed by the applicant&apos;s pastor and bearing the church office stamp (PDF or image).</p>
+            <input type="file" multiple accept="image/*,application/pdf"
+              onChange={e => setFiles(Array.from(e.target.files ?? []))}
+              className="block w-full text-sm text-stone-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#4a6da7]/10 file:text-[#4a6da7] hover:file:bg-[#4a6da7]/20" />
+            {files.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {files.map((f, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs text-stone-600">
+                    <FileText size={12} className="text-stone-400" /> {f.name}
+                    <button onClick={() => setFiles(fs => fs.filter((_, idx) => idx !== i))} className="text-stone-300 hover:text-red-500"><XCircle size={12} /></button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           {error && (
@@ -563,6 +594,21 @@ function BookingCard({ booking, user, onRefresh }: CardProps) {
 
             {booking.notes && (
               <div className="text-sm"><span className="text-stone-400 text-xs">Notes</span><div className="text-stone-600">{booking.notes}</div></div>
+            )}
+
+            {/* Scanned form attachments */}
+            {booking.attachments?.length > 0 && (
+              <div className="text-sm">
+                <span className="text-stone-400 text-xs">Scanned Form (signed &amp; stamped)</span>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {booking.attachments.map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-[#4a6da7] hover:underline border border-stone-200 rounded-lg px-2 py-1">
+                      <FileText size={12} /> Form {i + 1}
+                    </a>
+                  ))}
+                </div>
+              </div>
             )}
 
             {/* Actions */}

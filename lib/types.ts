@@ -205,6 +205,7 @@ export interface FacilityBooking {
   purpose: string;
   notes: string;
   internal_notes: string;
+  attachments: string[];
   created_by: string;
   created_at: string;
   updated_at: string;
