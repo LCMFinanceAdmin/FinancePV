@@ -76,10 +76,17 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [baseSalary, setBaseSalary] = useState("");
   const [stm, setStm] = useState("");
   const [experienceBonus, setExperienceBonus] = useState("");
+  const [familyAllowance, setFamilyAllowance] = useState("");
   const [incrementCarried, setIncrementCarried] = useState("");
   const [incrementCurrent, setIncrementCurrent] = useState("");
 
   const isEdit = !!existing;
+
+  // Family allowance: pastors with children & non-working spouse — RM300, or RM1000 for Bishop.
+  const hasChildren = (parseInt(childrenUnder18) || 0) + (parseInt(childrenCollege) || 0) > 0;
+  const spouseNotWorking = !!maritalValue && !MARITAL_OPTIONS.find(o => o.value === maritalValue)?.spouseWorking;
+  const suggestedFamily = (isPastor && hasChildren && spouseNotWorking)
+    ? (/bishop/i.test(designation) ? 1000 : 300) : 0;
 
   async function save() {
     if (!fullName.trim()) { setError("Employee name is required."); return; }
@@ -113,6 +120,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         bank_acct: bankAcct.trim(),
       };
 
+      const baseAmt = parseFloat(baseSalary) || 0;
       if (isEdit) {
         const { error: e } = await supabase.from("payroll_employees")
           .update({ ...payload, updated_at: new Date().toISOString() }).eq("id", existing!.id);
@@ -120,16 +128,17 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
       } else {
         const { data: empNoRow } = await supabase.rpc("next_emp_no");
         const { data: created, error: e } = await supabase.from("payroll_employees")
-          .insert({ ...payload, emp_no: empNoRow ?? `EMP-${Date.now()}`, created_by: user.email })
+          .insert({ ...payload, commencement_base: baseAmt, emp_no: empNoRow ?? `EMP-${Date.now()}`, created_by: user.email })
           .select("id").single();
         if (e) throw new Error(e.message);
         // seed the initial salary version
         await supabase.from("payroll_salary").insert({
           employee_id: created!.id,
           effective_from: dateCommenced || new Date().toISOString().slice(0, 10),
-          base_salary: parseFloat(baseSalary) || 0,
+          base_salary: baseAmt,
           stm_allowance: parseFloat(stm) || 0,
           experience_bonus: parseFloat(experienceBonus) || 0,
+          family_allowance: parseFloat(familyAllowance) || suggestedFamily,
           increment_carried: parseFloat(incrementCarried) || 0,
           increment_current: parseFloat(incrementCurrent) || 0,
           reason: "Initial salary",
@@ -241,13 +250,22 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           {/* Initial salary (create only) */}
           {!isEdit && (
             <div className="border-t border-stone-100 pt-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Initial Salary Components</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Salary Components</p>
+              <p className="text-[11px] text-stone-400 mb-2">Base = original salary at commencement. Increments accumulate on top; gross = base + increments + experience + family + STM.</p>
               <div className="grid grid-cols-3 gap-3">
-                <div><label className={labelCls}>Base Salary</label><input type="number" className={inputCls} value={baseSalary} onChange={e => setBaseSalary(e.target.value)} /></div>
+                <div><label className={labelCls}>Base Salary <span className="font-normal text-stone-400">(at commencement)</span></label><input type="number" className={inputCls} value={baseSalary} onChange={e => setBaseSalary(e.target.value)} /></div>
+                <div><label className={labelCls}>Increment (carried, since commencement)</label><input type="number" className={inputCls} value={incrementCarried} onChange={e => setIncrementCarried(e.target.value)} /></div>
+                <div><label className={labelCls}>Increment (current year)</label><input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} /></div>
+                <div><label className={labelCls}>Experience Bonus <span className="font-normal text-stone-400">(pastor 5-yr)</span></label><input type="number" className={inputCls} value={experienceBonus} onChange={e => setExperienceBonus(e.target.value)} /></div>
+                <div>
+                  <label className={labelCls}>Family Allowance</label>
+                  <input type="number" className={inputCls} value={familyAllowance} onChange={e => setFamilyAllowance(e.target.value)} placeholder={suggestedFamily ? String(suggestedFamily) : "0"} />
+                  {suggestedFamily > 0 && (!familyAllowance || parseFloat(familyAllowance) !== suggestedFamily) && (
+                    <button type="button" onClick={() => setFamilyAllowance(String(suggestedFamily))}
+                      className="mt-1 text-[10px] text-[#4a6da7] hover:underline">Apply suggested RM{suggestedFamily}</button>
+                  )}
+                </div>
                 <div><label className={labelCls}>STM / Allowance <span className="font-normal text-stone-400">(if applicable)</span></label><input type="number" className={inputCls} value={stm} onChange={e => setStm(e.target.value)} /></div>
-                <div><label className={labelCls}>Experience Bonus</label><input type="number" className={inputCls} value={experienceBonus} onChange={e => setExperienceBonus(e.target.value)} /></div>
-                <div><label className={labelCls}>Increment (carried)</label><input type="number" className={inputCls} value={incrementCarried} onChange={e => setIncrementCarried(e.target.value)} /></div>
-                <div><label className={labelCls}>Increment (current)</label><input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} /></div>
               </div>
             </div>
           )}
@@ -305,14 +323,14 @@ export default function PayrollPage() {
     setEmployees(list);
     // latest salary per employee → gross preview
     const { data: sal } = await supabase.from("payroll_salary")
-      .select("employee_id,base_salary,stm_allowance,experience_bonus,increment_carried,increment_current,effective_from")
+      .select("employee_id,base_salary,stm_allowance,experience_bonus,family_allowance,increment_carried,increment_current,effective_from")
       .order("effective_from", { ascending: false });
     const seen: Record<string, number> = {};
     for (const s of (sal as Record<string, number | string>[]) ?? []) {
       const eid = s.employee_id as string;
       if (eid in seen) continue;
-      seen[eid] = (Number(s.increment_carried) + Number(s.increment_current) + Number(s.experience_bonus)
-        + Number(s.base_salary) + Number(s.stm_allowance));
+      seen[eid] = (Number(s.base_salary) + Number(s.increment_carried) + Number(s.increment_current)
+        + Number(s.experience_bonus) + Number(s.family_allowance) + Number(s.stm_allowance));
     }
     setSalaryByEmp(seen);
     setLoading(false);

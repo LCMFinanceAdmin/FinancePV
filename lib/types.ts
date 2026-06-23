@@ -246,6 +246,7 @@ export interface PayrollEmployee {
   prior_experience_years: number;
   is_orang_asli: boolean;
   date_commenced: string | null;
+  commencement_base: number;
   posting_type: PostingType;
   church_name: string;
   department: string;
@@ -274,6 +275,7 @@ export interface PayrollSalary {
   base_salary: number;
   stm_allowance: number;
   experience_bonus: number;
+  family_allowance: number;
   increment_carried: number;
   increment_current: number;
   reason: string;

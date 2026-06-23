@@ -37,15 +37,16 @@ function yearsOfService(commenced: string | null): string {
   return `${yrs} year${yrs !== 1 ? "s" : ""}`;
 }
 function grossOf(s: PayrollSalary): number {
-  return Number(s.increment_carried) + Number(s.increment_current) + Number(s.experience_bonus)
-    + Number(s.base_salary) + Number(s.stm_allowance);
+  return Number(s.base_salary) + Number(s.increment_carried) + Number(s.increment_current)
+    + Number(s.experience_bonus) + Number(s.family_allowance) + Number(s.stm_allowance);
 }
 
 const COMPONENTS: { key: keyof PayrollSalary; label: string }[] = [
+  { key: "base_salary", label: "Base salary (commencement)" },
   { key: "increment_carried", label: "Increment (carried)" },
   { key: "increment_current", label: "Increment (current)" },
   { key: "experience_bonus", label: "Experience bonus" },
-  { key: "base_salary", label: "Base salary" },
+  { key: "family_allowance", label: "Family allowance" },
   { key: "stm_allowance", label: "STM / allowance" },
 ];
 
@@ -131,6 +132,7 @@ export default function PayrollEmployeePage() {
           <Field label="I/C No" value={emp.ic_no || "—"} />
           <Field label="Date of Birth // Age" value={`${fmtDate(emp.dob)} // ${ageFrom(emp.dob)}`} />
           <Field label="Commenced // Service" value={`${fmtDate(emp.date_commenced)} // ${yearsOfService(emp.date_commenced)}`} />
+          <Field label="Original base (commencement)" value={emp.commencement_base ? formatCurrency(emp.commencement_base) : "—"} />
           <Field label="Posting" value={`${emp.posting_type === "CHURCH" ? "Church" : emp.posting_type === "OFFICE" ? "Office" : "Other"} — ${posting || "—"}`} />
           <Field label="Marital Status" value={`${emp.marital_status || "—"}${emp.marital_status ? (emp.spouse_working ? " · spouse working" : " · spouse not working") : ""}`} />
           <Field label="Children (<18 / college)" value={`${emp.children_under_18} / ${emp.children_in_college}`} />
