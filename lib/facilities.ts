@@ -166,3 +166,28 @@ export function getRate(facility: FacilityDef, tier: PricingTier, isConcurrent =
 export function formatRate(amount: number): string {
   return amount === 0 ? "FOC" : `RM ${amount.toLocaleString("en-MY", { minimumFractionDigits: 2 })}`;
 }
+
+// Editable rate overrides (from the facility_rates table), keyed by facility id.
+export interface RateOverride {
+  facility_id: string;
+  rates?: Partial<Record<PricingTier, number>>;
+  concurrent_rates?: Partial<Record<PricingTier, number>> | null;
+}
+
+// Merge DB rate overrides onto the hardcoded defaults, returning an effective
+// facility list. Components keep calling getRate(def, …) unchanged.
+export function applyRateOverrides(overrides: RateOverride[]): FacilityDef[] {
+  if (!overrides?.length) return FACILITIES;
+  const byId = new Map(overrides.map(o => [o.facility_id, o]));
+  return FACILITIES.map(f => {
+    const o = byId.get(f.id);
+    if (!o) return f;
+    return {
+      ...f,
+      rates: { ...f.rates, ...(o.rates ?? {}) },
+      concurrentRates: o.concurrent_rates
+        ? { ...(f.concurrentRates ?? f.rates), ...o.concurrent_rates }
+        : f.concurrentRates,
+    };
+  });
+}

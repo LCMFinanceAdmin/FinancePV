@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, CheckCircle2, AlertCircle, FileText, XCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { FACILITIES, TIER_LABELS, getRate, formatRate, type PricingTier } from "@/lib/facilities";
+import { FACILITIES, TIER_LABELS, getRate, formatRate, applyRateOverrides, type PricingTier, type FacilityDef, type RateOverride } from "@/lib/facilities";
 import type { BookingItem } from "@/lib/types";
 
 interface BookedRange { facility_id: string; start_date: string; end_date: string }
@@ -33,8 +33,10 @@ export default function PublicBookingPage() {
   const [error, setError] = useState("");
   const [done, setDone] = useState<string | null>(null);
 
+  const [facilities, setFacilities] = useState<FacilityDef[]>(FACILITIES);
+
   function defaultItem(tier: PricingTier): BookingItem {
-    const def = FACILITIES[0];
+    const def = facilities[0];
     const rate = getRate(def, tier);
     return { facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel, sessions: 1, rate_per_session: rate, is_concurrent: false, subtotal: rate };
   }
@@ -42,20 +44,25 @@ export default function PublicBookingPage() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.rpc("public_booked_ranges");
-      setBooked((data as BookedRange[]) ?? []);
+      const [{ data: ranges }, { data: rates }] = await Promise.all([
+        supabase.rpc("public_booked_ranges"),
+        supabase.from("facility_rates").select("*"),
+      ]);
+      setBooked((ranges as BookedRange[]) ?? []);
+      setFacilities(applyRateOverrides((rates as RateOverride[]) ?? []));
     })();
   }, [supabase]);
 
-  // recalc rates when tier changes
+  // recalc rates when tier or rates change
   useEffect(() => {
     setItems(prev => prev.map(it => {
-      const def = FACILITIES.find(f => f.id === it.facility_id);
+      const def = facilities.find(f => f.id === it.facility_id);
       if (!def) return it;
       const rate = getRate(def, bookerType, it.is_concurrent);
       return { ...it, rate_per_session: rate, subtotal: rate * it.sessions };
     }));
-  }, [bookerType]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookerType, facilities]);
 
   const total = items.reduce((s, i) => s + i.subtotal, 0);
   const rangeEnd = endDate || startDate;
@@ -69,7 +76,7 @@ export default function PublicBookingPage() {
     setItems(prev => prev.map((it, i) => {
       if (i !== idx) return it;
       const next = { ...it, ...patch };
-      const def = FACILITIES.find(f => f.id === next.facility_id);
+      const def = facilities.find(f => f.id === next.facility_id);
       const rate = def ? getRate(def, bookerType, next.is_concurrent) : next.rate_per_session;
       next.rate_per_session = rate; next.subtotal = rate * next.sessions;
       return next;
@@ -186,8 +193,8 @@ export default function PublicBookingPage() {
                   <div key={idx}>
                     <div className="flex flex-wrap items-center gap-2">
                       <select className="flex-1 min-w-[180px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]" value={it.facility_id}
-                        onChange={e => { const def = FACILITIES.find(f => f.id === e.target.value)!; setItem(idx, { facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel, is_concurrent: false }); }}>
-                        {FACILITIES.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        onChange={e => { const def = facilities.find(f => f.id === e.target.value)!; setItem(idx, { facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel, is_concurrent: false }); }}>
+                        {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
                       <input type="number" min={1} className="w-16 border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]" value={it.sessions}
                         onChange={e => setItem(idx, { sessions: Math.max(1, parseInt(e.target.value) || 1) })} />

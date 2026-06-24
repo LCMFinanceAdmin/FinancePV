@@ -2,13 +2,13 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, ChevronDown, ChevronUp, Trash2, CheckCircle,
-  FileText, DollarSign, XCircle, AlertCircle, Share2,
+  FileText, DollarSign, XCircle, AlertCircle, Share2, Percent,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile, FacilityBooking, BookingItem } from "@/lib/types";
 import {
-  FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate,
-  type PricingTier,
+  FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate, applyRateOverrides,
+  type PricingTier, type FacilityDef, type RateOverride,
 } from "@/lib/facilities";
 import { ReceiptPdfButton } from "@/components/income/receipt-pdf";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
@@ -48,12 +48,13 @@ function fmtDate(s: string | null | undefined) {
 interface LineRowProps {
   item: BookingItem;
   tier: PricingTier;
+  facilities: FacilityDef[];
   onChange: (item: BookingItem) => void;
   onRemove: () => void;
 }
 
-function LineRow({ item, tier, onChange, onRemove }: LineRowProps) {
-  const facilityDef = FACILITIES.find(f => f.id === item.facility_id);
+function LineRow({ item, tier, facilities, onChange, onRemove }: LineRowProps) {
+  const facilityDef = facilities.find(f => f.id === item.facility_id);
   const hasDiscount = !!facilityDef?.concurrentRates;
 
   function update(patch: Partial<BookingItem>) {
@@ -73,7 +74,7 @@ function LineRow({ item, tier, onChange, onRemove }: LineRowProps) {
         className="flex-1 min-w-[180px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
         value={item.facility_id}
         onChange={e => {
-          const def = FACILITIES.find(f => f.id === e.target.value);
+          const def = facilities.find(f => f.id === e.target.value);
           if (!def) return;
           const rate = getRate(def, tier, item.is_concurrent);
           onChange({
@@ -87,7 +88,7 @@ function LineRow({ item, tier, onChange, onRemove }: LineRowProps) {
           });
         }}
       >
-        {FACILITIES.map(f => (
+        {facilities.map(f => (
           <option key={f.id} value={f.id}>{f.name}</option>
         ))}
       </select>
@@ -135,11 +136,12 @@ function LineRow({ item, tier, onChange, onRemove }: LineRowProps) {
 
 interface NewBookingModalProps {
   user: UserProfile;
+  facilities: FacilityDef[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-function NewBookingModal({ user, onClose, onSaved }: NewBookingModalProps) {
+function NewBookingModal({ user, facilities, onClose, onSaved }: NewBookingModalProps) {
   const supabase = createClient();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -164,7 +166,7 @@ function NewBookingModal({ user, onClose, onSaved }: NewBookingModalProps) {
 
   // Line items
   function defaultItem(tier: PricingTier): BookingItem {
-    const def = FACILITIES[0];
+    const def = facilities[0];
     const rate = getRate(def, tier);
     return {
       facility_id: def.id,
@@ -181,11 +183,12 @@ function NewBookingModal({ user, onClose, onSaved }: NewBookingModalProps) {
   // Re-calculate all item rates when tier changes
   useEffect(() => {
     setItems(prev => prev.map(it => {
-      const def = FACILITIES.find(f => f.id === it.facility_id);
+      const def = facilities.find(f => f.id === it.facility_id);
       if (!def) return it;
       const rate = getRate(def, bookerType, it.is_concurrent);
       return { ...it, rate_per_session: rate, subtotal: rate * it.sessions };
     }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookerType]);
 
   const total = items.reduce((s, i) => s + i.subtotal, 0);
@@ -343,6 +346,7 @@ function NewBookingModal({ user, onClose, onSaved }: NewBookingModalProps) {
                   key={idx}
                   item={item}
                   tier={bookerType}
+                  facilities={facilities}
                   onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
                   onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
                 />
@@ -499,10 +503,11 @@ function PayModal({ booking, onClose, onPaid }: PayModalProps) {
 interface CardProps {
   booking: FacilityBooking;
   user: UserProfile;
+  facilities: FacilityDef[];
   onRefresh: () => void;
 }
 
-function BookingCard({ booking, user, onRefresh }: CardProps) {
+function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
   const supabase = createClient();
   const [expanded, setExpanded] = useState(false);
   const [showPay, setShowPay]   = useState(false);
@@ -518,7 +523,7 @@ function BookingCard({ booking, user, onRefresh }: CardProps) {
     if (newType === booking.booker_type) return;
     setReclassifying(true);
     const items = booking.booking_items.map(it => {
-      const def = FACILITIES.find(f => f.id === it.facility_id);
+      const def = facilities.find(f => f.id === it.facility_id);
       const rate = def ? getRate(def, newType, it.is_concurrent) : it.rate_per_session;
       return { ...it, rate_per_session: rate, subtotal: rate * it.sessions };
     });
@@ -537,7 +542,7 @@ function BookingCard({ booking, user, onRefresh }: CardProps) {
     setActing(false);
   }
 
-  const facilities = booking.booking_items.map(it =>
+  const facilityNames = booking.booking_items.map(it =>
     it.facility_name + (it.is_concurrent ? " (concurrent)" : "")
   ).join(", ");
 
@@ -563,7 +568,7 @@ function BookingCard({ booking, user, onRefresh }: CardProps) {
               {booking.event_name || booking.booker_name}
             </div>
             <div className="text-xs text-stone-500 mt-0.5 truncate">
-              {facilities} · {fmtDate(booking.start_date)}
+              {facilityNames} · {fmtDate(booking.start_date)}
               {booking.end_date && booking.end_date !== booking.start_date ? " — " + fmtDate(booking.end_date) : ""}
             </div>
           </div>
@@ -714,6 +719,14 @@ export default function BookingsPage() {
   const [showNew, setShowNew]   = useState(false);
   const [view, setView]         = useState<"list" | "calendar">("list");
   const [copied, setCopied]     = useState(false);
+  const [facilities, setFacilities] = useState<FacilityDef[]>(FACILITIES);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("facility_rates").select("*");
+      setFacilities(applyRateOverrides((data as RateOverride[]) ?? []));
+    })();
+  }, [supabase]);
 
   async function loadUser() {
     const { data: { user: au } } = await supabase.auth.getUser();
@@ -772,6 +785,13 @@ export default function BookingsPage() {
           <p className="text-sm text-stone-500 mt-0.5">Manage venue bookings and facility rentals</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {canCreate && (
+            <a href="/bookings/rates"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 text-stone-600 text-sm font-medium hover:bg-stone-50 transition-colors"
+              title="Set facility rates">
+              <Percent size={15} /> Rates
+            </a>
+          )}
           {canCreate && (
             <button
               onClick={() => { navigator.clipboard?.writeText(`${location.origin}/book`); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
@@ -842,7 +862,7 @@ export default function BookingsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(b => (
-            <BookingCard key={b.id} booking={b} user={user!} onRefresh={loadBookings} />
+            <BookingCard key={b.id} booking={b} user={user!} facilities={facilities} onRefresh={loadBookings} />
           ))}
         </div>
       )}
@@ -867,7 +887,7 @@ export default function BookingsPage() {
               </tr>
             </thead>
             <tbody>
-              {FACILITIES.map(f => (
+              {facilities.map(f => (
                 <tr key={f.id} className="border-b border-stone-50 hover:bg-stone-50">
                   <td className="py-1.5 pr-3 text-stone-700">{f.name}</td>
                   <td className="py-1.5 pr-3 text-stone-400">{f.rateLabel}</td>
@@ -885,6 +905,7 @@ export default function BookingsPage() {
       {showNew && user && (
         <NewBookingModal
           user={user}
+          facilities={facilities}
           onClose={() => setShowNew(false)}
           onSaved={() => { setShowNew(false); loadBookings(); }}
         />
