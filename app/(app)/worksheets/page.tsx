@@ -235,10 +235,34 @@ export default function WorksheetsPage() {
     }
   }
 
-  async function deleteDraft(ws: WorkerWorksheet) {
-    if (!confirm(`Delete draft worksheet ${ws.worksheet_no}?`)) return;
+  async function deleteWorksheet(ws: WorkerWorksheet) {
+    const warn = ws.status === "PV_RAISED"
+      ? `Delete worksheet ${ws.worksheet_no}? This does NOT delete the linked PV — if you still need that PV, leave this worksheet alone.`
+      : `Delete worksheet ${ws.worksheet_no}?`;
+    if (!confirm(warn)) return;
     await supabase.from("worker_worksheets").delete().eq("id", ws.id);
     loadList();
+    if (editing?.id === ws.id) setEditing(null);
+  }
+
+  // Un-link a worksheet from a PV that no longer exists (e.g. it was deleted
+  // elsewhere) or was raised by mistake, so the worksheet can be re-generated.
+  async function retractPV() {
+    if (!editing) return;
+    if (!confirm("Retract this worksheet from its PV? This only un-links the worksheet — if the PV still exists, delete or cancel it separately in My BAM PVs.")) return;
+    setGenerating(true);
+    try {
+      const { data: row, error } = await supabase.from("worker_worksheets")
+        .update({ status: "SIGNED", pv_id: null })
+        .eq("id", editing.id).select("*").single();
+      if (error) throw new Error(error.message);
+      setEditing(row as WorkerWorksheet);
+      showMsg("Worksheet retracted — you can generate the PV again");
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : "Failed to retract", false);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   const inp = "w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
@@ -279,11 +303,9 @@ export default function WorksheetsPage() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <div className="text-sm font-semibold text-stone-700">{formatCurrency(ws.total_amount)}</div>
-                  {ws.status === "DRAFT" && (
-                    <span onClick={e => { e.stopPropagation(); deleteDraft(ws); }} className="p-1.5 text-stone-300 hover:text-red-500 rounded-lg">
-                      <Trash2 size={14} />
-                    </span>
-                  )}
+                  <span onClick={e => { e.stopPropagation(); deleteWorksheet(ws); }} className="p-1.5 text-stone-300 hover:text-red-500 rounded-lg">
+                    <Trash2 size={14} />
+                  </span>
                   <ChevronRight size={16} className="text-stone-300" />
                 </div>
               </button>
@@ -429,7 +451,13 @@ export default function WorksheetsPage() {
             </Button>
           )}
           {editing.status === "PV_RAISED" && (
-            <div className="text-center text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-xl py-2.5">PV already raised from this worksheet.</div>
+            <div className="space-y-2">
+              <div className="text-center text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-xl py-2.5">PV already raised from this worksheet.</div>
+              <Button variant="secondary" loading={generating} className="w-full" onClick={retractPV}>
+                Retract — generate a different PV
+              </Button>
+              <p className="text-xs text-stone-400 text-center">Use this if the PV was deleted (e.g. shows &quot;PV not found&quot;) or was raised by mistake.</p>
+            </div>
           )}
         </div>
       )}
