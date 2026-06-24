@@ -535,6 +535,36 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
     onRefresh();
   }
 
+  // Forward the booking / invoice details to the customer via the BEM's own
+  // email client (no email server configured — opens a prefilled draft to send).
+  function emailCustomer() {
+    const b = booking;
+    const lines = [
+      `Dear ${b.booker_name || "Customer"},`,
+      "",
+      `Thank you for your booking with the Lutheran Church in Malaysia. Here are the details:`,
+      "",
+      `Booking Ref: ${b.booking_no}`,
+      `Event: ${b.event_name || "—"}`,
+      `Date: ${fmtDate(b.start_date)}${b.start_time ? " " + b.start_time : ""}${b.end_date && b.end_date !== b.start_date ? " to " + fmtDate(b.end_date) : ""}${b.end_time ? " " + b.end_time : ""}`,
+      `Category: ${TIER_LABELS[b.booker_type]}`,
+      "",
+      "Facilities:",
+      ...b.booking_items.map(it => `  - ${it.facility_name}${it.is_concurrent ? " (concurrent)" : ""}: ${it.sessions} x ${formatRate(it.rate_per_session)} = ${fmt(it.subtotal)}`),
+      "",
+      `Total: ${fmt(b.total_amount)}`,
+      `Status: ${STATUS_LABELS[b.status]}`,
+      ...(b.status === "PAID" ? [`Receipt No: ${b.receipt_no}`, `Paid on: ${fmtDate(b.payment_date)} (${b.payment_method})`] : []),
+      "",
+      "Kindly reply to this email if you have any questions.",
+      "",
+      "Warm regards,",
+      "LCM Building & Events",
+    ];
+    const subject = `LCM Facility Booking ${b.booking_no} — ${b.event_name || "Booking"}`;
+    window.location.href = `mailto:${encodeURIComponent(b.booker_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
+  }
+
   async function transition(newStatus: FacilityBooking["status"]) {
     setActing(true);
     await supabase.from("facility_bookings").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", booking.id);
@@ -656,6 +686,13 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
             {/* Actions */}
             {canAct && (
               <div className="flex flex-wrap gap-2 pt-1">
+                {booking.booker_email && (
+                  <button onClick={emailCustomer}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-300 text-stone-600 text-xs font-medium hover:bg-stone-50 transition-colors"
+                    title="Forward booking & invoice details to the customer">
+                    <Share2 size={13} /> Email customer
+                  </button>
+                )}
                 {booking.status === "ENQUIRY" && (
                   <>
                     <button onClick={() => transition("CONFIRMED")} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-50">
