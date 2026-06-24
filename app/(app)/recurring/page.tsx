@@ -438,6 +438,7 @@ export default function RecurringPage() {
       pv_ids: allIds, pv_nos: allNos,
       total_amount: totalAmt, pv_count: allIds.length,
       ministry: toInclude[0]?.ministry || "",
+      pv_type: (toInclude[0] as RecurringPV & { pv_type?: string })?.pv_type || "LCM",
     }).select("id").single();
 
     if (bulkRun?.id) {
@@ -498,6 +499,7 @@ export default function RecurringPage() {
       total_amount: totalAmt,
       pv_count: allPvIds.length,
       ministry: entityTab,
+      pv_type: "LCM",
       is_master: true,
       child_group_names: groupNames,
       master_name: masterName.trim(),

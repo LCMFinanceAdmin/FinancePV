@@ -40,6 +40,7 @@ export default function DashboardPage() {
   const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(userRole);
   const isSignatory    = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"].includes(userRole);
   const needsPin       = ["BISHOP", "TREASURER", "SECRETARY"].includes(userRole);
+  const isBamRole      = ["BUILDING_MANAGER", "BAM_COMMITTEE"].includes(userRole);
 
   // GM Claim notifications (Finance Admin only)
   const [gmNotifs, setGmNotifs] = useState<{ id: string; message: string; pv_id: string | null; created_at: string }[]>([]);
@@ -72,38 +73,47 @@ export default function DashboardPage() {
         const user = session?.user;
         if (!user) return;
 
-        const [pvResult, bulkResult, profileResult, pendingResult, approvedResult] = await Promise.all([
-          supabase.from("pvs")
-            .select("id,pv_no,status,amount,payee_name,ministry,submitted_at,purpose,payment_type,approvals")
-            .eq("submitted_by_email", user.email)
-            .order("submitted_at", { ascending: false })
-            .limit(5),
-          supabase.from("bulk_pv_runs")
-            .select("id,group_name,run_by,run_date,pv_count,total_amount,ministry,pv_ids,is_master,child_group_names")
-            .eq("run_by", user.email)
-            .order("run_date", { ascending: false })
-            .limit(5),
-          supabase.from("user_roles").select("full_name,role,ministries").eq("email", user.email).single(),
-          supabase.from("pvs").select("id", { count: "exact", head: true })
-            .in("status", ["PENDING", "PENDING_HEAD", "MINISTRY_VERIFIED", "REVIEWED", "PENDING_SIGNATORY"])
-            .eq("submitted_by_email", user.email),
-          supabase.from("pvs").select("id", { count: "exact", head: true })
-            .in("status", ["APPROVED", "PAID"])
-            .eq("submitted_by_email", user.email),
-        ]);
-
-        const profile = profileResult.data;
-        setPvs(pvResult.data ?? []);
-        const runs: BulkRun[] = bulkResult.data ?? [];
-        setBulkRuns(runs);
+        const { data: profile } = await supabase.from("user_roles").select("full_name,role,ministries").eq("email", user.email).single();
         setFirstName((profile?.full_name ?? user.email ?? "").split(" ")[0]);
         setUserRole(profile?.role ?? "");
         setUserMinistries(profile?.ministries ?? []);
-        setPendingCount(pendingResult.count ?? 0);
-        setApprovedCount(approvedResult.count ?? 0);
 
         const role = profile?.role ?? "";
         const isFinAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role);
+        // BAM (Building/Event Manager + BAM Committee) is its own world — only those roles should
+        // see BAM activity, and they should see nothing but BAM activity, on their dashboard.
+        const isBam = ["BUILDING_MANAGER", "BAM_COMMITTEE"].includes(role);
+
+        function scopePvType<T>(q: T): T {
+          // @ts-expect-error -- shared filter helper across differently-typed query builders
+          return isBam ? q.eq("pv_type", "BAM") : q.neq("pv_type", "BAM");
+        }
+
+        const [pvResult, bulkResult, pendingResult, approvedResult] = await Promise.all([
+          scopePvType(supabase.from("pvs")
+            .select("id,pv_no,status,amount,payee_name,ministry,submitted_at,purpose,payment_type,approvals,pv_type")
+            .eq("submitted_by_email", user.email))
+            .order("submitted_at", { ascending: false })
+            .limit(5),
+          scopePvType(supabase.from("bulk_pv_runs")
+            .select("id,group_name,run_by,run_date,pv_count,total_amount,ministry,pv_ids,is_master,child_group_names,pv_type")
+            .eq("run_by", user.email))
+            .order("run_date", { ascending: false })
+            .limit(5),
+          scopePvType(supabase.from("pvs").select("id", { count: "exact", head: true })
+            .in("status", ["PENDING", "PENDING_HEAD", "MINISTRY_VERIFIED", "REVIEWED", "PENDING_SIGNATORY"])
+            .eq("submitted_by_email", user.email)),
+          scopePvType(supabase.from("pvs").select("id", { count: "exact", head: true })
+            .in("status", ["APPROVED", "PAID"])
+            .eq("submitted_by_email", user.email)),
+        ]);
+
+        setPvs(pvResult.data ?? []);
+        const runs: BulkRun[] = bulkResult.data ?? [];
+        setBulkRuns(runs);
+        setPendingCount(pendingResult.count ?? 0);
+        setApprovedCount(approvedResult.count ?? 0);
+
         const allPvIds = runs.flatMap(r => r.pv_ids ?? []);
         if (runs.length > 0) setExpandedBulk(new Set(runs.map(r => r.id)));
 
