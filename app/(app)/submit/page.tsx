@@ -574,8 +574,13 @@ export default function SubmitPVPage() {
       attachments.forEach(a => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
       setAttachments([]);
       clearApplicantCanvas();
-      // Redirect back to GM Claims if came from a claim, otherwise /my-pvs
-      setTimeout(() => router.push(urlClaimId ? "/gm-claims" : "/my-pvs"), 1500);
+      // Redirect back to GM Claims if came from a claim; the Building/Event
+      // Manager has no access to the generic /my-pvs list, so send him to his
+      // own BAM-scoped page instead. Everyone else lands on /my-pvs.
+      const redirectTo = urlClaimId
+        ? "/gm-claims"
+        : userRole === "BUILDING_MANAGER" ? "/my-bam-pvs" : "/my-pvs";
+      setTimeout(() => router.push(redirectTo), 1500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
