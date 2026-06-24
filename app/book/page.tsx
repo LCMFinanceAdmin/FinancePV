@@ -106,7 +106,7 @@ export default function PublicBookingPage() {
 
   async function submit() {
     if (!bookerName.trim()) { setError("Your name is required."); return; }
-    if (!bookerEmail.trim()) { setError("Your email is required."); return; }
+    if (!bookerEmail.trim() && !bookerPhone.trim()) { setError("Please leave a phone number or email so we can reach you."); return; }
     if (!startDate) { setError("Select a date."); return; }
     if (conflicts.length > 0) { setError("Some facilities are unavailable on the selected dates. Please adjust."); return; }
     setError(""); setSaving(true);
@@ -247,8 +247,9 @@ export default function PublicBookingPage() {
                 </div>
               </div>
               <div className="col-span-2"><label className={label}>Full Name *</label><input className={input} value={bookerName} onChange={e => setBookerName(e.target.value)} /></div>
-              <div><label className={label}>Email *</label><input type="email" className={input} value={bookerEmail} onChange={e => setBookerEmail(e.target.value)} /></div>
-              <div><label className={label}>Phone</label><input className={input} value={bookerPhone} onChange={e => setBookerPhone(e.target.value)} /></div>
+              <div><label className={label}>Phone</label><input type="tel" className={input} value={bookerPhone} onChange={e => setBookerPhone(e.target.value)} placeholder="e.g. 012-345 6789" /></div>
+              <div><label className={label}>Email</label><input type="email" className={input} value={bookerEmail} onChange={e => setBookerEmail(e.target.value)} /></div>
+              <div className="col-span-2 -mt-1"><p className="text-[11px] text-stone-400">Leave a phone number <span className="font-medium">or</span> an email — at least one so we can confirm availability with you.</p></div>
               <div className="col-span-2"><label className={label}>Church / Organisation</label><input className={input} value={bookerOrg} onChange={e => setBookerOrg(e.target.value)} /></div>
             </div>
           </section>
