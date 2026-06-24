@@ -155,6 +155,11 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
   const showApplicantSig = !isFinanceExecPV && !isExcoPV;
   const showExcoSection = true;
 
+  // BAM vouchers: raised by the Building/Event Manager, verified by the BAM Committee.
+  const isBamPV = pv.pv_type === "BAM";
+  const bmApproval = approvals.find(a => a.role === "BUILDING_MANAGER");
+  const committeeApproval = approvals.find(a => a.role === "BAM_COMMITTEE" && a.action === "APPROVED");
+
   // Ref shown in the FOR OFFICE USE ONLY box — Finance Exec can override via office_ref
   const displayRef = pv.office_ref?.trim() || pv.pv_no;
 
@@ -251,8 +256,46 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
           </View>
         </View>
 
+        {/* BAM voucher: raised by Building/Event Manager + verified by BAM Committee */}
+        {isBamPV && (
+          <View style={[s.row, { marginTop: 8, gap: 0 }]}>
+            <View style={[s.border, { flex: 1, padding: "6pt 8pt", borderRight: "none" }]}>
+              <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Payment Raised by:</Text>
+              <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(Building / Event Manager)</Text>
+              {bmApproval?.signature_data ? (
+                <Image src={bmApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
+              ) : (
+                <View style={{ height: 40 }} />
+              )}
+              <View style={[s.borderT, { paddingTop: 3 }]}>
+                <Text style={[s.bold, s.tiny]}>{bmApproval?.name ?? pv.submitted_by ?? ""}</Text>
+                <Text style={s.tiny}>Date: {fmtDate(bmApproval?.timestamp ?? pv.submitted_at)}</Text>
+              </View>
+            </View>
+            <View style={[s.border, { flex: 1, padding: "6pt 8pt" }]}>
+              <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by:</Text>
+              <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(BAM Committee)</Text>
+              {committeeApproval?.signature_data ? (
+                <Image src={committeeApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
+              ) : (
+                <View style={{ height: 40 }} />
+              )}
+              <View style={[s.borderT, { paddingTop: 3 }]}>
+                {committeeApproval ? (
+                  <>
+                    <Text style={[s.bold, s.tiny]}>{committeeApproval.name ?? committeeApproval.email}</Text>
+                    <Text style={s.tiny}>Date: {fmtDate(committeeApproval.timestamp)}</Text>
+                  </>
+                ) : (
+                  <Text style={s.tiny}>Name: _______________________{"   "}Date: _________</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Applicant signature */}
-        {showApplicantSig && (
+        {!isBamPV && showApplicantSig && (
           <View style={[s.border, { marginTop: 8, padding: "6pt 8pt" }]}>
             <Text style={[s.bold, s.tiny, { marginBottom: 3 }]}>{"Applicant's Signature:"}</Text>
             <View style={{ height: 40 }} />
@@ -263,7 +306,7 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
         )}
 
         {/* EXCO / Ministry Head verification */}
-        {showExcoSection && (
+        {!isBamPV && showExcoSection && (
           <View style={[s.border, { marginTop: 6, padding: "6pt 8pt" }]}>
             <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by:</Text>
             <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By EXCO Member / Dept Head in Charge)</Text>
@@ -302,7 +345,7 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
                   role: "FINANCE_ADMIN", email: "", name: pv.finance_verified_by,
                   action: "APPROVED", timestamp: pv.finance_verified_at, remarks: "",
                 } : undefined)}
-                label="Prepared by:"
+                label={isBamPV ? "Reviewed by:" : "Prepared by:"}
                 subtitle="(Finance Executive)"
               />
             </View>

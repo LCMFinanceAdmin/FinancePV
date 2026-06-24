@@ -756,6 +756,13 @@ export default function PVDetailPage() {
   // EXCO verification section shown for all PVs — Finance Exec PVs show it so EXCO can sign
   const showExcoSectionApp = isFinanceExecPV || isExcoPV || pv.head_verified !== "N/A";
 
+  // ── BAM voucher signature chain ────────────────────────────────────────
+  // BAM PVs follow their own route: raised by the Building/Event Manager →
+  // verified by the BAM Committee → reviewed by Finance Executive → GM → signatory.
+  const isBamPV = pv.pv_type === "BAM";
+  const bmApproval = [...approvals].reverse().find(a => a.role === "BUILDING_MANAGER") ?? null;
+  const committeeApproval = [...approvals].reverse().find(a => a.role === "BAM_COMMITTEE" && a.action === "APPROVED") ?? null;
+
   return (
     <div className="min-h-screen bg-stone-100 print:bg-white overflow-x-hidden">
       <style>{`@media print { .voucher-inner { width: auto !important; transform: none !important; } .voucher-clip { height: auto !important; overflow: visible !important; } }`}</style>
@@ -2152,6 +2159,29 @@ export default function PVDetailPage() {
             </table>
 
             {/* ══ ROWS 26–29: Applicant + Approver signatures ══ */}
+            {isBamPV ? (
+              /* BAM voucher: raised by the Building/Event Manager, verified by the BAM Committee */
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
+                <div className="border border-black px-4 py-3">
+                  <SigBlock
+                    title="Payment Raised by:"
+                    role="Building / Event Manager"
+                    approval={bmApproval}
+                    pending={!bmApproval}
+                    savedSigFallback={bmApproval?.email ? approverSigs[bmApproval.email] : undefined}
+                  />
+                </div>
+                <div className="border border-black px-4 py-3">
+                  <SigBlock
+                    title="Verified by:"
+                    role="BAM Committee"
+                    approval={committeeApproval}
+                    pending={!committeeApproval}
+                    savedSigFallback={committeeApproval?.email ? approverSigs[committeeApproval.email] : undefined}
+                  />
+                </div>
+              </div>
+            ) : (
             <div className="mt-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6 text-[13px]">
                 {/* Row 26: Applicant signature — hidden for Finance Executive and EXCO-member PVs */}
@@ -2204,6 +2234,7 @@ export default function PVDetailPage() {
                 )}
               </div>
             </div>
+            )}
 
             {/* ══ ROWS 31–39: Finance Office section ══ */}
             <div className="mt-6 border-t-2 border-t-black border-b-2 border-b-black border-l border-r border-black">
@@ -2219,10 +2250,10 @@ export default function PVDetailPage() {
 
               {/* 3-column sig blocks — equal width */}
               <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black px-0">
-                {/* Prepared by — Finance Executive */}
+                {/* Prepared by — Finance Executive (Reviewed, for BAM, since the BEM prepared it) */}
                 <div className="px-4 py-3">
                   <SigBlock
-                    title="Prepared by:"
+                    title={isBamPV ? "Reviewed by:" : "Prepared by:"}
                     role="Finance Executive"
                     approval={financeApproval}
                     pending={!financeApproval}
