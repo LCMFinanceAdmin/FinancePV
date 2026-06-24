@@ -33,6 +33,9 @@ export default function BamQueuePage() {
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
+  const [committee, setCommittee] = useState<{ email: string; full_name: string }[]>([]);
+  const [newCommitteeEmail, setNewCommitteeEmail] = useState("");
+  const [assigning, setAssigning] = useState(false);
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -63,10 +66,32 @@ export default function BamQueuePage() {
       .order("submitted_at", { ascending: false });
 
     setPvs((data ?? []) as BAMPv[]);
+
+    // Current BAM Committee members (for the assignment panel)
+    const { data: members } = await supabase
+      .from("user_roles").select("email,full_name").eq("role", "BAM_COMMITTEE").order("email");
+    setCommittee((members as { email: string; full_name: string }[]) ?? []);
+
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function assignCommittee(action: "add" | "remove", email: string) {
+    setAssigning(true);
+    try {
+      const { data, error } = await supabase.rpc("assign_bam_committee", { target_email: email, action });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      showToast(action === "add" ? `Assigned ${email} as BAM Committee` : `Removed ${email}`);
+      setNewCommitteeEmail("");
+      load();
+    } catch (err: unknown) {
+      showToast((err as Error).message, false);
+    } finally {
+      setAssigning(false);
+    }
+  }
 
   const isBuildingManager = userRole === "BUILDING_MANAGER";
   const isBamCommittee = userRole === "BAM_COMMITTEE";
@@ -147,6 +172,36 @@ export default function BamQueuePage() {
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.msg}
+        </div>
+      )}
+
+      {/* BAM Committee management — BEM + Finance Executive assign the committee PIC(s) */}
+      {(isBuildingManager || isFinanceAdmin) && (
+        <div className="bg-white border border-stone-200 rounded-xl p-4">
+          <h2 className="text-sm font-bold text-stone-700 mb-1">BAM Committee Members</h2>
+          <p className="text-xs text-stone-400 mb-3">Assign who verifies BAM PVs created by the Building/Event Manager. Use the person&apos;s Google account email.</p>
+          {committee.length > 0 ? (
+            <div className="space-y-1.5 mb-3">
+              {committee.map(m => (
+                <div key={m.email} className="flex items-center gap-2 text-sm">
+                  <span className="flex-1 text-stone-700">{m.full_name && m.full_name !== m.email ? `${m.full_name} · ` : ""}{m.email}</span>
+                  <button onClick={() => assignCommittee("remove", m.email)} disabled={assigning}
+                    className="text-xs text-red-600 hover:underline disabled:opacity-50">Remove</button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-stone-400 mb-3">No BAM Committee members assigned yet.</p>
+          )}
+          <div className="flex items-center gap-2">
+            <input type="email" value={newCommitteeEmail} onChange={e => setNewCommitteeEmail(e.target.value)}
+              placeholder="name@gmail.com"
+              className="flex-1 border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+            <button onClick={() => assignCommittee("add", newCommitteeEmail.trim())} disabled={assigning || !newCommitteeEmail.trim()}
+              className="bg-[#4a6da7] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#3d5c96] disabled:opacity-50 transition-colors">
+              {assigning ? "…" : "Assign"}
+            </button>
+          </div>
         </div>
       )}
 
