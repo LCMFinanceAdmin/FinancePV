@@ -9,11 +9,49 @@ interface SignaturePadProps {
   disabled?: boolean;
 }
 
-export function SignaturePad({ value, onChange, height = 110, disabled = false }: SignaturePadProps) {
+interface Point { x: number; y: number }
+
+export function SignaturePad({ value, onChange, height = 120, disabled = false }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
+  const lastPointRef = useRef<Point | null>(null);
+  const dprRef = useRef(1);
 
-  function getPos(e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) {
+  // Resync the canvas's backing resolution to its actual rendered size × device
+  // pixel ratio, so strokes stay crisp instead of blurry/blocky on touch screens
+  // (and don't go stretched/jagged when the container's width changes).
+  const syncResolution = useCallback(() => {
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    dprRef.current = dpr;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#1a1a2e";
+    if (value) {
+      const img = new window.Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      img.src = value;
+    }
+  }, [value]);
+
+  useEffect(() => {
+    syncResolution();
+    const canvas = canvasRef.current;
+    if (!canvas || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => syncResolution());
+    ro.observe(canvas);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function getPos(e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement): Point {
     const rect = canvas.getBoundingClientRect();
     const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
     const y = "touches" in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
@@ -22,50 +60,62 @@ export function SignaturePad({ value, onChange, height = 110, disabled = false }
 
   const start = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (disabled) return;
+    e.preventDefault();
     drawingRef.current = true;
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext("2d"); if (!ctx) return;
-    const { x, y } = getPos(e, canvas);
-    ctx.beginPath(); ctx.moveTo(x, y);
+    const pos = getPos(e, canvas);
+    lastPointRef.current = pos;
+    // Draw a dot so a single tap still registers as a mark.
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+    ctx.fillStyle = ctx.strokeStyle as string;
+    ctx.fill();
   }, [disabled]);
 
   const move = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!drawingRef.current || disabled) return;
+    e.preventDefault();
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext("2d"); if (!ctx) return;
-    const { x, y } = getPos(e, canvas);
-    ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
-    ctx.lineTo(x, y); ctx.stroke();
-    onChange(canvas.toDataURL("image/png"));
-  }, [disabled, onChange]);
+    const pos = getPos(e, canvas);
+    const last = lastPointRef.current;
+    if (last) {
+      // Quadratic curve through the midpoint of consecutive points smooths out
+      // the jagged, segmented look of plain lineTo strokes — especially
+      // noticeable with the lower, jumpier sampling rate of touch input.
+      const mid = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
+      ctx.beginPath();
+      ctx.moveTo(last.x, last.y);
+      ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
+      ctx.stroke();
+    }
+    lastPointRef.current = pos;
+  }, [disabled]);
 
-  const stop = useCallback(() => { drawingRef.current = false; }, []);
+  const stop = useCallback((e?: React.MouseEvent | React.TouchEvent) => {
+    if (!drawingRef.current) return;
+    e?.preventDefault();
+    drawingRef.current = false;
+    lastPointRef.current = null;
+    const canvas = canvasRef.current; if (!canvas) return;
+    onChange(canvas.toDataURL("image/png"));
+  }, [onChange]);
 
   function clear() {
     if (disabled) return;
     const canvas = canvasRef.current; if (!canvas) return;
-    canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width / dprRef.current, canvas.height / dprRef.current);
     onChange("");
   }
-
-  // Re-draw an existing value (e.g. when reopening a saved worksheet).
-  useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d"); if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!value) return;
-    const img = new window.Image();
-    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    img.src = value;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <div className="space-y-1.5">
       <div className={`border-2 border-dashed rounded-xl overflow-hidden bg-white ${disabled ? "border-stone-200 opacity-60" : "border-stone-300"}`} style={{ touchAction: "none" }}>
-        <canvas ref={canvasRef} width={460} height={height} className={`w-full ${disabled ? "" : "cursor-crosshair"}`}
+        <canvas ref={canvasRef} style={{ height, width: "100%", display: "block" }} className={disabled ? "" : "cursor-crosshair"}
           onMouseDown={start} onMouseMove={move} onMouseUp={stop} onMouseLeave={stop}
-          onTouchStart={start} onTouchMove={move} onTouchEnd={stop} />
+          onTouchStart={start} onTouchMove={move} onTouchEnd={stop} onTouchCancel={stop} />
       </div>
       {!disabled && (
         <button type="button" onClick={clear} className="flex items-center gap-1 text-xs text-stone-400 hover:text-red-500 transition-colors">
