@@ -301,6 +301,10 @@ export default function SubmitPVPage() {
           purpose,
           payee_name: ws.worker_name,
           line_items: [{ description: purpose, amount: ws.total_amount, date: "" }],
+          // The worksheet already carries both the worker's and the BEM's
+          // signatures, so the declaration is already satisfied — don't make
+          // the BEM hunt for a second checkbox at the bottom of the form.
+          sig_applicant_confirm: true,
         }));
         if (ws.pdf_url) {
           setAttachments(prev => [...prev, {
@@ -465,7 +469,7 @@ export default function SubmitPVPage() {
     e.preventDefault();
     setError(""); setSuccess("");
     if (!form.sig_applicant_confirm) { setError("Please confirm the declaration before submitting."); return; }
-    if (isMobile && !applicantSigData) { setError("Please sign the declaration before submitting."); return; }
+    if (isMobile && !applicantSigData && !worksheetBanner) { setError("Please sign the declaration before submitting."); return; }
     if (!form.payee_name.trim()) { setError("Please enter the payee name."); return; }
     if (!form.purpose.trim()) { setError("Please enter the purpose of payment."); return; }
     if (displayAmount <= 0) { setError("Please enter at least one line item with an amount."); return; }
