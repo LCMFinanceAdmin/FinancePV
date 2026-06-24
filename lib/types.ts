@@ -214,6 +214,19 @@ export interface FacilityBooking {
   updated_at: string;
 }
 
+export type FacilityBlockReason = "REHEARSAL" | "EVENT_HOLD" | "MAINTENANCE" | "OTHER";
+
+export interface FacilityBlock {
+  id: string;
+  facility_id: string | null; // null = all facilities / whole venue
+  start_date: string;
+  end_date: string;
+  reason: FacilityBlockReason;
+  notes: string;
+  created_by: string;
+  created_at: string;
+}
+
 export interface IncomeRecord {
   id: string;
   record_no: string;

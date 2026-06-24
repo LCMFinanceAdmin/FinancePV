@@ -6,6 +6,7 @@ import { FACILITIES, TIER_LABELS, getRate, formatRate, applyRateOverrides, type 
 import type { BookingItem } from "@/lib/types";
 
 interface BookedRange { facility_id: string; start_date: string; end_date: string }
+interface BlockedRange { facility_id: string | null; start_date: string; end_date: string }
 
 function fmt(n: number) { return "RM " + n.toLocaleString("en-MY", { minimumFractionDigits: 2 }); }
 
@@ -29,6 +30,7 @@ export default function PublicBookingPage() {
   const [purpose, setPurpose] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [booked, setBooked] = useState<BookedRange[]>([]);
+  const [blocked, setBlocked] = useState<BlockedRange[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<string | null>(null);
@@ -44,12 +46,14 @@ export default function PublicBookingPage() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: ranges }, { data: rates }] = await Promise.all([
+      const [{ data: ranges }, { data: rates }, { data: blocks }] = await Promise.all([
         supabase.rpc("public_booked_ranges"),
         supabase.from("facility_rates").select("*"),
+        supabase.rpc("public_blocked_ranges"),
       ]);
       setBooked((ranges as BookedRange[]) ?? []);
       setFacilities(applyRateOverrides((rates as RateOverride[]) ?? []));
+      setBlocked((blocks as BlockedRange[]) ?? []);
     })();
   }, [supabase]);
 
@@ -67,10 +71,15 @@ export default function PublicBookingPage() {
   const total = items.reduce((s, i) => s + i.subtotal, 0);
   const rangeEnd = endDate || startDate;
 
-  // Which selected facilities clash with an existing booking on the chosen dates?
-  const conflicts = startDate ? items.filter(it =>
-    booked.some(b => b.facility_id === it.facility_id && overlaps(startDate, rangeEnd, b.start_date, b.end_date))
-  ) : [];
+  // A facility is unavailable if it clashes with a booking, or with a block
+  // (a block with no facility blocks the whole venue).
+  function unavailable(facilityId: string): boolean {
+    if (!startDate) return false;
+    if (booked.some(b => b.facility_id === facilityId && overlaps(startDate, rangeEnd, b.start_date, b.end_date))) return true;
+    if (blocked.some(b => (b.facility_id === null || b.facility_id === facilityId) && overlaps(startDate, rangeEnd, b.start_date, b.end_date))) return true;
+    return false;
+  }
+  const conflicts = startDate ? items.filter(it => unavailable(it.facility_id)) : [];
 
   function setItem(idx: number, patch: Partial<BookingItem>) {
     setItems(prev => prev.map((it, i) => {
@@ -188,7 +197,7 @@ export default function PublicBookingPage() {
             </div>
             <div className="space-y-2">
               {items.map((it, idx) => {
-                const clash = startDate && booked.some(b => b.facility_id === it.facility_id && overlaps(startDate, rangeEnd, b.start_date, b.end_date));
+                const clash = unavailable(it.facility_id);
                 return (
                   <div key={idx}>
                     <div className="flex flex-wrap items-center gap-2">

@@ -5,7 +5,7 @@ import {
   FileText, DollarSign, XCircle, AlertCircle, Share2, Percent,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { UserProfile, FacilityBooking, BookingItem } from "@/lib/types";
+import type { UserProfile, FacilityBooking, BookingItem, FacilityBlock, FacilityBlockReason } from "@/lib/types";
 import {
   FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate, applyRateOverrides,
   type PricingTier, type FacilityDef, type RateOverride,
@@ -535,11 +535,10 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
     onRefresh();
   }
 
-  // Forward the booking / invoice details to the customer via the BEM's own
-  // email client (no email server configured — opens a prefilled draft to send).
-  function emailCustomer() {
+  // Build the booking / invoice summary shared by email and WhatsApp.
+  function bookingMessage(): string {
     const b = booking;
-    const lines = [
+    return [
       `Dear ${b.booker_name || "Customer"},`,
       "",
       `Thank you for your booking with the Lutheran Church in Malaysia. Here are the details:`,
@@ -556,13 +555,24 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
       `Status: ${STATUS_LABELS[b.status]}`,
       ...(b.status === "PAID" ? [`Receipt No: ${b.receipt_no}`, `Paid on: ${fmtDate(b.payment_date)} (${b.payment_method})`] : []),
       "",
-      "Kindly reply to this email if you have any questions.",
+      "Kindly reply if you have any questions.",
       "",
       "Warm regards,",
       "LCM Building & Events",
-    ];
-    const subject = `LCM Facility Booking ${b.booking_no} — ${b.event_name || "Booking"}`;
-    window.location.href = `mailto:${encodeURIComponent(b.booker_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
+    ].join("\n");
+  }
+
+  // Forward via the BEM's own email client (prefilled draft — nothing auto-sent).
+  function emailCustomer() {
+    const subject = `LCM Facility Booking ${booking.booking_no} — ${booking.event_name || "Booking"}`;
+    window.location.href = `mailto:${encodeURIComponent(booking.booker_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bookingMessage())}`;
+  }
+
+  // Share via WhatsApp. Normalise a Malaysian phone (leading 0 -> 60 country code).
+  function whatsappCustomer() {
+    const digits = (booking.booker_phone || "").replace(/\D/g, "").replace(/^0/, "60");
+    const base = digits ? `https://wa.me/${digits}` : "https://wa.me/";
+    window.open(`${base}?text=${encodeURIComponent(bookingMessage())}`, "_blank");
   }
 
   async function transition(newStatus: FacilityBooking["status"]) {
@@ -689,8 +699,15 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
                 {booking.booker_email && (
                   <button onClick={emailCustomer}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-300 text-stone-600 text-xs font-medium hover:bg-stone-50 transition-colors"
-                    title="Forward booking & invoice details to the customer">
-                    <Share2 size={13} /> Email customer
+                    title="Forward booking & invoice details by email">
+                    <Share2 size={13} /> Email
+                  </button>
+                )}
+                {booking.booker_phone && (
+                  <button onClick={whatsappCustomer}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-300 text-green-700 text-xs font-medium hover:bg-green-50 transition-colors"
+                    title="Forward booking & invoice details via WhatsApp">
+                    <Share2 size={13} /> WhatsApp
                   </button>
                 )}
                 {booking.status === "ENQUIRY" && (
@@ -745,6 +762,82 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
   );
 }
 
+// ─── Block-dates modal ────────────────────────────────────────────────────────
+
+const BLOCK_REASONS: { value: FacilityBlockReason; label: string }[] = [
+  { value: "MAINTENANCE", label: "Maintenance / Renovation" },
+  { value: "REHEARSAL", label: "Rehearsal (pre-event)" },
+  { value: "EVENT_HOLD", label: "Event hold (pre/post event)" },
+  { value: "OTHER", label: "Other" },
+];
+
+function BlockModal({ user, facilities, defaultDate, onClose, onSaved }: {
+  user: UserProfile; facilities: FacilityDef[]; defaultDate: string; onClose: () => void; onSaved: () => void;
+}) {
+  const supabase = createClient();
+  const [facilityId, setFacilityId] = useState("");        // "" = all facilities
+  const [startDate, setStartDate] = useState(defaultDate);
+  const [endDate, setEndDate] = useState(defaultDate);
+  const [reason, setReason] = useState<FacilityBlockReason>("MAINTENANCE");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    if (!startDate) { setError("Select a start date."); return; }
+    if (endDate && endDate < startDate) { setError("End date is before start date."); return; }
+    setError(""); setSaving(true);
+    const { error: e } = await supabase.from("facility_blocks").insert({
+      facility_id: facilityId || null,
+      start_date: startDate, end_date: endDate || startDate,
+      reason, notes: notes.trim(), created_by: user.email,
+    });
+    setSaving(false);
+    if (e) { setError(e.message); return; }
+    onSaved();
+  }
+
+  const input = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  const label = "block text-xs font-semibold text-stone-600 mb-1";
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+          <h2 className="text-base font-bold text-stone-800">Block Dates</h2>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><XCircle size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          <div>
+            <label className={label}>Facility</label>
+            <select className={input} value={facilityId} onChange={e => setFacilityId(e.target.value)}>
+              <option value="">All facilities (whole venue)</option>
+              {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className={label}>Start date</label><input type="date" className={input} value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
+            <div><label className={label}>End date</label><input type="date" className={input} value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
+          </div>
+          <div>
+            <label className={label}>Reason</label>
+            <select className={input} value={reason} onChange={e => setReason(e.target.value as FacilityBlockReason)}>
+              {BLOCK_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+          <div><label className={label}>Notes</label><input className={input} value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Aircon servicing" /></div>
+          <p className="text-[11px] text-stone-400">Blocked dates appear on the calendar and make the facility unavailable on the public booking form.</p>
+        </div>
+        <div className="flex gap-2 px-5 py-4 border-t border-stone-200">
+          <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold hover:bg-[#3a5a8f] disabled:opacity-50">{saving ? "Saving…" : "Block Dates"}</button>
+          <button onClick={onClose} className="px-5 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function BookingsPage() {
@@ -757,13 +850,28 @@ export default function BookingsPage() {
   const [view, setView]         = useState<"list" | "calendar">("list");
   const [copied, setCopied]     = useState(false);
   const [facilities, setFacilities] = useState<FacilityDef[]>(FACILITIES);
+  const [blocks, setBlocks] = useState<FacilityBlock[]>([]);
+  const [blockDate, setBlockDate] = useState<string | null>(null); // open BlockModal prefilled
+
+  const loadBlocks = useCallback(async () => {
+    const { data } = await supabase.from("facility_blocks").select("*").order("start_date");
+    setBlocks((data as FacilityBlock[]) ?? []);
+  }, [supabase]);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from("facility_rates").select("*");
       setFacilities(applyRateOverrides((data as RateOverride[]) ?? []));
     })();
-  }, [supabase]);
+    loadBlocks();
+  }, [supabase, loadBlocks]);
+
+  async function deleteBlock(b: FacilityBlock) {
+    const facLabel = b.facility_id ? (facilities.find(f => f.id === b.facility_id)?.name ?? b.facility_id) : "all facilities";
+    if (!confirm(`Remove this block (${facLabel}, ${b.start_date}${b.end_date !== b.start_date ? " – " + b.end_date : ""})?`)) return;
+    await supabase.from("facility_blocks").delete().eq("id", b.id);
+    loadBlocks();
+  }
 
   async function loadUser() {
     const { data: { user: au } } = await supabase.auth.getUser();
@@ -853,7 +961,10 @@ export default function BookingsPage() {
       </div>
 
       {view === "calendar" && (
-        <BookingCalendar bookings={bookings} onSelect={(b) => { setView("list"); setTab(b.status); }} />
+        <BookingCalendar bookings={bookings} blocks={blocks} canBlock={!!canCreate}
+          onSelect={(b) => { setView("list"); setTab(b.status); }}
+          onDayClick={(d) => { if (canCreate) setBlockDate(d); }}
+          onBlockClick={(b) => { if (canCreate) deleteBlock(b); }} />
       )}
 
       {/* Status tabs */}
@@ -945,6 +1056,16 @@ export default function BookingsPage() {
           facilities={facilities}
           onClose={() => setShowNew(false)}
           onSaved={() => { setShowNew(false); loadBookings(); }}
+        />
+      )}
+
+      {blockDate && user && (
+        <BlockModal
+          user={user}
+          facilities={facilities}
+          defaultDate={blockDate}
+          onClose={() => setBlockDate(null)}
+          onSaved={() => { setBlockDate(null); loadBlocks(); }}
         />
       )}
     </div>
