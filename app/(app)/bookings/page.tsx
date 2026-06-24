@@ -137,11 +137,20 @@ function LineRow({ item, tier, facilities, onChange, onRemove }: LineRowProps) {
 interface NewBookingModalProps {
   user: UserProfile;
   facilities: FacilityDef[];
+  bookings: FacilityBooking[];
+  blocks: FacilityBlock[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-function NewBookingModal({ user, facilities, onClose, onSaved }: NewBookingModalProps) {
+// Halls offered at a discounted "concurrent" rate alongside the Auditorium/Chapel.
+const CONCURRENT_TRIGGERS = ["word-auditorium", "christ-chapel"];
+const CONCURRENT_HALLS = ["faith-hall-1", "faith-hall-2"];
+
+function ymdOnly(s: string | null | undefined) { return s ? s.split("T")[0] : ""; }
+function rangesOverlap(aS: string, aE: string, bS: string, bE: string) { return aS <= bE && bS <= aE; }
+
+function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved }: NewBookingModalProps) {
   const supabase = createClient();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -197,10 +206,47 @@ function NewBookingModal({ user, facilities, onClose, onSaved }: NewBookingModal
     setItems(prev => [...prev, defaultItem(bookerType)]);
   }
 
+  // ── Availability: respect existing bookings + maintenance/rehearsal blocks ──
+  const rangeEnd = endDate || startDate;
+  function facilityConflict(facilityId: string): string | null {
+    if (!startDate) return null;
+    const clashBooking = bookings.find(b =>
+      b.status !== "CANCELLED" && b.start_date &&
+      (b.booking_items ?? []).some(it => it.facility_id === facilityId) &&
+      rangesOverlap(startDate, rangeEnd, ymdOnly(b.start_date), ymdOnly(b.end_date || b.start_date))
+    );
+    if (clashBooking) return `Already booked — ${clashBooking.booking_no} (${clashBooking.event_name || clashBooking.booker_name})`;
+    const clashBlock = blocks.find(b =>
+      (b.facility_id === null || b.facility_id === facilityId) &&
+      rangesOverlap(startDate, rangeEnd, ymdOnly(b.start_date), ymdOnly(b.end_date))
+    );
+    if (clashBlock) return `Date blocked — ${clashBlock.reason.replace(/_/g, " ").toLowerCase()}${clashBlock.notes ? `: ${clashBlock.notes}` : ""}`;
+    return null;
+  }
+  const conflicts = startDate
+    ? items.map(it => ({ name: it.facility_name, reason: facilityConflict(it.facility_id) })).filter(c => c.reason)
+    : [];
+
+  // ── Concurrent-hall prompt for Auditorium / Chapel bookings ──
+  const hasTriggerFacility = items.some(it => CONCURRENT_TRIGGERS.includes(it.facility_id));
+  const concurrentSuggestions = hasTriggerFacility
+    ? CONCURRENT_HALLS.filter(hid => !items.some(it => it.facility_id === hid))
+    : [];
+  function addConcurrentHall(hallId: string) {
+    const def = facilities.find(f => f.id === hallId);
+    if (!def) return;
+    const rate = getRate(def, bookerType, true);
+    setItems(prev => [...prev, {
+      facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel,
+      sessions: 1, rate_per_session: rate, is_concurrent: true, subtotal: rate,
+    }]);
+  }
+
   async function save() {
     if (!bookerName.trim()) { setError("Booker name is required."); return; }
     if (!startDate) { setError("Start date is required."); return; }
     if (items.length === 0) { setError("Add at least one facility."); return; }
+    if (conflicts.length > 0) { setError(`Cannot book — ${conflicts[0].name}: ${conflicts[0].reason}. Choose another date or remove the facility.`); return; }
     setError("");
     setSaving(true);
     try {
@@ -255,29 +301,83 @@ function NewBookingModal({ user, facilities, onClose, onSaved }: NewBookingModal
         </div>
 
         <div className="px-6 py-5 space-y-6">
-          {/* Booker */}
+          {/* Payer Category — drives pricing, so it comes first */}
+          <section>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Payer Category</h3>
+            <div className="flex flex-wrap gap-2">
+              {(["PUBLIC", "MEMBER", "CONGREGATION", "HQ"] as PricingTier[]).map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setBookerType(t)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    bookerType === t
+                      ? TIER_COLORS[t] + " border-transparent"
+                      : "border-stone-200 text-stone-500 hover:border-stone-300"
+                  }`}
+                >
+                  {TIER_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* Facilities — chosen right after the payer category */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400">Facilities & Rates</h3>
+              <button
+                type="button"
+                onClick={addItem}
+                className="flex items-center gap-1 text-xs text-[#4a6da7] hover:text-[#3a5a8f] font-medium"
+              >
+                <Plus size={13} /> Add Facility
+              </button>
+            </div>
+            <div className="rounded-xl border border-stone-200 px-3 py-1">
+              {items.map((item, idx) => (
+                <LineRow
+                  key={idx}
+                  item={item}
+                  tier={bookerType}
+                  facilities={facilities}
+                  onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
+                  onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
+                />
+              ))}
+            </div>
+
+            {/* Prompt to add the Faith Halls concurrently with the Auditorium / Chapel */}
+            {concurrentSuggestions.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <span className="text-xs text-amber-800">
+                  Booking the Auditorium or Chapel — add a Faith Hall at the discounted concurrent rate?
+                </span>
+                {concurrentSuggestions.map(hid => {
+                  const def = facilities.find(f => f.id === hid);
+                  if (!def) return null;
+                  return (
+                    <button key={hid} type="button" onClick={() => addConcurrentHall(hid)}
+                      className="flex items-center gap-1 text-xs font-medium text-amber-900 border border-amber-300 bg-white hover:bg-amber-100 px-2.5 py-1 rounded-full transition-colors">
+                      <Plus size={12} /> {def.name} ({formatRate(getRate(def, bookerType, true))})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex justify-end mt-2 pr-8">
+              <div className="text-right">
+                <div className="text-xs text-stone-400">Total</div>
+                <div className="text-xl font-bold text-[#4a6da7]">{fmt(total)}</div>
+              </div>
+            </div>
+          </section>
+
+          {/* Booker contact details */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Booker Information</h3>
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="text-xs text-stone-500 mb-1 block">Payer Category *</label>
-                <div className="flex flex-wrap gap-2">
-                  {(["PUBLIC", "MEMBER", "CONGREGATION", "HQ"] as PricingTier[]).map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setBookerType(t)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                        bookerType === t
-                          ? TIER_COLORS[t] + " border-transparent"
-                          : "border-stone-200 text-stone-500 hover:border-stone-300"
-                      }`}
-                    >
-                      {TIER_LABELS[t]}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Full Name *</label>
                 <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={bookerName} onChange={e => setBookerName(e.target.value)} placeholder="Contact person name" />
@@ -326,38 +426,18 @@ function NewBookingModal({ user, facilities, onClose, onSaved }: NewBookingModal
                 <textarea rows={2} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none" value={purpose} onChange={e => setPurpose(e.target.value)} />
               </div>
             </div>
-          </section>
-
-          {/* Facilities */}
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400">Facilities & Rates</h3>
-              <button
-                type="button"
-                onClick={addItem}
-                className="flex items-center gap-1 text-xs text-[#4a6da7] hover:text-[#3a5a8f] font-medium"
-              >
-                <Plus size={13} /> Add Facility
-              </button>
-            </div>
-            <div className="rounded-xl border border-stone-200 px-3 py-1">
-              {items.map((item, idx) => (
-                <LineRow
-                  key={idx}
-                  item={item}
-                  tier={bookerType}
-                  facilities={facilities}
-                  onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
-                  onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
-                />
-              ))}
-            </div>
-            <div className="flex justify-end mt-2 pr-8">
-              <div className="text-right">
-                <div className="text-xs text-stone-400">Total</div>
-                <div className="text-xl font-bold text-[#4a6da7]">{fmt(total)}</div>
+            {/* Availability — block dates already booked or blocked for the chosen facilities */}
+            {conflicts.length > 0 && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-sm space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold text-red-700">
+                  <AlertCircle size={14} /> Not available on the selected date(s)
+                </div>
+                {conflicts.map((c, i) => (
+                  <div key={i} className="text-xs text-red-700 pl-5">{c.name}: {c.reason}</div>
+                ))}
+                <div className="text-[11px] text-red-500 pl-5">Choose another date or remove the facility to continue.</div>
               </div>
-            </div>
+            )}
           </section>
 
           {/* Notes */}
@@ -405,7 +485,8 @@ function NewBookingModal({ user, facilities, onClose, onSaved }: NewBookingModal
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-stone-600 hover:bg-stone-200 transition-colors">Cancel</button>
           <button
             onClick={save}
-            disabled={saving}
+            disabled={saving || conflicts.length > 0}
+            title={conflicts.length > 0 ? "One or more facilities are unavailable on the selected date(s)" : undefined}
             className="px-5 py-2 rounded-xl bg-[#4a6da7] hover:bg-[#3a5a8f] text-white text-sm font-medium transition-colors disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save as Enquiry"}
@@ -1054,6 +1135,8 @@ export default function BookingsPage() {
         <NewBookingModal
           user={user}
           facilities={facilities}
+          bookings={bookings}
+          blocks={blocks}
           onClose={() => setShowNew(false)}
           onSaved={() => { setShowNew(false); loadBookings(); }}
         />
