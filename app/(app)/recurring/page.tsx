@@ -963,8 +963,8 @@ export default function RecurringPage() {
 
           <div className="divide-y-4 divide-stone-200">
 
-            {/* ── Section 0: Entity ── */}
-            {!form.id && (
+            {/* ── Section 0: Entity ── (hidden for BEM, who is locked to BAM) */}
+            {!form.id && !isBuildingManager && (
               <div className="px-4 py-3">
                 <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Entity</p>
                 <div className="flex gap-2">
