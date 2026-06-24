@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, CheckCircle2, AlertCircle, FileText, XCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { FACILITIES, TIER_LABELS, getRate, formatRate, applyRateOverrides, type PricingTier, type FacilityDef, type RateOverride } from "@/lib/facilities";
+import { FACILITIES, TIER_LABELS, FACILITY_TYPE_LABELS, getRate, formatRate, applyRateOverrides, type PricingTier, type FacilityDef, type FacilityType, type RateOverride } from "@/lib/facilities";
 import type { BookingItem } from "@/lib/types";
 
 interface BookedRange { facility_id: string; start_date: string; end_date: string }
@@ -14,6 +14,9 @@ function fmt(n: number) { return "RM " + n.toLocaleString("en-MY", { minimumFrac
 function overlaps(aS: string, aE: string, bS: string, bE: string) {
   return aS <= bE && bS <= aE;
 }
+
+const TIER_ORDER: PricingTier[] = ["PUBLIC", "MEMBER", "CONGREGATION", "HQ"];
+const TYPE_ORDER: FacilityType[] = ["AUDITORIUM", "CHAPEL", "HALL", "CLASSROOM", "GUEST_ROOM", "GARDEN"];
 
 export default function PublicBookingPage() {
   const supabase = createClient();
@@ -34,6 +37,7 @@ export default function PublicBookingPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<string | null>(null);
+  const [menuDate, setMenuDate] = useState("");
 
   const [facilities, setFacilities] = useState<FacilityDef[]>(FACILITIES);
 
@@ -80,6 +84,14 @@ export default function PublicBookingPage() {
     return false;
   }
   const conflicts = startDate ? items.filter(it => unavailable(it.facility_id)) : [];
+
+  // Availability of a single facility on a single day, for the menu's date check.
+  function freeOn(facilityId: string, day: string): boolean {
+    if (!day) return true;
+    if (booked.some(b => b.facility_id === facilityId && overlaps(day, day, b.start_date, b.end_date))) return false;
+    if (blocked.some(b => (b.facility_id === null || b.facility_id === facilityId) && overlaps(day, day, b.start_date, b.end_date))) return false;
+    return true;
+  }
 
   function setItem(idx: number, patch: Partial<BookingItem>) {
     setItems(prev => prev.map((it, i) => {
@@ -148,9 +160,74 @@ export default function PublicBookingPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/lcm-logo.svg" width={44} height={44} alt="LCM" />
           <div>
-            <h1 className="text-xl font-bold text-stone-800">Facility Booking Enquiry</h1>
+            <h1 className="text-xl font-bold text-stone-800">Facility Booking &amp; Rates</h1>
             <p className="text-sm text-stone-500">Lutheran Church in Malaysia</p>
           </div>
+        </div>
+
+        {/* ── Facilities menu / catalogue ── */}
+        <div className="bg-white border border-stone-200 rounded-2xl p-5 mb-5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="text-lg font-bold text-stone-800">Our Facilities &amp; Rates</h2>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-stone-500 whitespace-nowrap">Check a date:</label>
+              <input type="date" value={menuDate} onChange={e => setMenuDate(e.target.value)}
+                className="border border-stone-300 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#4a6da7]" />
+            </div>
+          </div>
+          <p className="text-xs text-stone-400 mt-1 mb-4">
+            Browse our venues and rooms below. Rates are per session unless stated. Pick a date to check availability, then submit a booking enquiry at the bottom.
+          </p>
+
+          {TYPE_ORDER.map(type => {
+            const group = facilities.filter(f => f.type === type);
+            if (!group.length) return null;
+            return (
+              <div key={type} className="mb-5 last:mb-0">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#4a6da7] mb-2">{FACILITY_TYPE_LABELS[type]}</h3>
+                <div className="space-y-2">
+                  {group.map(f => {
+                    const free = freeOn(f.id, menuDate);
+                    return (
+                      <div key={f.id} className="border border-stone-200 rounded-xl p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-stone-800 text-sm">{f.name}</div>
+                            <div className="text-xs text-stone-400">{f.capacity} · {f.rateLabel}</div>
+                          </div>
+                          {menuDate && (
+                            <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ${free ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                              {free ? "Available" : "Unavailable"}
+                            </span>
+                          )}
+                        </div>
+                        {f.includes.length > 0 && (
+                          <div className="text-[11px] text-stone-400 mt-1">Includes: {f.includes.join(", ")}</div>
+                        )}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-2">
+                          {TIER_ORDER.map(t => (
+                            <div key={t} className={`rounded-lg px-2 py-1.5 ${t === "PUBLIC" ? "bg-red-50 border border-red-200" : "bg-stone-50 border border-transparent"}`}>
+                              <div className="text-[10px] text-stone-500 leading-tight">{TIER_LABELS[t]}</div>
+                              <div className={`text-sm font-bold ${t === "PUBLIC" ? "text-red-700" : "text-stone-700"}`}>{formatRate(getRate(f, t))}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {f.concurrentRates && (
+                          <div className="text-[11px] text-amber-800 mt-1.5 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                            <span className="font-semibold">Concurrent rate</span> — when booked together with Word Auditorium or Christ Chapel:
+                            {" "}Public {formatRate(getRate(f, "PUBLIC", true))} · Member {formatRate(getRate(f, "MEMBER", true))} · Congregation {formatRate(getRate(f, "CONGREGATION", true))} · HQ {formatRate(getRate(f, "HQ", true))}
+                          </div>
+                        )}
+                        {f.notes && !f.concurrentRates && (
+                          <div className="text-[11px] text-stone-400 mt-1 italic">{f.notes}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="bg-white border border-stone-200 rounded-2xl p-5 space-y-6">
