@@ -15,6 +15,12 @@ export function SignaturePad({ value, onChange, height = 120, disabled = false }
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<Point | null>(null);
+  // Where the previously-drawn curve segment actually ended. Each new segment
+  // must start exactly here (not from the raw last point) so consecutive
+  // segments stay connected — otherwise fast/high-frequency input (trackpad,
+  // fine touch) produces a chain of near-zero-length strokes that render as
+  // dots instead of a continuous line, because of the round line cap.
+  const lastMidRef = useRef<Point | null>(null);
   const dprRef = useRef(1);
 
   // Resync the canvas's backing resolution to its actual rendered size × device
@@ -29,7 +35,9 @@ export function SignaturePad({ value, onChange, height = 120, disabled = false }
     dprRef.current = dpr;
     canvas.width = Math.round(rect.width * dpr);
     canvas.height = Math.round(rect.height * dpr);
-    ctx.scale(dpr, dpr);
+    // setTransform (not scale) so re-syncing on resize doesn't compound the
+    // scale factor on top of whatever was set last time.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.lineWidth = 2.6;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -66,6 +74,7 @@ export function SignaturePad({ value, onChange, height = 120, disabled = false }
     const ctx = canvas.getContext("2d"); if (!ctx) return;
     const pos = getPos(e, canvas);
     lastPointRef.current = pos;
+    lastMidRef.current = pos;
     // Draw a dot so a single tap still registers as a mark.
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, ctx.lineWidth / 2, 0, Math.PI * 2);
@@ -80,15 +89,19 @@ export function SignaturePad({ value, onChange, height = 120, disabled = false }
     const ctx = canvas.getContext("2d"); if (!ctx) return;
     const pos = getPos(e, canvas);
     const last = lastPointRef.current;
-    if (last) {
+    const lastMid = lastMidRef.current;
+    if (last && lastMid) {
       // Quadratic curve through the midpoint of consecutive points smooths out
-      // the jagged, segmented look of plain lineTo strokes — especially
-      // noticeable with the lower, jumpier sampling rate of touch input.
+      // the jagged, segmented look of plain lineTo strokes. Each segment must
+      // start exactly where the previous one ended (lastMid) — starting from
+      // the raw last point instead produces disconnected micro-segments that
+      // render as dots whenever points are close together.
       const mid = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
       ctx.beginPath();
-      ctx.moveTo(last.x, last.y);
+      ctx.moveTo(lastMid.x, lastMid.y);
       ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
       ctx.stroke();
+      lastMidRef.current = mid;
     }
     lastPointRef.current = pos;
   }, [disabled]);
@@ -98,6 +111,7 @@ export function SignaturePad({ value, onChange, height = 120, disabled = false }
     e?.preventDefault();
     drawingRef.current = false;
     lastPointRef.current = null;
+    lastMidRef.current = null;
     const canvas = canvasRef.current; if (!canvas) return;
     onChange(canvas.toDataURL("image/png"));
   }, [onChange]);
