@@ -89,6 +89,12 @@ export default function DashboardPage() {
           return isBam ? q.eq("pv_type", "BAM") : q.neq("pv_type", "BAM");
         }
 
+        // BAM PVs use their own status names (BAM_COMMITTEE_REVIEW, BAM_REVIEW,
+        // FINANCE_REVIEW, GM_REVIEW) instead of the LCM ones — match the right set.
+        const inProgressStatuses = isBam
+          ? ["BAM_COMMITTEE_REVIEW", "BAM_REVIEW", "FINANCE_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY"]
+          : ["PENDING", "PENDING_HEAD", "MINISTRY_VERIFIED", "REVIEWED", "PENDING_SIGNATORY"];
+
         const [pvResult, bulkResult, pendingResult, approvedResult] = await Promise.all([
           scopePvType(supabase.from("pvs")
             .select("id,pv_no,status,amount,payee_name,ministry,submitted_at,purpose,payment_type,approvals,pv_type")
@@ -101,7 +107,7 @@ export default function DashboardPage() {
             .order("run_date", { ascending: false })
             .limit(5),
           scopePvType(supabase.from("pvs").select("id", { count: "exact", head: true })
-            .in("status", ["PENDING", "PENDING_HEAD", "MINISTRY_VERIFIED", "REVIEWED", "PENDING_SIGNATORY"])
+            .in("status", inProgressStatuses)
             .eq("submitted_by_email", user.email)),
           scopePvType(supabase.from("pvs").select("id", { count: "exact", head: true })
             .in("status", ["APPROVED", "PAID"])
