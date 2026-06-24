@@ -214,6 +214,40 @@ export interface FacilityBooking {
   updated_at: string;
 }
 
+export type WorkerType = "PA_PERSONNEL" | "BUILDING_CARE_TAKER" | "RELA_PERSONNEL";
+export type WorksheetPeriodType = "MONTH" | "DAYS";
+export type WorksheetStatus = "DRAFT" | "SIGNED" | "PV_RAISED";
+
+export interface WorksheetEntry {
+  date: string;   // yyyy-mm-dd for DAYS, yyyy-mm-01 (month anchor) for MONTH
+  hours: number;
+}
+
+export interface WorkerWorksheet {
+  id: string;
+  worksheet_no: string;
+  worker_type: WorkerType;
+  worker_name: string;
+  period_type: WorksheetPeriodType;
+  period_label: string;
+  entries: WorksheetEntry[];
+  rate_per_hour: number;
+  total_hours: number;
+  total_amount: number;
+  worker_signature: string | null;
+  worker_signed_at: string | null;
+  bem_signature: string | null;
+  bem_signed_by: string | null;
+  bem_signed_at: string | null;
+  status: WorksheetStatus;
+  pdf_url: string | null;
+  pv_id: string | null;
+  notes: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type FacilityBlockReason = "REHEARSAL" | "EVENT_HOLD" | "MAINTENANCE" | "OTHER";
 
 export interface FacilityBlock {

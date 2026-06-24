@@ -18,6 +18,12 @@ const MINISTRIES = [
   "Luther Study Centre",
 ];
 
+const WORKSHEET_TYPE_LABEL = {
+  PA_PERSONNEL: "PA Personnel",
+  BUILDING_CARE_TAKER: "Building Care Taker",
+  RELA_PERSONNEL: "RELA Personnel",
+};
+
 const PAYMENT_METHODS = ["Online Transfer", "Cheque", "Cash", "JomPay", "Auto Debit"];
 const BANKS = [
   "Maybank", "CIMB", "Public Bank", "RHB", "Hong Leong Bank",
@@ -156,6 +162,7 @@ export default function SubmitPVPage() {
   const [success, setSuccess] = useState("");
   const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
   const [claimBanner, setClaimBanner] = useState<{ id: string; claim_no: string; claimant: string } | null>(null);
+  const [worksheetBanner, setWorksheetBanner] = useState<{ id: string; worksheet_no: string; worker_name: string } | null>(null);
   const [isTravelClaim, setIsTravelClaim] = useState(false);
   const [travelItems, setTravelItems] = useState<TravelItem[]>([{ ...EMPTY_TRAVEL_ITEM }]);
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
@@ -276,6 +283,33 @@ export default function SubmitPVPage() {
             ? pr.line_items.map((l: { description: string; amount: number }) => ({ description: l.description, amount: l.amount, date: "" }))
             : f.line_items,
         }));
+      });
+    }
+
+    // Worksheet pre-fill (PA Personnel / Building Care Taker / RELA Personnel)
+    const worksheetId = params.get("worksheet_id");
+    if (worksheetId) {
+      supabase.from("worker_worksheets").select("*").eq("id", worksheetId).single().then(({ data: ws }) => {
+        if (!ws) return;
+        setWorksheetBanner({ id: ws.id, worksheet_no: ws.worksheet_no, worker_name: ws.worker_name });
+        setPvType("BAM");
+        const typeLabel = WORKSHEET_TYPE_LABEL[ws.worker_type as keyof typeof WORKSHEET_TYPE_LABEL] ?? ws.worker_type;
+        const purpose = `Wages — ${typeLabel} (${ws.period_label})`;
+        setForm(f => ({
+          ...f,
+          ministry: "Property",
+          purpose,
+          payee_name: ws.worker_name,
+          line_items: [{ description: purpose, amount: ws.total_amount, date: "" }],
+        }));
+        if (ws.pdf_url) {
+          setAttachments(prev => [...prev, {
+            file: new File([], `${ws.worksheet_no}.pdf`),
+            name: `Worksheet ${ws.worksheet_no} (signed)`,
+            previewUrl: ws.pdf_url,
+            sourceUrl: ws.pdf_url,
+          }]);
+        }
       });
     }
   }, []);
@@ -503,6 +537,11 @@ export default function SubmitPVPage() {
           status: "PV_RAISED", pv_id: result.pv_id, updated_at: new Date().toISOString(),
         }).eq("id", prBanner.id);
       }
+      if (worksheetBanner?.id && result.pv_id) {
+        await supabase.from("worker_worksheets").update({
+          status: "PV_RAISED", pv_id: result.pv_id, updated_at: new Date().toISOString(),
+        }).eq("id", worksheetBanner.id);
+      }
       // Link GM claim (read directly from URL — more reliable than state)
       const urlParams = new URLSearchParams(window.location.search);
       const urlClaimId = urlParams.get("claim_id");
@@ -530,6 +569,7 @@ export default function SubmitPVPage() {
       setForm(EMPTY_FORM);
       setPrBanner(null);
       setClaimBanner(null);
+      setWorksheetBanner(null);
       // Revoke all object URLs
       attachments.forEach(a => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
       setAttachments([]);
@@ -1057,6 +1097,13 @@ export default function SubmitPVPage() {
               <button type="button" onClick={() => setPrBanner(null)} className="text-blue-400 text-xs shrink-0">Clear</button>
             </div>
           )}
+          {worksheetBanner && (
+            <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
+              <span className="text-green-700 font-semibold shrink-0">🖊 {worksheetBanner.worksheet_no}</span>
+              <span className="text-green-800 flex-1 text-xs">Raising PV for worksheet — <strong>{worksheetBanner.worker_name}</strong>. Signed worksheet attached.</span>
+              <button type="button" onClick={() => setWorksheetBanner(null)} className="text-green-400 text-xs shrink-0">Clear</button>
+            </div>
+          )}
 
           <div className="p-4 space-y-3 pb-10">
             {SECTION_TITLES.map((title, i) => (
@@ -1170,6 +1217,13 @@ export default function SubmitPVPage() {
           <span className="text-blue-600 font-semibold shrink-0">📋 {prBanner.request_no}</span>
           <span className="text-blue-800 flex-1">Raising PV for: <strong>{prBanner.title}</strong></span>
           <button type="button" onClick={() => setPrBanner(null)} className="text-blue-400 hover:text-blue-600 text-xs">Clear</button>
+        </div>
+      )}
+      {worksheetBanner && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
+          <span className="text-green-700 font-semibold shrink-0">🖊 {worksheetBanner.worksheet_no}</span>
+          <span className="text-green-800 flex-1">Raising PV for worksheet — <strong>{worksheetBanner.worker_name}</strong>. Signed worksheet attached as supporting document.</span>
+          <button type="button" onClick={() => setWorksheetBanner(null)} className="text-green-400 hover:text-green-600 text-xs">Clear</button>
         </div>
       )}
 

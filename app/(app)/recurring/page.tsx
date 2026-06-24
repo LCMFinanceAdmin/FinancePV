@@ -992,7 +992,13 @@ export default function RecurringPage() {
               <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Template Setup</p>
               <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                 <Field label="Template Name *">
-                  <input className={inp} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="e.g. Office Rental" />
+                  <input className={inp} list={form.pv_type === "BAM" ? "bam-name-suggestions" : undefined}
+                    value={form.name} onChange={e => setField("name", e.target.value)} placeholder="e.g. Office Rental" />
+                  <datalist id="bam-name-suggestions">
+                    <option value="Lift Maintenance" />
+                    <option value="Sewerage Treatment" />
+                    <option value="Fire Protection System" />
+                  </datalist>
                 </Field>
                 <Field label="Group / Folder">
                   <input className={inp} list="group-list" value={form.group_name} onChange={e => setField("group_name", e.target.value)} placeholder="e.g. Allowances" />
