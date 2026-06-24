@@ -96,7 +96,7 @@ function WorksheetDocument({ ws, logoDataUri }: { ws: WorkerWorksheet; logoDataU
           </View>
           {ws.entries.map((e, i) => (
             <View key={i} style={s.row}>
-              <Text style={[s.cell, s.tiny, { flex: 2 }]}>{ws.period_type === "MONTH" ? ws.period_label : fmtDate(e.date)}</Text>
+              <Text style={[s.cell, s.tiny, { flex: 2 }]}>{fmtDate(e.date)}</Text>
               <Text style={[s.cell, s.tiny, { flex: 1, textAlign: "right" }]}>{e.hours}</Text>
             </View>
           ))}

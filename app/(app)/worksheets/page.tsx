@@ -39,6 +39,12 @@ function daysLabel(entries: WorksheetEntry[]) {
   if (dates.length === 1) return formatDate(dates[0]);
   return `${formatDate(dates[0])} – ${formatDate(dates[dates.length - 1])} (${dates.length} day${dates.length > 1 ? "s" : ""})`;
 }
+function daysInMonth(monthStr: string): string[] {
+  const [y, m] = monthStr.split("-").map(Number);
+  if (!y || !m) return [];
+  const count = new Date(y, m, 0).getDate();
+  return Array.from({ length: count }, (_, i) => `${monthStr}-${String(i + 1).padStart(2, "0")}`);
+}
 
 const BLANK: Omit<WorkerWorksheet, "id" | "worksheet_no" | "created_at" | "updated_at" | "created_by" | "pdf_url" | "pv_id" | "status" | "worker_signature" | "worker_signed_at" | "bem_signature" | "bem_signed_by" | "bem_signed_at"> = {
   worker_type: "PA_PERSONNEL",
@@ -62,7 +68,6 @@ export default function WorksheetsPage() {
   const [isNew, setIsNew] = useState(false);
   const [form, setForm] = useState(BLANK);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [monthHours, setMonthHours] = useState(0);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
@@ -91,16 +96,24 @@ export default function WorksheetsPage() {
 
   const periodType = PERIOD_TYPE_FOR[form.worker_type];
   const totalHours = useMemo(
-    () => (periodType === "MONTH" ? monthHours : form.entries.reduce((s, e) => s + (Number(e.hours) || 0), 0)),
-    [periodType, monthHours, form.entries]
+    () => form.entries.reduce((s, e) => s + (Number(e.hours) || 0), 0),
+    [form.entries]
   );
   const totalAmount = totalHours * (Number(form.rate_per_hour) || 0);
   const periodLabel = periodType === "MONTH" ? monthLabel(month) : daysLabel(form.entries);
 
+  function fillMonthDays() {
+    const days = daysInMonth(month);
+    if (days.length === 0) return;
+    setForm(f => {
+      const existingByDate = new Map(f.entries.filter(e => e.date).map(e => [e.date, e.hours]));
+      return { ...f, entries: days.map(date => ({ date, hours: existingByDate.get(date) ?? 0 })) };
+    });
+  }
+
   function openNew() {
     setForm(BLANK);
     setMonth(new Date().toISOString().slice(0, 7));
-    setMonthHours(0);
     setIsNew(true);
     setWorkerSigDraft(""); setBemSigDraft("");
     setEditing({
@@ -119,7 +132,6 @@ export default function WorksheetsPage() {
     });
     if (ws.period_type === "MONTH") {
       setMonth(ws.entries[0]?.date?.slice(0, 7) || new Date().toISOString().slice(0, 7));
-      setMonthHours(ws.entries[0]?.hours || 0);
     }
     setWorkerSigDraft(ws.worker_signature ?? ""); setBemSigDraft(ws.bem_signature ?? "");
     setEditing(ws);
@@ -141,9 +153,7 @@ export default function WorksheetsPage() {
     if (!form.rate_per_hour || form.rate_per_hour <= 0) { showMsg("Enter the rate per hour", false); return; }
     setSaving(true);
     try {
-      const entries: WorksheetEntry[] = periodType === "MONTH"
-        ? [{ date: `${month}-01`, hours: monthHours }]
-        : form.entries.filter(e => e.date && e.hours > 0);
+      const entries: WorksheetEntry[] = form.entries.filter(e => e.date && e.hours > 0);
       if (entries.length === 0) { showMsg("Add at least one valid date + hours entry", false); setSaving(false); return; }
 
       const payload = {
@@ -334,36 +344,40 @@ export default function WorksheetsPage() {
           </div>
         </div>
 
-        {periodType === "MONTH" ? (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+        {periodType === "MONTH" && (
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
               <label className={label}>Month</label>
               <input type="month" className={inp} value={month} onChange={e => setMonth(e.target.value)} />
             </div>
-            <div>
-              <label className={label}>Hours Worked (this month)</label>
-              <input type="number" min={0} step={0.5} className={inp} value={monthHours || ""} onChange={e => setMonthHours(Number(e.target.value))} />
-            </div>
-          </div>
-        ) : (
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className={label.replace("mb-1", "mb-0")}>Days Worked</label>
-              <button type="button" onClick={addEntry} className="flex items-center gap-1 text-xs text-[#4a6da7] font-medium hover:underline"><Plus size={12} /> Add day</button>
-            </div>
-            <div className="space-y-2">
-              {form.entries.map((e, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <input type="date" className={`${inp} flex-1`} value={e.date} onChange={ev => updateEntry(idx, { date: ev.target.value })} />
-                  <input type="number" min={0} step={0.5} className="w-24 border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]" placeholder="hrs" value={e.hours || ""} onChange={ev => updateEntry(idx, { hours: Number(ev.target.value) })} />
-                  {form.entries.length > 1 && (
-                    <button type="button" onClick={() => removeEntry(idx)} className="p-1.5 text-stone-300 hover:text-red-500"><Trash2 size={14} /></button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <Button type="button" variant="secondary" size="sm" onClick={fillMonthDays}>
+              Fill days of month
+            </Button>
           </div>
         )}
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className={label.replace("mb-1", "mb-0")}>
+              {periodType === "MONTH" ? "Hours per Day" : "Days Worked"}
+            </label>
+            <button type="button" onClick={addEntry} className="flex items-center gap-1 text-xs text-[#4a6da7] font-medium hover:underline"><Plus size={12} /> Add day</button>
+          </div>
+          {periodType === "MONTH" && (
+            <p className="text-xs text-stone-400 mb-2">Fill in the hours worked for each day; leave a day at 0 if the worker was off.</p>
+          )}
+          <div className="space-y-2">
+            {form.entries.map((e, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input type="date" className={`${inp} flex-1`} value={e.date} onChange={ev => updateEntry(idx, { date: ev.target.value })} />
+                <input type="number" min={0} step={0.5} className="w-24 border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]" placeholder="hrs" value={e.hours || ""} onChange={ev => updateEntry(idx, { hours: Number(ev.target.value) })} />
+                {form.entries.length > 1 && (
+                  <button type="button" onClick={() => removeEntry(idx)} className="p-1.5 text-stone-300 hover:text-red-500"><Trash2 size={14} /></button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div>
           <label className={label}>Notes (optional)</label>
