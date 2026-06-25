@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Plus, Trash2, CheckCircle2, AlertCircle, FileText, XCircle } from "lucide-react";
+import { Plus, Trash2, CheckCircle2, AlertCircle, FileText, XCircle, CalendarDays } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { FACILITIES, TIER_LABELS, FACILITY_TYPE_LABELS, getRate, formatRate, applyRateOverrides, type PricingTier, type FacilityDef, type FacilityType, type RateOverride } from "@/lib/facilities";
 import type { BookingItem } from "@/lib/types";
+import { AvailabilityCalendar } from "@/components/bookings/availability-calendar";
 
 interface BookedRange { facility_id: string; start_date: string; end_date: string }
 interface BlockedRange { facility_id: string | null; start_date: string; end_date: string }
@@ -38,6 +39,7 @@ export default function PublicBookingPage() {
   const [error, setError] = useState("");
   const [done, setDone] = useState<string | null>(null);
   const [menuDates, setMenuDates] = useState<Record<string, string>>({}); // per-facility availability check
+  const [openCal, setOpenCal] = useState<string | null>(null); // which facility's calendar is expanded
 
   const [facilities, setFacilities] = useState<FacilityDef[]>(FACILITIES);
 
@@ -219,12 +221,24 @@ export default function PublicBookingPage() {
                         {f.notes && !f.concurrentRates && (
                           <div className="text-[11px] text-stone-400 mt-1 italic">{f.notes}</div>
                         )}
-                        {/* Per-facility availability check */}
-                        <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-stone-100">
-                          <label className="text-xs font-semibold text-stone-500 whitespace-nowrap">Check availability:</label>
-                          <input type="date" value={fDate}
-                            onChange={e => setMenuDates(prev => ({ ...prev, [f.id]: e.target.value }))}
-                            className="border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+                        {/* Per-facility availability calendar */}
+                        <div className="mt-2.5 pt-2.5 border-t border-stone-100">
+                          <button type="button"
+                            onClick={() => setOpenCal(prev => prev === f.id ? null : f.id)}
+                            className="flex items-center gap-1.5 text-xs font-semibold text-[#4a6da7] hover:underline">
+                            <CalendarDays size={14} />
+                            {openCal === f.id ? "Hide availability" : "Check availability"}
+                            {fDate && <span className="text-stone-400 font-normal">· {fDate}</span>}
+                          </button>
+                          {openCal === f.id && (
+                            <div className="mt-2 max-w-[280px]">
+                              <AvailabilityCalendar
+                                unavailable={(d) => !freeOn(f.id, d)}
+                                selected={fDate || undefined}
+                                onPick={(d) => setMenuDates(prev => ({ ...prev, [f.id]: d }))}
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
