@@ -181,6 +181,7 @@ export interface BookingItem {
   rate_label: string;
   sessions: number;          // = dates.length (one session per booked date)
   dates?: string[];          // specific session dates (yyyy-mm-dd) for THIS facility
+  times?: Record<string, { start: number; end: number }>; // per-date hour block (0-23), keyed by date
   rate_per_session: number;
   is_concurrent: boolean;
   subtotal: number;

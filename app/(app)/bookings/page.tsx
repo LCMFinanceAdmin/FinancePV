@@ -7,12 +7,13 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile, FacilityBooking, BookingItem, FacilityBlock, FacilityBlockReason } from "@/lib/types";
 import {
-  FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate, applyRateOverrides,
+  FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate, applyRateOverrides, defaultSessionHours, fmtHour,
   type PricingTier, type FacilityDef, type RateOverride,
 } from "@/lib/facilities";
 import { ReceiptPdfButton } from "@/components/income/receipt-pdf";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { AvailabilityCalendar } from "@/components/bookings/availability-calendar";
+import { HourBlockPicker } from "@/components/bookings/hour-block-picker";
 import { AttachmentPreview } from "@/components/attachment-preview";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -59,7 +60,9 @@ function LineRow({ item, tier, facilities, isDayUnavailable, onChange, onRemove 
   const facilityDef = facilities.find(f => f.id === item.facility_id);
   const hasDiscount = !!facilityDef?.concurrentRates;
   const [showCal, setShowCal] = useState(false);
+  const [editingTimeFor, setEditingTimeFor] = useState<string | null>(null);
   const dates = item.dates ?? [];
+  const times = item.times ?? {};
   const unit = item.rate_label.toLowerCase().includes("night") ? "night" : "session";
 
   // Recompute rate + sessions (one session per booked date) + subtotal.
@@ -71,8 +74,13 @@ function LineRow({ item, tier, facilities, isDayUnavailable, onChange, onRemove 
   function update(patch: Partial<BookingItem>) { onChange(recalc({ ...item, ...patch })); }
   function toggleDate(d: string) {
     const set = new Set(item.dates ?? []);
-    if (set.has(d)) set.delete(d); else set.add(d);
-    update({ dates: Array.from(set).sort() });
+    const nextTimes = { ...times };
+    if (set.has(d)) { set.delete(d); delete nextTimes[d]; }
+    else { set.add(d); nextTimes[d] = defaultSessionHours(item.rate_label); setEditingTimeFor(d); }
+    update({ dates: Array.from(set).sort(), times: nextTimes });
+  }
+  function setTime(d: string, start: number, end: number) {
+    update({ times: { ...times, [d]: { start, end } } });
   }
 
   return (
@@ -104,21 +112,36 @@ function LineRow({ item, tier, facilities, isDayUnavailable, onChange, onRemove 
         <button type="button" onClick={onRemove} className="p-1 text-stone-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
       </div>
 
-      {/* Per-facility dates */}
+      {/* Per-facility dates + per-date hour block */}
       <div>
         <button type="button" onClick={() => setShowCal(s => !s)}
           className="flex items-center gap-1.5 text-xs font-medium text-[#4a6da7] hover:underline">
           <CalendarDays size={13} />
-          {dates.length === 0 ? `Select ${unit} date(s)` : `${dates.length} ${unit}${dates.length > 1 ? "s" : ""} selected`}
+          {dates.length === 0 ? `Select ${unit} date(s) & time` : `${dates.length} ${unit}${dates.length > 1 ? "s" : ""} selected`}
         </button>
         {dates.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
-            {dates.map(d => (
-              <span key={d} className="inline-flex items-center gap-1 text-[11px] bg-[#4a6da7]/10 text-[#4a6da7] rounded-full pl-2 pr-1 py-0.5">
-                {fmtDate(d)}
-                <button type="button" onClick={() => toggleDate(d)} className="hover:text-red-500"><XCircle size={11} /></button>
-              </span>
-            ))}
+            {dates.map(d => {
+              const t = times[d];
+              return (
+                <span key={d} className="inline-flex items-center gap-1 text-[11px] bg-[#4a6da7]/10 text-[#4a6da7] rounded-full pl-2 pr-1 py-0.5">
+                  <button type="button" onClick={() => setEditingTimeFor(p => p === d ? null : d)} className="hover:underline">
+                    {fmtDate(d)}{t ? ` · ${fmtHour(t.start)}–${fmtHour(t.end)}` : ""}
+                  </button>
+                  <button type="button" onClick={() => toggleDate(d)} className="hover:text-red-500"><XCircle size={11} /></button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        {editingTimeFor && dates.includes(editingTimeFor) && (
+          <div className="mt-2 p-2.5 bg-stone-50 border border-stone-200 rounded-xl max-w-[420px]">
+            <p className="text-[11px] font-medium text-stone-600 mb-1.5">Time block for {fmtDate(editingTimeFor)}</p>
+            <HourBlockPicker
+              start={times[editingTimeFor]?.start ?? 9}
+              end={times[editingTimeFor]?.end ?? 13}
+              onChange={(s, e) => setTime(editingTimeFor, s, e)}
+            />
           </div>
         )}
         {showCal && (
@@ -128,7 +151,7 @@ function LineRow({ item, tier, facilities, isDayUnavailable, onChange, onRemove 
               selectedDates={dates}
               onToggle={toggleDate}
             />
-            <p className="text-[11px] text-stone-400 mt-1">Click days to add/remove {unit}s for {item.facility_name}.</p>
+            <p className="text-[11px] text-stone-400 mt-1">Click days to add/remove {unit}s for {item.facility_name}. Tap a date chip above to set its time block.</p>
           </div>
         )}
       </div>
@@ -166,10 +189,8 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
   const [bookerPhone, setBookerPhone] = useState("");
   const [bookerOrg, setBookerOrg]     = useState("");
 
-  // Event (dates are per-facility on the line items; these are general times)
+  // Event (dates AND times now live per-facility on the line items)
   const [eventName, setEventName]   = useState("");
-  const [startTime, setStartTime]   = useState("");
-  const [endTime, setEndTime]       = useState("");
   const [purpose, setPurpose]       = useState("");
   const [notes, setNotes]           = useState("");
   const [internalNotes, setInternal] = useState("");
@@ -239,6 +260,12 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
 
   // All booked dates across every facility (for the booking's overall range).
   const allDates = Array.from(new Set(items.flatMap(it => it.dates ?? []))).sort();
+  // Overall time span — earliest start hour to latest end hour across every
+  // facility's chosen time blocks (each date/time now lives on the line item).
+  const allHourBlocks = items.flatMap(it => Object.values(it.times ?? {}));
+  const hh = (h: number) => `${String(h % 24).padStart(2, "0")}:00`;
+  const overallStartTime = allHourBlocks.length ? hh(Math.min(...allHourBlocks.map(t => t.start))) : "";
+  const overallEndTime = allHourBlocks.length ? hh(Math.max(...allHourBlocks.map(t => t.end))) : "";
 
   // ── Concurrent-hall prompt for Auditorium / Chapel bookings ──
   const hasTriggerFacility = items.some(it => CONCURRENT_TRIGGERS.includes(it.facility_id));
@@ -283,9 +310,9 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
         booker_type:   bookerType,
         event_name:    eventName.trim(),
         start_date:    allDates[0],
-        start_time:    startTime,
+        start_time:    overallStartTime,
         end_date:      allDates.length > 1 ? allDates[allDates.length - 1] : null,
-        end_time:      endTime,
+        end_time:      overallEndTime,
         booking_items: items,
         total_amount:  total,
         purpose:       purpose.trim(),
@@ -414,19 +441,11 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
           {/* Event */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Event Details</h3>
-            <p className="text-xs text-stone-400 mb-3">Dates are picked per facility above — each venue can run on its own set of dates. The times below are the general daily event times.</p>
+            <p className="text-xs text-stone-400 mb-3">Dates and times are picked per facility above — each venue can run on its own dates and hour block.</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Event Name</label>
                 <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={eventName} onChange={e => setEventName(e.target.value)} placeholder="e.g. Sunday Service, Wedding Reception" />
-              </div>
-              <div>
-                <label className="text-xs text-stone-500 mb-1 block">Start Time</label>
-                <input type="time" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={startTime} onChange={e => setStartTime(e.target.value)} />
-              </div>
-              <div>
-                <label className="text-xs text-stone-500 mb-1 block">End Time</label>
-                <input type="time" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={endTime} onChange={e => setEndTime(e.target.value)} />
               </div>
               <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Purpose / Description</label>
@@ -636,7 +655,7 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
       `Category: ${TIER_LABELS[b.booker_type]}`,
       "",
       "Facilities:",
-      ...b.booking_items.map(it => `  - ${it.facility_name}${it.is_concurrent ? " (concurrent)" : ""}${it.dates && it.dates.length ? ` [${it.dates.map(d => fmtDate(d)).join(", ")}]` : ""}: ${it.sessions} x ${formatRate(it.rate_per_session)} = ${fmt(it.subtotal)}`),
+      ...b.booking_items.map(it => `  - ${it.facility_name}${it.is_concurrent ? " (concurrent)" : ""}${it.dates && it.dates.length ? ` [${it.dates.map(d => `${fmtDate(d)}${it.times?.[d] ? ` ${fmtHour(it.times[d].start)}-${fmtHour(it.times[d].end)}` : ""}`).join(", ")}]` : ""}: ${it.sessions} x ${formatRate(it.rate_per_session)} = ${fmt(it.subtotal)}`),
       "",
       `Total: ${fmt(b.total_amount)}`,
       `Status: ${STATUS_LABELS[b.status]}`,
@@ -741,7 +760,9 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
                     <div className="flex-1">
                       {it.facility_name}{it.is_concurrent ? <span className="ml-1 text-xs text-stone-400">(concurrent)</span> : null}
                       {it.dates && it.dates.length > 0 && (
-                        <div className="text-[11px] text-stone-400 mt-0.5">{it.dates.map(d => fmtDate(d)).join(", ")}</div>
+                        <div className="text-[11px] text-stone-400 mt-0.5">
+                          {it.dates.map(d => `${fmtDate(d)}${it.times?.[d] ? ` ${fmtHour(it.times[d].start)}–${fmtHour(it.times[d].end)}` : ""}`).join(", ")}
+                        </div>
                       )}
                     </div>
                     <div className="text-stone-500 text-xs whitespace-nowrap">{it.sessions} × {it.rate_label}</div>

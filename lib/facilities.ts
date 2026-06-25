@@ -167,6 +167,24 @@ export function formatRate(amount: number): string {
   return amount === 0 ? "FOC" : `RM ${amount.toLocaleString("en-MY", { minimumFractionDigits: 2 })}`;
 }
 
+// Default hour-block (24h, half-open) for a new session date, based on the
+// facility's rate label — e.g. "4-hour session" defaults to a 4-hour block
+// starting at 9am; "per night" defaults to an evening block.
+export function defaultSessionHours(rateLabel: string): { start: number; end: number } {
+  const m = rateLabel.match(/(\d+)-hour/);
+  if (m) {
+    const dur = parseInt(m[1], 10);
+    return { start: 9, end: Math.min(22, 9 + dur) };
+  }
+  if (rateLabel.includes("night")) return { start: 18, end: 23 };
+  return { start: 9, end: 18 }; // "per day" and any other fallback
+}
+
+export function fmtHour(h: number): string {
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}${h < 12 || h === 24 ? "am" : "pm"}`;
+}
+
 // Editable rate overrides (from the facility_rates table), keyed by facility id.
 export interface RateOverride {
   facility_id: string;
