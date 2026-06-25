@@ -2,18 +2,19 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, ChevronDown, ChevronUp, Trash2, CheckCircle,
-  FileText, DollarSign, XCircle, AlertCircle, Share2, Percent, CalendarDays,
+  FileText, DollarSign, XCircle, AlertCircle, Share2, Percent,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile, FacilityBooking, BookingItem, FacilityBlock, FacilityBlockReason, BookingEventType } from "@/lib/types";
 import {
-  FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate, applyRateOverrides, defaultSessionHours, fmtHour, EVENT_TYPES,
+  FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate, applyRateOverrides, fmtHour, fmtCurrency as fmt, fmtDate,
+  EVENT_TYPES, CONCURRENT_TRIGGERS, CONCURRENT_HALLS, dateRangesOverlap as rangesOverlap,
   type PricingTier, type FacilityDef, type RateOverride,
 } from "@/lib/facilities";
 import { ReceiptPdfButton } from "@/components/income/receipt-pdf";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
-import { AvailabilityCalendar } from "@/components/bookings/availability-calendar";
-import { HourBlockPicker } from "@/components/bookings/hour-block-picker";
+import { FacilityLineRow } from "@/components/bookings/facility-line-row";
+import { SignaturePad } from "@/components/ui/signature-pad";
 import { AttachmentPreview } from "@/components/attachment-preview";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -36,129 +37,6 @@ const STATUS_COLORS: Record<FacilityBooking["status"], string> = {
 
 const METHODS = ["Cash", "Bank Transfer", "Cheque", "Online Transfer", "Other"];
 
-function fmt(n: number) {
-  return "RM " + n.toLocaleString("en-MY", { minimumFractionDigits: 2 });
-}
-
-function fmtDate(s: string | null | undefined) {
-  if (!s) return "—";
-  return new Date(s).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-// ─── New booking line-item row ────────────────────────────────────────────────
-
-interface LineRowProps {
-  item: BookingItem;
-  tier: PricingTier;
-  facilities: FacilityDef[];
-  isDayUnavailable: (facilityId: string, ymd: string) => boolean;
-  onChange: (item: BookingItem) => void;
-  onRemove: () => void;
-}
-
-function LineRow({ item, tier, facilities, isDayUnavailable, onChange, onRemove }: LineRowProps) {
-  const facilityDef = facilities.find(f => f.id === item.facility_id);
-  const hasDiscount = !!facilityDef?.concurrentRates;
-  const [showCal, setShowCal] = useState(false);
-  const [editingTimeFor, setEditingTimeFor] = useState<string | null>(null);
-  const dates = item.dates ?? [];
-  const times = item.times ?? {};
-  const unit = item.rate_label.toLowerCase().includes("night") ? "night" : "session";
-
-  // Recompute rate + sessions (one session per booked date) + subtotal.
-  function recalc(next: BookingItem): BookingItem {
-    const rate = facilityDef ? getRate(facilityDef, tier, next.is_concurrent) : next.rate_per_session;
-    const sessions = (next.dates ?? []).length;
-    return { ...next, rate_per_session: rate, sessions, subtotal: rate * sessions };
-  }
-  function update(patch: Partial<BookingItem>) { onChange(recalc({ ...item, ...patch })); }
-  function toggleDate(d: string) {
-    const set = new Set(item.dates ?? []);
-    const nextTimes = { ...times };
-    if (set.has(d)) { set.delete(d); delete nextTimes[d]; }
-    else { set.add(d); nextTimes[d] = defaultSessionHours(item.rate_label); setEditingTimeFor(d); }
-    update({ dates: Array.from(set).sort(), times: nextTimes });
-  }
-  function setTime(d: string, start: number, end: number) {
-    update({ times: { ...times, [d]: { start, end } } });
-  }
-
-  return (
-    <div className="py-2.5 border-b border-stone-100 last:border-0 space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="flex-1 min-w-[180px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
-          value={item.facility_id}
-          onChange={e => {
-            const def = facilities.find(f => f.id === e.target.value);
-            if (!def) return;
-            onChange(recalc({ ...item, facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel, is_concurrent: false }));
-          }}
-        >
-          {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-        </select>
-
-        {hasDiscount && (
-          <label className="flex items-center gap-1 text-xs text-stone-600 cursor-pointer">
-            <input type="checkbox" className="accent-[#4a6da7]" checked={item.is_concurrent} onChange={e => update({ is_concurrent: e.target.checked })} />
-            Concurrent discount
-          </label>
-        )}
-
-        <div className="text-sm text-right ml-auto whitespace-nowrap">
-          <span className="text-stone-400 text-xs">{formatRate(item.rate_per_session)}/{unit} × {dates.length}  </span>
-          <span className="font-semibold text-stone-800">{fmt(item.subtotal)}</span>
-        </div>
-        <button type="button" onClick={onRemove} className="p-1 text-stone-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
-      </div>
-
-      {/* Per-facility dates + per-date hour block */}
-      <div>
-        <button type="button" onClick={() => setShowCal(s => !s)}
-          className="flex items-center gap-1.5 text-xs font-medium text-[#4a6da7] hover:underline">
-          <CalendarDays size={13} />
-          {dates.length === 0 ? `Select ${unit} date(s) & time` : `${dates.length} ${unit}${dates.length > 1 ? "s" : ""} selected`}
-        </button>
-        {dates.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1.5">
-            {dates.map(d => {
-              const t = times[d];
-              return (
-                <span key={d} className="inline-flex items-center gap-1 text-[11px] bg-[#4a6da7]/10 text-[#4a6da7] rounded-full pl-2 pr-1 py-0.5">
-                  <button type="button" onClick={() => setEditingTimeFor(p => p === d ? null : d)} className="hover:underline">
-                    {fmtDate(d)}{t ? ` · ${fmtHour(t.start)}–${fmtHour(t.end)}` : ""}
-                  </button>
-                  <button type="button" onClick={() => toggleDate(d)} className="hover:text-red-500"><XCircle size={11} /></button>
-                </span>
-              );
-            })}
-          </div>
-        )}
-        {editingTimeFor && dates.includes(editingTimeFor) && (
-          <div className="mt-2 p-2.5 bg-stone-50 border border-stone-200 rounded-xl max-w-[420px]">
-            <p className="text-[11px] font-medium text-stone-600 mb-1.5">Time block for {fmtDate(editingTimeFor)}</p>
-            <HourBlockPicker
-              start={times[editingTimeFor]?.start ?? 9}
-              end={times[editingTimeFor]?.end ?? 13}
-              onChange={(s, e) => setTime(editingTimeFor, s, e)}
-            />
-          </div>
-        )}
-        {showCal && (
-          <div className="mt-2 max-w-[300px]">
-            <AvailabilityCalendar
-              unavailable={(d) => isDayUnavailable(item.facility_id, d)}
-              selectedDates={dates}
-              onToggle={toggleDate}
-            />
-            <p className="text-[11px] text-stone-400 mt-1">Click days to add/remove {unit}s for {item.facility_name}. Tap a date chip above to set its time block.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── New booking modal ────────────────────────────────────────────────────────
 
 interface NewBookingModalProps {
@@ -170,12 +48,7 @@ interface NewBookingModalProps {
   onSaved: () => void;
 }
 
-// Halls offered at a discounted "concurrent" rate alongside the Auditorium/Chapel.
-const CONCURRENT_TRIGGERS = ["word-auditorium", "christ-chapel"];
-const CONCURRENT_HALLS = ["faith-hall-1", "faith-hall-2"];
-
 function ymdOnly(s: string | null | undefined) { return s ? s.split("T")[0] : ""; }
-function rangesOverlap(aS: string, aE: string, bS: string, bE: string) { return aS <= bE && bS <= aE; }
 
 function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved }: NewBookingModalProps) {
   const supabase = createClient();
@@ -388,7 +261,7 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
             </div>
             <div className="rounded-xl border border-stone-200 px-3 py-1">
               {items.map((item, idx) => (
-                <LineRow
+                <FacilityLineRow
                   key={idx}
                   item={item}
                   tier={bookerType}
@@ -637,6 +510,122 @@ function PayModal({ booking, onClose, onPaid }: PayModalProps) {
   );
 }
 
+// ─── Confirm booking modal — dual e-signature before confirming ───────────────
+
+interface ConfirmModalProps {
+  booking: FacilityBooking;
+  onClose: () => void;
+  onConfirmed: () => void;
+}
+
+function ConfirmBookingModal({ booking, onClose, onConfirmed }: ConfirmModalProps) {
+  const supabase = createClient();
+  const [local, setLocal] = useState(booking);
+  const [bookerSigDraft, setBookerSigDraft] = useState(booking.booker_signature ?? "");
+  const [bemSigDraft, setBemSigDraft] = useState(booking.bem_signature ?? "");
+  const [savingSig, setSavingSig] = useState<"booker" | "bem" | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState("");
+
+  async function saveSignature(which: "booker" | "bem") {
+    const dataUrl = which === "booker" ? bookerSigDraft : bemSigDraft;
+    if (!dataUrl) { setError("Draw a signature first."); return; }
+    setError("");
+    setSavingSig(which);
+    try {
+      let updatePatch: Record<string, unknown>;
+      if (which === "booker") {
+        updatePatch = { booker_signature: dataUrl, booker_signed_at: new Date().toISOString() };
+      } else {
+        const { data: { user } } = await supabase.auth.getUser();
+        updatePatch = { bem_signature: dataUrl, bem_signed_by: user?.email ?? "", bem_signed_at: new Date().toISOString() };
+      }
+      const { data: row, error: e } = await supabase.from("facility_bookings").update(updatePatch).eq("id", booking.id).select("*").single();
+      if (e) throw new Error(e.message);
+      setLocal(row as FacilityBooking);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save signature.");
+    } finally {
+      setSavingSig(null);
+    }
+  }
+
+  async function confirmBooking() {
+    setConfirming(true);
+    try {
+      const { error: e } = await supabase.from("facility_bookings")
+        .update({ status: "CONFIRMED", updated_at: new Date().toISOString() }).eq("id", booking.id);
+      if (e) throw new Error(e.message);
+      onConfirmed();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to confirm.");
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  const bothSigned = !!local.booker_signature && !!local.bem_signature;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 px-4 py-6 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
+          <h2 className="font-bold text-stone-800">Confirm Booking</h2>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><XCircle size={20} /></button>
+        </div>
+        <div className="px-6 py-5 space-y-5">
+          <div className="p-3 bg-stone-50 rounded-xl text-sm">
+            <div className="font-medium">{booking.event_name || booking.booker_name}</div>
+            <div className="text-stone-500">{booking.booking_no} · {fmt(booking.total_amount)}</div>
+          </div>
+          <p className="text-xs text-stone-500">
+            Both the bookee and the Building/Event Manager must sign before this booking is confirmed and the invoice can be generated.
+          </p>
+
+          <div className="grid sm:grid-cols-2 gap-5">
+            <div>
+              <div className="text-xs font-semibold text-stone-600 mb-1.5">Bookee&apos;s Signature {local.booker_signature && <span className="text-green-600">✓ signed</span>}</div>
+              <SignaturePad value={bookerSigDraft} onChange={setBookerSigDraft} />
+              <Button2 onClick={() => saveSignature("booker")} loading={savingSig === "booker"} disabled={!bookerSigDraft || bookerSigDraft === local.booker_signature}>
+                Save Bookee Signature
+              </Button2>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-stone-600 mb-1.5">Verified by BEM {local.bem_signature && <span className="text-green-600">✓ signed</span>}</div>
+              <SignaturePad value={bemSigDraft} onChange={setBemSigDraft} />
+              <Button2 onClick={() => saveSignature("bem")} loading={savingSig === "bem"} disabled={!bemSigDraft || bemSigDraft === local.bem_signature}>
+                Save BEM Signature
+              </Button2>
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-stone-100 bg-stone-50 rounded-b-2xl">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-stone-600 hover:bg-stone-200 transition-colors">Cancel</button>
+          <button
+            onClick={confirmBooking}
+            disabled={!bothSigned || confirming}
+            title={!bothSigned ? "Both signatures are required" : undefined}
+            className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {confirming ? "Confirming…" : "Confirm Booking"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Button2({ children, onClick, loading, disabled }: { children: React.ReactNode; onClick: () => void; loading?: boolean; disabled?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} disabled={loading || disabled}
+      className="mt-2 w-full py-1.5 rounded-lg border border-stone-300 text-stone-700 text-xs font-medium hover:bg-stone-50 transition-colors disabled:opacity-50">
+      {loading ? "Saving…" : children}
+    </button>
+  );
+}
+
 // ─── Booking card ─────────────────────────────────────────────────────────────
 
 interface CardProps {
@@ -650,6 +639,7 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
   const supabase = createClient();
   const [expanded, setExpanded] = useState(false);
   const [showPay, setShowPay]   = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [acting, setActing]     = useState(false);
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
   const [reclassifying, setReclassifying] = useState(false);
@@ -863,7 +853,7 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
                 )}
                 {booking.status === "ENQUIRY" && (
                   <>
-                    <button onClick={() => transition("CONFIRMED")} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-50">
+                    <button onClick={() => setShowConfirm(true)} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-50">
                       <CheckCircle size={13} /> Confirm
                     </button>
                     <button onClick={() => transition("CANCELLED")} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium transition-colors disabled:opacity-50">
@@ -903,6 +893,14 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
           booking={booking}
           onClose={() => setShowPay(false)}
           onPaid={() => { setShowPay(false); onRefresh(); }}
+        />
+      )}
+
+      {showConfirm && (
+        <ConfirmBookingModal
+          booking={booking}
+          onClose={() => setShowConfirm(false)}
+          onConfirmed={() => { setShowConfirm(false); onRefresh(); }}
         />
       )}
 

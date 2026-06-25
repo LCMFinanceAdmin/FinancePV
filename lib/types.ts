@@ -214,6 +214,11 @@ export interface FacilityBooking {
   notes: string;
   internal_notes: string;
   attachments: string[];
+  booker_signature: string | null;
+  booker_signed_at: string | null;
+  bem_signature: string | null;
+  bem_signed_by: string | null;
+  bem_signed_at: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

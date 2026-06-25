@@ -187,6 +187,25 @@ export function fmtHour(h: number): string {
   return `${h12}${h < 12 || h === 24 ? "am" : "pm"}`;
 }
 
+export function fmtCurrency(n: number): string {
+  return "RM " + n.toLocaleString("en-MY", { minimumFractionDigits: 2 });
+}
+
+export function fmtDate(s: string | null | undefined): string {
+  if (!s) return "—";
+  return new Date(s).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// Does date range [aS,aE] overlap [bS,bE]? (all yyyy-mm-dd strings)
+export function dateRangesOverlap(aS: string, aE: string, bS: string, bE: string): boolean {
+  return aS <= bE && bS <= aE;
+}
+
+// Halls offered at a discounted "concurrent" rate alongside the Auditorium/Chapel,
+// shared between the internal New Booking form and the public booking page.
+export const CONCURRENT_TRIGGERS = ["word-auditorium", "christ-chapel"];
+export const CONCURRENT_HALLS = ["faith-hall-1", "faith-hall-2"];
+
 // Event types for facility bookings. Weddings require an endorsement letter
 // (signed by the pastor-in-charge, chopped by church administration) —
 // the other types don't.
