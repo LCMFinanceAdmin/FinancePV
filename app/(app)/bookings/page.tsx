@@ -12,6 +12,7 @@ import {
 } from "@/lib/facilities";
 import { ReceiptPdfButton } from "@/components/income/receipt-pdf";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
+import { AvailabilityCalendar } from "@/components/bookings/availability-calendar";
 import { AttachmentPreview } from "@/components/attachment-preview";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -227,6 +228,24 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
     ? items.map(it => ({ name: it.facility_name, reason: facilityConflict(it.facility_id) })).filter(c => c.reason)
     : [];
 
+  // Is a single day unavailable for ANY currently-selected facility? Drives the
+  // calendar so booked / maintenance-blocked days are greyed out as you pick.
+  function dayUnavailable(day: string): boolean {
+    return items.some(it => {
+      const fid = it.facility_id;
+      const booked = bookings.some(b =>
+        b.status !== "CANCELLED" && b.start_date &&
+        (b.booking_items ?? []).some(bi => bi.facility_id === fid) &&
+        rangesOverlap(day, day, ymdOnly(b.start_date), ymdOnly(b.end_date || b.start_date))
+      );
+      if (booked) return true;
+      return blocks.some(b =>
+        (b.facility_id === null || b.facility_id === fid) &&
+        rangesOverlap(day, day, ymdOnly(b.start_date), ymdOnly(b.end_date))
+      );
+    });
+  }
+
   // ── Concurrent-hall prompt for Auditorium / Chapel bookings ──
   const hasTriggerFacility = items.some(it => CONCURRENT_TRIGGERS.includes(it.facility_id));
   const concurrentSuggestions = hasTriggerFacility
@@ -405,21 +424,28 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
                 <label className="text-xs text-stone-500 mb-1 block">Event Name</label>
                 <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={eventName} onChange={e => setEventName(e.target.value)} placeholder="e.g. Sunday Service, Wedding Reception" />
               </div>
-              <div>
-                <label className="text-xs text-stone-500 mb-1 block">Start Date *</label>
-                <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <div className="col-span-2">
+                <label className="text-xs text-stone-500 mb-1 block">Start Date * <span className="text-stone-400 font-normal">— green = available, red = booked or blocked</span></label>
+                <div className="max-w-[300px]">
+                  <AvailabilityCalendar
+                    unavailable={dayUnavailable}
+                    selected={startDate || undefined}
+                    onPick={d => setStartDate(d)}
+                  />
+                </div>
+                {startDate && <p className="text-xs text-stone-500 mt-1">Selected start: <span className="font-semibold">{fmtDate(startDate)}</span></p>}
               </div>
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Start Time</label>
                 <input type="time" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={startTime} onChange={e => setStartTime(e.target.value)} />
               </div>
               <div>
-                <label className="text-xs text-stone-500 mb-1 block">End Date</label>
-                <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={endDate} onChange={e => setEndDate(e.target.value)} />
-              </div>
-              <div>
                 <label className="text-xs text-stone-500 mb-1 block">End Time</label>
                 <input type="time" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={endTime} onChange={e => setEndTime(e.target.value)} />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-stone-500 mb-1 block">End Date <span className="text-stone-400 font-normal">(only for multi-day bookings)</span></label>
+                <input type="date" min={startDate || undefined} className="w-full max-w-[300px] border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={endDate} onChange={e => setEndDate(e.target.value)} />
               </div>
               <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Purpose / Description</label>
