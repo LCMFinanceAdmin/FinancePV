@@ -219,6 +219,10 @@ export interface FacilityBooking {
   bem_signature: string | null;
   bem_signed_by: string | null;
   bem_signed_at: string | null;
+  invoice_sent_at: string | null;
+  invoice_sent_via: string | null;
+  invoice_voided_at: string | null;
+  invoice_voided_by: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

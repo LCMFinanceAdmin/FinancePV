@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, ChevronDown, ChevronUp, Trash2, CheckCircle,
-  FileText, DollarSign, XCircle, AlertCircle, Share2, Percent,
+  FileText, DollarSign, XCircle, AlertCircle, Share2, Percent, CalendarDays, Clock, RotateCcw, Send,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile, FacilityBooking, BookingItem, FacilityBlock, FacilityBlockReason, BookingEventType } from "@/lib/types";
@@ -691,10 +691,21 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
     ].join("\n");
   }
 
+  // Once an invoice has actually been shared with the bookee, record when —
+  // so the BEM knows the customer already holds a copy before changing anything.
+  async function markInvoiceSent(via: "EMAIL" | "WHATSAPP") {
+    if (booking.status !== "INVOICED") return;
+    await supabase.from("facility_bookings")
+      .update({ invoice_sent_at: new Date().toISOString(), invoice_sent_via: via })
+      .eq("id", booking.id);
+    onRefresh();
+  }
+
   // Forward via the BEM's own email client (prefilled draft — nothing auto-sent).
   function emailCustomer() {
     const subject = `LCM Facility Booking ${booking.booking_no} — ${booking.event_name || "Booking"}`;
     window.location.href = `mailto:${encodeURIComponent(booking.booker_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bookingMessage())}`;
+    markInvoiceSent("EMAIL");
   }
 
   // Share via WhatsApp. Normalise a Malaysian phone (leading 0 -> 60 country code).
@@ -702,6 +713,7 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
     const digits = (booking.booker_phone || "").replace(/\D/g, "").replace(/^0/, "60");
     const base = digits ? `https://wa.me/${digits}` : "https://wa.me/";
     window.open(`${base}?text=${encodeURIComponent(bookingMessage())}`, "_blank");
+    markInvoiceSent("WHATSAPP");
   }
 
   async function transition(newStatus: FacilityBooking["status"]) {
@@ -710,6 +722,33 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
     onRefresh();
     setActing(false);
   }
+
+  // Void the current invoice — reverts to Confirmed so the BEM can adjust the
+  // payer category, facilities, or dates/times, then re-generate a fresh one.
+  async function voidInvoice() {
+    const warn = booking.invoice_sent_at
+      ? "This invoice was already shared with the bookee. Void it and revert to Confirmed so you can make adjustments? You'll need to send a revised invoice afterward."
+      : "Void this invoice and revert to Confirmed so you can make adjustments?";
+    if (!confirm(warn)) return;
+    setActing(true);
+    await supabase.from("facility_bookings").update({
+      status: "CONFIRMED",
+      invoice_voided_at: new Date().toISOString(),
+      invoice_voided_by: user.email,
+      invoice_sent_at: null,
+      invoice_sent_via: null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", booking.id);
+    onRefresh();
+    setActing(false);
+  }
+
+  const allBookingDates = Array.from(new Set(booking.booking_items.flatMap(it => it.dates ?? []))).sort();
+  const dateTimeSummary = allBookingDates.length === 0
+    ? fmtDate(booking.start_date)
+    : allBookingDates.length === 1
+      ? fmtDate(allBookingDates[0])
+      : `${fmtDate(allBookingDates[0])} – ${fmtDate(allBookingDates[allBookingDates.length - 1])} (${allBookingDates.length} dates)`;
 
   const facilityNames = booking.booking_items.map(it =>
     it.facility_name + (it.is_concurrent ? " (concurrent)" : "")
@@ -741,9 +780,15 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
             <div className="font-semibold text-stone-800 mt-0.5 truncate">
               {booking.event_name || booking.booker_name}
             </div>
-            <div className="text-xs text-stone-500 mt-0.5 truncate">
-              {facilityNames} · {fmtDate(booking.start_date)}
-              {booking.end_date && booking.end_date !== booking.start_date ? " — " + fmtDate(booking.end_date) : ""}
+            <div className="text-xs text-stone-500 mt-0.5 truncate">{facilityNames}</div>
+            <div className="flex items-center gap-1.5 mt-1 text-sm font-semibold text-[#4a6da7]">
+              <CalendarDays size={14} className="shrink-0" />
+              <span>{dateTimeSummary}</span>
+              {booking.start_time && (
+                <span className="flex items-center gap-1 text-stone-500 font-medium">
+                  <Clock size={12} className="shrink-0" /> {fmtHour(parseInt(booking.start_time, 10))}{booking.end_time ? `–${fmtHour(parseInt(booking.end_time, 10))}` : ""}
+                </span>
+              )}
             </div>
           </div>
           <div className="text-right shrink-0">
@@ -764,7 +809,7 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
               {booking.purpose && <div className="col-span-2"><span className="text-stone-400 text-xs">Purpose</span><div>{booking.purpose}</div></div>}
               <div className="col-span-2">
                 <span className="text-stone-400 text-xs">Payer Category</span>
-                {canAct && !["PAID", "CANCELLED"].includes(booking.status) ? (
+                {canAct && ["ENQUIRY", "CONFIRMED"].includes(booking.status) ? (
                   <div className="flex items-center gap-2 mt-0.5">
                     <select value={booking.booker_type} disabled={reclassifying}
                       onChange={e => reclassify(e.target.value as PricingTier)}
@@ -774,28 +819,56 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
                     <span className="text-[11px] text-stone-400">{reclassifying ? "Updating rates…" : "Changing this re-prices the booking"}</span>
                   </div>
                 ) : (
-                  <div className="font-medium">{TIER_LABELS[booking.booker_type]}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="font-medium">{TIER_LABELS[booking.booker_type]}</div>
+                    {booking.status === "INVOICED" && (
+                      <span className="text-[11px] text-stone-400">Locked — void the invoice to adjust</span>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Facility line items */}
+            {/* Invoice status */}
+            {booking.status === "INVOICED" && (
+              <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-xl bg-purple-50 border border-purple-100 text-purple-800">
+                <Send size={13} className="shrink-0" />
+                {booking.invoice_sent_at
+                  ? <span>Invoice sent {fmtDate(booking.invoice_sent_at)} {new Date(booking.invoice_sent_at).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit" })} via {booking.invoice_sent_via === "WHATSAPP" ? "WhatsApp" : "Email"}</span>
+                  : <span>Not yet shared with the bookee</span>}
+              </div>
+            )}
+
+            {/* Facility line items — date & time emphasised */}
             <div>
               <div className="text-xs text-stone-400 mb-1.5">Facilities</div>
               <div className="rounded-xl border border-stone-100 overflow-hidden">
                 {booking.booking_items.map((it, i) => (
-                  <div key={i} className="flex items-start gap-2 px-3 py-2 text-sm border-b border-stone-50 last:border-0">
-                    <div className="flex-1">
-                      {it.facility_name}{it.is_concurrent ? <span className="ml-1 text-xs text-stone-400">(concurrent)</span> : null}
-                      {it.dates && it.dates.length > 0 && (
-                        <div className="text-[11px] text-stone-400 mt-0.5">
-                          {it.dates.map(d => `${fmtDate(d)}${it.times?.[d] ? ` ${fmtHour(it.times[d].start)}–${fmtHour(it.times[d].end)}` : ""}`).join(", ")}
+                  <div key={i} className="px-3 py-2.5 border-b border-stone-50 last:border-0">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <div className="text-sm font-semibold text-stone-800">
+                          {it.facility_name}{it.is_concurrent ? <span className="ml-1 text-xs font-normal text-amber-600">(concurrent)</span> : null}
                         </div>
-                      )}
+                      </div>
+                      <div className="text-stone-500 text-xs whitespace-nowrap">{it.sessions} × {it.rate_label}</div>
+                      <div className="text-stone-400 text-xs">{fmt(it.rate_per_session)}</div>
+                      <div className="font-semibold text-stone-800 w-20 text-right">{fmt(it.subtotal)}</div>
                     </div>
-                    <div className="text-stone-500 text-xs whitespace-nowrap">{it.sessions} × {it.rate_label}</div>
-                    <div className="text-stone-400 text-xs">{fmt(it.rate_per_session)}</div>
-                    <div className="font-medium w-20 text-right">{fmt(it.subtotal)}</div>
+                    {it.dates && it.dates.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {it.dates.map(d => (
+                          <span key={d} className="inline-flex items-center gap-1 text-[11px] font-medium bg-[#4a6da7]/10 text-[#4a6da7] rounded-full px-2 py-1">
+                            <CalendarDays size={11} /> {fmtDate(d)}
+                            {it.times?.[d] && (
+                              <span className="flex items-center gap-0.5 text-stone-600">
+                                <Clock size={11} /> {fmtHour(it.times[d].start)}–{fmtHour(it.times[d].end)}
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div className="flex items-center gap-2 px-3 py-2 text-sm bg-stone-50 font-bold">
@@ -872,9 +945,15 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
                   </>
                 )}
                 {booking.status === "INVOICED" && (
-                  <button onClick={() => setShowPay(true)} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors disabled:opacity-50">
-                    <DollarSign size={13} /> Mark as Paid
-                  </button>
+                  <>
+                    <button onClick={() => setShowPay(true)} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors disabled:opacity-50">
+                      <DollarSign size={13} /> Mark as Paid
+                    </button>
+                    <button onClick={voidInvoice} disabled={acting} title="Revert to Confirmed so you can adjust the payer category, facilities, or dates/times"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 text-xs font-medium hover:bg-amber-50 transition-colors disabled:opacity-50">
+                      <RotateCcw size={13} /> Void Invoice
+                    </button>
+                  </>
                 )}
                 {booking.status === "PAID" && (
                   <ReceiptPdfButton source={{ kind: "booking", data: booking }} />
