@@ -1,4 +1,4 @@
-const CACHE = "lcm-finance-v1";
+const CACHE = "lcm-finance-v2";
 const STATIC = ["/", "/login"];
 
 self.addEventListener("install", (e) => {
@@ -22,8 +22,14 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     fetch(e.request)
       .then((res) => {
-        const clone = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, clone));
+        // Only cache complete, successful, same-origin/CORS responses. The
+        // Cache API throws on 206 (partial/range) responses — and there's no
+        // value caching errors or opaque responses — so guard before put()
+        // and swallow any failure so it never surfaces as an uncaught rejection.
+        if (res && res.status === 200 && (res.type === "basic" || res.type === "cors")) {
+          const clone = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, clone)).catch(() => {});
+        }
         return res;
       })
       .catch(() => caches.match(e.request))
