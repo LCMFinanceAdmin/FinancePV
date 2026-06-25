@@ -14,7 +14,11 @@ Deno.serve(async (req) => {
     const db = getServiceClient();
     const profile = await getProfileByEmail(db, user.email!);
     const adminRoles = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
-    if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Executive only" }, 403);
+    // NOTE: the blanket role check used to sit here, which made the "CANCEL
+    // is allowed for the PV submitter" carve-out below unreachable for
+    // anyone who isn't already a Finance Executive. The real gate is applied
+    // per-action further down (CANCEL has its own check; everything else
+    // requires adminRoles).
 
     const body = await req.json();
     const { pv_id, action } = body;

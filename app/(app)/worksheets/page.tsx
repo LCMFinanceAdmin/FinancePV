@@ -194,12 +194,34 @@ export default function WorksheetsPage() {
         setIsNew(false);
         showMsg(`Worksheet ${row.worksheet_no} saved`);
       } else {
+        // If this worksheet was already fully signed and the BEM has now
+        // changed something that affects pay — hours, rate, or the total —
+        // the existing signatures no longer attest to the right figures, so
+        // clear them and drop back to Draft, requiring a fresh sign-off.
+        // Editing only the purpose/remarks or other minor details doesn't
+        // need a re-sign.
+        const financialsChanged = editing.status === "SIGNED" && (
+          Math.abs(totalHours - editing.total_hours) > 0.001 ||
+          Math.abs(totalAmount - editing.total_amount) > 0.01 ||
+          Number(form.rate_per_hour) !== editing.rate_per_hour
+        );
+        const updatePayload: Record<string, unknown> = { ...payload, updated_at: new Date().toISOString() };
+        if (financialsChanged) {
+          updatePayload.status = "DRAFT";
+          updatePayload.worker_signature = null; updatePayload.worker_signed_at = null;
+          updatePayload.bem_signature = null; updatePayload.bem_signed_by = null; updatePayload.bem_signed_at = null;
+        }
         const { data: row, error } = await supabase.from("worker_worksheets")
-          .update({ ...payload, updated_at: new Date().toISOString() })
+          .update(updatePayload)
           .eq("id", editing.id).select("*").single();
         if (error) throw new Error(error.message);
         setEditing(row as WorkerWorksheet);
-        showMsg("Worksheet updated");
+        if (financialsChanged) {
+          setWorkerSigDraft(""); setBemSigDraft("");
+          showMsg("Hours/rate/total changed — both signatures were cleared. Please sign again before generating a PV.");
+        } else {
+          showMsg("Worksheet updated");
+        }
       }
     } catch (e: unknown) {
       showMsg(e instanceof Error ? e.message : "Failed to save", false);
@@ -261,19 +283,60 @@ export default function WorksheetsPage() {
     if (editing?.id === ws.id) setEditing(null);
   }
 
-  // Un-link a worksheet from a PV that no longer exists (e.g. it was deleted
-  // elsewhere) or was raised by mistake, so the worksheet can be re-generated.
+  // A retracted PV is cancelled outright (not just unlinked) so it drops out
+  // of the BAM Committee's queue entirely — the BEM is either amending it or
+  // abandoning it, not leaving a phantom entry for someone to review. This
+  // is only safe to do automatically while the PV is still sitting untouched
+  // at its first stage; once anyone downstream has acted, they have to
+  // revert their own approval before the BEM can retract.
+  const RETRACT_ALLOWED_STATUSES = ["BAM_COMMITTEE_REVIEW", "REJECTED"];
+  const STAGE_LABEL: Record<string, string> = {
+    BAM_REVIEW: "the Building/Event Manager review stage",
+    FINANCE_REVIEW: "Finance Executive review",
+    GM_REVIEW: "General Manager approval",
+    PENDING_SIGNATORY: "signatory approval",
+    APPROVED: "final approval",
+    PAID: "payment",
+  };
+
   async function retractPV() {
-    if (!editing) return;
-    if (!confirm("Retract this worksheet from its PV? This only un-links the worksheet — if the PV still exists, delete or cancel it separately in My BAM PVs.")) return;
+    if (!editing?.pv_id) return;
     setGenerating(true);
     try {
+      const { data: pv } = await supabase.from("pvs").select("id,pv_no,status").eq("id", editing.pv_id).maybeSingle();
+
+      // PV already gone (deleted elsewhere) — nothing to cancel, just unlink.
+      if (!pv) {
+        const { data: row, error } = await supabase.from("worker_worksheets")
+          .update({ status: "SIGNED", pv_id: null }).eq("id", editing.id).select("*").single();
+        if (error) throw new Error(error.message);
+        setEditing(row as WorkerWorksheet);
+        showMsg("Worksheet retracted — the linked PV no longer exists. You can generate a new one.");
+        return;
+      }
+
+      if (!RETRACT_ALLOWED_STATUSES.includes(pv.status)) {
+        const stage = STAGE_LABEL[pv.status] ?? pv.status;
+        showMsg(`Cannot retract — ${pv.pv_no} has already passed ${stage}. Ask them to revert/unapprove it first, then retract again.`, false);
+        return;
+      }
+
+      if (!confirm(`Retract and cancel ${pv.pv_no}? This removes it from the BAM Committee's review queue so you can adjust this worksheet. The existing signatures stay valid unless you change the hours, rate, or total.`)) return;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pv.id, action: "CANCEL", remarks: "Retracted by Building/Event Manager for revision" }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "Failed to cancel the PV");
+
       const { data: row, error } = await supabase.from("worker_worksheets")
-        .update({ status: "SIGNED", pv_id: null })
-        .eq("id", editing.id).select("*").single();
+        .update({ status: "SIGNED", pv_id: null }).eq("id", editing.id).select("*").single();
       if (error) throw new Error(error.message);
       setEditing(row as WorkerWorksheet);
-      showMsg("Worksheet retracted — you can generate the PV again");
+      showMsg(`${pv.pv_no} cancelled and removed from the review queue. Make your adjustments, then generate a new PV.`);
     } catch (e: unknown) {
       showMsg(e instanceof Error ? e.message : "Failed to retract", false);
     } finally {
@@ -481,9 +544,12 @@ export default function WorksheetsPage() {
             <div className="space-y-2">
               <div className="text-center text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-xl py-2.5">PV already raised from this worksheet.</div>
               <Button variant="secondary" loading={generating} className="w-full" onClick={retractPV}>
-                Retract — generate a different PV
+                Retract &amp; Cancel PV
               </Button>
-              <p className="text-xs text-stone-400 text-center">Use this if the PV was deleted (e.g. shows &quot;PV not found&quot;) or was raised by mistake.</p>
+              <p className="text-xs text-stone-400 text-center">
+                Cancels the PV and removes it from the BAM Committee&apos;s queue, so you can adjust this worksheet and generate a fresh one.
+                Only works while the PV is still waiting on the BAM Committee (or already rejected) — if it&apos;s moved further (Finance, GM, signatories), ask them to revert their approval first.
+              </p>
             </div>
           )}
         </div>

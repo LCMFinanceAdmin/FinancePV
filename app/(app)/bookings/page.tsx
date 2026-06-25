@@ -1294,12 +1294,12 @@ export default function BookingsPage() {
   return (
     <div className={`${view === "calendar" ? "max-w-6xl" : "max-w-3xl"} mx-auto px-4 py-6 space-y-5`}>
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-stone-800">Facility Bookings</h1>
           <p className="text-sm text-stone-500 mt-0.5">Manage venue bookings and facility rentals</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:shrink-0">
           {canCreate && (
             <a href="/bookings/rates"
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 text-stone-600 text-sm font-medium hover:bg-stone-50 transition-colors"
@@ -1315,14 +1315,14 @@ export default function BookingsPage() {
               <Share2 size={15} /> {copied ? "Copied!" : "Public link"}
             </button>
           )}
-          <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden text-sm font-medium">
+          <div className="inline-flex rounded-xl border-2 border-[#4a6da7]/30 overflow-hidden text-sm font-semibold shrink-0">
             <button onClick={() => setView("list")} className={`px-3 py-2 transition-colors ${view === "list" ? "bg-[#4a6da7] text-white" : "text-stone-600 hover:bg-stone-50"}`}>List</button>
             <button onClick={() => setView("calendar")} className={`px-3 py-2 transition-colors ${view === "calendar" ? "bg-[#4a6da7] text-white" : "text-stone-600 hover:bg-stone-50"}`}>Calendar</button>
           </div>
           {canCreate && (
             <button
               onClick={() => setShowNew(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4a6da7] hover:bg-[#3a5a8f] text-white text-sm font-medium transition-colors"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#4a6da7] hover:bg-[#3a5a8f] text-white text-sm font-bold shadow-md transition-colors shrink-0 basis-full sm:basis-auto justify-center"
             >
               <Plus size={16} /> New Booking
             </button>
