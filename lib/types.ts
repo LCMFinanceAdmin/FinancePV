@@ -187,6 +187,8 @@ export interface BookingItem {
   subtotal: number;
 }
 
+export type BookingEventType = "WEDDING" | "TRAINING_WORKSHOP" | "WORSHIP_SERVICE" | "FELLOWSHIP_EVENT" | "OTHER";
+
 export interface FacilityBooking {
   id: string;
   booking_no: string;
@@ -195,6 +197,7 @@ export interface FacilityBooking {
   booker_phone: string;
   booker_org: string;
   booker_type: "PUBLIC" | "MEMBER" | "CONGREGATION" | "HQ";
+  event_type: BookingEventType;
   event_name: string;
   start_date: string;
   start_time: string;

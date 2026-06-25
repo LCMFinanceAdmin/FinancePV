@@ -1,3 +1,5 @@
+import type { BookingEventType } from "./types";
+
 export type PricingTier = "PUBLIC" | "MEMBER" | "CONGREGATION" | "HQ";
 
 export const TIER_LABELS: Record<PricingTier, string> = {
@@ -184,6 +186,17 @@ export function fmtHour(h: number): string {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}${h < 12 || h === 24 ? "am" : "pm"}`;
 }
+
+// Event types for facility bookings. Weddings require an endorsement letter
+// (signed by the pastor-in-charge, chopped by church administration) —
+// the other types don't.
+export const EVENT_TYPES: { value: BookingEventType; label: string }[] = [
+  { value: "WEDDING",            label: "Wedding" },
+  { value: "TRAINING_WORKSHOP",  label: "Training Workshop" },
+  { value: "WORSHIP_SERVICE",    label: "Worship Service" },
+  { value: "FELLOWSHIP_EVENT",   label: "Fellowship Event" },
+  { value: "OTHER",              label: "Other" },
+];
 
 // Editable rate overrides (from the facility_rates table), keyed by facility id.
 export interface RateOverride {

@@ -5,9 +5,9 @@ import {
   FileText, DollarSign, XCircle, AlertCircle, Share2, Percent, CalendarDays,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { UserProfile, FacilityBooking, BookingItem, FacilityBlock, FacilityBlockReason } from "@/lib/types";
+import type { UserProfile, FacilityBooking, BookingItem, FacilityBlock, FacilityBlockReason, BookingEventType } from "@/lib/types";
 import {
-  FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate, applyRateOverrides, defaultSessionHours, fmtHour,
+  FACILITIES, TIER_LABELS, TIER_COLORS, getRate, formatRate, applyRateOverrides, defaultSessionHours, fmtHour, EVENT_TYPES,
   type PricingTier, type FacilityDef, type RateOverride,
 } from "@/lib/facilities";
 import { ReceiptPdfButton } from "@/components/income/receipt-pdf";
@@ -190,6 +190,7 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
   const [bookerOrg, setBookerOrg]     = useState("");
 
   // Event (dates AND times now live per-facility on the line items)
+  const [eventType, setEventType]   = useState<BookingEventType | "">("");
   const [eventName, setEventName]   = useState("");
   const [purpose, setPurpose]       = useState("");
   const [notes, setNotes]           = useState("");
@@ -276,17 +277,27 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
     const def = facilities.find(f => f.id === hallId);
     if (!def) return;
     const rate = getRate(def, bookerType, true);
+    // Default the hall to the same date(s)/time(s) as the Auditorium/Chapel
+    // already on the booking, so it doesn't sit empty at RM0 — still fully
+    // editable afterward if the hall is needed for longer or extra dates.
+    const triggerItems = items.filter(it => CONCURRENT_TRIGGERS.includes(it.facility_id));
+    const dates = Array.from(new Set(triggerItems.flatMap(it => it.dates ?? []))).sort();
+    const times: Record<string, { start: number; end: number }> = {};
+    triggerItems.forEach(it => Object.entries(it.times ?? {}).forEach(([d, t]) => { times[d] = t; }));
     setItems(prev => [...prev, {
       facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel,
-      sessions: 0, dates: [], rate_per_session: rate, is_concurrent: true, subtotal: 0,
+      sessions: dates.length, dates, times, rate_per_session: rate, is_concurrent: true, subtotal: rate * dates.length,
     }]);
   }
 
   async function save() {
     if (!bookerName.trim()) { setError("Booker name is required."); return; }
+    if (!eventType) { setError("Select the type of event."); return; }
     if (items.length === 0) { setError("Add at least one facility."); return; }
     if (itemsMissingDates.length > 0) { setError(`Select at least one date for ${itemsMissingDates[0].facility_name}.`); return; }
     if (conflicts.length > 0) { setError(`Cannot book — ${conflicts[0].name}: ${conflicts[0].reason}. Pick another date or remove the facility.`); return; }
+    // Note: a missing endorsement letter for weddings is flagged, not blocked —
+    // the booking can proceed and the form uploaded before the event.
     setError("");
     setSaving(true);
     try {
@@ -308,6 +319,7 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
         booker_phone:  bookerPhone.trim(),
         booker_org:    bookerOrg.trim(),
         booker_type:   bookerType,
+        event_type:    eventType,
         event_name:    eventName.trim(),
         start_date:    allDates[0],
         start_time:    overallStartTime,
@@ -444,6 +456,19 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
             <p className="text-xs text-stone-400 mb-3">Dates and times are picked per facility above — each venue can run on its own dates and hour block.</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
+                <label className="text-xs text-stone-500 mb-1 block">Type of Event *</label>
+                <div className="flex flex-wrap gap-2">
+                  {EVENT_TYPES.map(t => (
+                    <button key={t.value} type="button" onClick={() => setEventType(t.value)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        eventType === t.value ? "bg-[#4a6da7] text-white border-transparent" : "border-stone-200 text-stone-500 hover:border-stone-300"
+                      }`}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Event Name</label>
                 <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={eventName} onChange={e => setEventName(e.target.value)} placeholder="e.g. Sunday Service, Wedding Reception" />
               </div>
@@ -483,7 +508,15 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
           {/* Signed/stamped form */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-1">Scanned Booking Form</h3>
-            <p className="text-xs text-stone-400 mb-2">Upload the form signed by the applicant&apos;s pastor and bearing the church office stamp (PDF or image).</p>
+            <p className="text-xs text-stone-400 mb-2">Optional — upload a signed/stamped copy if one applies (PDF or image).</p>
+            {eventType === "WEDDING" && files.length === 0 && (
+              <div className="mb-2.5 flex items-start gap-2 p-3 bg-orange-50 border border-orange-300 rounded-xl text-sm text-orange-800">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold">Endorsement letter pending.</span> Weddings require the endorsement letter signed by the pastor-in-charge and chopped by the church administration. You can still save this booking now and upload it before the event.
+                </div>
+              </div>
+            )}
             <input type="file" multiple accept="image/*,application/pdf"
               onChange={e => setFiles(Array.from(e.target.files ?? []))}
               className="block w-full text-sm text-stone-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#4a6da7]/10 file:text-[#4a6da7] hover:file:bg-[#4a6da7]/20" />
@@ -709,6 +742,11 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[booking.booker_type]}`}>
                 {TIER_LABELS[booking.booker_type]}
               </span>
+              {booking.event_type === "WEDDING" && (booking.attachments ?? []).length === 0 && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-700">
+                  Endorsement letter pending
+                </span>
+              )}
             </div>
             <div className="font-semibold text-stone-800 mt-0.5 truncate">
               {booking.event_name || booking.booker_name}
