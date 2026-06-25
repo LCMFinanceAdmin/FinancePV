@@ -8,14 +8,15 @@ import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff } from "lucide-react";
 const ROLES = [
   "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
   "GENERAL_MANAGER", "BISHOP", "TREASURER", "SECRETARY",
-  "MINISTRY_HEAD", "STAFF",
+  "MINISTRY_HEAD", "BUILDING_MANAGER", "BAM_COMMITTEE", "STAFF",
 ];
 
 const ROLE_LABELS: Record<string, string> = {
   FINANCE_ADMIN: "Finance Executive", FINANCE_ADMIN_2: "Accounts Executive",
   FINANCE_ADMIN_3: "Finance Executive 3", GENERAL_MANAGER: "General Manager",
   BISHOP: "Bishop", TREASURER: "Treasurer", SECRETARY: "Secretary",
-  MINISTRY_HEAD: "EXCO Member", STAFF: "Staff",
+  MINISTRY_HEAD: "EXCO Member", BUILDING_MANAGER: "Building / Event Manager",
+  BAM_COMMITTEE: "BAM Committee", STAFF: "Staff",
 };
 
 interface UserRole {

@@ -39,6 +39,8 @@ export const ROLE_LABELS: Record<string, string> = {
   TREASURER:       "Treasurer",
   SECRETARY:       "Secretary",
   MINISTRY_HEAD:   "EXCO Member",
+  BUILDING_MANAGER:"Building / Event Manager",
+  BAM_COMMITTEE:   "BAM Committee",
   STAFF:           "Staff",
 };
 
