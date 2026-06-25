@@ -92,25 +92,32 @@ function WorksheetDocument({ ws, logoDataUri }: { ws: WorkerWorksheet; logoDataU
         <View style={[s.border, { marginBottom: 10 }]}>
           <View style={[s.row, s.headerBg]}>
             <Text style={[s.cell, s.bold, s.tiny, { flex: 2 }]}>Date</Text>
+            <Text style={[s.cell, s.bold, s.tiny, { flex: 1.6 }]}>Time</Text>
             <Text style={[s.cell, s.bold, s.tiny, { flex: 1, textAlign: "right" }]}>Hours</Text>
+            <Text style={[s.cell, s.bold, s.tiny, { flex: 2.4 }]}>Purpose / Remarks</Text>
           </View>
           {ws.entries.map((e, i) => (
             <View key={i} style={s.row}>
               <Text style={[s.cell, s.tiny, { flex: 2 }]}>{fmtDate(e.date)}</Text>
+              <Text style={[s.cell, s.tiny, { flex: 1.6 }]}>{e.start_time && e.end_time ? `${e.start_time}–${e.end_time}` : "—"}</Text>
               <Text style={[s.cell, s.tiny, { flex: 1, textAlign: "right" }]}>{e.hours}</Text>
+              <Text style={[s.cell, s.tiny, { flex: 2.4 }]}>{e.purpose || ""}</Text>
             </View>
           ))}
           <View style={[s.row, s.headerBg]}>
-            <Text style={[s.cell, s.bold, s.tiny, { flex: 2 }]}>Total Hours</Text>
+            <Text style={[s.cell, s.bold, s.tiny, { flex: 3.6 }]}>Total Hours</Text>
             <Text style={[s.cell, s.bold, s.tiny, { flex: 1, textAlign: "right" }]}>{ws.total_hours}</Text>
+            <Text style={[s.cell, s.tiny, { flex: 2.4 }]} />
           </View>
           <View style={s.row}>
-            <Text style={[s.cell, s.tiny, { flex: 2 }]}>Rate per Hour (RM)</Text>
+            <Text style={[s.cell, s.tiny, { flex: 3.6 }]}>Rate per Hour (RM)</Text>
             <Text style={[s.cell, s.tiny, { flex: 1, textAlign: "right" }]}>{fmt(ws.rate_per_hour)}</Text>
+            <Text style={[s.cell, s.tiny, { flex: 2.4 }]} />
           </View>
           <View style={[s.row, s.headerBg]}>
-            <Text style={[s.cell, s.bold, s.tiny, { flex: 2 }]}>Total Amount (RM)</Text>
+            <Text style={[s.cell, s.bold, s.tiny, { flex: 3.6 }]}>Total Amount (RM)</Text>
             <Text style={[s.cell, s.bold, s.tiny, { flex: 1, textAlign: "right" }]}>{fmt(ws.total_amount)}</Text>
+            <Text style={[s.cell, s.tiny, { flex: 2.4 }]} />
           </View>
         </View>
 

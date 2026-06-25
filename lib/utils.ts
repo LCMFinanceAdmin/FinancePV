@@ -30,6 +30,18 @@ export function formatDateTime(iso: string): string {
   });
 }
 
+// Hours worked between two "HH:MM" times, to 2dp. A shift that ends earlier
+// than it starts (e.g. 22:00–06:00) is treated as crossing midnight.
+export function hoursBetween(startTime: string, endTime: string): number {
+  if (!startTime || !endTime) return 0;
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  if ([sh, sm, eh, em].some(n => Number.isNaN(n))) return 0;
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff <= 0) diff += 24 * 60;
+  return Math.round((diff / 60) * 100) / 100;
+}
+
 export const ROLE_LABELS: Record<string, string> = {
   FINANCE_ADMIN:   "Finance Executive",
   FINANCE_ADMIN_2: "Accounts Executive",

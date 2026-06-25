@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { SignaturePad } from "@/components/ui/signature-pad";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
 import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
 import type { WorkerWorksheet, WorkerType, WorksheetEntry } from "@/lib/types";
 import { Plus, Trash2, ArrowLeft, FileCheck2, FileText, ChevronRight } from "lucide-react";
@@ -45,13 +45,19 @@ function daysInMonth(monthStr: string): string[] {
   const count = new Date(y, m, 0).getDate();
   return Array.from({ length: count }, (_, i) => `${monthStr}-${String(i + 1).padStart(2, "0")}`);
 }
+// Hours for an entry — derived from its time range; falls back to a raw
+// stored number for older rows that were entered before time-range tracking.
+function entryHours(e: WorksheetEntry): number {
+  if (e.start_time && e.end_time) return hoursBetween(e.start_time, e.end_time);
+  return Number(e.hours) || 0;
+}
 
 const BLANK: Omit<WorkerWorksheet, "id" | "worksheet_no" | "created_at" | "updated_at" | "created_by" | "pdf_url" | "pv_id" | "status" | "worker_signature" | "worker_signed_at" | "bem_signature" | "bem_signed_by" | "bem_signed_at"> = {
   worker_type: "PA_PERSONNEL",
   worker_name: "",
   period_type: "DAYS",
   period_label: "",
-  entries: [{ date: "", hours: 0 }],
+  entries: [{ date: "", start_time: "", end_time: "", hours: 0, purpose: "" }],
   rate_per_hour: 0,
   total_hours: 0,
   total_amount: 0,
@@ -96,7 +102,7 @@ export default function WorksheetsPage() {
 
   const periodType = PERIOD_TYPE_FOR[form.worker_type];
   const totalHours = useMemo(
-    () => form.entries.reduce((s, e) => s + (Number(e.hours) || 0), 0),
+    () => Math.round(form.entries.reduce((s, e) => s + entryHours(e), 0) * 100) / 100,
     [form.entries]
   );
   const totalAmount = totalHours * (Number(form.rate_per_hour) || 0);
@@ -106,8 +112,14 @@ export default function WorksheetsPage() {
     const days = daysInMonth(month);
     if (days.length === 0) return;
     setForm(f => {
-      const existingByDate = new Map(f.entries.filter(e => e.date).map(e => [e.date, e.hours]));
-      return { ...f, entries: days.map(date => ({ date, hours: existingByDate.get(date) ?? 0 })) };
+      const existingByDate = new Map(f.entries.filter(e => e.date).map(e => [e.date, e]));
+      return {
+        ...f,
+        entries: days.map(date => {
+          const existing = existingByDate.get(date);
+          return existing ?? { date, start_time: "", end_time: "", hours: 0, purpose: "" };
+        }),
+      };
     });
   }
 
@@ -142,7 +154,7 @@ export default function WorksheetsPage() {
   function updateEntry(idx: number, patch: Partial<WorksheetEntry>) {
     setForm(f => ({ ...f, entries: f.entries.map((e, i) => i === idx ? { ...e, ...patch } : e) }));
   }
-  function addEntry() { setForm(f => ({ ...f, entries: [...f.entries, { date: "", hours: 0 }] })); }
+  function addEntry() { setForm(f => ({ ...f, entries: [...f.entries, { date: "", start_time: "", end_time: "", hours: 0, purpose: "" }] })); }
   function removeEntry(idx: number) {
     setForm(f => ({ ...f, entries: f.entries.length > 1 ? f.entries.filter((_, i) => i !== idx) : f.entries }));
   }
@@ -153,8 +165,12 @@ export default function WorksheetsPage() {
     if (!form.rate_per_hour || form.rate_per_hour <= 0) { showMsg("Enter the rate per hour", false); return; }
     setSaving(true);
     try {
-      const entries: WorksheetEntry[] = form.entries.filter(e => e.date && e.hours > 0);
-      if (entries.length === 0) { showMsg("Add at least one valid date + hours entry", false); setSaving(false); return; }
+      // Store the computed hours on each entry (derived from its time range)
+      // so older display logic / the PDF can keep reading entry.hours directly.
+      const entries: WorksheetEntry[] = form.entries
+        .filter(e => e.date && entryHours(e) > 0)
+        .map(e => ({ ...e, hours: entryHours(e) }));
+      if (entries.length === 0) { showMsg("Add at least one day with a date and time range.", false); setSaving(false); return; }
 
       const payload = {
         worker_type: form.worker_type,
@@ -380,24 +396,35 @@ export default function WorksheetsPage() {
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className={label.replace("mb-1", "mb-0")}>
-              {periodType === "MONTH" ? "Hours per Day" : "Days Worked"}
-            </label>
+            <label className={label.replace("mb-1", "mb-0")}>Days Worked</label>
             <button type="button" onClick={addEntry} className="flex items-center gap-1 text-xs text-[#4a6da7] font-medium hover:underline"><Plus size={12} /> Add day</button>
           </div>
-          {periodType === "MONTH" && (
-            <p className="text-xs text-stone-400 mb-2">Fill in the hours worked for each day; leave a day at 0 if the worker was off.</p>
-          )}
+          <p className="text-xs text-stone-400 mb-2">
+            Set the time worked from–to for each day; hours are calculated automatically.
+            {periodType === "MONTH" && " Leave a day's times blank if the worker was off."}
+          </p>
           <div className="space-y-2">
-            {form.entries.map((e, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <input type="date" className={`${inp} flex-1`} value={e.date} onChange={ev => updateEntry(idx, { date: ev.target.value })} />
-                <input type="number" min={0} step={0.5} className="w-24 border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]" placeholder="hrs" value={e.hours || ""} onChange={ev => updateEntry(idx, { hours: Number(ev.target.value) })} />
-                {form.entries.length > 1 && (
-                  <button type="button" onClick={() => removeEntry(idx)} className="p-1.5 text-stone-300 hover:text-red-500"><Trash2 size={14} /></button>
-                )}
-              </div>
-            ))}
+            {form.entries.map((e, idx) => {
+              const hrs = entryHours(e);
+              return (
+                <div key={idx} className="border border-stone-200 rounded-xl p-2.5 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <input type="date" className={`${inp} flex-1`} value={e.date} onChange={ev => updateEntry(idx, { date: ev.target.value })} />
+                    <input type="time" className="w-[110px] border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                      value={e.start_time ?? ""} onChange={ev => updateEntry(idx, { start_time: ev.target.value })} />
+                    <span className="text-stone-400 text-xs">to</span>
+                    <input type="time" className="w-[110px] border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                      value={e.end_time ?? ""} onChange={ev => updateEntry(idx, { end_time: ev.target.value })} />
+                    <span className="text-xs font-semibold text-stone-600 whitespace-nowrap w-14 text-right">{hrs > 0 ? `${hrs} hrs` : "—"}</span>
+                    {form.entries.length > 1 && (
+                      <button type="button" onClick={() => removeEntry(idx)} className="p-1.5 text-stone-300 hover:text-red-500"><Trash2 size={14} /></button>
+                    )}
+                  </div>
+                  <input className={inp} placeholder="Purpose / remarks (optional) — e.g. Easter service security cover"
+                    value={e.purpose ?? ""} onChange={ev => updateEntry(idx, { purpose: ev.target.value })} />
+                </div>
+              );
+            })}
           </div>
         </div>
 

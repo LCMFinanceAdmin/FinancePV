@@ -233,8 +233,11 @@ export type WorksheetPeriodType = "MONTH" | "DAYS";
 export type WorksheetStatus = "DRAFT" | "SIGNED" | "PV_RAISED";
 
 export interface WorksheetEntry {
-  date: string;   // yyyy-mm-dd for DAYS, yyyy-mm-01 (month anchor) for MONTH
-  hours: number;
+  date: string;        // yyyy-mm-dd
+  start_time?: string; // "HH:MM" — hours is derived from start_time/end_time when both are set
+  end_time?: string;   // "HH:MM"
+  hours: number;        // computed from start_time/end_time; kept for older rows entered as a raw number
+  purpose?: string;    // optional remarks for that day (e.g. "Easter service security cover")
 }
 
 export interface WorkerWorksheet {
