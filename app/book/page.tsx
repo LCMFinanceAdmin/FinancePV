@@ -1,15 +1,18 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Plus, Trash2, CheckCircle2, AlertCircle, FileText, XCircle, CalendarDays } from "lucide-react";
+import { Plus, CheckCircle2, AlertCircle, FileText, XCircle, CalendarDays } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { FACILITIES, TIER_LABELS, FACILITY_TYPE_LABELS, getRate, formatRate, applyRateOverrides, type PricingTier, type FacilityDef, type FacilityType, type RateOverride } from "@/lib/facilities";
-import type { BookingItem } from "@/lib/types";
+import {
+  FACILITIES, TIER_LABELS, FACILITY_TYPE_LABELS, getRate, formatRate, applyRateOverrides, fmtCurrency as fmt,
+  EVENT_TYPES, CONCURRENT_TRIGGERS, CONCURRENT_HALLS,
+  type PricingTier, type FacilityDef, type FacilityType, type RateOverride,
+} from "@/lib/facilities";
+import type { BookingItem, BookingEventType } from "@/lib/types";
 import { AvailabilityCalendar } from "@/components/bookings/availability-calendar";
+import { FacilityLineRow } from "@/components/bookings/facility-line-row";
 
 interface BookedRange { facility_id: string; start_date: string; end_date: string }
 interface BlockedRange { facility_id: string | null; start_date: string; end_date: string }
-
-function fmt(n: number) { return "RM " + n.toLocaleString("en-MY", { minimumFractionDigits: 2 }); }
 
 // Does [aS,aE] overlap [bS,bE]? (all yyyy-mm-dd strings)
 function overlaps(aS: string, aE: string, bS: string, bE: string) {
@@ -26,11 +29,8 @@ export default function PublicBookingPage() {
   const [bookerEmail, setBookerEmail] = useState("");
   const [bookerPhone, setBookerPhone] = useState("");
   const [bookerOrg, setBookerOrg] = useState("");
+  const [eventType, setEventType] = useState<BookingEventType | "">("");
   const [eventName, setEventName] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [endTime, setEndTime] = useState("");
   const [purpose, setPurpose] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [booked, setBooked] = useState<BookedRange[]>([]);
@@ -38,15 +38,15 @@ export default function PublicBookingPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<string | null>(null);
-  const [menuDates, setMenuDates] = useState<Record<string, string>>({}); // per-facility availability check
-  const [openCal, setOpenCal] = useState<string | null>(null); // which facility's calendar is expanded
+  const [menuDates, setMenuDates] = useState<Record<string, string>>({}); // per-facility availability check (menu only)
+  const [openCal, setOpenCal] = useState<string | null>(null); // which facility's menu calendar is expanded
 
   const [facilities, setFacilities] = useState<FacilityDef[]>(FACILITIES);
 
   function defaultItem(tier: PricingTier): BookingItem {
     const def = facilities[0];
     const rate = getRate(def, tier);
-    return { facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel, sessions: 1, rate_per_session: rate, is_concurrent: false, subtotal: rate };
+    return { facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel, sessions: 0, dates: [], times: {}, rate_per_session: rate, is_concurrent: false, subtotal: 0 };
   }
   const [items, setItems] = useState<BookingItem[]>([defaultItem("PUBLIC")]);
 
@@ -63,54 +63,69 @@ export default function PublicBookingPage() {
     })();
   }, [supabase]);
 
-  // recalc rates when tier or rates change
+  // Re-calculate all item rates when tier or rates change (subtotal = rate × #dates)
   useEffect(() => {
     setItems(prev => prev.map(it => {
       const def = facilities.find(f => f.id === it.facility_id);
       if (!def) return it;
       const rate = getRate(def, bookerType, it.is_concurrent);
-      return { ...it, rate_per_session: rate, subtotal: rate * it.sessions };
+      const n = (it.dates ?? []).length;
+      return { ...it, rate_per_session: rate, sessions: n, subtotal: rate * n };
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookerType, facilities]);
 
   const total = items.reduce((s, i) => s + i.subtotal, 0);
-  const rangeEnd = endDate || startDate;
 
-  // A facility is unavailable if it clashes with a booking, or with a block
-  // (a block with no facility blocks the whole venue).
-  function unavailable(facilityId: string): boolean {
-    if (!startDate) return false;
-    if (booked.some(b => b.facility_id === facilityId && overlaps(startDate, rangeEnd, b.start_date, b.end_date))) return true;
-    if (blocked.some(b => (b.facility_id === null || b.facility_id === facilityId) && overlaps(startDate, rangeEnd, b.start_date, b.end_date))) return true;
-    return false;
-  }
-  const conflicts = startDate ? items.filter(it => unavailable(it.facility_id)) : [];
-
-  // Availability of a single facility on a single day, for the menu's date check.
+  // A single day is unavailable for a facility if it clashes with a confirmed
+  // booking or a maintenance/rehearsal block (a block with no facility blocks
+  // the whole venue).
   function freeOn(facilityId: string, day: string): boolean {
     if (!day) return true;
     if (booked.some(b => b.facility_id === facilityId && overlaps(day, day, b.start_date, b.end_date))) return false;
     if (blocked.some(b => (b.facility_id === null || b.facility_id === facilityId) && overlaps(day, day, b.start_date, b.end_date))) return false;
     return true;
   }
+  const isDayUnavailable = (facilityId: string, day: string) => !freeOn(facilityId, day);
 
-  function setItem(idx: number, patch: Partial<BookingItem>) {
-    setItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it;
-      const next = { ...it, ...patch };
-      const def = facilities.find(f => f.id === next.facility_id);
-      const rate = def ? getRate(def, bookerType, next.is_concurrent) : next.rate_per_session;
-      next.rate_per_session = rate; next.subtotal = rate * next.sessions;
-      return next;
-    }));
+  const itemsMissingDates = items.filter(it => (it.dates ?? []).length === 0);
+  const conflicts = items.flatMap(it =>
+    (it.dates ?? [])
+      .filter(d => isDayUnavailable(it.facility_id, d))
+      .map(d => ({ name: it.facility_name, reason: `${d} is unavailable` }))
+  );
+  const allDates = Array.from(new Set(items.flatMap(it => it.dates ?? []))).sort();
+  const allHourBlocks = items.flatMap(it => Object.values(it.times ?? {}));
+  const hh = (h: number) => `${String(h % 24).padStart(2, "0")}:00`;
+  const overallStartTime = allHourBlocks.length ? hh(Math.min(...allHourBlocks.map(t => t.start))) : "";
+  const overallEndTime = allHourBlocks.length ? hh(Math.max(...allHourBlocks.map(t => t.end))) : "";
+
+  // Concurrent-hall prompt for Auditorium / Chapel bookings — matches the
+  // internal New Booking modal's behaviour exactly.
+  const hasTriggerFacility = items.some(it => CONCURRENT_TRIGGERS.includes(it.facility_id));
+  const concurrentSuggestions = hasTriggerFacility
+    ? CONCURRENT_HALLS.filter(hid => !items.some(it => it.facility_id === hid))
+    : [];
+  function addConcurrentHall(hallId: string) {
+    const def = facilities.find(f => f.id === hallId);
+    if (!def) return;
+    const rate = getRate(def, bookerType, true);
+    const triggerItems = items.filter(it => CONCURRENT_TRIGGERS.includes(it.facility_id));
+    const dates = Array.from(new Set(triggerItems.flatMap(it => it.dates ?? []))).sort();
+    const times: Record<string, { start: number; end: number }> = {};
+    triggerItems.forEach(it => Object.entries(it.times ?? {}).forEach(([d, t]) => { times[d] = t; }));
+    setItems(prev => [...prev, {
+      facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel,
+      sessions: dates.length, dates, times, rate_per_session: rate, is_concurrent: true, subtotal: rate * dates.length,
+    }]);
   }
 
   async function submit() {
     if (!bookerName.trim()) { setError("Your name is required."); return; }
     if (!bookerEmail.trim() && !bookerPhone.trim()) { setError("Please leave a phone number or email so we can reach you."); return; }
-    if (!startDate) { setError("Select a date."); return; }
-    if (conflicts.length > 0) { setError("Some facilities are unavailable on the selected dates. Please adjust."); return; }
+    if (!eventType) { setError("Select the type of event."); return; }
+    if (itemsMissingDates.length > 0) { setError(`Select at least one date for ${itemsMissingDates[0].facility_name}.`); return; }
+    if (conflicts.length > 0) { setError("Some facilities are unavailable on the selected date(s). Please adjust."); return; }
     setError(""); setSaving(true);
     try {
       const attachments: string[] = [];
@@ -126,8 +141,9 @@ export default function PublicBookingPage() {
         booking_no: bkNo,
         booker_name: bookerName.trim(), booker_email: bookerEmail.trim(),
         booker_phone: bookerPhone.trim(), booker_org: bookerOrg.trim(), booker_type: bookerType,
-        event_name: eventName.trim(), start_date: startDate, start_time: startTime,
-        end_date: endDate || null, end_time: endTime,
+        event_type: eventType, event_name: eventName.trim(),
+        start_date: allDates[0], start_time: overallStartTime,
+        end_date: allDates.length > 1 ? allDates[allDates.length - 1] : null, end_time: overallEndTime,
         booking_items: items, total_amount: total, purpose: purpose.trim(),
         notes: "", internal_notes: "", attachments, status: "ENQUIRY", created_by: "public-form",
       });
@@ -277,49 +293,89 @@ export default function PublicBookingPage() {
           <section>
             <h2 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Event</h2>
             <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className={label}>Type of Event *</label>
+                <div className="flex flex-wrap gap-2">
+                  {EVENT_TYPES.map(t => (
+                    <button key={t.value} type="button" onClick={() => setEventType(t.value)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${eventType === t.value ? "bg-[#4a6da7] text-white border-transparent" : "border-stone-200 text-stone-500 hover:border-stone-300"}`}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="col-span-2"><label className={label}>Event Name</label><input className={input} value={eventName} onChange={e => setEventName(e.target.value)} /></div>
-              <div><label className={label}>Start Date *</label><input type="date" className={input} value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
-              <div><label className={label}>Start Time</label><input type="time" className={input} value={startTime} onChange={e => setStartTime(e.target.value)} /></div>
-              <div><label className={label}>End Date</label><input type="date" className={input} value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
-              <div><label className={label}>End Time</label><input type="time" className={input} value={endTime} onChange={e => setEndTime(e.target.value)} /></div>
               <div className="col-span-2"><label className={label}>Purpose / Description</label><textarea rows={2} className={`${input} resize-none`} value={purpose} onChange={e => setPurpose(e.target.value)} /></div>
             </div>
           </section>
 
-          {/* Facilities */}
+          {/* Facilities — dates & time are picked per facility below */}
           <section>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xs font-bold uppercase tracking-wider text-stone-400">Facilities</h2>
               <button type="button" onClick={() => setItems(p => [...p, defaultItem(bookerType)])} className="flex items-center gap-1 text-xs text-[#4a6da7] font-medium hover:underline"><Plus size={13} /> Add Facility</button>
             </div>
-            <div className="space-y-2">
-              {items.map((it, idx) => {
-                const clash = unavailable(it.facility_id);
-                return (
-                  <div key={idx}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select className="flex-1 min-w-[180px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]" value={it.facility_id}
-                        onChange={e => { const def = facilities.find(f => f.id === e.target.value)!; setItem(idx, { facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel, is_concurrent: false }); }}>
-                        {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                      </select>
-                      <input type="number" min={1} className="w-16 border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]" value={it.sessions}
-                        onChange={e => setItem(idx, { sessions: Math.max(1, parseInt(e.target.value) || 1) })} />
-                      <span className="text-xs text-stone-400">{formatRate(it.rate_per_session)}/session</span>
-                      <span className="text-sm font-semibold text-stone-800 ml-auto">{fmt(it.subtotal)}</span>
-                      {items.length > 1 && <button type="button" onClick={() => setItems(p => p.filter((_, i) => i !== idx))} className="p-1 text-stone-300 hover:text-red-500"><Trash2 size={14} /></button>}
-                    </div>
-                    {clash && <p className="text-[11px] text-red-600 mt-0.5 flex items-center gap-1"><AlertCircle size={11} /> {it.facility_name} is unavailable on the selected date(s).</p>}
-                  </div>
-                );
-              })}
+            <p className="text-xs text-stone-400 mb-2">Each facility can run on its own dates and hour block — e.g. the Auditorium on one day and a Guest Room over several nights, all in this one enquiry.</p>
+            <div className="rounded-xl border border-stone-200 px-3 py-1">
+              {items.map((item, idx) => (
+                <FacilityLineRow
+                  key={idx}
+                  item={item}
+                  tier={bookerType}
+                  facilities={facilities}
+                  isDayUnavailable={isDayUnavailable}
+                  showRemove={items.length > 1}
+                  onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
+                  onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
+                />
+              ))}
             </div>
+
+            {/* Prompt to add the Faith Halls concurrently with the Auditorium / Chapel */}
+            {concurrentSuggestions.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <span className="text-xs text-amber-800">
+                  Booking the Auditorium or Chapel — add a Faith Hall at the discounted concurrent rate?
+                </span>
+                {concurrentSuggestions.map(hid => {
+                  const def = facilities.find(f => f.id === hid);
+                  if (!def) return null;
+                  return (
+                    <button key={hid} type="button" onClick={() => addConcurrentHall(hid)}
+                      className="flex items-center gap-1 text-xs font-medium text-amber-900 border border-amber-300 bg-white hover:bg-amber-100 px-2.5 py-1 rounded-full transition-colors">
+                      <Plus size={12} /> {def.name} ({formatRate(getRate(def, bookerType, true))})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {conflicts.length > 0 && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-sm space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold text-red-700">
+                  <AlertCircle size={14} /> Some selected dates are unavailable
+                </div>
+                {conflicts.map((c, i) => (
+                  <div key={i} className="text-xs text-red-700 pl-5">{c.name}: {c.reason}</div>
+                ))}
+              </div>
+            )}
+
             <div className="flex justify-end mt-3 text-sm"><span className="text-stone-400 mr-2">Estimated total</span><span className="text-xl font-bold text-[#4a6da7]">{fmt(total)}</span></div>
           </section>
 
           {/* Scanned form */}
           <section>
             <h2 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-1">Signed &amp; Stamped Form</h2>
-            <p className="text-xs text-stone-400 mb-2">Upload the booking form signed by your pastor-in-charge and bearing your church office stamp (PDF or image).</p>
+            <p className="text-xs text-stone-400 mb-2">Optional — upload a signed/stamped copy if one applies (PDF or image).</p>
+            {eventType === "WEDDING" && files.length === 0 && (
+              <div className="mb-2.5 flex items-start gap-2 p-3 bg-orange-50 border border-orange-300 rounded-xl text-sm text-orange-800">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold">Endorsement letter pending.</span> Weddings require the endorsement letter signed by the pastor-in-charge and chopped by the church administration. You can still submit this enquiry now and bring/upload the letter before the event.
+                </div>
+              </div>
+            )}
             <input type="file" multiple accept="image/*,application/pdf" onChange={e => setFiles(Array.from(e.target.files ?? []))}
               className="block w-full text-sm text-stone-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#4a6da7]/10 file:text-[#4a6da7] hover:file:bg-[#4a6da7]/20" />
             {files.length > 0 && (
