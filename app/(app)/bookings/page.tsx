@@ -37,38 +37,41 @@ const STATUS_COLORS: Record<FacilityBooking["status"], string> = {
 
 const METHODS = ["Cash", "Bank Transfer", "Cheque", "Online Transfer", "Other"];
 
-// ─── New booking modal ────────────────────────────────────────────────────────
+// ─── Booking form modal (create + edit) ────────────────────────────────────────
 
-interface NewBookingModalProps {
+interface BookingFormModalProps {
   user: UserProfile;
   facilities: FacilityDef[];
   bookings: FacilityBooking[];
   blocks: FacilityBlock[];
+  initial?: FacilityBooking; // present => editing an existing booking instead of creating one
   onClose: () => void;
   onSaved: () => void;
 }
 
 function ymdOnly(s: string | null | undefined) { return s ? s.split("T")[0] : ""; }
 
-function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved }: NewBookingModalProps) {
+function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose, onSaved }: BookingFormModalProps) {
   const supabase = createClient();
+  const isEdit = !!initial;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   // Booker
-  const [bookerType, setBookerType]   = useState<PricingTier>("PUBLIC");
-  const [bookerName, setBookerName]   = useState("");
-  const [bookerEmail, setBookerEmail] = useState("");
-  const [bookerPhone, setBookerPhone] = useState("");
-  const [bookerOrg, setBookerOrg]     = useState("");
+  const [bookerType, setBookerType]   = useState<PricingTier>(initial?.booker_type ?? "PUBLIC");
+  const [bookerName, setBookerName]   = useState(initial?.booker_name ?? "");
+  const [bookerEmail, setBookerEmail] = useState(initial?.booker_email ?? "");
+  const [bookerPhone, setBookerPhone] = useState(initial?.booker_phone ?? "");
+  const [bookerOrg, setBookerOrg]     = useState(initial?.booker_org ?? "");
 
   // Event (dates AND times now live per-facility on the line items)
-  const [eventType, setEventType]   = useState<BookingEventType | "">("");
-  const [eventName, setEventName]   = useState("");
-  const [purpose, setPurpose]       = useState("");
-  const [notes, setNotes]           = useState("");
-  const [internalNotes, setInternal] = useState("");
+  const [eventType, setEventType]   = useState<BookingEventType | "">(initial?.event_type ?? "");
+  const [eventName, setEventName]   = useState(initial?.event_name ?? "");
+  const [purpose, setPurpose]       = useState(initial?.purpose ?? "");
+  const [notes, setNotes]           = useState(initial?.notes ?? "");
+  const [internalNotes, setInternal] = useState(initial?.internal_notes ?? "");
   const [files, setFiles]           = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<string[]>(initial?.attachments ?? []);
 
   // Line items — each facility carries its OWN session dates.
   function defaultItem(tier: PricingTier): BookingItem {
@@ -85,7 +88,9 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
       subtotal: 0,
     };
   }
-  const [items, setItems] = useState<BookingItem[]>([defaultItem("PUBLIC")]);
+  const [items, setItems] = useState<BookingItem[]>(
+    initial?.booking_items?.length ? initial.booking_items : [defaultItem("PUBLIC")]
+  );
 
   // Re-calculate all item rates when tier changes (subtotal = rate × #dates)
   useEffect(() => {
@@ -108,9 +113,12 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
   // ── Availability: respect existing bookings + maintenance/rehearsal blocks ──
   // A single day is unavailable for a specific facility if it clashes with a
   // booking for that facility or a block (facility-specific or venue-wide).
+  // When editing, exclude this booking's own existing rows from the clash
+  // check — otherwise it would always conflict with its own dates.
   function isDayUnavailable(facilityId: string, day: string): boolean {
     const booked = bookings.some(b => {
       if (b.status === "CANCELLED") return false;
+      if (initial && b.id === initial.id) return false;
       const it = (b.booking_items ?? []).find(bi => bi.facility_id === facilityId);
       if (!it) return false;
       // Newer bookings carry per-facility dates; older ones only a start/end range.
@@ -174,8 +182,9 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
     setError("");
     setSaving(true);
     try {
-      // Upload any scanned forms first.
-      const attachments: string[] = [];
+      // Upload any newly-attached scanned forms; keep whichever existing ones
+      // weren't removed (edit mode).
+      const attachments: string[] = [...existingAttachments];
       for (const f of files) {
         const path = `${Date.now()}-${f.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
         const { error: upErr } = await supabase.storage.from("booking-forms").upload(path, f);
@@ -184,9 +193,7 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
         attachments.push(publicUrl);
       }
 
-      const { data: bkNo } = await supabase.rpc("next_booking_no");
-      const { error: e } = await supabase.from("facility_bookings").insert({
-        booking_no:    bkNo,
+      const payload = {
         booker_name:   bookerName.trim(),
         booker_email:  bookerEmail.trim(),
         booker_phone:  bookerPhone.trim(),
@@ -204,10 +211,30 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
         notes:         notes.trim(),
         internal_notes: internalNotes.trim(),
         attachments,
-        status:        "ENQUIRY",
-        created_by:    user.email,
-      });
-      if (e) throw e;
+      };
+
+      if (isEdit && initial) {
+        // Revising an existing booking puts it back to a clean Enquiry —
+        // any prior signatures no longer apply to the revised details and
+        // must be recaptured before this can be confirmed again.
+        const { error: e } = await supabase.from("facility_bookings").update({
+          ...payload,
+          status: "ENQUIRY",
+          booker_signature: null, booker_signed_at: null,
+          bem_signature: null, bem_signed_by: null, bem_signed_at: null,
+          updated_at: new Date().toISOString(),
+        }).eq("id", initial.id);
+        if (e) throw e;
+      } else {
+        const { data: bkNo } = await supabase.rpc("next_booking_no");
+        const { error: e } = await supabase.from("facility_bookings").insert({
+          ...payload,
+          booking_no: bkNo,
+          status: "ENQUIRY",
+          created_by: user.email,
+        });
+        if (e) throw e;
+      }
       onSaved();
     } catch (e: unknown) {
       setError((e as Error).message ?? "Failed to save booking.");
@@ -221,7 +248,7 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
-          <h2 className="font-bold text-stone-800 text-lg">New Facility Booking</h2>
+          <h2 className="font-bold text-stone-800 text-lg">{isEdit ? `Edit Booking — ${initial?.booking_no}` : "New Facility Booking"}</h2>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-1"><XCircle size={20} /></button>
         </div>
 
@@ -382,13 +409,23 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-1">Scanned Booking Form</h3>
             <p className="text-xs text-stone-400 mb-2">Optional — upload a signed/stamped copy if one applies (PDF or image).</p>
-            {eventType === "WEDDING" && files.length === 0 && (
+            {eventType === "WEDDING" && files.length === 0 && existingAttachments.length === 0 && (
               <div className="mb-2.5 flex items-start gap-2 p-3 bg-orange-50 border border-orange-300 rounded-xl text-sm text-orange-800">
                 <AlertCircle size={15} className="shrink-0 mt-0.5" />
                 <div>
                   <span className="font-semibold">Endorsement letter pending.</span> Weddings require the endorsement letter signed by the pastor-in-charge and chopped by the church administration. You can still save this booking now and upload it before the event.
                 </div>
               </div>
+            )}
+            {existingAttachments.length > 0 && (
+              <ul className="mb-2 space-y-1">
+                {existingAttachments.map((url, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs text-stone-600">
+                    <FileText size={12} className="text-stone-400" /> Existing file {i + 1}
+                    <button onClick={() => setExistingAttachments(prev => prev.filter((_, idx) => idx !== i))} className="text-stone-300 hover:text-red-500"><XCircle size={12} /></button>
+                  </li>
+                ))}
+              </ul>
             )}
             <input type="file" multiple accept="image/*,application/pdf"
               onChange={e => setFiles(Array.from(e.target.files ?? []))}
@@ -405,6 +442,13 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
             )}
           </section>
 
+          {isEdit && (
+            <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
+              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+              Saving will move this booking back to <strong>Enquiry</strong> and clear any existing signatures — both the bookee and the BEM will need to sign off again before this can be confirmed.
+            </div>
+          )}
+
           {error && (
             <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-xl text-sm">
               <AlertCircle size={15} /> {error}
@@ -420,7 +464,7 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
             title={conflicts.length > 0 ? "Some selected dates are unavailable" : itemsMissingDates.length > 0 ? "Select date(s) for every facility" : undefined}
             className="px-5 py-2 rounded-xl bg-[#4a6da7] hover:bg-[#3a5a8f] text-white text-sm font-medium transition-colors disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save as Enquiry"}
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Save as Enquiry"}
           </button>
         </div>
       </div>
@@ -626,18 +670,51 @@ function Button2({ children, onClick, loading, disabled }: { children: React.Rea
   );
 }
 
+// A nicer, app-styled stand-in for window.confirm() — used for actions that
+// need a deliberate yes/no rather than a plain notification.
+function ConfirmDialog({ title, message, confirmLabel = "Confirm", onConfirm, onCancel, loading }: {
+  title: string; message: string; confirmLabel?: string; onConfirm: () => void; onCancel: () => void; loading?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+            <AlertCircle size={18} className="text-amber-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-stone-800 text-sm">{title}</h3>
+            <p className="text-sm text-stone-600 mt-1">{message}</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onCancel} className="px-4 py-2 rounded-xl text-sm text-stone-600 hover:bg-stone-100 transition-colors">Cancel</button>
+          <button onClick={onConfirm} disabled={loading}
+            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
+            {loading ? "Working…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Booking card ─────────────────────────────────────────────────────────────
 
 interface CardProps {
   booking: FacilityBooking;
   user: UserProfile;
   facilities: FacilityDef[];
+  bookings: FacilityBooking[];
+  blocks: FacilityBlock[];
   onRefresh: () => void;
 }
 
-function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
+function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }: CardProps) {
   const supabase = createClient();
   const [expanded, setExpanded] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showVoidConfirm, setShowVoidConfirm] = useState(false);
   const [showPay, setShowPay]   = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [acting, setActing]     = useState(false);
@@ -723,22 +800,23 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
     setActing(false);
   }
 
-  // Void the current invoice — reverts to Confirmed so the BEM can adjust the
-  // payer category, facilities, or dates/times, then re-generate a fresh one.
+  // Void the current invoice — reverts all the way back to Enquiry so the BEM
+  // can change anything (payer category, facilities, dates/times, event type),
+  // clearing prior signatures since the revised booking needs to be signed off
+  // again by both the bookee and the BEM before it can be confirmed.
   async function voidInvoice() {
-    const warn = booking.invoice_sent_at
-      ? "This invoice was already shared with the bookee. Void it and revert to Confirmed so you can make adjustments? You'll need to send a revised invoice afterward."
-      : "Void this invoice and revert to Confirmed so you can make adjustments?";
-    if (!confirm(warn)) return;
     setActing(true);
     await supabase.from("facility_bookings").update({
-      status: "CONFIRMED",
+      status: "ENQUIRY",
       invoice_voided_at: new Date().toISOString(),
       invoice_voided_by: user.email,
       invoice_sent_at: null,
       invoice_sent_via: null,
+      booker_signature: null, booker_signed_at: null,
+      bem_signature: null, bem_signed_by: null, bem_signed_at: null,
       updated_at: new Date().toISOString(),
     }).eq("id", booking.id);
+    setShowVoidConfirm(false);
     onRefresh();
     setActing(false);
   }
@@ -929,6 +1007,9 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
                     <button onClick={() => setShowConfirm(true)} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-50">
                       <CheckCircle size={13} /> Confirm
                     </button>
+                    <button onClick={() => setShowEdit(true)} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-300 text-stone-600 text-xs font-medium hover:bg-stone-50 transition-colors disabled:opacity-50">
+                      <FileText size={13} /> Edit
+                    </button>
                     <button onClick={() => transition("CANCELLED")} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium transition-colors disabled:opacity-50">
                       <XCircle size={13} /> Cancel
                     </button>
@@ -949,7 +1030,7 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
                     <button onClick={() => setShowPay(true)} disabled={acting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors disabled:opacity-50">
                       <DollarSign size={13} /> Mark as Paid
                     </button>
-                    <button onClick={voidInvoice} disabled={acting} title="Revert to Confirmed so you can adjust the payer category, facilities, or dates/times"
+                    <button onClick={() => setShowVoidConfirm(true)} disabled={acting} title="Revert to Enquiry so you can edit anything — facilities, dates/times, payer category, event type"
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 text-xs font-medium hover:bg-amber-50 transition-colors disabled:opacity-50">
                       <RotateCcw size={13} /> Void Invoice
                     </button>
@@ -985,6 +1066,31 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
 
       {previewIdx !== null && (
         <AttachmentPreview urls={booking.attachments} startIndex={previewIdx} onClose={() => setPreviewIdx(null)} />
+      )}
+
+      {showEdit && (
+        <BookingFormModal
+          user={user}
+          facilities={facilities}
+          bookings={bookings}
+          blocks={blocks}
+          initial={booking}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); onRefresh(); }}
+        />
+      )}
+
+      {showVoidConfirm && (
+        <ConfirmDialog
+          title="Void this invoice?"
+          message={booking.invoice_sent_at
+            ? "This invoice was already shared with the bookee. Voiding reverts the booking all the way back to Enquiry so you can edit anything — facilities, dates/times, payer category, event type — then it'll need to be signed off again by both the bookee and the BEM before sending a revised invoice."
+            : "This reverts the booking back to Enquiry so you can edit anything — facilities, dates/times, payer category, event type — then it'll need to be signed off again by both the bookee and the BEM."}
+          confirmLabel="Void & Revert to Enquiry"
+          loading={acting}
+          onConfirm={voidInvoice}
+          onCancel={() => setShowVoidConfirm(false)}
+        />
       )}
     </>
   );
@@ -1238,7 +1344,7 @@ export default function BookingsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(b => (
-            <BookingCard key={b.id} booking={b} user={user!} facilities={facilities} onRefresh={loadBookings} />
+            <BookingCard key={b.id} booking={b} user={user!} facilities={facilities} bookings={bookings} blocks={blocks} onRefresh={loadBookings} />
           ))}
         </div>
       )}
@@ -1279,7 +1385,7 @@ export default function BookingsPage() {
       </details>
 
       {showNew && user && (
-        <NewBookingModal
+        <BookingFormModal
           user={user}
           facilities={facilities}
           bookings={bookings}
