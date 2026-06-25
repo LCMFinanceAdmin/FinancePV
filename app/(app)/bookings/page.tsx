@@ -1236,9 +1236,9 @@ export default function BookingsPage() {
     loadBlocks();
   }, [supabase, loadBlocks]);
 
+  // Deletion is gated by the calendar's own detail panel (it reveals what's
+  // saved on that date and offers a Delete button there) — no extra prompt here.
   async function deleteBlock(b: FacilityBlock) {
-    const facLabel = b.facility_id ? (facilities.find(f => f.id === b.facility_id)?.name ?? b.facility_id) : "all facilities";
-    if (!confirm(`Remove this block (${facLabel}, ${b.start_date}${b.end_date !== b.start_date ? " – " + b.end_date : ""})?`)) return;
     await supabase.from("facility_blocks").delete().eq("id", b.id);
     loadBlocks();
   }
@@ -1331,7 +1331,7 @@ export default function BookingsPage() {
       </div>
 
       {view === "calendar" && (
-        <BookingCalendar bookings={bookings} blocks={blocks} canBlock={!!canCreate}
+        <BookingCalendar bookings={bookings} blocks={blocks} facilities={facilities} canBlock={!!canCreate}
           onSelect={(b) => { setView("list"); setTab(b.status); }}
           onDayClick={(d) => { if (canCreate) setBlockDate(d); }}
           onBlockClick={(b) => { if (canCreate) deleteBlock(b); }} />

@@ -66,18 +66,18 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: "Income & Collections",
+    items: [
+      { href: "/bookings", label: "Facility Bookings", icon: <CalendarDays size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
+      { href: "/income",   label: "Income Records",    icon: <TrendingUp size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
+    ],
+  },
+  {
     label: "Requests & Payments",
     items: [
       { href: "/purchase-requests", label: "Purchase Requests", icon: <ShoppingCart size={16} />, show: () => true },
       { href: "/payments",          label: "Payments",          icon: <CreditCard size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin },
       { href: "/banking",           label: "Banking",           icon: <Landmark size={16} />,     show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager },
-    ],
-  },
-  {
-    label: "Income & Collections",
-    items: [
-      { href: "/bookings", label: "Facility Bookings", icon: <CalendarDays size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
-      { href: "/income",   label: "Income Records",    icon: <TrendingUp size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
     ],
   },
   {

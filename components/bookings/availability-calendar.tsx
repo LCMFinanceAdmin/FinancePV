@@ -46,12 +46,12 @@ export function AvailabilityCalendar({ unavailable, selected, onPick, selectedDa
   }
 
   return (
-    <div className="border border-stone-200 rounded-xl p-2.5 bg-white">
+    <div className="border-2 border-stone-300 rounded-xl p-2.5 bg-white">
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-2">
-        <button type="button" onClick={() => shiftMonth(-1)} className="p-1 rounded-lg border border-stone-200 hover:bg-stone-50"><ChevronLeft size={14} /></button>
+        <button type="button" onClick={() => shiftMonth(-1)} className="p-1 rounded-lg border-2 border-stone-300 hover:bg-stone-50"><ChevronLeft size={14} /></button>
         <span className="text-xs font-semibold text-stone-700">{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</span>
-        <button type="button" onClick={() => shiftMonth(1)} className="p-1 rounded-lg border border-stone-200 hover:bg-stone-50"><ChevronRight size={14} /></button>
+        <button type="button" onClick={() => shiftMonth(1)} className="p-1 rounded-lg border-2 border-stone-300 hover:bg-stone-50"><ChevronRight size={14} /></button>
       </div>
 
       <div className="grid grid-cols-7 gap-0.5 text-[10px] font-semibold text-stone-400 mb-0.5">
@@ -74,12 +74,12 @@ export function AvailabilityCalendar({ unavailable, selected, onPick, selectedDa
               onClick={() => (multi ? onToggle?.(ds) : onPick?.(ds))}
               title={isUnavail ? "Unavailable" : isPast ? "Past date" : isSel ? "Selected — click to remove" : "Available"}
               className={[
-                "aspect-square rounded-md text-[11px] flex items-center justify-center transition-colors",
-                !inMonth ? "text-stone-200 cursor-default" :
-                isSel ? "bg-[#4a6da7] text-white font-bold cursor-pointer" :
-                isPast ? "text-stone-300 cursor-not-allowed line-through" :
-                isUnavail ? "bg-red-100 text-red-400 cursor-not-allowed line-through" :
-                "bg-green-50 text-green-800 hover:bg-green-200 font-medium cursor-pointer",
+                "aspect-square rounded-md text-[11px] flex items-center justify-center transition-colors border-2",
+                !inMonth ? "text-stone-200 border-transparent cursor-default" :
+                isSel ? "bg-[#4a6da7] border-[#3a5a8f] text-white font-bold cursor-pointer" :
+                isPast ? "text-stone-300 border-stone-200 cursor-not-allowed line-through" :
+                isUnavail ? "bg-red-100 border-red-300 text-red-400 cursor-not-allowed line-through" :
+                "bg-green-50 border-green-300 text-green-800 hover:bg-green-200 font-medium cursor-pointer",
               ].join(" ")}
             >
               {inMonth ? d.getDate() : ""}
@@ -89,9 +89,9 @@ export function AvailabilityCalendar({ unavailable, selected, onPick, selectedDa
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-3 mt-2 pt-2 border-t border-stone-100 text-[10px] text-stone-500">
-        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-100 border border-green-300" /> Available</span>
-        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-300" /> Unavailable</span>
+      <div className="flex flex-wrap gap-3 mt-2 pt-2 border-t-2 border-stone-200 text-[10px] text-stone-500">
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-100 border-2 border-green-300" /> Available</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-100 border-2 border-red-300" /> Unavailable</span>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#4a6da7]" /> Selected</span>
       </div>
     </div>

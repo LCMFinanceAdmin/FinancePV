@@ -67,9 +67,10 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     { href: "/pr-queue",            label: "PR Q",          icon: <ClipboardList size={20} />,   show: user.isSignatory || user.isGeneralManager },
     { href: "/gm-claims",           label: "Claims",        icon: <Inbox size={20} />,           show: user.isGeneralManager || user.isFinanceAdmin || user.isSignatory },
     { href: "/budget",              label: "Budget",        icon: <PiggyBank size={20} />,       show: user.isSignatory },
-    { href: "/dashboard",           label: "Home",          icon: <LayoutDashboard size={20} />, show: user.isBuildingManager },
-    { href: "/submit?type=bam",     label: "Submit BAM",    icon: <Hammer size={20} />,          show: user.isBuildingManager },
+    { href: "/submit?type=bam",     label: "Submit PV",     icon: <Hammer size={20} />,          show: user.isBuildingManager },
     { href: "/bam-queue",           label: "BAM Queue",     icon: <Building2 size={20} />,       show: user.isBuildingManager },
+    { href: "/worksheets",          label: "Worksheets",    icon: <ClipboardList size={20} />,   show: user.isBuildingManager },
+    { href: "/bookings",            label: "Bookings",      icon: <CalendarDays size={20} />,    show: user.isBuildingManager },
   ].filter(i => i.show).slice(0, 4);
 
   // All sections for the "More" drawer
