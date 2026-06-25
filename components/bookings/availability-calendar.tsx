@@ -17,14 +17,21 @@ function startOfWeek(d: Date): Date {
 interface AvailabilityCalendarProps {
   // Facility-scoped: returns true if the given yyyy-mm-dd is booked or blocked.
   unavailable: (ymd: string) => boolean;
+  // Single-select mode:
   selected?: string;
   onPick?: (ymd: string) => void;
+  // Multi-select mode: pass selectedDates + onToggle to let the user pick
+  // several non-contiguous dates (e.g. multiple sessions on different days).
+  selectedDates?: string[];
+  onToggle?: (ymd: string) => void;
   // Days before this are not selectable (defaults to today).
   minDate?: string;
 }
 
-export function AvailabilityCalendar({ unavailable, selected, onPick, minDate }: AvailabilityCalendarProps) {
-  const [cursor, setCursor] = useState(() => (selected ? new Date(selected) : new Date()));
+export function AvailabilityCalendar({ unavailable, selected, onPick, selectedDates, onToggle, minDate }: AvailabilityCalendarProps) {
+  const multi = !!onToggle;
+  const selectedSet = new Set(selectedDates ?? []);
+  const [cursor, setCursor] = useState(() => (selected ? new Date(selected) : (selectedDates?.[0] ? new Date(selectedDates[0]) : new Date())));
   const today = ymd(new Date());
   const floor = minDate ?? today;
 
@@ -57,19 +64,19 @@ export function AvailabilityCalendar({ unavailable, selected, onPick, minDate }:
           const inMonth = d.getMonth() === cursor.getMonth();
           const isPast = ds < floor;
           const isUnavail = unavailable(ds);
-          const isSel = selected === ds;
+          const isSel = multi ? selectedSet.has(ds) : selected === ds;
           const blocked = isPast || isUnavail;
           return (
             <button
               key={i}
               type="button"
               disabled={blocked || !inMonth}
-              onClick={() => onPick?.(ds)}
-              title={isUnavail ? "Unavailable" : isPast ? "Past date" : "Available"}
+              onClick={() => (multi ? onToggle?.(ds) : onPick?.(ds))}
+              title={isUnavail ? "Unavailable" : isPast ? "Past date" : isSel ? "Selected — click to remove" : "Available"}
               className={[
                 "aspect-square rounded-md text-[11px] flex items-center justify-center transition-colors",
                 !inMonth ? "text-stone-200 cursor-default" :
-                isSel ? "bg-[#4a6da7] text-white font-bold" :
+                isSel ? "bg-[#4a6da7] text-white font-bold cursor-pointer" :
                 isPast ? "text-stone-300 cursor-not-allowed line-through" :
                 isUnavail ? "bg-red-100 text-red-400 cursor-not-allowed line-through" :
                 "bg-green-50 text-green-800 hover:bg-green-200 font-medium cursor-pointer",

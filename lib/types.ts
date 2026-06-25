@@ -179,7 +179,8 @@ export interface BookingItem {
   facility_id: string;
   facility_name: string;
   rate_label: string;
-  sessions: number;
+  sessions: number;          // = dates.length (one session per booked date)
+  dates?: string[];          // specific session dates (yyyy-mm-dd) for THIS facility
   rate_per_session: number;
   is_concurrent: boolean;
   subtotal: number;

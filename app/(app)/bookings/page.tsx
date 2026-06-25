@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, ChevronDown, ChevronUp, Trash2, CheckCircle,
-  FileText, DollarSign, XCircle, AlertCircle, Share2, Percent,
+  FileText, DollarSign, XCircle, AlertCircle, Share2, Percent, CalendarDays,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile, FacilityBooking, BookingItem, FacilityBlock, FacilityBlockReason } from "@/lib/types";
@@ -50,85 +50,88 @@ interface LineRowProps {
   item: BookingItem;
   tier: PricingTier;
   facilities: FacilityDef[];
+  isDayUnavailable: (facilityId: string, ymd: string) => boolean;
   onChange: (item: BookingItem) => void;
   onRemove: () => void;
 }
 
-function LineRow({ item, tier, facilities, onChange, onRemove }: LineRowProps) {
+function LineRow({ item, tier, facilities, isDayUnavailable, onChange, onRemove }: LineRowProps) {
   const facilityDef = facilities.find(f => f.id === item.facility_id);
   const hasDiscount = !!facilityDef?.concurrentRates;
+  const [showCal, setShowCal] = useState(false);
+  const dates = item.dates ?? [];
+  const unit = item.rate_label.toLowerCase().includes("night") ? "night" : "session";
 
-  function update(patch: Partial<BookingItem>) {
-    const next = { ...item, ...patch };
-    const rate = facilityDef
-      ? getRate(facilityDef, tier, next.is_concurrent)
-      : next.rate_per_session;
-    next.rate_per_session = rate;
-    next.subtotal = rate * next.sessions;
-    onChange(next);
+  // Recompute rate + sessions (one session per booked date) + subtotal.
+  function recalc(next: BookingItem): BookingItem {
+    const rate = facilityDef ? getRate(facilityDef, tier, next.is_concurrent) : next.rate_per_session;
+    const sessions = (next.dates ?? []).length;
+    return { ...next, rate_per_session: rate, sessions, subtotal: rate * sessions };
+  }
+  function update(patch: Partial<BookingItem>) { onChange(recalc({ ...item, ...patch })); }
+  function toggleDate(d: string) {
+    const set = new Set(item.dates ?? []);
+    if (set.has(d)) set.delete(d); else set.add(d);
+    update({ dates: Array.from(set).sort() });
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 py-2 border-b border-stone-100 last:border-0">
-      {/* Facility selector */}
-      <select
-        className="flex-1 min-w-[180px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
-        value={item.facility_id}
-        onChange={e => {
-          const def = facilities.find(f => f.id === e.target.value);
-          if (!def) return;
-          const rate = getRate(def, tier, item.is_concurrent);
-          onChange({
-            ...item,
-            facility_id: def.id,
-            facility_name: def.name,
-            rate_label: def.rateLabel,
-            rate_per_session: rate,
-            is_concurrent: false,
-            subtotal: rate * item.sessions,
-          });
-        }}
-      >
-        {facilities.map(f => (
-          <option key={f.id} value={f.id}>{f.name}</option>
-        ))}
-      </select>
+    <div className="py-2.5 border-b border-stone-100 last:border-0 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          className="flex-1 min-w-[180px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
+          value={item.facility_id}
+          onChange={e => {
+            const def = facilities.find(f => f.id === e.target.value);
+            if (!def) return;
+            onChange(recalc({ ...item, facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel, is_concurrent: false }));
+          }}
+        >
+          {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
 
-      {/* Sessions */}
-      <div className="flex items-center gap-1">
-        <input
-          type="number"
-          min={1}
-          step={1}
-          className="w-16 border border-stone-200 rounded-lg px-2 py-1.5 text-sm text-center outline-none focus:border-[#4a6da7]"
-          value={item.sessions}
-          onChange={e => update({ sessions: Math.max(1, parseInt(e.target.value) || 1) })}
-        />
-        <span className="text-xs text-stone-400 whitespace-nowrap">{item.rate_label}</span>
+        {hasDiscount && (
+          <label className="flex items-center gap-1 text-xs text-stone-600 cursor-pointer">
+            <input type="checkbox" className="accent-[#4a6da7]" checked={item.is_concurrent} onChange={e => update({ is_concurrent: e.target.checked })} />
+            Concurrent discount
+          </label>
+        )}
+
+        <div className="text-sm text-right ml-auto whitespace-nowrap">
+          <span className="text-stone-400 text-xs">{formatRate(item.rate_per_session)}/{unit} × {dates.length}  </span>
+          <span className="font-semibold text-stone-800">{fmt(item.subtotal)}</span>
+        </div>
+        <button type="button" onClick={onRemove} className="p-1 text-stone-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
       </div>
 
-      {/* Concurrent checkbox for halls */}
-      {hasDiscount && (
-        <label className="flex items-center gap-1 text-xs text-stone-600 cursor-pointer">
-          <input
-            type="checkbox"
-            className="accent-[#4a6da7]"
-            checked={item.is_concurrent}
-            onChange={e => update({ is_concurrent: e.target.checked })}
-          />
-          Concurrent discount
-        </label>
-      )}
-
-      {/* Rate + subtotal */}
-      <div className="text-sm text-right min-w-[130px]">
-        <span className="text-stone-400 text-xs">{formatRate(item.rate_per_session)}/session  </span>
-        <span className="font-semibold text-stone-800">{fmt(item.subtotal)}</span>
+      {/* Per-facility dates */}
+      <div>
+        <button type="button" onClick={() => setShowCal(s => !s)}
+          className="flex items-center gap-1.5 text-xs font-medium text-[#4a6da7] hover:underline">
+          <CalendarDays size={13} />
+          {dates.length === 0 ? `Select ${unit} date(s)` : `${dates.length} ${unit}${dates.length > 1 ? "s" : ""} selected`}
+        </button>
+        {dates.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {dates.map(d => (
+              <span key={d} className="inline-flex items-center gap-1 text-[11px] bg-[#4a6da7]/10 text-[#4a6da7] rounded-full pl-2 pr-1 py-0.5">
+                {fmtDate(d)}
+                <button type="button" onClick={() => toggleDate(d)} className="hover:text-red-500"><XCircle size={11} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        {showCal && (
+          <div className="mt-2 max-w-[300px]">
+            <AvailabilityCalendar
+              unavailable={(d) => isDayUnavailable(item.facility_id, d)}
+              selectedDates={dates}
+              onToggle={toggleDate}
+            />
+            <p className="text-[11px] text-stone-400 mt-1">Click days to add/remove {unit}s for {item.facility_name}.</p>
+          </div>
+        )}
       </div>
-
-      <button onClick={onRemove} className="p-1 text-stone-300 hover:text-red-500 transition-colors">
-        <Trash2 size={14} />
-      </button>
     </div>
   );
 }
@@ -163,18 +166,16 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
   const [bookerPhone, setBookerPhone] = useState("");
   const [bookerOrg, setBookerOrg]     = useState("");
 
-  // Event
+  // Event (dates are per-facility on the line items; these are general times)
   const [eventName, setEventName]   = useState("");
-  const [startDate, setStartDate]   = useState("");
   const [startTime, setStartTime]   = useState("");
-  const [endDate, setEndDate]       = useState("");
   const [endTime, setEndTime]       = useState("");
   const [purpose, setPurpose]       = useState("");
   const [notes, setNotes]           = useState("");
   const [internalNotes, setInternal] = useState("");
   const [files, setFiles]           = useState<File[]>([]);
 
-  // Line items
+  // Line items — each facility carries its OWN session dates.
   function defaultItem(tier: PricingTier): BookingItem {
     const def = facilities[0];
     const rate = getRate(def, tier);
@@ -182,21 +183,23 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
       facility_id: def.id,
       facility_name: def.name,
       rate_label: def.rateLabel,
-      sessions: 1,
+      sessions: 0,
+      dates: [],
       rate_per_session: rate,
       is_concurrent: false,
-      subtotal: rate,
+      subtotal: 0,
     };
   }
   const [items, setItems] = useState<BookingItem[]>([defaultItem("PUBLIC")]);
 
-  // Re-calculate all item rates when tier changes
+  // Re-calculate all item rates when tier changes (subtotal = rate × #dates)
   useEffect(() => {
     setItems(prev => prev.map(it => {
       const def = facilities.find(f => f.id === it.facility_id);
       if (!def) return it;
       const rate = getRate(def, bookerType, it.is_concurrent);
-      return { ...it, rate_per_session: rate, subtotal: rate * it.sessions };
+      const n = (it.dates ?? []).length;
+      return { ...it, rate_per_session: rate, sessions: n, subtotal: rate * n };
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookerType]);
@@ -208,43 +211,34 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
   }
 
   // ── Availability: respect existing bookings + maintenance/rehearsal blocks ──
-  const rangeEnd = endDate || startDate;
-  function facilityConflict(facilityId: string): string | null {
-    if (!startDate) return null;
-    const clashBooking = bookings.find(b =>
-      b.status !== "CANCELLED" && b.start_date &&
-      (b.booking_items ?? []).some(it => it.facility_id === facilityId) &&
-      rangesOverlap(startDate, rangeEnd, ymdOnly(b.start_date), ymdOnly(b.end_date || b.start_date))
-    );
-    if (clashBooking) return `Already booked — ${clashBooking.booking_no} (${clashBooking.event_name || clashBooking.booker_name})`;
-    const clashBlock = blocks.find(b =>
-      (b.facility_id === null || b.facility_id === facilityId) &&
-      rangesOverlap(startDate, rangeEnd, ymdOnly(b.start_date), ymdOnly(b.end_date))
-    );
-    if (clashBlock) return `Date blocked — ${clashBlock.reason.replace(/_/g, " ").toLowerCase()}${clashBlock.notes ? `: ${clashBlock.notes}` : ""}`;
-    return null;
-  }
-  const conflicts = startDate
-    ? items.map(it => ({ name: it.facility_name, reason: facilityConflict(it.facility_id) })).filter(c => c.reason)
-    : [];
-
-  // Is a single day unavailable for ANY currently-selected facility? Drives the
-  // calendar so booked / maintenance-blocked days are greyed out as you pick.
-  function dayUnavailable(day: string): boolean {
-    return items.some(it => {
-      const fid = it.facility_id;
-      const booked = bookings.some(b =>
-        b.status !== "CANCELLED" && b.start_date &&
-        (b.booking_items ?? []).some(bi => bi.facility_id === fid) &&
-        rangesOverlap(day, day, ymdOnly(b.start_date), ymdOnly(b.end_date || b.start_date))
-      );
-      if (booked) return true;
-      return blocks.some(b =>
-        (b.facility_id === null || b.facility_id === fid) &&
-        rangesOverlap(day, day, ymdOnly(b.start_date), ymdOnly(b.end_date))
-      );
+  // A single day is unavailable for a specific facility if it clashes with a
+  // booking for that facility or a block (facility-specific or venue-wide).
+  function isDayUnavailable(facilityId: string, day: string): boolean {
+    const booked = bookings.some(b => {
+      if (b.status === "CANCELLED") return false;
+      const it = (b.booking_items ?? []).find(bi => bi.facility_id === facilityId);
+      if (!it) return false;
+      // Newer bookings carry per-facility dates; older ones only a start/end range.
+      if (it.dates && it.dates.length > 0) return it.dates.map(ymdOnly).includes(day);
+      return !!b.start_date && rangesOverlap(day, day, ymdOnly(b.start_date), ymdOnly(b.end_date || b.start_date));
     });
+    if (booked) return true;
+    return blocks.some(b =>
+      (b.facility_id === null || b.facility_id === facilityId) &&
+      rangesOverlap(day, day, ymdOnly(b.start_date), ymdOnly(b.end_date))
+    );
   }
+
+  // Items still missing a date, and items whose chosen dates clash.
+  const itemsMissingDates = items.filter(it => (it.dates ?? []).length === 0);
+  const conflicts = items.flatMap(it =>
+    (it.dates ?? [])
+      .filter(d => isDayUnavailable(it.facility_id, d))
+      .map(d => ({ name: it.facility_name, reason: `${fmtDate(d)} is booked or blocked` }))
+  );
+
+  // All booked dates across every facility (for the booking's overall range).
+  const allDates = Array.from(new Set(items.flatMap(it => it.dates ?? []))).sort();
 
   // ── Concurrent-hall prompt for Auditorium / Chapel bookings ──
   const hasTriggerFacility = items.some(it => CONCURRENT_TRIGGERS.includes(it.facility_id));
@@ -257,15 +251,15 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
     const rate = getRate(def, bookerType, true);
     setItems(prev => [...prev, {
       facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel,
-      sessions: 1, rate_per_session: rate, is_concurrent: true, subtotal: rate,
+      sessions: 0, dates: [], rate_per_session: rate, is_concurrent: true, subtotal: 0,
     }]);
   }
 
   async function save() {
     if (!bookerName.trim()) { setError("Booker name is required."); return; }
-    if (!startDate) { setError("Start date is required."); return; }
     if (items.length === 0) { setError("Add at least one facility."); return; }
-    if (conflicts.length > 0) { setError(`Cannot book — ${conflicts[0].name}: ${conflicts[0].reason}. Choose another date or remove the facility.`); return; }
+    if (itemsMissingDates.length > 0) { setError(`Select at least one date for ${itemsMissingDates[0].facility_name}.`); return; }
+    if (conflicts.length > 0) { setError(`Cannot book — ${conflicts[0].name}: ${conflicts[0].reason}. Pick another date or remove the facility.`); return; }
     setError("");
     setSaving(true);
     try {
@@ -288,9 +282,9 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
         booker_org:    bookerOrg.trim(),
         booker_type:   bookerType,
         event_name:    eventName.trim(),
-        start_date:    startDate,
+        start_date:    allDates[0],
         start_time:    startTime,
-        end_date:      endDate || null,
+        end_date:      allDates.length > 1 ? allDates[allDates.length - 1] : null,
         end_time:      endTime,
         booking_items: items,
         total_amount:  total,
@@ -360,6 +354,7 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
                   item={item}
                   tier={bookerType}
                   facilities={facilities}
+                  isDayUnavailable={isDayUnavailable}
                   onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
                   onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
                 />
@@ -419,21 +414,11 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
           {/* Event */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Event Details</h3>
+            <p className="text-xs text-stone-400 mb-3">Dates are picked per facility above — each venue can run on its own set of dates. The times below are the general daily event times.</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Event Name</label>
                 <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={eventName} onChange={e => setEventName(e.target.value)} placeholder="e.g. Sunday Service, Wedding Reception" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-stone-500 mb-1 block">Start Date * <span className="text-stone-400 font-normal">— green = available, red = booked or blocked</span></label>
-                <div className="max-w-[300px]">
-                  <AvailabilityCalendar
-                    unavailable={dayUnavailable}
-                    selected={startDate || undefined}
-                    onPick={d => setStartDate(d)}
-                  />
-                </div>
-                {startDate && <p className="text-xs text-stone-500 mt-1">Selected start: <span className="font-semibold">{fmtDate(startDate)}</span></p>}
               </div>
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Start Time</label>
@@ -444,24 +429,19 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
                 <input type="time" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={endTime} onChange={e => setEndTime(e.target.value)} />
               </div>
               <div className="col-span-2">
-                <label className="text-xs text-stone-500 mb-1 block">End Date <span className="text-stone-400 font-normal">(only for multi-day bookings)</span></label>
-                <input type="date" min={startDate || undefined} className="w-full max-w-[300px] border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={endDate} onChange={e => setEndDate(e.target.value)} />
-              </div>
-              <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Purpose / Description</label>
                 <textarea rows={2} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none" value={purpose} onChange={e => setPurpose(e.target.value)} />
               </div>
             </div>
-            {/* Availability — block dates already booked or blocked for the chosen facilities */}
             {conflicts.length > 0 && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-sm space-y-1">
                 <div className="flex items-center gap-1.5 font-semibold text-red-700">
-                  <AlertCircle size={14} /> Not available on the selected date(s)
+                  <AlertCircle size={14} /> Some selected dates are unavailable
                 </div>
                 {conflicts.map((c, i) => (
                   <div key={i} className="text-xs text-red-700 pl-5">{c.name}: {c.reason}</div>
                 ))}
-                <div className="text-[11px] text-red-500 pl-5">Choose another date or remove the facility to continue.</div>
+                <div className="text-[11px] text-red-500 pl-5">Remove those dates to continue.</div>
               </div>
             )}
           </section>
@@ -511,8 +491,8 @@ function NewBookingModal({ user, facilities, bookings, blocks, onClose, onSaved 
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-stone-600 hover:bg-stone-200 transition-colors">Cancel</button>
           <button
             onClick={save}
-            disabled={saving || conflicts.length > 0}
-            title={conflicts.length > 0 ? "One or more facilities are unavailable on the selected date(s)" : undefined}
+            disabled={saving || conflicts.length > 0 || itemsMissingDates.length > 0}
+            title={conflicts.length > 0 ? "Some selected dates are unavailable" : itemsMissingDates.length > 0 ? "Select date(s) for every facility" : undefined}
             className="px-5 py-2 rounded-xl bg-[#4a6da7] hover:bg-[#3a5a8f] text-white text-sm font-medium transition-colors disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save as Enquiry"}
@@ -656,7 +636,7 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
       `Category: ${TIER_LABELS[b.booker_type]}`,
       "",
       "Facilities:",
-      ...b.booking_items.map(it => `  - ${it.facility_name}${it.is_concurrent ? " (concurrent)" : ""}: ${it.sessions} x ${formatRate(it.rate_per_session)} = ${fmt(it.subtotal)}`),
+      ...b.booking_items.map(it => `  - ${it.facility_name}${it.is_concurrent ? " (concurrent)" : ""}${it.dates && it.dates.length ? ` [${it.dates.map(d => fmtDate(d)).join(", ")}]` : ""}: ${it.sessions} x ${formatRate(it.rate_per_session)} = ${fmt(it.subtotal)}`),
       "",
       `Total: ${fmt(b.total_amount)}`,
       `Status: ${STATUS_LABELS[b.status]}`,
@@ -757,9 +737,14 @@ function BookingCard({ booking, user, facilities, onRefresh }: CardProps) {
               <div className="text-xs text-stone-400 mb-1.5">Facilities</div>
               <div className="rounded-xl border border-stone-100 overflow-hidden">
                 {booking.booking_items.map((it, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-2 text-sm border-b border-stone-50 last:border-0">
-                    <div className="flex-1">{it.facility_name}{it.is_concurrent ? <span className="ml-1 text-xs text-stone-400">(concurrent)</span> : null}</div>
-                    <div className="text-stone-500 text-xs">{it.sessions} × {it.rate_label}</div>
+                  <div key={i} className="flex items-start gap-2 px-3 py-2 text-sm border-b border-stone-50 last:border-0">
+                    <div className="flex-1">
+                      {it.facility_name}{it.is_concurrent ? <span className="ml-1 text-xs text-stone-400">(concurrent)</span> : null}
+                      {it.dates && it.dates.length > 0 && (
+                        <div className="text-[11px] text-stone-400 mt-0.5">{it.dates.map(d => fmtDate(d)).join(", ")}</div>
+                      )}
+                    </div>
+                    <div className="text-stone-500 text-xs whitespace-nowrap">{it.sessions} × {it.rate_label}</div>
                     <div className="text-stone-400 text-xs">{fmt(it.rate_per_session)}</div>
                     <div className="font-medium w-20 text-right">{fmt(it.subtotal)}</div>
                   </div>
