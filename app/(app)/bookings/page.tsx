@@ -28,11 +28,11 @@ const STATUS_LABELS: Record<FacilityBooking["status"], string> = {
 };
 
 const STATUS_COLORS: Record<FacilityBooking["status"], string> = {
-  ENQUIRY:   "bg-amber-100 text-amber-700",
-  CONFIRMED: "bg-blue-100 text-blue-700",
-  INVOICED:  "bg-purple-100 text-purple-700",
-  PAID:      "bg-green-100 text-green-700",
-  CANCELLED: "bg-stone-100 text-stone-500",
+  ENQUIRY:   "bg-orange-100 text-orange-700",
+  CONFIRMED: "bg-green-100 text-green-700",
+  INVOICED:  "bg-green-700 text-white",
+  PAID:      "bg-purple-100 text-purple-700",
+  CANCELLED: "bg-red-100 text-red-700",
 };
 
 const METHODS = ["Cash", "Bank Transfer", "Cheque", "Online Transfer", "Other"];
@@ -672,15 +672,15 @@ function Button2({ children, onClick, loading, disabled }: { children: React.Rea
 
 // A nicer, app-styled stand-in for window.confirm() — used for actions that
 // need a deliberate yes/no rather than a plain notification.
-function ConfirmDialog({ title, message, confirmLabel = "Confirm", onConfirm, onCancel, loading }: {
-  title: string; message: string; confirmLabel?: string; onConfirm: () => void; onCancel: () => void; loading?: boolean;
+function ConfirmDialog({ title, message, confirmLabel = "Confirm", danger, onConfirm, onCancel, loading }: {
+  title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void; onCancel: () => void; loading?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-            <AlertCircle size={18} className="text-amber-600" />
+          <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${danger ? "bg-red-100" : "bg-amber-100"}`}>
+            <AlertCircle size={18} className={danger ? "text-red-600" : "text-amber-600"} />
           </div>
           <div>
             <h3 className="font-bold text-stone-800 text-sm">{title}</h3>
@@ -690,7 +690,7 @@ function ConfirmDialog({ title, message, confirmLabel = "Confirm", onConfirm, on
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onCancel} className="px-4 py-2 rounded-xl text-sm text-stone-600 hover:bg-stone-100 transition-colors">Cancel</button>
           <button onClick={onConfirm} disabled={loading}
-            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
+            className={`px-4 py-2 rounded-xl text-white text-sm font-medium transition-colors disabled:opacity-50 ${danger ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700"}`}>
             {loading ? "Working…" : confirmLabel}
           </button>
         </div>
@@ -715,6 +715,7 @@ function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }:
   const [expanded, setExpanded] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showVoidConfirm, setShowVoidConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPay, setShowPay]   = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [acting, setActing]     = useState(false);
@@ -800,16 +801,16 @@ function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }:
     setActing(false);
   }
 
-  // Void the current invoice — reverts all the way back to Enquiry so the BEM
-  // can change anything (payer category, facilities, dates/times, event type),
-  // clearing prior signatures since the revised booking needs to be signed off
-  // again by both the bookee and the BEM before it can be confirmed.
-  async function voidInvoice() {
+  // Used to void an Invoiced booking or revise a Cancelled one — both revert
+  // all the way back to Enquiry so the BEM can change anything (payer
+  // category, facilities, dates/times, event type), clearing prior
+  // signatures since the revised booking needs to be signed off again by
+  // both the bookee and the BEM before it can be confirmed.
+  async function revertToEnquiry() {
     setActing(true);
     await supabase.from("facility_bookings").update({
       status: "ENQUIRY",
-      invoice_voided_at: new Date().toISOString(),
-      invoice_voided_by: user.email,
+      ...(booking.status === "INVOICED" ? { invoice_voided_at: new Date().toISOString(), invoice_voided_by: user.email } : {}),
       invoice_sent_at: null,
       invoice_sent_via: null,
       booker_signature: null, booker_signed_at: null,
@@ -817,6 +818,15 @@ function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }:
       updated_at: new Date().toISOString(),
     }).eq("id", booking.id);
     setShowVoidConfirm(false);
+    onRefresh();
+    setActing(false);
+  }
+
+  // Permanently remove the record — only ever offered on Cancelled bookings.
+  async function deleteBooking() {
+    setActing(true);
+    await supabase.from("facility_bookings").delete().eq("id", booking.id);
+    setShowDeleteConfirm(false);
     onRefresh();
     setActing(false);
   }
@@ -1039,6 +1049,18 @@ function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }:
                 {booking.status === "PAID" && (
                   <ReceiptPdfButton source={{ kind: "booking", data: booking }} />
                 )}
+                {booking.status === "CANCELLED" && (
+                  <>
+                    <button onClick={() => setShowVoidConfirm(true)} disabled={acting} title="Revert to Enquiry so you can edit and resubmit this booking"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 text-xs font-medium hover:bg-amber-50 transition-colors disabled:opacity-50">
+                      <RotateCcw size={13} /> Revise
+                    </button>
+                    <button onClick={() => setShowDeleteConfirm(true)} disabled={acting} title="Permanently delete this booking"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium transition-colors disabled:opacity-50">
+                      <Trash2 size={13} /> Delete
+                    </button>
+                  </>
+                )}
               </div>
             )}
             {!canAct && booking.status === "PAID" && (
@@ -1082,14 +1104,28 @@ function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }:
 
       {showVoidConfirm && (
         <ConfirmDialog
-          title="Void this invoice?"
-          message={booking.invoice_sent_at
-            ? "This invoice was already shared with the bookee. Voiding reverts the booking all the way back to Enquiry so you can edit anything — facilities, dates/times, payer category, event type — then it'll need to be signed off again by both the bookee and the BEM before sending a revised invoice."
-            : "This reverts the booking back to Enquiry so you can edit anything — facilities, dates/times, payer category, event type — then it'll need to be signed off again by both the bookee and the BEM."}
-          confirmLabel="Void & Revert to Enquiry"
+          title={booking.status === "INVOICED" ? "Void this invoice?" : "Revise this booking?"}
+          message={
+            booking.status === "INVOICED" && booking.invoice_sent_at
+              ? "This invoice was already shared with the bookee. Voiding reverts the booking all the way back to Enquiry so you can edit anything — facilities, dates/times, payer category, event type — then it'll need to be signed off again by both the bookee and the BEM before sending a revised invoice."
+              : "This reverts the booking back to Enquiry so you can edit anything — facilities, dates/times, payer category, event type — then it'll need to be signed off again by both the bookee and the BEM."
+          }
+          confirmLabel={booking.status === "INVOICED" ? "Void & Revert to Enquiry" : "Revert to Enquiry"}
           loading={acting}
-          onConfirm={voidInvoice}
+          onConfirm={revertToEnquiry}
           onCancel={() => setShowVoidConfirm(false)}
+        />
+      )}
+
+      {showDeleteConfirm && (
+        <ConfirmDialog
+          title="Delete this booking permanently?"
+          message={`This permanently removes ${booking.booking_no} (${booking.event_name || booking.booker_name}) from the system. This cannot be undone.`}
+          confirmLabel="Delete Permanently"
+          danger
+          loading={acting}
+          onConfirm={deleteBooking}
+          onCancel={() => setShowDeleteConfirm(false)}
         />
       )}
     </>
