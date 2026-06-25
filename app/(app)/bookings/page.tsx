@@ -1142,7 +1142,7 @@ export default function BookingsPage() {
       </div>
 
       {/* Booking list */}
-      {loading ? (
+      {loading || !user ? (
         <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
