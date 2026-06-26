@@ -194,6 +194,9 @@ export default function SubmitPVPage() {
   const applicantCanvasRef = useRef<HTMLCanvasElement>(null);
   const isApplicantDrawingRef = useRef(false);
   const [applicantSigData, setApplicantSigData] = useState("");
+  // BEM's own signature, carried over from the worksheet (not the Finance
+  // Executive's signature — kept separate so it can't land in that field).
+  const [worksheetBemSig, setWorksheetBemSig] = useState({ data: "", signedBy: "" });
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -292,6 +295,10 @@ export default function SubmitPVPage() {
       supabase.from("worker_worksheets").select("*").eq("id", worksheetId).single().then(({ data: ws }) => {
         if (!ws) return;
         setWorksheetBanner({ id: ws.id, worksheet_no: ws.worksheet_no, worker_name: ws.worker_name });
+        // Carry the worksheet's own BEM signature over as the PV's "raised
+        // by" signature — this is the BEM's signature, not the Finance
+        // Executive's, so it must not be confused with finance_signature_data.
+        setWorksheetBemSig({ data: ws.bem_signature ?? "", signedBy: ws.bem_signed_by ?? "" });
         setPvType("BAM");
         const typeLabel = WORKSHEET_TYPE_LABEL[ws.worker_type as keyof typeof WORKSHEET_TYPE_LABEL] ?? ws.worker_type;
         const purpose = `Wages — ${typeLabel} (${ws.period_label})`;
@@ -300,6 +307,8 @@ export default function SubmitPVPage() {
           ministry: "Property",
           purpose,
           payee_name: ws.worker_name,
+          payee_bank_name: ws.bank_name || f.payee_bank_name,
+          payee_bank_acct: ws.bank_account_no || f.payee_bank_acct,
           line_items: [{ description: purpose, amount: ws.total_amount, date: "" }],
           // The worksheet already carries both the worker's and the BEM's
           // signatures, so the declaration is already satisfied — don't make
@@ -524,6 +533,10 @@ export default function SubmitPVPage() {
           attachment_urls: attachmentUrls,
           ...(isFinanceAdmin && finSigData ? { finance_signature_data: finSigData } : {}),
           ...(applicantSigData ? { applicant_signature_data: applicantSigData } : {}),
+          ...(worksheetBemSig.data ? {
+            worksheet_bem_signature_data: worksheetBemSig.data,
+            worksheet_bem_signed_by: worksheetBemSig.signedBy,
+          } : {}),
         }),
       });
       const result = await res.json();

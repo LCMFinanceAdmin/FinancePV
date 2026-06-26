@@ -27,6 +27,23 @@ const STATUS_CHIP: Record<string, string> = {
   PV_RAISED: "bg-blue-100 text-blue-700",
 };
 
+// PA Personnel and RELA Personnel are paid a flat rate per session worked,
+// not by the hour — hours are still tracked on the worksheet for reference,
+// but they no longer drive the payout.
+const SESSION_RATE: Partial<Record<WorkerType, number>> = {
+  PA_PERSONNEL: 200,
+  RELA_PERSONNEL: 100,
+};
+function isSessionRate(t: WorkerType): boolean {
+  return t in SESSION_RATE;
+}
+
+const BANKS = [
+  "Maybank", "CIMB", "Public Bank", "RHB", "Hong Leong Bank",
+  "AmBank", "Bank Islam", "Bank Rakyat", "OCBC", "Standard Chartered",
+  "Affin Bank", "Alliance Bank", "UOB", "BSN",
+];
+
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function monthLabel(monthStr: string) {
@@ -53,13 +70,23 @@ function entryHours(e: WorksheetEntry): number {
   return Number(e.hours) || 0;
 }
 
+interface BamWorker {
+  id: string;
+  worker_type: WorkerType;
+  name: string;
+  bank_name: string | null;
+  bank_account_no: string | null;
+}
+
 const BLANK: Omit<WorkerWorksheet, "id" | "worksheet_no" | "created_at" | "updated_at" | "created_by" | "pdf_url" | "pv_id" | "status" | "worker_signature" | "worker_signed_at" | "bem_signature" | "bem_signed_by" | "bem_signed_at"> = {
   worker_type: "PA_PERSONNEL",
   worker_name: "",
+  bank_name: "",
+  bank_account_no: "",
   period_type: "DAYS",
   period_label: "",
   entries: [{ date: "", start_time: "", end_time: "", hours: 0, purpose: "" }],
-  rate_per_hour: 0,
+  rate_per_hour: SESSION_RATE.PA_PERSONNEL ?? 0,
   total_hours: 0,
   total_amount: 0,
   notes: "",
@@ -85,6 +112,7 @@ export default function WorksheetsPage() {
   const [confirmDelete, setConfirmDelete] = useState<WorkerWorksheet | null>(null);
   const [confirmRetract, setConfirmRetract] = useState<{ pvNo: string; pvId: string } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [workers, setWorkers] = useState<BamWorker[]>([]);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -98,19 +126,48 @@ export default function WorksheetsPage() {
     setLoading(false);
   }
 
+  async function loadWorkers(type: WorkerType) {
+    const { data } = await supabase.from("bam_workers").select("id,worker_type,name,bank_name,bank_account_no")
+      .eq("worker_type", type).order("name");
+    setWorkers((data as BamWorker[]) ?? []);
+  }
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUserEmail(user?.email ?? ""));
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    loadWorkers(form.worker_type);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.worker_type]);
+
   const periodType = PERIOD_TYPE_FOR[form.worker_type];
   const totalHours = useMemo(
     () => Math.round(form.entries.reduce((s, e) => s + entryHours(e), 0) * 100) / 100,
     [form.entries]
   );
-  const totalAmount = totalHours * (Number(form.rate_per_hour) || 0);
+  // PA/RELA Personnel are paid per session worked, not per hour worked.
+  const sessionCount = useMemo(
+    () => form.entries.filter(e => e.date && e.start_time && e.end_time).length,
+    [form.entries]
+  );
+  const totalAmount = isSessionRate(form.worker_type)
+    ? sessionCount * (Number(form.rate_per_hour) || 0)
+    : totalHours * (Number(form.rate_per_hour) || 0);
   const periodLabel = periodType === "MONTH" ? monthLabel(month) : daysLabel(form.entries);
+
+  // When picking an existing worker from the list, carry their saved bank
+  // details over so Finance doesn't need to re-enter them on the PV.
+  function selectWorkerName(name: string) {
+    const match = workers.find(w => w.name.toLowerCase() === name.trim().toLowerCase());
+    setForm(f => ({
+      ...f,
+      worker_name: name,
+      ...(match ? { bank_name: match.bank_name ?? "", bank_account_no: match.bank_account_no ?? "" } : {}),
+    }));
+  }
 
   function fillMonthDays() {
     const days = daysInMonth(month);
@@ -142,7 +199,9 @@ export default function WorksheetsPage() {
   function openExisting(ws: WorkerWorksheet) {
     setIsNew(false);
     setForm({
-      worker_type: ws.worker_type, worker_name: ws.worker_name, period_type: ws.period_type,
+      worker_type: ws.worker_type, worker_name: ws.worker_name,
+      bank_name: ws.bank_name ?? "", bank_account_no: ws.bank_account_no ?? "",
+      period_type: ws.period_type,
       period_label: ws.period_label, entries: ws.entries.length ? ws.entries : [{ date: "", hours: 0 }],
       rate_per_hour: ws.rate_per_hour, total_hours: ws.total_hours, total_amount: ws.total_amount, notes: ws.notes,
     });
@@ -179,6 +238,8 @@ export default function WorksheetsPage() {
       const payload = {
         worker_type: form.worker_type,
         worker_name: form.worker_name.trim(),
+        bank_name: form.bank_name || null,
+        bank_account_no: form.bank_account_no || null,
         period_type: periodType,
         period_label: periodLabel,
         entries,
@@ -187,6 +248,17 @@ export default function WorksheetsPage() {
         total_amount: totalAmount,
         notes: form.notes,
       };
+
+      // Keep the worker directory up to date so the name + bank details are
+      // ready to pick next time, instead of being retyped on every worksheet.
+      await supabase.from("bam_workers").upsert({
+        worker_type: form.worker_type,
+        name: form.worker_name.trim(),
+        bank_name: form.bank_name || null,
+        bank_account_no: form.bank_account_no || null,
+        created_by: userEmail,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "worker_type,name" });
 
       if (isNew || !editing?.id) {
         const { data: wsNo } = await supabase.rpc("next_worksheet_no");
@@ -227,6 +299,7 @@ export default function WorksheetsPage() {
           showMsg("Worksheet updated");
         }
       }
+      loadWorkers(form.worker_type);
     } catch (e: unknown) {
       showMsg(e instanceof Error ? e.message : "Failed to save", false);
     } finally {
@@ -461,7 +534,7 @@ export default function WorksheetsPage() {
           <div className="flex flex-wrap gap-2">
             {(Object.keys(WORKER_TYPE_LABEL) as WorkerType[]).map(t => (
               <button key={t} type="button" disabled={editing.status !== "DRAFT" && !isNew}
-                onClick={() => setForm(f => ({ ...f, worker_type: t }))}
+                onClick={() => setForm(f => ({ ...f, worker_type: t, rate_per_hour: SESSION_RATE[t] ?? f.rate_per_hour }))}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors disabled:opacity-50 ${form.worker_type === t ? "bg-green-600 text-white border-transparent" : "border-stone-200 text-stone-500 hover:border-stone-300"}`}>
                 {WORKER_TYPE_LABEL[t]}
               </button>
@@ -472,12 +545,36 @@ export default function WorksheetsPage() {
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className={label}>Worker Name</label>
-            <input className={inp} value={form.worker_name} onChange={e => setForm(f => ({ ...f, worker_name: e.target.value }))} placeholder="Full name as per IC" />
+            <input className={inp} list="bam-worker-names" value={form.worker_name}
+              onChange={e => selectWorkerName(e.target.value)} placeholder="Full name as per IC — pick existing or type new" />
+            <datalist id="bam-worker-names">
+              {workers.map(w => <option key={w.id} value={w.name} />)}
+            </datalist>
           </div>
           <div>
-            <label className={label}>Rate per Hour (RM)</label>
-            <input type="number" min={0} step={0.5} className={inp} value={form.rate_per_hour || ""} onChange={e => setForm(f => ({ ...f, rate_per_hour: Number(e.target.value) }))} />
+            <label className={label}>Bank</label>
+            <select className={inp} value={form.bank_name ?? ""} onChange={e => setForm(f => ({ ...f, bank_name: e.target.value }))}>
+              <option value="">— Select bank —</option>
+              {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
           </div>
+          <div>
+            <label className={label}>Account Number</label>
+            <input className={inp} value={form.bank_account_no ?? ""} onChange={e => setForm(f => ({ ...f, bank_account_no: e.target.value }))} placeholder="Bank account number" />
+          </div>
+          {isSessionRate(form.worker_type) ? (
+            <div className="col-span-2">
+              <label className={label}>Rate</label>
+              <div className="bg-stone-50 border border-stone-100 rounded-xl px-3 py-2 text-sm text-stone-600">
+                Standard rate — {formatCurrency(SESSION_RATE[form.worker_type] ?? 0)} per session
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className={label}>Rate per Hour (RM)</label>
+              <input type="number" min={0} step={0.5} className={inp} value={form.rate_per_hour || ""} onChange={e => setForm(f => ({ ...f, rate_per_hour: Number(e.target.value) }))} />
+            </div>
+          )}
         </div>
 
         {periodType === "MONTH" && (
@@ -494,16 +591,21 @@ export default function WorksheetsPage() {
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className={label.replace("mb-1", "mb-0")}>Days Worked</label>
-            <button type="button" onClick={addEntry} className="flex items-center gap-1 text-xs text-[#4a6da7] font-medium hover:underline"><Plus size={12} /> Add day</button>
+            <label className={label.replace("mb-1", "mb-0")}>{isSessionRate(form.worker_type) ? "Sessions Worked" : "Days Worked"}</label>
+            <button type="button" onClick={addEntry} className="flex items-center gap-1 text-xs text-[#4a6da7] font-medium hover:underline">
+              <Plus size={12} /> {isSessionRate(form.worker_type) ? "Add session" : "Add day"}
+            </button>
           </div>
           <p className="text-xs text-stone-400 mb-2">
-            Set the time worked from–to for each day; hours are calculated automatically.
+            {isSessionRate(form.worker_type)
+              ? "Set the time worked for each session — each one is paid the standard rate above, regardless of hours."
+              : "Set the time worked from–to for each day; hours are calculated automatically."}
             {periodType === "MONTH" && " Leave a day's times blank if the worker was off."}
           </p>
           <div className="space-y-2">
             {form.entries.map((e, idx) => {
               const hrs = entryHours(e);
+              const hrsDisplay = isSessionRate(form.worker_type) ? Math.round(hrs) : hrs;
               return (
                 <div key={idx} className="border border-stone-200 rounded-xl p-2.5 space-y-1.5">
                   <div className="flex items-center gap-2">
@@ -513,7 +615,7 @@ export default function WorksheetsPage() {
                     <span className="text-stone-400 text-xs">to</span>
                     <input type="time" className="w-[110px] border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]"
                       value={e.end_time ?? ""} onChange={ev => updateEntry(idx, { end_time: ev.target.value })} />
-                    <span className="text-xs font-semibold text-stone-600 whitespace-nowrap w-14 text-right">{hrs > 0 ? `${hrs} hrs` : "—"}</span>
+                    <span className="text-xs font-semibold text-stone-600 whitespace-nowrap w-14 text-right">{hrs > 0 ? `${hrsDisplay} hrs` : "—"}</span>
                     {form.entries.length > 1 && (
                       <button type="button" onClick={() => removeEntry(idx)} className="p-1.5 text-stone-300 hover:text-red-500"><Trash2 size={14} /></button>
                     )}
@@ -532,7 +634,10 @@ export default function WorksheetsPage() {
         </div>
 
         <div className="flex items-center justify-between p-3.5 bg-stone-50 rounded-xl border border-stone-100">
-          <div className="text-sm text-stone-500">{periodLabel || "—"} · {totalHours} hrs</div>
+          <div className="text-sm text-stone-500">
+            {periodLabel || "—"} ·{" "}
+            {isSessionRate(form.worker_type) ? `${sessionCount} session${sessionCount === 1 ? "" : "s"} · ${Math.round(totalHours)} hrs` : `${totalHours} hrs`}
+          </div>
           <div className="text-lg font-bold text-stone-800">{formatCurrency(totalAmount)}</div>
         </div>
 

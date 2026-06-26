@@ -110,7 +110,9 @@ function WorksheetDocument({ ws, logoDataUri }: { ws: WorkerWorksheet; logoDataU
             <Text style={[s.cell, s.tiny, { flex: 2.4 }]} />
           </View>
           <View style={s.row}>
-            <Text style={[s.cell, s.tiny, { flex: 3.6 }]}>Rate per Hour (RM)</Text>
+            <Text style={[s.cell, s.tiny, { flex: 3.6 }]}>
+              {ws.worker_type === "PA_PERSONNEL" || ws.worker_type === "RELA_PERSONNEL" ? "Rate per Session (RM)" : "Rate per Hour (RM)"}
+            </Text>
             <Text style={[s.cell, s.tiny, { flex: 1, textAlign: "right" }]}>{fmt(ws.rate_per_hour)}</Text>
             <Text style={[s.cell, s.tiny, { flex: 2.4 }]} />
           </View>

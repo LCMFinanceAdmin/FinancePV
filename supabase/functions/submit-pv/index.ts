@@ -31,7 +31,12 @@ Deno.serve(async (req) => {
       const amount = Number(d.amount) || 0;
       const loa = getLOATier(amount, d.payment_type);
       const applicantEmail = (d.applicant_email || user.email || "").toLowerCase().trim();
-      const isBuildingManager = profile?.role === "BUILDING_MANAGER";
+      // A PV raised from a signed worksheet is always attributed to the BEM
+      // who signed that worksheet — even if whoever clicked Submit (e.g.
+      // Finance helping out) is logged in under a different role. This keeps
+      // the BEM's own signature out of the Finance Executive's slot.
+      const fromWorksheet = !!d.worksheet_bem_signature_data;
+      const isBuildingManager = fromWorksheet || profile?.role === "BUILDING_MANAGER";
 
       // BM submitting → must first be verified by a BAM Committee PIC
       // FE submitting → Building Manager must review first
@@ -39,13 +44,15 @@ Deno.serve(async (req) => {
 
       // Submitter auto-signs their approval entry
       const submitterEntry = {
-        role: profile?.role || "BUILDING_MANAGER",
+        role: fromWorksheet ? "BUILDING_MANAGER" : (profile?.role || "BUILDING_MANAGER"),
         email: user.email,
-        name: profile?.full_name || user.email,
+        name: fromWorksheet ? (d.worksheet_bem_signed_by || profile?.full_name || user.email) : (profile?.full_name || user.email),
         action: "APPROVED",
         timestamp: now,
         remarks: "Submitted",
-        ...(d.finance_signature_data ? { signature_data: d.finance_signature_data } : {}),
+        ...(fromWorksheet
+          ? { signature_data: d.worksheet_bem_signature_data }
+          : (d.finance_signature_data ? { signature_data: d.finance_signature_data } : {})),
       };
 
       const pvRow = {

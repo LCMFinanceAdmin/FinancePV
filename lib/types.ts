@@ -245,6 +245,8 @@ export interface WorkerWorksheet {
   worksheet_no: string;
   worker_type: WorkerType;
   worker_name: string;
+  bank_name: string | null;
+  bank_account_no: string | null;
   period_type: WorksheetPeriodType;
   period_label: string;
   entries: WorksheetEntry[];
