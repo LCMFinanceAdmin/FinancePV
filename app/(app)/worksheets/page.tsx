@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { SignaturePad } from "@/components/ui/signature-pad";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
 import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
 import type { WorkerWorksheet, WorkerType, WorksheetEntry } from "@/lib/types";
@@ -81,6 +82,9 @@ export default function WorksheetsPage() {
   const [workerSigDraft, setWorkerSigDraft] = useState("");
   const [bemSigDraft, setBemSigDraft] = useState("");
   const [savingSig, setSavingSig] = useState<"worker" | "bem" | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<WorkerWorksheet | null>(null);
+  const [confirmRetract, setConfirmRetract] = useState<{ pvNo: string; pvId: string } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -273,14 +277,21 @@ export default function WorksheetsPage() {
     }
   }
 
-  async function deleteWorksheet(ws: WorkerWorksheet) {
-    const warn = ws.status === "PV_RAISED"
-      ? `Delete worksheet ${ws.worksheet_no}? This does NOT delete the linked PV — if you still need that PV, leave this worksheet alone.`
-      : `Delete worksheet ${ws.worksheet_no}?`;
-    if (!confirm(warn)) return;
-    await supabase.from("worker_worksheets").delete().eq("id", ws.id);
-    loadList();
-    if (editing?.id === ws.id) setEditing(null);
+  function deleteWorksheet(ws: WorkerWorksheet) {
+    setConfirmDelete(ws);
+  }
+
+  async function confirmDeleteAction() {
+    if (!confirmDelete) return;
+    setConfirmBusy(true);
+    try {
+      await supabase.from("worker_worksheets").delete().eq("id", confirmDelete.id);
+      loadList();
+      if (editing?.id === confirmDelete.id) setEditing(null);
+    } finally {
+      setConfirmBusy(false);
+      setConfirmDelete(null);
+    }
   }
 
   // A retracted PV is cancelled outright (not just unlinked) so it drops out
@@ -321,13 +332,23 @@ export default function WorksheetsPage() {
         return;
       }
 
-      if (!confirm(`Retract and cancel ${pv.pv_no}? This removes it from the BAM Committee's review queue so you can adjust this worksheet. The existing signatures stay valid unless you change the hours, rate, or total.`)) return;
+      setConfirmRetract({ pvNo: pv.pv_no, pvId: pv.id });
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : "Failed to retract", false);
+    } finally {
+      setGenerating(false);
+    }
+  }
 
+  async function confirmRetractAction() {
+    if (!confirmRetract || !editing) return;
+    setConfirmBusy(true);
+    try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ pv_id: pv.id, action: "CANCEL", remarks: "Retracted by Building/Event Manager for revision" }),
+        body: JSON.stringify({ pv_id: confirmRetract.pvId, action: "CANCEL", remarks: "Retracted by Building/Event Manager for revision" }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Failed to cancel the PV");
@@ -336,11 +357,12 @@ export default function WorksheetsPage() {
         .update({ status: "SIGNED", pv_id: null }).eq("id", editing.id).select("*").single();
       if (error) throw new Error(error.message);
       setEditing(row as WorkerWorksheet);
-      showMsg(`${pv.pv_no} cancelled and removed from the review queue. Make your adjustments, then generate a new PV.`);
+      showMsg(`${confirmRetract.pvNo} cancelled and removed from the review queue. Make your adjustments, then generate a new PV.`);
     } catch (e: unknown) {
       showMsg(e instanceof Error ? e.message : "Failed to retract", false);
     } finally {
-      setGenerating(false);
+      setConfirmBusy(false);
+      setConfirmRetract(null);
     }
   }
 
@@ -390,6 +412,19 @@ export default function WorksheetsPage() {
               </button>
             ))}
           </div>
+        )}
+        {confirmDelete && (
+          <ConfirmDialog
+            title="Delete worksheet"
+            message={confirmDelete.status === "PV_RAISED"
+              ? `Delete worksheet ${confirmDelete.worksheet_no}? This does NOT delete the linked PV — if you still need that PV, leave this worksheet alone.`
+              : `Delete worksheet ${confirmDelete.worksheet_no}?`}
+            confirmLabel="Delete"
+            danger
+            loading={confirmBusy}
+            onCancel={() => setConfirmDelete(null)}
+            onConfirm={confirmDeleteAction}
+          />
         )}
       </div>
     );
@@ -553,6 +588,17 @@ export default function WorksheetsPage() {
             </div>
           )}
         </div>
+      )}
+      {confirmRetract && (
+        <ConfirmDialog
+          title="Retract & cancel PV"
+          message={`Retract and cancel ${confirmRetract.pvNo}? This removes it from the BAM Committee's review queue so you can adjust this worksheet. The existing signatures stay valid unless you change the hours, rate, or total.`}
+          confirmLabel="Retract & cancel"
+          danger
+          loading={confirmBusy}
+          onCancel={() => setConfirmRetract(null)}
+          onConfirm={confirmRetractAction}
+        />
       )}
     </div>
   );
