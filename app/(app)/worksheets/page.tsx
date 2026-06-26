@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
 import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
 import type { WorkerWorksheet, WorkerType, WorksheetEntry } from "@/lib/types";
-import { Plus, Trash2, ArrowLeft, FileCheck2, FileText, ChevronRight } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, FileCheck2, FileText, ChevronRight, Star } from "lucide-react";
 
 const WORKER_TYPE_LABEL: Record<WorkerType, string> = {
   PA_PERSONNEL: "PA Personnel",
@@ -113,6 +113,7 @@ export default function WorksheetsPage() {
   const [confirmRetract, setConfirmRetract] = useState<{ pvNo: string; pvId: string } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [workers, setWorkers] = useState<BamWorker[]>([]);
+  const [savingWorker, setSavingWorker] = useState(false);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -167,6 +168,38 @@ export default function WorksheetsPage() {
       worker_name: name,
       ...(match ? { bank_name: match.bank_name ?? "", bank_account_no: match.bank_account_no ?? "" } : {}),
     }));
+  }
+
+  function isFavouriteWorker() {
+    const name = form.worker_name.trim().toLowerCase();
+    if (!name) return false;
+    return workers.some(w => w.name.toLowerCase() === name && w.bank_name === (form.bank_name || null) && w.bank_account_no === (form.bank_account_no || null));
+  }
+
+  async function upsertWorkerFavourite() {
+    if (!form.worker_name.trim()) return;
+    await supabase.from("bam_workers").upsert({
+      worker_type: form.worker_type,
+      name: form.worker_name.trim(),
+      bank_name: form.bank_name || null,
+      bank_account_no: form.bank_account_no || null,
+      created_by: userEmail,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "worker_type,name" });
+  }
+
+  async function saveWorkerFavourite() {
+    if (!form.worker_name.trim()) { showMsg("Enter the worker's name first", false); return; }
+    setSavingWorker(true);
+    try {
+      await upsertWorkerFavourite();
+      await loadWorkers(form.worker_type);
+      showMsg(`Saved ${form.worker_name.trim()} as a favourite worker`);
+    } catch {
+      showMsg("Failed to save worker", false);
+    } finally {
+      setSavingWorker(false);
+    }
   }
 
   function fillMonthDays() {
@@ -251,14 +284,7 @@ export default function WorksheetsPage() {
 
       // Keep the worker directory up to date so the name + bank details are
       // ready to pick next time, instead of being retyped on every worksheet.
-      await supabase.from("bam_workers").upsert({
-        worker_type: form.worker_type,
-        name: form.worker_name.trim(),
-        bank_name: form.bank_name || null,
-        bank_account_no: form.bank_account_no || null,
-        created_by: userEmail,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "worker_type,name" });
+      await upsertWorkerFavourite();
 
       if (isNew || !editing?.id) {
         const { data: wsNo } = await supabase.rpc("next_worksheet_no");
@@ -561,6 +587,18 @@ export default function WorksheetsPage() {
           <div>
             <label className={label}>Account Number</label>
             <input className={inp} value={form.bank_account_no ?? ""} onChange={e => setForm(f => ({ ...f, bank_account_no: e.target.value }))} placeholder="Bank account number" />
+          </div>
+          <div className="col-span-2">
+            {isFavouriteWorker() ? (
+              <div className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
+                <Star size={13} className="fill-green-600" /> Saved as a favourite worker
+              </div>
+            ) : (
+              <button type="button" onClick={saveWorkerFavourite} disabled={savingWorker || !form.worker_name.trim()}
+                className="flex items-center gap-1.5 text-xs text-[#4a6da7] font-medium hover:underline disabled:opacity-50 disabled:no-underline">
+                <Star size={13} /> {savingWorker ? "Saving…" : "Save as Favourite Worker"}
+              </button>
+            )}
           </div>
           {isSessionRate(form.worker_type) ? (
             <div className="col-span-2">
