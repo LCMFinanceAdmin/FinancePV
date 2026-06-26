@@ -58,6 +58,20 @@ Deno.serve(async (req) => {
       return json({ ok: true, status: "CANCELLED" });
     }
 
+    // HARD_DELETE is allowed for the PV submitter when it's their own
+    // cancelled PV (cleaning up a withdrawn/cancelled request), or any
+    // Finance Executive for anything else (except PAID, guarded below).
+    if (action === "HARD_DELETE") {
+      const isSubmitter = pv.submitted_by_email === user.email;
+      const selfCancelledCleanup = isSubmitter && pv.status === "CANCELLED";
+      if (!adminRoles.includes(profile?.role) && !selfCancelledCleanup) {
+        return json({ error: "Not authorised to delete this PV" }, 403);
+      }
+      if (pv.status === "PAID") return json({ error: "Cannot delete a paid PV" }, 400);
+      await db.from("pvs").delete().eq("id", pv_id);
+      return json({ ok: true, action: "DELETED" });
+    }
+
     // All other actions require Finance Executive
     if (!adminRoles.includes(profile?.role)) return json({ error: "Finance Executive only" }, 403);
 
@@ -260,12 +274,6 @@ Deno.serve(async (req) => {
         updated_at:           new Date().toISOString(),
       }).eq("id", pv_id);
       return json({ ok: true, action: "EDITED" });
-    }
-
-    if (action === "HARD_DELETE") {
-      if (pv.status === "PAID") return json({ error: "Cannot delete a paid PV" }, 400);
-      await db.from("pvs").delete().eq("id", pv_id);
-      return json({ ok: true, action: "DELETED" });
     }
 
     if (action === "UNREVIEW") {

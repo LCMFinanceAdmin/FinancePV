@@ -4,9 +4,10 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
-import { Search, Layers } from "lucide-react";
+import { Search, Layers, Trash2 } from "lucide-react";
 
 type FilterStatus = "ALL" | "IN_PROGRESS" | "APPROVED" | "PAID" | "REJECTED";
 
@@ -32,6 +33,9 @@ export default function MyBamPVsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterStatus>("ALL");
   const [search, setSearch] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<Partial<PV> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -55,6 +59,30 @@ export default function MyBamPVsPage() {
     }
     load();
   }, [filter]);
+
+  async function confirmDeleteAction() {
+    if (!confirmDelete?.id) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: confirmDelete.id, action: "HARD_DELETE" }),
+      });
+      if (!res.ok) {
+        const result = await res.json();
+        throw new Error(result.error ?? "Failed to delete the PV");
+      }
+      setPvs(prev => prev.filter(p => p.id !== confirmDelete.id));
+      setConfirmDelete(null);
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete the PV");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!search) return pvs;
@@ -122,12 +150,34 @@ export default function MyBamPVsPage() {
                     <div className="text-xs text-stone-400 mt-0.5 truncate">{pv.purpose}</div>
                     <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)} · by {pv.submitted_by}</div>
                   </div>
-                  <div className="text-sm font-bold text-stone-800 whitespace-nowrap shrink-0">{formatCurrency(pv.amount!)}</div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-sm font-bold text-stone-800 whitespace-nowrap">{formatCurrency(pv.amount!)}</div>
+                    {pv.status === "CANCELLED" && (
+                      <span
+                        onClick={e => { e.preventDefault(); e.stopPropagation(); setConfirmDelete(pv); }}
+                        className="p-1.5 text-stone-300 hover:text-red-500 rounded-lg"
+                      >
+                        <Trash2 size={14} />
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </Link>
           ))}
         </div>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete cancelled PV"
+          message={deleteError || `Permanently delete ${confirmDelete.pv_no}? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          loading={deleting}
+          onCancel={() => { setConfirmDelete(null); setDeleteError(""); }}
+          onConfirm={confirmDeleteAction}
+        />
       )}
     </div>
   );
