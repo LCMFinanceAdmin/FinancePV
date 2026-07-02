@@ -708,7 +708,7 @@ export default function SubmitPVPage() {
             <div key={idx} className="relative group">
               {(() => {
                 const url = att.previewUrl || att.sourceUrl;
-                const isImg = /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(url || att.file.name);
+                const isImg = att.file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(url || att.file.name);
                 const active = previewDocUrl === url;
                 return isImg && url ? (
                   <button type="button" onClick={() => setPreviewDocUrl(active ? null : url)}
@@ -735,10 +735,15 @@ export default function SubmitPVPage() {
       )}
       {previewDocUrl && (
         <div className="mt-3 rounded-xl border border-[#4a6da7]/30 overflow-hidden bg-stone-50">
-          {/\.(jpg|jpeg|png|webp|gif|heic)$/i.test(previewDocUrl)
-            ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={previewDocUrl} alt="preview" className="max-w-full max-h-96 object-contain mx-auto block" />
-            : <iframe src={previewDocUrl} className="w-full h-96 border-0" title="Document preview" />
-          }
+          {(() => {
+            const previewAtt = attachments.find(a => (a.previewUrl || a.sourceUrl) === previewDocUrl);
+            const isPreviewImg = previewAtt
+              ? (previewAtt.file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(previewDocUrl))
+              : /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(previewDocUrl);
+            return isPreviewImg
+              ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={previewDocUrl} alt="preview" className="max-w-full max-h-96 object-contain mx-auto block" />
+              : <iframe src={previewDocUrl} className="w-full h-96 border-0" title="Document preview" />;
+          })()}
         </div>
       )}
     </div>
