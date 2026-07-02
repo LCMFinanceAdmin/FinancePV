@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
@@ -63,6 +63,7 @@ export default function PayrollEmployeePage() {
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [canEdit, setCanEdit] = useState(false);
   const [showRevision, setShowRevision] = useState(false);
+  const [slipMonth, setSlipMonth] = useState<number | null>(null); // 0-11 for months
 
   useEffect(() => {
     (async () => {
@@ -225,7 +226,7 @@ export default function PayrollEmployeePage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-[11px] border-collapse" style={{ minWidth: 1000 }}>
+              <table className="w-full text-[14px] border-collapse" style={{ minWidth: 1000 }}>
                 <thead>
                   <tr className="bg-stone-100 text-stone-600">
                     <th className="border border-stone-200 px-1.5 py-1 text-left">Month</th>
@@ -240,6 +241,7 @@ export default function PayrollEmployeePage() {
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Net</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Total LCM</th>
+                    <th className="border border-stone-200 px-1 py-1 print:hidden"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -260,6 +262,12 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(l.net)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(l.totalLcmPayment)}</td>
+                      <td className="border border-stone-200 px-1 py-1 text-center print:hidden">
+                        <button onClick={() => setSlipMonth(i)} title="Share salary slip"
+                          className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-[#4a6da7]">
+                          <Share2 size={12} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {/* Sub-total (12 months) */}
@@ -276,6 +284,7 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.net, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-[#4a6da7]">{num(monthLines.reduce((s, l) => s + l.totalLcmPayment, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-1 print:hidden"></td>
                   </tr>
                   {/* 13th month */}
                   {thirteenth ? (
@@ -295,9 +304,10 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(thirteenth.net)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(thirteenth.totalLcmPayment)}</td>
+                      <td className="border border-stone-200 px-1 py-1 print:hidden"></td>
                     </tr>
                   ) : (
-                    <tr><td colSpan={12} className="border border-stone-200 px-1.5 py-1 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
+                    <tr><td colSpan={13} className="border border-stone-200 px-1.5 py-1 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
                   )}
                   {/* Annual total */}
                   <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7]">
@@ -313,6 +323,7 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.net))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.totalLcmPayment))}</td>
+                    <td className="border border-stone-200 px-1 py-1 print:hidden"></td>
                   </tr>
                 </tbody>
               </table>
@@ -394,9 +405,146 @@ export default function PayrollEmployeePage() {
       {showRevision && current && (
         <RevisionModal employeeId={emp.id} latest={current} onClose={() => setShowRevision(false)} onSaved={() => { setShowRevision(false); load(); }} />
       )}
+
+      {slipMonth !== null && monthLines[slipMonth] && (
+        <SlipModal emp={emp} month={MONTHS[slipMonth]} year={year}
+          line={monthLines[slipMonth]} pcbVal={pcb[slipMonth] || 0}
+          onClose={() => setSlipMonth(null)} />
+      )}
     </div>
   );
 }
+
+// ─── Salary Slip Modal ────────────────────────────────────────────────────────
+
+function SlipModal({ emp, month, year, line, pcbVal, onClose }: {
+  emp: PayrollEmployee; month: string; year: number;
+  line: CalcLine; pcbVal: number; onClose: () => void;
+}) {
+  function rm(n: number) { return `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+
+  const totalDeductions = line.epf.ee + line.socso.ee + line.eis.ee + pcbVal + line.eplDeduction;
+
+  const plainText = [
+    `SALARY SLIP — ${month} ${year}`,
+    `LCM BANGSAR LUTHERAN CHURCH`,
+    `─────────────────────────────`,
+    `Employee:    ${emp.full_name}`,
+    `Emp No:      ${emp.emp_no}`,
+    `Designation: ${emp.designation || "—"}`,
+    `IC No:       ${emp.ic_no || "—"}`,
+    ``,
+    `EARNINGS`,
+    `  Gross Salary:             ${rm(line.gross)}`,
+    ``,
+    `DEDUCTIONS`,
+    `  EPF (Employee 11%):       ${rm(line.epf.ee)}`,
+    `  SOCSO (Employee):         ${rm(line.socso.ee)}`,
+    `  EIS (Employee):           ${rm(line.eis.ee)}`,
+    `  PCB (Income Tax):         ${rm(pcbVal)}`,
+    `  EPL Deduction:            ${rm(line.eplDeduction)}`,
+    `  ─────────────────────────`,
+    `  Total Deductions:         ${rm(totalDeductions)}`,
+    ``,
+    `NET PAY:                    ${rm(line.net)}`,
+    ``,
+    `EMPLOYER CONTRIBUTIONS (not deducted from pay)`,
+    `  EPF Employer:             ${rm(line.epf.er)}`,
+    `  SOCSO Employer:           ${rm(line.socso.er)}`,
+    `  EIS Employer:             ${rm(line.eis.er)}`,
+  ].join("\n");
+
+  const waText = [
+    `*SALARY SLIP — ${month} ${year}*`,
+    `Employee: ${emp.full_name} (${emp.emp_no})`,
+    `Gross: ${rm(line.gross)}`,
+    `EPF: ${rm(line.epf.ee)} | SOCSO: ${rm(line.socso.ee)} | EIS: ${rm(line.eis.ee)} | PCB: ${rm(pcbVal)}`,
+    `Net Pay: *${rm(line.net)}*`,
+  ].join("\n");
+
+  function shareWhatsApp() {
+    window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, "_blank");
+  }
+
+  function shareEmail() {
+    window.open(`mailto:?subject=${encodeURIComponent(`Salary Slip ${month} ${year}`)}&body=${encodeURIComponent(plainText)}`, "_blank");
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print:bg-transparent print:inset-auto print:p-0">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl print:shadow-none print:rounded-none print:max-w-none print:w-auto">
+        {/* Modal header — hidden on print */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200 print:hidden">
+          <h2 className="text-base font-bold text-stone-800">Salary Slip — {month} {year}</h2>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><X size={18} /></button>
+        </div>
+
+        {/* Slip body */}
+        <div className="p-6 font-mono text-sm print:block">
+          <div className="text-center mb-4">
+            <div className="font-bold text-base">LCM BANGSAR LUTHERAN CHURCH</div>
+            <div className="font-bold">SALARY SLIP — {month} {year}</div>
+            <div className="text-stone-400">─────────────────────────────────────</div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-4 mb-4 text-[13px]">
+            <div><span className="text-stone-500">Employee:</span> {emp.full_name}</div>
+            <div><span className="text-stone-500">Emp No:</span> {emp.emp_no}</div>
+            <div><span className="text-stone-500">Designation:</span> {emp.designation || "—"}</div>
+            <div><span className="text-stone-500">IC No:</span> {emp.ic_no || "—"}</div>
+          </div>
+
+          <div className="border-t border-stone-200 pt-3 mb-3">
+            <div className="font-bold text-stone-700 mb-1">EARNINGS</div>
+            <div className="flex justify-between"><span>Gross Salary</span><span>{rm(line.gross)}</span></div>
+          </div>
+
+          <div className="border-t border-stone-200 pt-3 mb-3">
+            <div className="font-bold text-stone-700 mb-1">DEDUCTIONS</div>
+            <div className="flex justify-between"><span>EPF (Employee 11%)</span><span>{rm(line.epf.ee)}</span></div>
+            <div className="flex justify-between"><span>SOCSO (Employee)</span><span>{rm(line.socso.ee)}</span></div>
+            <div className="flex justify-between"><span>EIS (Employee)</span><span>{rm(line.eis.ee)}</span></div>
+            <div className="flex justify-between"><span>PCB (Income Tax)</span><span>{rm(pcbVal)}</span></div>
+            <div className="flex justify-between"><span>EPL Deduction</span><span>{rm(line.eplDeduction)}</span></div>
+            <div className="border-t border-stone-200 mt-1 pt-1 flex justify-between font-semibold">
+              <span>Total Deductions</span><span>{rm(totalDeductions)}</span>
+            </div>
+          </div>
+
+          <div className="border-t-2 border-stone-800 pt-2 mb-4 flex justify-between font-bold text-base">
+            <span>NET PAY</span><span>{rm(line.net)}</span>
+          </div>
+
+          <div className="border-t border-stone-200 pt-3 text-[12px] text-stone-500">
+            <div className="font-bold mb-1">EMPLOYER CONTRIBUTIONS (not deducted from pay)</div>
+            <div className="flex justify-between"><span>EPF Employer</span><span>{rm(line.epf.er)}</span></div>
+            <div className="flex justify-between"><span>SOCSO Employer</span><span>{rm(line.socso.er)}</span></div>
+            <div className="flex justify-between"><span>EIS Employer</span><span>{rm(line.eis.er)}</span></div>
+          </div>
+        </div>
+
+        {/* Action buttons — hidden on print */}
+        <div className="flex gap-2 px-5 py-4 border-t border-stone-200 print:hidden flex-wrap">
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-stone-600 text-sm font-medium hover:bg-stone-50">
+            <Printer size={14} /> Print / Save PDF
+          </button>
+          <button onClick={shareWhatsApp}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#25D366] text-white text-sm font-medium hover:opacity-90">
+            <Share2 size={14} /> WhatsApp
+          </button>
+          <button onClick={shareEmail}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-stone-600 text-sm font-medium hover:bg-stone-50">
+            <Share2 size={14} /> Email
+          </button>
+          <button onClick={onClose} className="ml-auto px-4 py-2 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Revision Modal ───────────────────────────────────────────────────────────
 
 function RevisionModal({ employeeId, latest, onClose, onSaved }: {
   employeeId: string; latest: PayrollSalary; onClose: () => void; onSaved: () => void;
