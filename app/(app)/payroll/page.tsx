@@ -83,6 +83,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [taxRef, setTaxRef] = useState(existing?.employer_tax_ref ?? "");
   const [bankName, setBankName] = useState(existing?.bank_name ?? "");
   const [bankAcct, setBankAcct] = useState(existing?.bank_acct ?? "");
+  const [phoneNo, setPhoneNo] = useState(existing?.phone_no ?? "");
   const [status, setStatus] = useState(existing?.status ?? "ACTIVE");
   const [resignedDate, setResignedDate] = useState(existing?.resigned_date ?? "");
 
@@ -226,6 +227,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         employer_tax_ref: taxRef.trim(),
         bank_name: bankName.trim(),
         bank_acct: bankAcct.trim(),
+        phone_no: phoneNo.trim(),
         status,
         resigned_date: status === "RESIGNED" ? (resignedDate || null) : null,
       };
@@ -379,6 +381,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                 <datalist id="bank-options">{BANKS.map(b => <option key={b} value={b} />)}</datalist>
               </div>
               <div><label className={labelCls}>Bank Account</label><input className={inputCls} value={bankAcct} onChange={e => setBankAcct(e.target.value)} /></div>
+              <div><label className={labelCls}>WhatsApp / Phone No.</label><input className={inputCls} value={phoneNo} onChange={e => setPhoneNo(e.target.value)} placeholder="0123456789" /></div>
             </div>
           </div>
 

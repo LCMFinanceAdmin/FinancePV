@@ -332,6 +332,7 @@ export interface PayrollEmployee {
   employer_tax_ref: string;
   bank_name: string;
   bank_acct: string;
+  phone_no: string;
   status: PayrollEmployeeStatus;
   resigned_date: string | null;
   created_by: string;

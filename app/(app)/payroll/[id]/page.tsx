@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { installmentForMonth } from "@/lib/payroll/loan";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem } from "@/lib/types";
+import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
@@ -557,6 +558,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
 }) {
   const MONTH_LABELS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
   const [whatsappHint, setWhatsappHint] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // Inject print CSS so only the sheet content prints, not the background page
   useEffect(() => {
@@ -610,19 +612,52 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const emailSubject = `${emp.full_name} — Salary Sheet ${year}`;
   const emailBody = `Please find attached the ${year} Yearly Salary Statement for ${emp.full_name}.\n\nAnnual Gross: RM ${num(sum(l => l.gross))}\nAnnual Net:   RM ${num(sum(l => l.net))}\n\nLutheran Church in Malaysia`;
 
-  function handlePrint() {
-    window.print();
-  }
+  function handlePrint() { window.print(); }
 
-  function handleWhatsApp() {
-    // Save PDF first, then open WhatsApp Web for the user to attach
-    window.print();
-    setWhatsappHint(true);
-    setTimeout(() => window.open("https://web.whatsapp.com/", "_blank"), 800);
+  async function handleWhatsApp() {
+    setGeneratingPdf(true);
+    try {
+      const { pdf } = await import("@react-pdf/renderer");
+      const blob = await pdf(
+        <YearlySheetPDF emp={emp} year={year} salary={salary} monthLines={monthLines}
+          thirteenth={thirteenth} pcbArr={pcbArr} customItemsByMonth={customItemsByMonth} effMonth={effMonth} />
+      ).toBlob();
+      const fileName = `${emp.full_name.replace(/\s+/g, "_")}_${year}_Salary.pdf`;
+      const file = new File([blob], fileName, { type: "application/pdf" });
+
+      // Mobile: Web Share API can send file directly to WhatsApp
+      if (typeof navigator !== "undefined" && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${emp.full_name} — Salary Sheet ${year}` });
+        return;
+      }
+
+      // Desktop: download PDF, then open WhatsApp with employee's number pre-selected
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = fileName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      const phone = formatWaPhone(emp.phone_no);
+      setTimeout(() => window.open(phone ? `https://wa.me/${phone}` : "https://web.whatsapp.com/", "_blank"), 600);
+      setWhatsappHint(true);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+    } finally {
+      setGeneratingPdf(false);
+    }
   }
 
   function handleEmail() {
     window.open(`mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`, "_blank");
+  }
+
+  function formatWaPhone(p: string | undefined | null): string {
+    if (!p) return "";
+    const d = p.replace(/\D/g, "");
+    if (d.startsWith("60")) return d;
+    if (d.startsWith("0")) return "60" + d.slice(1);
+    return d;
   }
 
   return (
@@ -637,9 +672,9 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5c8f]">
             <Printer size={13} /> Print / Save PDF
           </button>
-          <button onClick={handleWhatsApp}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700">
-            <Share2 size={13} /> WhatsApp
+          <button onClick={handleWhatsApp} disabled={generatingPdf}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-60">
+            <Share2 size={13} /> {generatingPdf ? "Generating…" : emp.phone_no ? `WhatsApp ${emp.phone_no}` : "WhatsApp"}
           </button>
           <button onClick={handleEmail}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50">
@@ -652,7 +687,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       {/* WhatsApp hint banner */}
       {whatsappHint && (
         <div className="bg-green-50 border-b border-green-200 px-4 py-2 flex items-center justify-between print:hidden">
-          <span className="text-xs text-green-800 font-medium">Save the PDF from the print dialog, then attach it in WhatsApp Web.</span>
+          <span className="text-xs text-green-800 font-medium">PDF downloaded — attach it in the WhatsApp chat that just opened{emp.phone_no ? ` (${emp.phone_no})` : ""}.</span>
           <button onClick={() => setWhatsappHint(false)} className="text-green-600 hover:text-green-800 ml-3"><X size={14} /></button>
         </div>
       )}
@@ -703,6 +738,12 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Bank</td>
                 <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{emp.bank_name ? `${emp.bank_name} · ${emp.bank_acct}` : "—"}</td>
               </tr>
+              {emp.phone_no && (
+                <tr>
+                  <td className="border border-stone-200 px-3 py-1.5 text-stone-500">WhatsApp / Phone</td>
+                  <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800" colSpan={3}>{emp.phone_no}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
