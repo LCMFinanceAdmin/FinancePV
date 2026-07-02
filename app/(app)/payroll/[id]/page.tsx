@@ -77,6 +77,7 @@ export default function PayrollEmployeePage() {
   const [slipMonth, setSlipMonth] = useState<number | null>(null); // 0-11 for months
   const [customItemsByMonth, setCustomItemsByMonth] = useState<Record<number, PayrollEmployeeCustomItem[]>>({});
   const [editingMonth, setEditingMonth] = useState<number | null>(null); // 1-13
+  const [showYearlySheet, setShowYearlySheet] = useState(false);
 
   const refreshCustomItems = useCallback(async () => {
     const { data: items } = await supabase.from("payroll_employee_custom_items")
@@ -264,7 +265,7 @@ export default function PayrollEmployeePage() {
           <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5"><Table2 size={15} className="text-[#4a6da7]" /> Yearly Sheet — {year}</h2>
           <div className="flex items-center gap-1 print:hidden">
             <button onClick={exportCsv} title="Export to Excel (CSV)" className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600"><Download size={13} /> CSV</button>
-            <button onClick={() => window.print()} title="Print / Save as PDF" className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600"><Printer size={13} /> Print</button>
+            <button onClick={() => setShowYearlySheet(true)} title="Share / Print yearly sheet" className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600"><Share2 size={13} /> Share</button>
             <span className="w-1" />
             <button onClick={() => setYear(y => y - 1)} className="px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50">‹</button>
             <span className="text-sm font-semibold text-stone-700 w-12 text-center">{year}</span>
@@ -528,6 +529,355 @@ export default function PayrollEmployeePage() {
           onSaved={refreshCustomItems}
         />
       )}
+
+      {showYearlySheet && current && (
+        <YearlySheetModal
+          emp={emp} year={year} salary={current}
+          monthLines={monthLines} thirteenth={thirteenth}
+          pcbArr={pcb} customItemsByMonth={customItemsByMonth}
+          effMonth={effMonth}
+          onClose={() => setShowYearlySheet(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Yearly Sheet Modal ──────────────────────────────────────────────────────
+function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, onClose }: {
+  emp: PayrollEmployee;
+  year: number;
+  salary: PayrollSalary;
+  monthLines: CalcLine[];
+  thirteenth: CalcLine | null;
+  pcbArr: number[];
+  customItemsByMonth: Record<number, PayrollEmployeeCustomItem[]>;
+  effMonth: number;
+  onClose: () => void;
+}) {
+  const MONTH_LABELS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
+  // Build custom columns (same logic as parent)
+  const customCols: { label: string; type: "allowance" | "deduction" }[] = [];
+  const _seen = new Set<string>();
+  for (let m = 1; m <= 13; m++) {
+    for (const ci of customItemsByMonth[m] ?? []) {
+      const key = `${ci.label}|${ci.type}`;
+      if (!_seen.has(key)) { _seen.add(key); customCols.push({ label: ci.label, type: ci.type }); }
+    }
+  }
+  function customAmt(monthNum: number, col: { label: string }): number {
+    const found = (customItemsByMonth[monthNum] ?? []).find(i => i.label === col.label);
+    return found ? Number(found.amount) : 0;
+  }
+  function customColTotal(col: { label: string }): number {
+    return Array.from({ length: 13 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
+  }
+  function customColSubTotal(col: { label: string }): number {
+    return Array.from({ length: 12 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
+  }
+  function allMonths(): CalcLine[] {
+    return thirteenth ? [...monthLines, thirteenth] : monthLines;
+  }
+  function sum(fn: (l: CalcLine) => number): number {
+    return allMonths().reduce((s, l) => s + fn(l), 0);
+  }
+
+  // Special items for highlight box
+  const hasFamily = Number(salary.family_allowance) > 0;
+  const hasStm = Number(salary.stm_allowance) > 0;
+  const hasExp = Number(salary.experience_bonus) > 0;
+  const annualEpl = sum(l => l.eplDeduction);
+  const hasEpl = annualEpl > 0;
+  const specialCustom = customCols; // all custom items are "special"
+
+  const hasAnySpecial = hasFamily || hasStm || hasExp || hasEpl || specialCustom.length > 0;
+
+  // WhatsApp / Email share text
+  const shareText = `${emp.full_name} — Yearly Salary Sheet ${year}\nGross (Annual): RM ${num(sum(l => l.gross))}\nNet (Annual): RM ${num(sum(l => l.net))}\nFor full details, refer to the printed sheet.`;
+
+  function handlePrint() {
+    window.print();
+  }
+
+  function handleWhatsApp() {
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
+  }
+
+  function handleEmail() {
+    window.open(`mailto:?subject=${encodeURIComponent(`${emp.full_name} — Salary Sheet ${year}`)}&body=${encodeURIComponent(shareText)}`, "_blank");
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-white overflow-auto print:static print:inset-auto">
+      {/* Action bar — hidden on print */}
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 py-2.5 bg-white border-b border-stone-200 print:hidden">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-bold text-stone-700">{emp.full_name} — Yearly Sheet {year}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handlePrint}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5c8f]">
+            <Printer size={13} /> Print / Save PDF
+          </button>
+          <button onClick={handleWhatsApp}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700">
+            <Share2 size={13} /> WhatsApp
+          </button>
+          <button onClick={handleEmail}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50">
+            <Share2 size={13} /> Email
+          </button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500"><X size={16} /></button>
+        </div>
+      </div>
+
+      {/* Sheet content */}
+      <div className="flex-1 px-6 py-5 max-w-[1400px] mx-auto w-full">
+        {/* Header */}
+        <div className="text-center mb-4">
+          <div className="text-[11px] text-stone-500 uppercase tracking-widest mb-0.5">Living Church Malaysia</div>
+          <div className="text-xl font-bold text-stone-800">Employee Salary Statement</div>
+          <div className="text-sm text-stone-500">Year {year}</div>
+        </div>
+
+        {/* Employee profile table */}
+        <div className="border border-stone-300 rounded-lg overflow-hidden mb-4">
+          <div className="bg-[#4a6da7] text-white px-3 py-1.5 text-xs font-bold uppercase tracking-wider">Employee Profile</div>
+          <table className="w-full text-[12px] border-collapse">
+            <tbody>
+              <tr>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500 w-[18%]">Full Name</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800 w-[32%]">{emp.full_name}</td>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500 w-[18%]">Employee No.</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800 w-[32%]">{emp.emp_no || "—"}</td>
+              </tr>
+              <tr>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Designation</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{emp.designation}</td>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500">IC No.</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{emp.ic_no || "—"}</td>
+              </tr>
+              <tr>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Posting</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">
+                  {emp.posting_type === "CHURCH" ? emp.church_name : emp.posting_type === "OFFICE" ? "Head Office" : emp.department || "—"}
+                </td>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Date of Birth</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{fmtDate(emp.dob)}{emp.dob ? ` (age ${ageFrom(emp.dob)})` : ""}</td>
+              </tr>
+              <tr>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Date Commenced</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{fmtDate(emp.date_commenced)}{emp.date_commenced ? ` · ${yearsOfService(emp.date_commenced)} service` : ""}</td>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Marital Status</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{emp.marital_status || "—"}{emp.spouse_working ? " · Spouse working" : ""}</td>
+              </tr>
+              <tr>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500">EPF No.</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{emp.epf_no || "—"}</td>
+                <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Bank</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{emp.bank_name ? `${emp.bank_name} · ${emp.bank_acct}` : "—"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Special items highlight box */}
+        {hasAnySpecial && (
+          <div className="border border-amber-300 bg-amber-50 rounded-lg p-3 mb-4">
+            <div className="text-[11px] font-bold text-amber-700 uppercase tracking-wider mb-2">Special / Non-Statutory Items</div>
+            <div className="flex flex-wrap gap-3">
+              {hasFamily && (
+                <div className="bg-white border border-amber-200 rounded-lg px-3 py-2 min-w-[160px]">
+                  <div className="text-[10px] text-amber-600 font-semibold uppercase">Family Allowance</div>
+                  <div className="text-sm font-bold text-stone-800 font-mono">RM {num(Number(salary.family_allowance))}<span className="text-[10px] font-normal text-stone-400"> /month</span></div>
+                  <div className="text-[10px] text-stone-500">Annual: RM {num(Number(salary.family_allowance) * 12)}</div>
+                </div>
+              )}
+              {hasStm && (
+                <div className="bg-white border border-amber-200 rounded-lg px-3 py-2 min-w-[160px]">
+                  <div className="text-[10px] text-amber-600 font-semibold uppercase">STM Allowance</div>
+                  <div className="text-sm font-bold text-stone-800 font-mono">RM {num(Number(salary.stm_allowance))}<span className="text-[10px] font-normal text-stone-400"> /month</span></div>
+                  <div className="text-[10px] text-stone-500">Annual: RM {num(Number(salary.stm_allowance) * 12)}</div>
+                </div>
+              )}
+              {hasExp && (
+                <div className="bg-white border border-amber-200 rounded-lg px-3 py-2 min-w-[160px]">
+                  <div className="text-[10px] text-amber-600 font-semibold uppercase">Experience Bonus</div>
+                  <div className="text-sm font-bold text-stone-800 font-mono">RM {num(Number(salary.experience_bonus))}<span className="text-[10px] font-normal text-stone-400"> /month</span></div>
+                  <div className="text-[10px] text-stone-500">Annual: RM {num(Number(salary.experience_bonus) * 12)}</div>
+                </div>
+              )}
+              {hasEpl && (
+                <div className="bg-white border border-red-200 rounded-lg px-3 py-2 min-w-[160px]">
+                  <div className="text-[10px] text-red-600 font-semibold uppercase">EPL Deduction</div>
+                  <div className="text-sm font-bold text-red-700 font-mono">RM {num(annualEpl)}<span className="text-[10px] font-normal text-stone-400"> annual</span></div>
+                  <div className="text-[10px] text-stone-500">Loan repayment installments</div>
+                </div>
+              )}
+              {specialCustom.map(col => {
+                const annual = customColTotal(col);
+                if (annual === 0) return null;
+                const isAllowance = col.type === "allowance";
+                return (
+                  <div key={col.label} className={`bg-white border rounded-lg px-3 py-2 min-w-[160px] ${isAllowance ? "border-green-200" : "border-red-200"}`}>
+                    <div className={`text-[10px] font-semibold uppercase ${isAllowance ? "text-green-600" : "text-red-600"}`}>{col.label} <span className="normal-case font-normal">({isAllowance ? "allowance" : "deduction"})</span></div>
+                    <div className={`text-sm font-bold font-mono ${isAllowance ? "text-green-700" : "text-red-700"}`}>{isAllowance ? "+" : "−"}RM {num(annual)}<span className="text-[10px] font-normal text-stone-400"> annual</span></div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Yearly table */}
+        <div className="overflow-x-auto mb-5">
+          <table className="w-full text-[12px] border-collapse" style={{ minWidth: 900 }}>
+            <thead>
+              <tr className="bg-[#4a6da7] text-white">
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-left">Month</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">Gross</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">PCB</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EPF EE</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EPF ER</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">SOCSO EE</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">SOCSO ER</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EIS EE</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EIS ER</th>
+                {hasEpl && <th className="border border-[#3d5c8f] px-2 py-1.5 text-right bg-red-800">EPL</th>}
+                {customCols.map(col => (
+                  <th key={col.label} className={`border border-[#3d5c8f] px-2 py-1.5 text-right ${col.type === "allowance" ? "bg-green-800" : "bg-red-800"}`}>
+                    <div className="text-[10px] truncate max-w-[80px]">{col.label}</div>
+                    <div className="text-[8px] opacity-75">{col.type === "allowance" ? "+allow" : "−deduct"}</div>
+                  </th>
+                ))}
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right font-bold">Net</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right font-bold">Total LCM</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthLines.map((l, i) => {
+                const monthNum = i + 1;
+                return (
+                  <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-stone-50"}>
+                    <td className="border border-stone-200 px-2 py-1 font-semibold text-stone-600">{MONTH_LABELS[i]}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.gross)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(pcbArr[i] || 0)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.epf.ee)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.epf.er)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.socso.ee)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.socso.er)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.eis.ee)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.eis.er)}</td>
+                    {hasEpl && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{l.eplDeduction > 0 ? num(l.eplDeduction) : <span className="text-stone-200">—</span>}</td>}
+                    {customCols.map(col => {
+                      const amt = customAmt(monthNum, col);
+                      return (
+                        <td key={col.label} className={`border border-stone-200 px-2 py-1 text-right font-mono ${col.type === "allowance" ? "bg-green-50" : "bg-red-50"}`}>
+                          {amt !== 0
+                            ? <span className={col.type === "allowance" ? "text-green-700 font-semibold" : "text-red-700 font-semibold"}>{col.type === "allowance" ? "+" : "−"}{num(amt)}</span>
+                            : <span className="text-stone-200">—</span>}
+                        </td>
+                      );
+                    })}
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono font-semibold">{num(l.net)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(l.totalLcmPayment)}</td>
+                  </tr>
+                );
+              })}
+              {/* Sub-total */}
+              <tr className="bg-stone-100 font-semibold text-stone-700">
+                <td className="border border-stone-300 px-2 py-1">SUB-T (12)</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.gross, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.pcb, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.ee, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.er, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.ee, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
+                {hasEpl && <td className="border border-stone-300 px-2 py-1 text-right font-mono bg-red-50 text-red-700">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>}
+                {customCols.map(col => {
+                  const t = customColSubTotal(col);
+                  return <td key={col.label} className={`border border-stone-300 px-2 py-1 text-right font-mono ${col.type === "allowance" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</td>;
+                })}
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.net, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono text-[#4a6da7]">{num(monthLines.reduce((s, l) => s + l.totalLcmPayment, 0))}</td>
+              </tr>
+              {/* 13th month */}
+              {thirteenth ? (
+                <tr className={monthLines.length % 2 === 0 ? "bg-white" : "bg-stone-50"}>
+                  <td className="border border-stone-200 px-2 py-1 font-semibold text-stone-600">13th MTH</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(thirteenth.gross)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(pcbArr[12] || 0)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(thirteenth.epf.ee)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(thirteenth.epf.er)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.socso.ee)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.socso.er)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.eis.ee)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.eis.er)}</td>
+                  {hasEpl && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{thirteenth.eplDeduction > 0 ? num(thirteenth.eplDeduction) : <span className="text-stone-200">—</span>}</td>}
+                  {customCols.map(col => {
+                    const amt = customAmt(13, col);
+                    return (
+                      <td key={col.label} className={`border border-stone-200 px-2 py-1 text-right font-mono ${col.type === "allowance" ? "bg-green-50" : "bg-red-50"}`}>
+                        {amt !== 0
+                          ? <span className={col.type === "allowance" ? "text-green-700 font-semibold" : "text-red-700 font-semibold"}>{col.type === "allowance" ? "+" : "−"}{num(amt)}</span>
+                          : <span className="text-stone-200">—</span>}
+                      </td>
+                    );
+                  })}
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono font-semibold">{num(thirteenth.net)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(thirteenth.totalLcmPayment)}</td>
+                </tr>
+              ) : (
+                <tr><td colSpan={10 + (hasEpl ? 1 : 0) + customCols.length} className="border border-stone-200 px-2 py-1 text-stone-400 italic text-center">13th month — excluded (Orang Asli)</td></tr>
+              )}
+              {/* Annual total */}
+              <tr className="bg-[#4a6da7] text-white font-bold">
+                <td className="border border-[#3d5c8f] px-2 py-1.5">ANNUAL</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.gross))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.pcb))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.epf.ee))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.epf.er))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.socso.ee))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.socso.er))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.eis.er))}</td>
+                {hasEpl && <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono bg-red-700">{num(sum(l => l.eplDeduction))}</td>}
+                {customCols.map(col => {
+                  const t = customColTotal(col);
+                  return <td key={col.label} className={`border border-[#3d5c8f] px-2 py-1.5 text-right font-mono ${col.type === "allowance" ? "bg-green-700" : "bg-red-700"}`}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</td>;
+                })}
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.net))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.totalLcmPayment))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Notes */}
+        <div className="text-[10px] text-stone-400 mb-6 space-y-0.5">
+          <p>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Current-year increment effective from {["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][effMonth - 1]}.</p>
+          {hasEpl && <p className="text-red-500">EPL column (highlighted red): loan repayment deductions included in monthly net.</p>}
+          {customCols.filter(c => c.type === "allowance").length > 0 && <p className="text-green-600">Green columns: special allowances included in gross/net calculation.</p>}
+          {customCols.filter(c => c.type === "deduction").length > 0 && <p className="text-red-500">Red columns: additional deductions subtracted from net.</p>}
+        </div>
+
+        {/* Signature section */}
+        <div className="grid grid-cols-2 gap-8 mt-8 print:mt-12">
+          <div>
+            <div className="h-12 border-b border-stone-400 mb-1.5"></div>
+            <div className="text-[11px] text-stone-500">Prepared by / Finance Executive</div>
+            <div className="text-[11px] text-stone-400 mt-0.5">Date: ___________________</div>
+          </div>
+          <div>
+            <div className="h-12 border-b border-stone-400 mb-1.5"></div>
+            <div className="text-[11px] text-stone-500">Acknowledged by / {emp.full_name}</div>
+            <div className="text-[11px] text-stone-400 mt-0.5">Date: ___________________</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
