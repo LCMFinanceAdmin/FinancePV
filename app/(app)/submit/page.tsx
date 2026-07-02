@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
 import {
   Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle,
-  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon,
+  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare,
 } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import type { PVLineItem } from "@/lib/types";
@@ -181,6 +181,7 @@ export default function SubmitPVPage() {
   // Mobile accordion
   const [isMobile, setIsMobile] = useState(false);
   const [openSection, setOpenSection] = useState(0);
+  const [hasScreenCapture, setHasScreenCapture] = useState(false);
 
   // Finance Executive e-signature
   const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
@@ -202,6 +203,7 @@ export default function SubmitPVPage() {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
     window.addEventListener("resize", check);
+    setHasScreenCapture("getDisplayMedia" in (navigator.mediaDevices ?? {}));
     return () => window.removeEventListener("resize", check);
   }, []);
 
@@ -425,6 +427,31 @@ export default function SubmitPVPage() {
       .filter(f => f.type.startsWith("image/") || f.type === "application/pdf")
       .map(f => ({ file: f, previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : "" }));
     setAttachments(prev => [...prev, ...newFiles]);
+  }
+
+  async function handleScreenCapture() {
+    if (!navigator.mediaDevices?.getDisplayMedia) return;
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.muted = true;
+      await new Promise<void>((res, rej) => {
+        video.onloadedmetadata = () => { video.play().then(res).catch(rej); };
+        video.onerror = rej;
+      });
+      await new Promise(r => setTimeout(r, 200)); // let first frame render
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d")!.drawImage(video, 0, 0);
+      stream.getTracks().forEach(t => t.stop());
+      canvas.toBlob(blob => {
+        if (blob) handleFiles([new File([blob], `capture-${Date.now()}.png`, { type: "image/png" })]);
+      }, "image/png", 0.92);
+    } catch {
+      // User cancelled or browser denied — silent
+    }
   }
 
   // Global paste handler — captures snipping tool / clipboard screenshots
@@ -703,6 +730,12 @@ export default function SubmitPVPage() {
             <input type="file" accept="image/*" capture="environment" multiple className="hidden"
               onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
           </label>
+          {hasScreenCapture && (
+            <button type="button" onClick={handleScreenCapture}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-600 hover:bg-stone-50 transition-colors font-medium">
+              <ScreenShare size={12} /> Capture Screen
+            </button>
+          )}
         </div>
       </div>
       {attachments.length > 0 && (
