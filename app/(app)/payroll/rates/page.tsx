@@ -3,11 +3,10 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Percent, Save, Plus, Upload, FileText, ExternalLink } from "lucide-react";
+import { ArrowLeft, Percent, Save, Plus, Upload, FileText, ExternalLink, Sparkles, X, CheckCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile, PayrollStatutoryRates } from "@/lib/types";
 
-// Fields shown as percentages (stored as fractions) vs plain RM ceilings.
 const PCT_FIELDS: { key: keyof PayrollStatutoryRates; label: string; group: string }[] = [
   { key: "epf_ee_under60", label: "EPF Employee — under 60", group: "EPF" },
   { key: "epf_er_under60", label: "EPF Employer — under 60 (13% + 3%)", group: "EPF" },
@@ -25,6 +24,8 @@ const CEIL_FIELDS: { key: keyof PayrollStatutoryRates; label: string }[] = [
   { key: "eis_ceiling", label: "EIS wage ceiling (RM)" },
 ];
 
+type ExtractedRates = Record<string, number | string | null>;
+
 export default function PayrollRatesPage() {
   const supabase = createClient();
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -38,6 +39,8 @@ export default function PayrollRatesPage() {
   const [gazetteUrl, setGazetteUrl] = useState<string>("");
   const [gazetteFile, setGazetteFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [suggestions, setSuggestions] = useState<ExtractedRates | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function loadUser() {
@@ -66,6 +69,7 @@ export default function PayrollRatesPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setGazetteUrl((r as any)?.gazette_url ?? "");
     setGazetteFile(null);
+    setSuggestions(null);
     setLoading(false);
   }, [supabase, year]);
 
@@ -120,15 +124,63 @@ export default function PayrollRatesPage() {
       setGazetteUrl(publicUrl);
       setGazetteFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      setToast("Gazette uploaded successfully");
-      setTimeout(() => setToast(""), 3000);
+      setUploading(false);
+
+      // AI extraction
+      setExtracting(true);
+      setToast("Gazette uploaded — analysing with AI…");
+      try {
+        const { data: fnData, error: fnErr } = await supabase.functions.invoke(
+          "extract-gazette-rates",
+          { body: { gazette_url: publicUrl } }
+        );
+        if (fnErr) throw new Error(fnErr.message);
+        if (fnData?.rates) {
+          setSuggestions(fnData.rates as ExtractedRates);
+          setToast("Rates extracted — review the suggestions below, then click Save Rates");
+        } else {
+          setToast("Gazette uploaded. Rates could not be extracted automatically — please enter manually.");
+        }
+      } catch (extractErr) {
+        setToast(`Gazette uploaded. Extraction failed: ${extractErr instanceof Error ? extractErr.message : String(extractErr)}`);
+      } finally {
+        setExtracting(false);
+      }
+      setTimeout(() => setToast(""), 6000);
     } catch (e: unknown) {
       setToast(e instanceof Error ? e.message : "Upload failed");
       setTimeout(() => setToast(""), 5000);
-    } finally {
       setUploading(false);
     }
   }
+
+  function applySuggestions() {
+    if (!suggestions || !row) return;
+    let updated = { ...row };
+    for (const f of PCT_FIELDS) {
+      const val = suggestions[f.key];
+      if (typeof val === "number" && val !== null) {
+        updated = { ...updated, [f.key]: val / 100 };
+      }
+    }
+    for (const f of CEIL_FIELDS) {
+      const val = suggestions[f.key];
+      if (typeof val === "number" && val !== null) {
+        updated = { ...updated, [f.key]: val };
+      }
+    }
+    setRow(updated);
+    setSuggestions(null);
+    setToast("Suggestions applied — review the rates above, then click Save Rates");
+    setTimeout(() => setToast(""), 5000);
+  }
+
+  const suggestionCount = suggestions
+    ? [...PCT_FIELDS, ...CEIL_FIELDS].filter(f => {
+        const v = suggestions[f.key];
+        return v !== null && v !== undefined;
+      }).length
+    : 0;
 
   const inputCls = "w-28 border border-stone-300 rounded-lg px-2 py-1.5 text-sm text-right font-mono outline-none focus:border-[#4a6da7] disabled:bg-stone-50 disabled:text-stone-400";
 
@@ -150,7 +202,15 @@ export default function PayrollRatesPage() {
         </div>
       </div>
 
-      {toast && <div className={`text-sm text-white rounded-lg px-3 py-2 ${toast.includes("failed") || toast.includes("error") ? "bg-red-600" : "bg-green-600"}`}>{toast}</div>}
+      {toast && (
+        <div className={`text-sm text-white rounded-lg px-3 py-2 ${
+          toast.toLowerCase().includes("fail") || toast.toLowerCase().includes("error")
+            ? "bg-red-600"
+            : toast.includes("review") || toast.includes("applied") || toast.includes("suggestion")
+              ? "bg-amber-600"
+              : "bg-green-600"
+        }`}>{toast}</div>
+      )}
 
       {loading ? (
         <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
@@ -166,6 +226,76 @@ export default function PayrollRatesPage() {
         </div>
       ) : (
         <>
+          {/* AI Suggestion Banner */}
+          {suggestions && suggestionCount > 0 && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={18} className="text-amber-600 shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-800">
+                      AI found {suggestionCount} rate{suggestionCount !== 1 ? "s" : ""} in the gazette
+                    </p>
+                    {suggestions.notes && (
+                      <p className="text-xs text-amber-700 mt-0.5">{suggestions.notes as string}</p>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setSuggestions(null)} className="text-amber-400 hover:text-amber-600 shrink-0 mt-0.5">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                {[...PCT_FIELDS, ...CEIL_FIELDS].map(f => {
+                  const rawVal = suggestions[f.key];
+                  if (rawVal === null || rawVal === undefined) return null;
+                  const isPct = PCT_FIELDS.some(p => p.key === f.key);
+                  const currentVal = Number(row[f.key]);
+                  const suggestedVal = Number(rawVal);
+                  const displayCurrent = isPct
+                    ? `${(currentVal * 100).toFixed(2)}%`
+                    : `RM ${currentVal.toLocaleString()}`;
+                  const displaySuggested = isPct
+                    ? `${suggestedVal.toFixed(2)}%`
+                    : `RM ${suggestedVal.toLocaleString()}`;
+                  const changed = isPct
+                    ? Math.abs(currentVal * 100 - suggestedVal) > 0.001
+                    : Math.abs(currentVal - suggestedVal) > 0.001;
+                  return (
+                    <div key={f.key} className={`flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg text-xs ${changed ? "bg-amber-100" : "bg-white/60"}`}>
+                      <span className="text-stone-600">{f.label}</span>
+                      <span className="font-mono shrink-0">
+                        {changed ? (
+                          <>
+                            <span className="text-stone-400 line-through mr-1.5">{displayCurrent}</span>
+                            <span className="text-amber-800 font-bold">{displaySuggested}</span>
+                          </>
+                        ) : (
+                          <span className="text-stone-500">{displayCurrent} (unchanged)</span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={applySuggestions}
+                  className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-semibold">
+                  <CheckCheck size={15} /> Apply {suggestionCount} Suggestion{suggestionCount !== 1 ? "s" : ""}
+                </button>
+                <button onClick={() => setSuggestions(null)}
+                  className="px-4 py-2 rounded-xl text-sm text-stone-600 border border-stone-200 hover:bg-stone-50">
+                  Dismiss
+                </button>
+              </div>
+              <p className="text-[11px] text-amber-700">
+                Always verify AI-extracted rates against the original gazette before saving.
+              </p>
+            </div>
+          )}
+
           <div className="bg-white border border-stone-200 rounded-2xl p-5 space-y-5">
             {["EPF", "SOCSO", "EIS"].map(group => (
               <div key={group}>
@@ -208,18 +338,19 @@ export default function PayrollRatesPage() {
             {row.updated_at && <p className="text-[11px] text-stone-400 text-center">Last updated {new Date(row.updated_at).toLocaleString("en-MY")}{row.updated_by ? ` by ${row.updated_by}` : ""}</p>}
           </div>
 
-          {/* Reference Documents / Gazette Upload */}
+          {/* Gazette Upload with AI extraction */}
           <div className="bg-white border border-stone-200 rounded-2xl p-5 space-y-4">
             <div>
               <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5 mb-1">
-                <FileText size={15} className="text-[#4a6da7]" /> Reference Documents
+                <FileText size={15} className="text-[#4a6da7]" />
+                <Sparkles size={14} className="text-amber-500" />
+                Gazette Upload — AI Rate Extraction
               </h2>
               <p className="text-[12px] text-stone-400">
-                Upload the latest Jabatan Buruh or KWSP gazette PDF. Rates above still need to be entered manually based on the applicable salary brackets.
+                Upload the latest KWSP / PERKESO / SIP gazette. AI will read it and suggest the updated rates for your review.
               </p>
             </div>
 
-            {/* Existing gazette link */}
             {gazetteUrl && (
               <div className="flex items-center gap-3 px-3 py-2 bg-stone-50 rounded-lg border border-stone-200">
                 <FileText size={16} className="text-[#4a6da7] shrink-0" />
@@ -236,16 +367,15 @@ export default function PayrollRatesPage() {
               </div>
             )}
 
-            {/* Upload area (shown when no gazette yet, or always for replace) */}
             {canEdit && (
               <div className="space-y-2">
-                <label className="flex flex-col items-center gap-2 px-4 py-5 border-2 border-dashed border-stone-200 rounded-xl cursor-pointer hover:border-[#4a6da7]/50 hover:bg-stone-50 transition-colors"
+                <label className="flex flex-col items-center gap-2 px-4 py-5 border-2 border-dashed border-stone-200 rounded-xl cursor-pointer hover:border-amber-400/60 hover:bg-amber-50/40 transition-colors"
                   onClick={() => fileInputRef.current?.click()}>
                   <Upload size={20} className="text-stone-400" />
                   <span className="text-sm text-stone-500">
                     {gazetteFile ? gazetteFile.name : (gazetteUrl ? "Click to replace gazette file…" : "Click to select gazette PDF or image…")}
                   </span>
-                  <span className="text-[11px] text-stone-400">PDF or image (JPG, PNG)</span>
+                  <span className="text-[11px] text-stone-400">PDF or image (JPG, PNG) · AI will extract EPF / SOCSO / EIS rates</span>
                 </label>
                 <input
                   ref={fileInputRef}
@@ -255,9 +385,15 @@ export default function PayrollRatesPage() {
                   onChange={e => setGazetteFile(e.target.files?.[0] ?? null)}
                 />
                 {gazetteFile && (
-                  <button onClick={uploadGazette} disabled={uploading}
+                  <button onClick={uploadGazette} disabled={uploading || extracting}
                     className="w-full flex items-center justify-center gap-1.5 bg-[#4a6da7] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">
-                    <Upload size={14} /> {uploading ? "Uploading…" : `Upload "${gazetteFile.name}"`}
+                    {uploading ? (
+                      <><Upload size={14} /> Uploading…</>
+                    ) : extracting ? (
+                      <><Sparkles size={14} className="animate-pulse" /> Analysing gazette with AI…</>
+                    ) : (
+                      <><Upload size={14} className="shrink-0" /> Upload &amp; Extract — &ldquo;{gazetteFile.name}&rdquo;</>
+                    )}
                   </button>
                 )}
               </div>
