@@ -10,6 +10,17 @@ import { installmentForMonth } from "@/lib/payroll/loan";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem } from "@/lib/types";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
+function monthShort(m: number): string { return MONTH_SHORT[m - 1] ?? String(m); }
+
+function itemAppliesToMonth(item: { year: number; month: number; is_recurring: boolean; recur_until_year: number | null; recur_until_month: number | null }, targetYear: number, targetMonth: number): boolean {
+  if (!item.is_recurring) return item.year === targetYear && item.month === targetMonth;
+  const started = item.year < targetYear || (item.year === targetYear && item.month <= targetMonth);
+  if (!started) return false;
+  if (item.recur_until_year === null || item.recur_until_year === undefined) return true;
+  return item.recur_until_year > targetYear ||
+    (item.recur_until_year === targetYear && (item.recur_until_month ?? 13) >= targetMonth);
+}
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 function fmtDate(s: string | null): string {
@@ -69,10 +80,12 @@ export default function PayrollEmployeePage() {
 
   const refreshCustomItems = useCallback(async () => {
     const { data: items } = await supabase.from("payroll_employee_custom_items")
-      .select("*").eq("employee_id", id).eq("year", year);
+      .select("*").eq("employee_id", id).order("created_at");
+    const allItems = (items as PayrollEmployeeCustomItem[]) ?? [];
     const byMonth: Record<number, PayrollEmployeeCustomItem[]> = {};
-    for (const item of (items as PayrollEmployeeCustomItem[]) ?? []) {
-      (byMonth[item.month] ??= []).push(item);
+    for (let m = 1; m <= 13; m++) {
+      const forMonth = allItems.filter(item => itemAppliesToMonth(item, year, m));
+      if (forMonth.length > 0) byMonth[m] = forMonth;
     }
     setCustomItemsByMonth(byMonth);
   }, [supabase, id, year]);
@@ -472,6 +485,10 @@ function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose,
   const [newLabel, setNewLabel] = useState("");
   const [newType, setNewType] = useState<"allowance" | "deduction">("allowance");
   const [newAmount, setNewAmount] = useState("");
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurUntilMonth, setRecurUntilMonth] = useState(12);
+  const [recurUntilYear, setRecurUntilYear] = useState<number | "">(year);
+  const [noEndDate, setNoEndDate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -481,13 +498,17 @@ function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose,
     if (isNaN(amount) || amount <= 0) { setError("Enter a valid amount."); return; }
     setSaving(true); setError("");
     const { data: { session } } = await supabase.auth.getSession();
+    const hasEnd = isRecurring && !noEndDate && recurUntilYear !== "";
     const { error: e } = await supabase.from("payroll_employee_custom_items").insert({
       employee_id: employeeId, year, month,
       label: newLabel.trim(), type: newType, amount,
+      is_recurring: isRecurring,
+      recur_until_year: hasEnd ? Number(recurUntilYear) : null,
+      recur_until_month: hasEnd ? recurUntilMonth : null,
       created_by: session?.user?.email ?? "",
     });
     if (e) { setError(e.message); setSaving(false); return; }
-    setNewLabel(""); setNewAmount(""); setSaving(false);
+    setNewLabel(""); setNewAmount(""); setIsRecurring(false); setNoEndDate(false); setSaving(false);
     onSaved();
   }
 
@@ -497,6 +518,12 @@ function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose,
   }
 
   const inputCls = "border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]";
+
+  function recurLabel(item: PayrollEmployeeCustomItem): string {
+    const from = `${monthShort(item.month)} ${item.year}`;
+    if (!item.recur_until_year) return `↻ from ${from} · ongoing`;
+    return `↻ ${from} – ${monthShort(item.recur_until_month ?? 13)} ${item.recur_until_year}`;
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -515,13 +542,18 @@ function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose,
           ) : (
             <div className="space-y-1.5">
               {items.map(item => (
-                <div key={item.id} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-stone-100 bg-stone-50">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                <div key={item.id} className="flex items-start gap-2 px-3 py-2 rounded-xl border border-stone-100 bg-stone-50">
+                  <span className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
                     {item.type === "allowance" ? "+" : "−"}
                   </span>
-                  <span className="text-sm text-stone-700 flex-1">{item.label}</span>
-                  <span className="text-sm font-mono font-semibold text-stone-700">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
-                  <button onClick={() => remove(item.id)} className="text-stone-300 hover:text-red-400 ml-1"><Trash2 size={14} /></button>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm text-stone-700">{item.label}</span>
+                    {item.is_recurring && (
+                      <div className="text-[10px] text-sky-600 mt-0.5">{recurLabel(item)}</div>
+                    )}
+                  </div>
+                  <span className="text-sm font-mono font-semibold text-stone-700 shrink-0">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
+                  <button onClick={() => remove(item.id)} className="text-stone-300 hover:text-red-400 mt-0.5 shrink-0"><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
@@ -546,11 +578,41 @@ function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose,
                 onKeyDown={e => e.key === "Enter" && add()}
                 placeholder="Amount (RM)"
                 className={`${inputCls} w-36`} />
-              <button onClick={add} disabled={saving || !newLabel.trim() || !newAmount}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4a6da7] text-white rounded-lg text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-40">
-                <Plus size={14} /> {saving ? "…" : "Add"}
-              </button>
             </div>
+            {/* Recurring toggle */}
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-stone-600 select-none">
+              <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)}
+                className="rounded" />
+              Recurring (repeats every month)
+            </label>
+            {isRecurring && (
+              <div className="pl-5 space-y-1.5">
+                <p className="text-[11px] text-stone-400">Starts from <span className="font-semibold">{monthShort(month)} {year}</span>. Set an end date below, or leave blank for no end.</p>
+                <label className="flex items-center gap-2 cursor-pointer text-sm text-stone-600 select-none">
+                  <input type="checkbox" checked={noEndDate} onChange={e => setNoEndDate(e.target.checked)} className="rounded" />
+                  No end date (ongoing)
+                </label>
+                {!noEndDate && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-stone-500 shrink-0">Until:</span>
+                    <select value={recurUntilMonth} onChange={e => setRecurUntilMonth(Number(e.target.value))}
+                      className={inputCls}>
+                      {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                        <option key={i + 1} value={i + 1}>{m}</option>
+                      ))}
+                      <option value={13}>13th Month</option>
+                    </select>
+                    <input type="number" value={recurUntilYear} onChange={e => setRecurUntilYear(e.target.value === "" ? "" : Number(e.target.value))}
+                      placeholder="Year"
+                      className={`${inputCls} w-24`} />
+                  </div>
+                )}
+              </div>
+            )}
+            <button onClick={add} disabled={saving || !newLabel.trim() || !newAmount}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4a6da7] text-white rounded-lg text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-40">
+              <Plus size={14} /> {saving ? "…" : "Add"}
+            </button>
           </div>
         </div>
 

@@ -83,15 +83,22 @@ export default function PayrollRunDetailPage() {
       setVouchers((pv as PayrollVoucher[]) ?? []);
     }
 
-    // Load custom items per employee for this run's year+month
+    // Load custom items per employee — include recurring items from other months
     const { data: cItems } = await supabase
       .from("payroll_employee_custom_items")
-      .select("employee_id, label, type, amount")
-      .eq("year", runRow.year)
-      .eq("month", runRow.month);
+      .select("employee_id, label, type, amount, is_recurring, year, month, recur_until_year, recur_until_month");
     const customByEmp: Record<string, CustomPayrollItem[]> = {};
-    for (const item of (cItems as { employee_id: string; label: string; type: "allowance" | "deduction"; amount: number }[]) ?? []) {
-      (customByEmp[item.employee_id] ??= []).push({ label: item.label, type: item.type, amount: Number(item.amount) });
+    for (const item of (cItems as { employee_id: string; label: string; type: "allowance" | "deduction"; amount: number; is_recurring: boolean; year: number; month: number; recur_until_year: number | null; recur_until_month: number | null }[]) ?? []) {
+      const applies = !item.is_recurring
+        ? item.year === runRow.year && item.month === runRow.month
+        : (() => {
+            const started = item.year < runRow.year || (item.year === runRow.year && item.month <= runRow.month);
+            if (!started) return false;
+            if (item.recur_until_year === null || item.recur_until_year === undefined) return true;
+            return item.recur_until_year > runRow.year ||
+              (item.recur_until_year === runRow.year && (item.recur_until_month ?? 13) >= runRow.month);
+          })();
+      if (applies) (customByEmp[item.employee_id] ??= []).push({ label: item.label, type: item.type, amount: Number(item.amount) });
     }
     setEmpCustomItems(customByEmp);
 

@@ -6,6 +6,18 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
 
+const MONTH_SHORT_DIR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
+function monthShortDir(m: number): string { return MONTH_SHORT_DIR[m - 1] ?? String(m); }
+
+function itemAppliesToMonth(item: { year: number; month: number; is_recurring: boolean; recur_until_year: number | null; recur_until_month: number | null }, targetYear: number, targetMonth: number): boolean {
+  if (!item.is_recurring) return item.year === targetYear && item.month === targetMonth;
+  const started = item.year < targetYear || (item.year === targetYear && item.month <= targetMonth);
+  if (!started) return false;
+  if (item.recur_until_year === null || item.recur_until_year === undefined) return true;
+  return item.recur_until_year > targetYear ||
+    (item.recur_until_year === targetYear && (item.recur_until_month ?? 13) >= targetMonth);
+}
+
 function postingLabel(e: PayrollEmployee): string {
   if (e.posting_type === "CHURCH") return e.church_name || "Church";
   if (e.posting_type === "OFFICE") return e.department || "Office";
@@ -97,6 +109,10 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [newItemLabel, setNewItemLabel] = useState("");
   const [newItemType, setNewItemType] = useState<"allowance" | "deduction">("allowance");
   const [newItemAmount, setNewItemAmount] = useState("");
+  const [newItemRecurring, setNewItemRecurring] = useState(false);
+  const [newItemNoEnd, setNewItemNoEnd] = useState(false);
+  const [newItemUntilMonth, setNewItemUntilMonth] = useState(12);
+  const [newItemUntilYear, setNewItemUntilYear] = useState<number | "">(now.getFullYear());
   const [addingItem, setAddingItem] = useState(false);
   const [itemError, setItemError] = useState("");
 
@@ -105,9 +121,9 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const loadCustomItems = useCallback(async () => {
     if (!existing?.id) return;
     const { data } = await supabase.from("payroll_employee_custom_items")
-      .select("*").eq("employee_id", existing.id).eq("year", itemYear).eq("month", itemMonth)
-      .order("created_at");
-    setEmpCustomItems((data as PayrollEmployeeCustomItem[]) ?? []);
+      .select("*").eq("employee_id", existing.id).order("created_at");
+    const all = (data as PayrollEmployeeCustomItem[]) ?? [];
+    setEmpCustomItems(all.filter(item => itemAppliesToMonth(item, itemYear, itemMonth)));
   }, [supabase, existing?.id, itemYear, itemMonth]);
 
   useEffect(() => { if (isEdit) loadCustomItems(); }, [isEdit, loadCustomItems]);
@@ -118,13 +134,17 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
     if (isNaN(amount) || amount <= 0) { setItemError("Enter a valid positive amount."); return; }
     setItemError("");
     const { data: { session } } = await supabase.auth.getSession();
+    const hasEnd = newItemRecurring && !newItemNoEnd && newItemUntilYear !== "";
     const { error: e } = await supabase.from("payroll_employee_custom_items").insert({
       employee_id: existing!.id, year: itemYear, month: itemMonth,
       label: newItemLabel.trim(), type: newItemType, amount,
+      is_recurring: newItemRecurring,
+      recur_until_year: hasEnd ? Number(newItemUntilYear) : null,
+      recur_until_month: hasEnd ? newItemUntilMonth : null,
       created_by: session?.user?.email ?? "",
     });
     if (e) { setItemError(e.message); return; }
-    setNewItemLabel(""); setNewItemAmount(""); setAddingItem(false);
+    setNewItemLabel(""); setNewItemAmount(""); setNewItemRecurring(false); setNewItemNoEnd(false); setAddingItem(false);
     loadCustomItems();
   }
 
@@ -434,14 +454,23 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
               ) : (
                 <div className="space-y-1.5 mb-3">
                   {empCustomItems.map(item => (
-                    <div key={item.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-stone-100 bg-stone-50">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                    <div key={item.id} className="flex items-start gap-2 px-3 py-1.5 rounded-lg border border-stone-100 bg-stone-50">
+                      <span className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
                         {item.type === "allowance" ? "+" : "−"}
                       </span>
-                      <span className="text-sm text-stone-700 flex-1">{item.label}</span>
-                      <span className="text-sm font-mono font-semibold text-stone-700">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-stone-700">{item.label}</span>
+                        {item.is_recurring && (
+                          <div className="text-[10px] text-sky-600 mt-0.5">
+                            {item.recur_until_year
+                              ? `↻ ${monthShortDir(item.month)} ${item.year} – ${monthShortDir(item.recur_until_month ?? 13)} ${item.recur_until_year}`
+                              : `↻ from ${monthShortDir(item.month)} ${item.year} · ongoing`}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-sm font-mono font-semibold text-stone-700 shrink-0">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
                       <button type="button" onClick={() => deleteCustomItem(item.id)}
-                        className="text-stone-300 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                        className="text-stone-300 hover:text-red-400 transition-colors mt-0.5 shrink-0"><Trash2 size={13} /></button>
                     </div>
                   ))}
                 </div>
@@ -471,12 +500,43 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                       onKeyDown={e => e.key === "Enter" && addCustomItem()}
                       placeholder="Amount (RM)"
                       className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7] w-36" />
+                  </div>
+                  {/* Recurring toggle */}
+                  <label className="flex items-center gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
+                    <input type="checkbox" checked={newItemRecurring} onChange={e => setNewItemRecurring(e.target.checked)} className="rounded" />
+                    Recurring (repeats every month)
+                  </label>
+                  {newItemRecurring && (
+                    <div className="pl-4 space-y-1.5">
+                      <p className="text-[11px] text-stone-400">Starts from <span className="font-semibold">{["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"][itemMonth-1]} {itemYear}</span>.</p>
+                      <label className="flex items-center gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
+                        <input type="checkbox" checked={newItemNoEnd} onChange={e => setNewItemNoEnd(e.target.checked)} className="rounded" />
+                        No end date (ongoing)
+                      </label>
+                      {!newItemNoEnd && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] text-stone-500">Until:</span>
+                          <select value={newItemUntilMonth} onChange={e => setNewItemUntilMonth(Number(e.target.value))}
+                            className="border border-stone-300 rounded-lg px-2 py-1 text-[12px] outline-none focus:border-[#4a6da7]">
+                            {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                              <option key={i + 1} value={i + 1}>{m}</option>
+                            ))}
+                            <option value={13}>13th Month</option>
+                          </select>
+                          <input type="number" value={newItemUntilYear} onChange={e => setNewItemUntilYear(e.target.value === "" ? "" : Number(e.target.value))}
+                            placeholder="Year"
+                            className="border border-stone-300 rounded-lg px-2 py-1 text-[12px] outline-none focus:border-[#4a6da7] w-20" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex gap-2 items-center pt-1">
                     <button type="button" onClick={addCustomItem}
                       disabled={!newItemLabel.trim() || !newItemAmount}
                       className="px-3 py-1.5 bg-[#4a6da7] text-white rounded-lg text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-40">
                       Add
                     </button>
-                    <button type="button" onClick={() => { setAddingItem(false); setNewItemLabel(""); setNewItemAmount(""); setItemError(""); }}
+                    <button type="button" onClick={() => { setAddingItem(false); setNewItemLabel(""); setNewItemAmount(""); setNewItemRecurring(false); setNewItemNoEnd(false); setItemError(""); }}
                       className="px-3 py-1.5 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50">
                       Cancel
                     </button>

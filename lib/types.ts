@@ -392,10 +392,13 @@ export interface PayrollEmployeeCustomItem {
   id: string;
   employee_id: string;
   year: number;
-  month: number; // 1-13
+  month: number; // 1-13 — "from" month when is_recurring = true
   label: string;
   type: "allowance" | "deduction";
   amount: number;
+  is_recurring: boolean;
+  recur_until_year: number | null;  // null = no end date
+  recur_until_month: number | null; // 1-13
   created_by: string | null;
   created_at: string;
 }
