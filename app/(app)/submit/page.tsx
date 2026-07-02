@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
 import {
   Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle,
-  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare,
+  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images,
 } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import type { PVLineItem } from "@/lib/types";
@@ -721,13 +721,18 @@ export default function SubmitPVPage() {
         </p>
         <div className="flex flex-wrap justify-center gap-2">
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-600 cursor-pointer hover:bg-stone-50 transition-colors font-medium">
-            <Upload size={12} /> Choose File
-            <input type="file" accept="image/*,application/pdf" multiple className="hidden"
+            <Images size={12} /> From Gallery
+            <input type="file" accept="image/*" multiple className="hidden"
               onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
           </label>
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-600 cursor-pointer hover:bg-stone-50 transition-colors font-medium">
             <Camera size={12} /> Take Photo
-            <input type="file" accept="image/*" capture="environment" multiple className="hidden"
+            <input type="file" accept="image/*" capture="environment" className="hidden"
+              onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+          </label>
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-600 cursor-pointer hover:bg-stone-50 transition-colors font-medium">
+            <Upload size={12} /> File / PDF
+            <input type="file" accept="image/*,application/pdf" multiple className="hidden"
               onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
           </label>
           {hasScreenCapture && (
