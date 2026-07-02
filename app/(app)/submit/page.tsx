@@ -226,7 +226,10 @@ export default function SubmitPVPage() {
           await cache.delete(`/share-cache/file-${i}`);
         }
         await cache.delete("/share-cache/meta");
-        if (files.length) handleFiles(files);
+        if (files.length) {
+          handleFiles(files);
+          setOpenSection(4); // jump to Supporting Documents
+        }
         // Remove the query param from the URL without a page reload
         const url = new URL(window.location.href);
         url.searchParams.delete("from_share");
@@ -725,7 +728,7 @@ export default function SubmitPVPage() {
                 );
               })()}
               <button type="button" onClick={() => removeAttachment(idx)}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white shadow border border-stone-200 flex items-center justify-center opacity-0 group-hover:opacity-100 active:opacity-100 transition-opacity z-10">
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white shadow border border-stone-200 flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10">
                 <XIcon size={9} className="text-stone-600" />
               </button>
               <p className="text-[9px] text-stone-400 mt-0.5 text-center truncate">{att.sourceUrl ? "GM Claim" : formatFileSize(att.file.size)}</p>
