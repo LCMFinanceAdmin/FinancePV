@@ -1147,12 +1147,14 @@ export default function RecurringPage() {
                   <span />
                 </div>
                 {form.line_items.map((li, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_130px_28px] border-t border-stone-200 items-center px-3 py-1.5 hover:bg-stone-50">
-                    <input
-                      className="text-sm text-stone-900 bg-transparent outline-none placeholder:text-stone-300 pr-2 font-medium"
+                  <div key={i} className="grid grid-cols-[1fr_130px_28px] border-t border-stone-200 items-start px-3 py-1.5 hover:bg-stone-50">
+                    <textarea
+                      rows={1}
+                      className="text-sm text-stone-900 bg-transparent outline-none placeholder:text-stone-300 pr-2 font-medium resize-none overflow-hidden leading-snug pt-0.5"
                       value={li.description}
                       placeholder={`Item ${i + 1}`}
-                      onChange={e => updateLineItem(i, "description", e.target.value)}
+                      onChange={e => { updateLineItem(i, "description", e.target.value); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                      onFocus={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                     />
                     <input
                       className="text-sm text-right text-stone-900 bg-transparent outline-none placeholder:text-stone-300 font-mono font-medium"

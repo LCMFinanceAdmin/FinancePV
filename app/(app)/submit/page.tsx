@@ -1009,9 +1009,10 @@ export default function SubmitPVPage() {
               </div>
               <div>
                 <label className={mLabel}>Description</label>
-                <input className={mInput} value={item.description}
+                <textarea rows={1} className={`${mInput} resize-none overflow-hidden leading-snug`} value={item.description}
                   placeholder="Description of item / service"
-                  onChange={e => updateLineItem(idx, "description", e.target.value)} />
+                  onChange={e => { updateLineItem(idx, "description", e.target.value); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                  onFocus={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} />
               </div>
               <div>
                 <label className={mLabel}>Amount (RM)</label>
@@ -1551,7 +1552,9 @@ export default function SubmitPVPage() {
                           <input type="date" className="w-full outline-none text-xs text-stone-600 bg-transparent border-0 py-0.5" value={item.date || form.pvDate} onChange={e => updateLineItem(idx, "date", e.target.value)} />
                         </td>
                         <td className="border border-stone-800 px-1 py-0.5">
-                          <input className="w-full outline-none text-sm bg-transparent border-0 py-0.5 placeholder:text-stone-300" placeholder="Description of item / service" value={item.description} onChange={e => updateLineItem(idx, "description", e.target.value)} />
+                          <textarea rows={1} className="w-full outline-none text-sm bg-transparent border-0 py-0.5 placeholder:text-stone-300 resize-none overflow-hidden leading-snug" placeholder="Description of item / service" value={item.description}
+                            onChange={e => { updateLineItem(idx, "description", e.target.value); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                            onFocus={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} />
                         </td>
                         <td className="border border-stone-800 px-1 py-0.5">
                           <input type="number" min="0" step="0.01" className="w-full outline-none text-sm text-right bg-transparent border-0 py-0.5 placeholder:text-stone-300" placeholder="0.00" value={item.amount || ""} onChange={e => updateLineItem(idx, "amount", e.target.value)} />
