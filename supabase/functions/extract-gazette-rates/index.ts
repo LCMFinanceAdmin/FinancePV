@@ -1,6 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -8,7 +8,7 @@ Deno.serve(async (req) => {
   try {
     const { gazette_url } = await req.json() as { gazette_url: string };
     if (!gazette_url) return json({ error: "gazette_url required" }, 400);
-    if (!ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
+    if (!GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY not configured" }, 500);
 
     // Fetch the gazette file
     const fileResp = await fetch(gazette_url);
@@ -34,21 +34,9 @@ Deno.serve(async (req) => {
     }
     base64 = btoa(base64);
 
-    // Build Claude API message content
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fileBlock: Record<string, any> = isPdf
-      ? {
-          type: "document",
-          source: { type: "base64", media_type: "application/pdf", data: base64 },
-        }
-      : {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: contentType.startsWith("image/") ? contentType : "image/jpeg",
-            data: base64,
-          },
-        };
+    const mimeType = isPdf
+      ? "application/pdf"
+      : (contentType.startsWith("image/") ? contentType : "image/jpeg");
 
     const prompt = `This document is a Malaysian government gazette, circular, or notice regarding EPF (KWSP), SOCSO (PERKESO), or EIS (SIP) statutory contribution rates.
 
@@ -76,31 +64,33 @@ Rules:
 - If a rate is unchanged or not mentioned, return null — do not guess
 - Return ONLY the JSON object, no explanation text around it`;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 512,
-        messages: [{ role: "user", content: [fileBlock, { type: "text", text: prompt }] }],
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { inline_data: { mime_type: mimeType, data: base64 } },
+              { text: prompt },
+            ],
+          }],
+          generationConfig: { maxOutputTokens: 512, temperature: 0 },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errText = await response.text();
-      return json({ error: `Claude API error: ${response.status} — ${errText}` }, 502);
+      return json({ error: `Gemini API error: ${response.status} — ${errText}` }, 502);
     }
 
-    const claudeData = await response.json() as {
-      content: Array<{ type: string; text?: string }>;
+    const geminiData = await response.json() as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
 
-    const rawText = claudeData.content.find(b => b.type === "text")?.text ?? "";
+    const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return json({ error: "Could not extract rates from document", raw: rawText }, 422);
 
