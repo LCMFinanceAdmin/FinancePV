@@ -1649,9 +1649,31 @@ export default function SubmitPVPage() {
               church-related expenses in accordance with LCM&apos;s financial policies.
             </p>
             <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Your Full Name (as signature) <span className="text-red-400">*</span></label>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Your Full Name <span className="text-red-400">*</span></label>
               <input className="w-full border-b border-stone-400 bg-transparent outline-none text-sm px-1 py-1 focus:border-[#4a6da7] transition-colors"
                 value={form.sig_applicant_name} onChange={e => setField("sig_applicant_name", e.target.value)} required />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-600 mb-1">Applicant Signature <span className="text-red-400">*</span></label>
+              <div className="border-2 border-dashed border-stone-300 rounded-xl overflow-hidden bg-white" style={{ touchAction: "none" }}>
+                <canvas
+                  ref={applicantCanvasRef}
+                  width={600} height={120}
+                  className="w-full cursor-crosshair"
+                  onMouseDown={startApplicantDraw} onMouseMove={drawApplicant}
+                  onMouseUp={stopApplicantDraw} onMouseLeave={stopApplicantDraw}
+                  onTouchStart={startApplicantDraw} onTouchMove={drawApplicant} onTouchEnd={stopApplicantDraw}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-1 px-0.5">
+                <p className="text-[11px] text-stone-400">Sign above with your mouse or trackpad</p>
+                {applicantSigData && (
+                  <button type="button" onClick={clearApplicantCanvas}
+                    className="text-[11px] text-stone-400 hover:text-red-400 flex items-center gap-1 transition-colors">
+                    <XIcon size={10} /> Clear
+                  </button>
+                )}
+              </div>
             </div>
             <label className="flex items-start gap-2 cursor-pointer">
               <input type="checkbox" className="mt-0.5 accent-[#4a6da7] w-3.5 h-3.5"

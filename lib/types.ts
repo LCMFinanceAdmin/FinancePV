@@ -94,6 +94,7 @@ export interface PV {
   finance_verified_at: string;
   sig_applicant_name: string;
   sig_applicant_confirm: string;
+  applicant_signature_data: string | null;
   biller_code: string;
   cheque_no: string;
   ref_no: string;

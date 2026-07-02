@@ -298,7 +298,11 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
         {!isBamPV && showApplicantSig && (
           <View style={[s.border, { marginTop: 8, padding: "6pt 8pt" }]}>
             <Text style={[s.bold, s.tiny, { marginBottom: 3 }]}>{"Applicant's Signature:"}</Text>
-            <View style={{ height: 40 }} />
+            {pv.applicant_signature_data ? (
+              <Image src={pv.applicant_signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
+            ) : (
+              <View style={{ height: 40 }} />
+            )}
             <View style={[s.borderT, { paddingTop: 3 }]}>
               <Text style={s.tiny}>Name: <Text style={s.bold}>{pv.sig_applicant_name || pv.applicant_name}</Text>    Date: {fmtDate(pv.submitted_at)}</Text>
             </View>
