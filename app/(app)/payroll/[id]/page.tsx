@@ -556,6 +556,20 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   onClose: () => void;
 }) {
   const MONTH_LABELS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  const [whatsappHint, setWhatsappHint] = useState(false);
+
+  // Inject print CSS so only the sheet content prints, not the background page
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.id = "ys-print-css";
+    style.textContent = `@media print {
+      body * { visibility: hidden !important; }
+      #ys-print-area, #ys-print-area * { visibility: visible !important; }
+      #ys-print-area { position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; background: white !important; padding: 24px 32px !important; box-sizing: border-box !important; }
+    }`;
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, []);
 
   // Build custom columns (same logic as parent)
   const customCols: { label: string; type: "allowance" | "deduction" }[] = [];
@@ -593,19 +607,22 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
 
   const hasAnySpecial = hasFamily || hasStm || hasExp || hasEpl || specialCustom.length > 0;
 
-  // WhatsApp / Email share text
-  const shareText = `${emp.full_name} — Yearly Salary Sheet ${year}\nGross (Annual): RM ${num(sum(l => l.gross))}\nNet (Annual): RM ${num(sum(l => l.net))}\nFor full details, refer to the printed sheet.`;
+  const emailSubject = `${emp.full_name} — Salary Sheet ${year}`;
+  const emailBody = `Please find attached the ${year} Yearly Salary Statement for ${emp.full_name}.\n\nAnnual Gross: RM ${num(sum(l => l.gross))}\nAnnual Net:   RM ${num(sum(l => l.net))}\n\nLutheran Church in Malaysia`;
 
   function handlePrint() {
     window.print();
   }
 
   function handleWhatsApp() {
-    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
+    // Save PDF first, then open WhatsApp Web for the user to attach
+    window.print();
+    setWhatsappHint(true);
+    setTimeout(() => window.open("https://web.whatsapp.com/", "_blank"), 800);
   }
 
   function handleEmail() {
-    window.open(`mailto:?subject=${encodeURIComponent(`${emp.full_name} — Salary Sheet ${year}`)}&body=${encodeURIComponent(shareText)}`, "_blank");
+    window.open(`mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`, "_blank");
   }
 
   return (
@@ -632,11 +649,19 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
         </div>
       </div>
 
+      {/* WhatsApp hint banner */}
+      {whatsappHint && (
+        <div className="bg-green-50 border-b border-green-200 px-4 py-2 flex items-center justify-between print:hidden">
+          <span className="text-xs text-green-800 font-medium">Save the PDF from the print dialog, then attach it in WhatsApp Web.</span>
+          <button onClick={() => setWhatsappHint(false)} className="text-green-600 hover:text-green-800 ml-3"><X size={14} /></button>
+        </div>
+      )}
+
       {/* Sheet content */}
-      <div className="flex-1 px-6 py-5 max-w-[1400px] mx-auto w-full">
+      <div id="ys-print-area" className="flex-1 px-6 py-5 max-w-[1400px] mx-auto w-full">
         {/* Header */}
         <div className="text-center mb-4">
-          <div className="text-[11px] text-stone-500 uppercase tracking-widest mb-0.5">Living Church Malaysia</div>
+          <div className="text-[11px] text-stone-500 uppercase tracking-widest mb-0.5">Lutheran Church in Malaysia</div>
           <div className="text-xl font-bold text-stone-800">Employee Salary Statement</div>
           <div className="text-sm text-stone-500">Year {year}</div>
         </div>
