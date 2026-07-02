@@ -388,11 +388,15 @@ export interface CustomPayrollItem {
   amount: number;
 }
 
-export interface PayrollRunCustomDef {
+export interface PayrollEmployeeCustomItem {
   id: string;
-  run_id: string;
+  employee_id: string;
+  year: number;
+  month: number; // 1-13
   label: string;
   type: "allowance" | "deduction";
+  amount: number;
+  created_by: string | null;
   created_at: string;
 }
 

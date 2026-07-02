@@ -2,12 +2,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2 } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { installmentForMonth } from "@/lib/payroll/loan";
-import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, CustomPayrollItem } from "@/lib/types";
+import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem } from "@/lib/types";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -64,28 +64,26 @@ export default function PayrollEmployeePage() {
   const [canEdit, setCanEdit] = useState(false);
   const [showRevision, setShowRevision] = useState(false);
   const [slipMonth, setSlipMonth] = useState<number | null>(null); // 0-11 for months
-  const [customItemsByMonth, setCustomItemsByMonth] = useState<Record<number, CustomPayrollItem[]>>({});
+  const [customItemsByMonth, setCustomItemsByMonth] = useState<Record<number, PayrollEmployeeCustomItem[]>>({});
+  const [editingMonth, setEditingMonth] = useState<number | null>(null); // 1-13
+
+  const refreshCustomItems = useCallback(async () => {
+    const { data: items } = await supabase.from("payroll_employee_custom_items")
+      .select("*").eq("employee_id", id).eq("year", year);
+    const byMonth: Record<number, PayrollEmployeeCustomItem[]> = {};
+    for (const item of (items as PayrollEmployeeCustomItem[]) ?? []) {
+      (byMonth[item.month] ??= []).push(item);
+    }
+    setCustomItemsByMonth(byMonth);
+  }, [supabase, id, year]);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from("payroll_statutory_rates").select("*").eq("year", year).maybeSingle();
       setRates((data as RateConfig) ?? undefined);
-
-      // Load custom items from finalized runs for this employee + year
-      const { data: runs } = await supabase.from("payroll_runs").select("id, month").eq("year", year).in("status", ["FINALIZED", "PAID"]);
-      if (runs && runs.length > 0) {
-        const { data: plines } = await supabase.from("payroll_lines").select("run_id, custom_items").eq("employee_id", id).in("run_id", runs.map((r: { id: string }) => r.id));
-        const byMonth: Record<number, CustomPayrollItem[]> = {};
-        for (const pl of (plines ?? []) as { run_id: string; custom_items: CustomPayrollItem[] }[]) {
-          const run = (runs as { id: string; month: number }[]).find(r => r.id === pl.run_id);
-          if (run) byMonth[run.month] = pl.custom_items ?? [];
-        }
-        setCustomItemsByMonth(byMonth);
-      } else {
-        setCustomItemsByMonth({});
-      }
+      await refreshCustomItems();
     })();
-  }, [supabase, year, id]);
+  }, [supabase, year, id, refreshCustomItems]);
 
   useEffect(() => {
     (async () => {
@@ -134,7 +132,7 @@ export default function PayrollEmployeePage() {
     eplDeduction: eplForMonth(i + 1),
     is13thMonth: false,
     rates,
-    customItems: customItemsByMonth[i + 1] ?? [],
+    customItems: (customItemsByMonth[i + 1] ?? []).map(c => ({ label: c.label, type: c.type, amount: Number(c.amount) })),
   })) : [];
   // Orang Asli are excluded from the 13th month.
   const thirteenth: CalcLine | null = current && !emp.is_orang_asli ? calcLine({
@@ -257,11 +255,14 @@ export default function PayrollEmployeePage() {
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Net</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Total LCM</th>
-                    <th className="border border-stone-200 px-1 py-1 print:hidden"></th>
+                    <th className="border border-stone-200 px-1 py-1 print:hidden w-14"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {monthLines.map((l, i) => (
+                  {monthLines.map((l, i) => {
+                    const monthNum = i + 1;
+                    const monthItems = customItemsByMonth[monthNum] ?? [];
+                    return (
                     <tr key={i} className="hover:bg-stone-50">
                       <td className="border border-stone-200 px-1.5 py-1 font-semibold text-stone-600">{MONTHS[i]}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.gross)}</td>
@@ -278,14 +279,23 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(l.net)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(l.totalLcmPayment)}</td>
-                      <td className="border border-stone-200 px-1 py-1 text-center print:hidden">
-                        <button onClick={() => setSlipMonth(i)} title="Share salary slip"
-                          className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-[#4a6da7]">
-                          <Share2 size={12} />
-                        </button>
+                      <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
+                        <div className="flex items-center justify-center gap-0.5">
+                          {canEdit && (
+                            <button onClick={() => setEditingMonth(monthNum)} title="Add/edit custom items"
+                              className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-semibold ${monthItems.length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
+                              {monthItems.length > 0 ? <><ListPlus size={10} />{monthItems.length}</> : <ListPlus size={11} />}
+                            </button>
+                          )}
+                          <button onClick={() => setSlipMonth(i)} title="Share salary slip"
+                            className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-[#4a6da7]">
+                            <Share2 size={12} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   {/* Sub-total (12 months) */}
                   <tr className="bg-stone-50 font-semibold">
                     <td className="border border-stone-200 px-1.5 py-1">SUB-T (12)</td>
@@ -320,7 +330,17 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(thirteenth.net)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(thirteenth.totalLcmPayment)}</td>
-                      <td className="border border-stone-200 px-1 py-1 print:hidden"></td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
+                        <div className="flex items-center justify-center gap-0.5">
+                          {canEdit && (
+                            <button onClick={() => setEditingMonth(13)} title="Add/edit custom items"
+                              className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-semibold ${(customItemsByMonth[13] ?? []).length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
+                              {(customItemsByMonth[13] ?? []).length > 0 ? <><ListPlus size={10} />{customItemsByMonth[13].length}</> : <ListPlus size={11} />}
+                            </button>
+                          )}
+                          <Share2 size={12} className="text-stone-200" />
+                        </div>
+                      </td>
                     </tr>
                   ) : (
                     <tr><td colSpan={13} className="border border-stone-200 px-1.5 py-1 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
@@ -428,6 +448,116 @@ export default function PayrollEmployeePage() {
           salary={current}
           onClose={() => setSlipMonth(null)} />
       )}
+
+      {editingMonth !== null && (
+        <CustomItemsModal
+          employeeId={emp.id} year={year} month={editingMonth}
+          monthLabel={editingMonth === 13 ? "13th Month" : `${MONTHS[editingMonth - 1]} ${year}`}
+          items={customItemsByMonth[editingMonth] ?? []}
+          onClose={() => setEditingMonth(null)}
+          onSaved={refreshCustomItems}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Custom Items Modal ───────────────────────────────────────────────────────
+
+function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose, onSaved }: {
+  employeeId: string; year: number; month: number; monthLabel: string;
+  items: PayrollEmployeeCustomItem[]; onClose: () => void; onSaved: () => void;
+}) {
+  const supabase = createClient();
+  const [newLabel, setNewLabel] = useState("");
+  const [newType, setNewType] = useState<"allowance" | "deduction">("allowance");
+  const [newAmount, setNewAmount] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function add() {
+    if (!newLabel.trim() || !newAmount) return;
+    const amount = parseFloat(newAmount);
+    if (isNaN(amount) || amount <= 0) { setError("Enter a valid amount."); return; }
+    setSaving(true); setError("");
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error: e } = await supabase.from("payroll_employee_custom_items").insert({
+      employee_id: employeeId, year, month,
+      label: newLabel.trim(), type: newType, amount,
+      created_by: session?.user?.email ?? "",
+    });
+    if (e) { setError(e.message); setSaving(false); return; }
+    setNewLabel(""); setNewAmount(""); setSaving(false);
+    onSaved();
+  }
+
+  async function remove(itemId: string) {
+    await supabase.from("payroll_employee_custom_items").delete().eq("id", itemId);
+    onSaved();
+  }
+
+  const inputCls = "border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]";
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+          <h2 className="text-sm font-bold text-stone-800">Custom Items — {monthLabel}</h2>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+
+          {/* Existing items */}
+          {items.length === 0 ? (
+            <p className="text-sm text-stone-400 text-center py-2">No custom items for this month yet.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {items.map(item => (
+                <div key={item.id} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-stone-100 bg-stone-50">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                    {item.type === "allowance" ? "+" : "−"}
+                  </span>
+                  <span className="text-sm text-stone-700 flex-1">{item.label}</span>
+                  <span className="text-sm font-mono font-semibold text-stone-700">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
+                  <button onClick={() => remove(item.id)} className="text-stone-300 hover:text-red-400 ml-1"><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add form */}
+          <div className="border-t border-stone-100 pt-3 space-y-2">
+            <p className="text-[11px] text-stone-400 font-semibold uppercase tracking-wide">Add item</p>
+            <div className="flex gap-2">
+              <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && add()}
+                placeholder="Label (e.g. Housing Allowance)"
+                className={`${inputCls} flex-1`} />
+              <select value={newType} onChange={e => setNewType(e.target.value as "allowance" | "deduction")}
+                className={inputCls}>
+                <option value="allowance">Allowance +</option>
+                <option value="deduction">Deduction −</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <input type="number" value={newAmount} onChange={e => setNewAmount(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && add()}
+                placeholder="Amount (RM)"
+                className={`${inputCls} w-36`} />
+              <button onClick={add} disabled={saving || !newLabel.trim() || !newAmount}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4a6da7] text-white rounded-lg text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-40">
+                <Plus size={14} /> {saving ? "…" : "Add"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-3 border-t border-stone-100 flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">Done</button>
+        </div>
+      </div>
     </div>
   );
 }
