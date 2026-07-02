@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { installmentForMonth } from "@/lib/payroll/loan";
-import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile } from "@/lib/types";
+import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, CustomPayrollItem } from "@/lib/types";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -64,13 +64,28 @@ export default function PayrollEmployeePage() {
   const [canEdit, setCanEdit] = useState(false);
   const [showRevision, setShowRevision] = useState(false);
   const [slipMonth, setSlipMonth] = useState<number | null>(null); // 0-11 for months
+  const [customItemsByMonth, setCustomItemsByMonth] = useState<Record<number, CustomPayrollItem[]>>({});
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from("payroll_statutory_rates").select("*").eq("year", year).maybeSingle();
       setRates((data as RateConfig) ?? undefined);
+
+      // Load custom items from finalized runs for this employee + year
+      const { data: runs } = await supabase.from("payroll_runs").select("id, month").eq("year", year).in("status", ["FINALIZED", "PAID"]);
+      if (runs && runs.length > 0) {
+        const { data: plines } = await supabase.from("payroll_lines").select("run_id, custom_items").eq("employee_id", id).in("run_id", runs.map((r: { id: string }) => r.id));
+        const byMonth: Record<number, CustomPayrollItem[]> = {};
+        for (const pl of (plines ?? []) as { run_id: string; custom_items: CustomPayrollItem[] }[]) {
+          const run = (runs as { id: string; month: number }[]).find(r => r.id === pl.run_id);
+          if (run) byMonth[run.month] = pl.custom_items ?? [];
+        }
+        setCustomItemsByMonth(byMonth);
+      } else {
+        setCustomItemsByMonth({});
+      }
     })();
-  }, [supabase, year]);
+  }, [supabase, year, id]);
 
   useEffect(() => {
     (async () => {
@@ -119,6 +134,7 @@ export default function PayrollEmployeePage() {
     eplDeduction: eplForMonth(i + 1),
     is13thMonth: false,
     rates,
+    customItems: customItemsByMonth[i + 1] ?? [],
   })) : [];
   // Orang Asli are excluded from the 13th month.
   const thirteenth: CalcLine | null = current && !emp.is_orang_asli ? calcLine({
@@ -425,7 +441,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
   function n2(n: number) { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function rm(n: number) { return `RM ${n2(n)}`; }
 
-  const totalDeductions = line.epf.ee + line.socso.ee + line.eis.ee + pcbVal + line.eplDeduction;
+  const totalDeductions = line.epf.ee + line.socso.ee + line.eis.ee + pcbVal + line.eplDeduction + line.customDeductions;
   const dept = emp.posting_type === "CHURCH"
     ? `${emp.designation || "PASTOR"} - ${(emp.church_name || "").toUpperCase()}`
     : emp.department || emp.designation || "—";
@@ -441,6 +457,10 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
     if (Number(salary.experience_bonus) > 0) components.push({ label: "Experience bonus", amount: Number(salary.experience_bonus) });
     if (Number(salary.family_allowance) > 0) components.push({ label: "Family allowance", amount: Number(salary.family_allowance) });
     if (Number(salary.stm_allowance) > 0) components.push({ label: "STM / Allowance", amount: Number(salary.stm_allowance) });
+    // Custom allowances
+    for (const item of line.customItems.filter(i => i.type === "allowance")) {
+      components.push({ label: item.label, amount: item.amount });
+    }
   } else {
     components.push({ label: "Basic Salary", amount: line.gross });
   }
@@ -563,6 +583,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                   { label: "Employee EIS", amount: line.eis.ee },
                   ...(pcbVal > 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
                   ...(line.eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: line.eplDeduction }] : []),
+                  ...line.customItems.filter(i => i.type === "deduction").map(i => ({ label: i.label, amount: i.amount })),
                 ];
                 const maxRows = Math.max(components.length, deductions.length);
                 const rows = [];

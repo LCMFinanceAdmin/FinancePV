@@ -46,6 +46,7 @@ export interface CalcInput {
   eplDeduction: number;        // monthly loan installment
   is13thMonth: boolean;        // 13th month: EPF + PCB only, no SOCSO/EIS
   rates?: RateConfig;          // editable statutory config; defaults to current rates
+  customItems?: Array<{ label?: string; type: "allowance" | "deduction"; amount: number }>;
 }
 
 export interface CalcLine {
@@ -56,8 +57,11 @@ export interface CalcLine {
   socso: StatPortion;
   totalContrib: StatPortion;   // EPF + EIS + SOCSO, per side
   eplDeduction: number;
-  net: number;                 // gross − pcb − employee contributions − EPL
-  totalLcmPayment: number;     // gross + employer contributions
+  net: number;                 // gross − pcb − employee contributions − EPL ± custom items
+  totalLcmPayment: number;     // gross + employer contributions + custom allowances
+  customAllowances: number;
+  customDeductions: number;
+  customItems: Array<{ label: string; type: "allowance" | "deduction"; amount: number }>;
 }
 
 function round2(n: number): number {
@@ -146,8 +150,11 @@ export function calcLine(input: CalcInput): CalcLine {
     total: round2(epf.total + eis.total + socso.total),
   };
 
-  const net = round2(gross - (manualPcb || 0) - totalContrib.ee - (eplDeduction || 0));
-  const totalLcmPayment = round2(gross + totalContrib.er);
+  const customRaw = input.customItems ?? [];
+  const customAllowances = round2(customRaw.filter(i => i.type === "allowance").reduce((s, i) => s + i.amount, 0));
+  const customDeductions = round2(customRaw.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0));
+  const net = round2(gross - (manualPcb || 0) - totalContrib.ee - (eplDeduction || 0) - customDeductions + customAllowances);
+  const totalLcmPayment = round2(gross + totalContrib.er + customAllowances);
 
   return {
     gross: round2(gross),
@@ -156,6 +163,9 @@ export function calcLine(input: CalcInput): CalcLine {
     eplDeduction: round2(eplDeduction || 0),
     net,
     totalLcmPayment,
+    customAllowances,
+    customDeductions,
+    customItems: customRaw.filter(i => i.amount > 0).map(i => ({ label: i.label ?? "", type: i.type, amount: i.amount })),
   };
 }
 

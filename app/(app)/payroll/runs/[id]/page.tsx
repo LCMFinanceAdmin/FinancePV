@@ -2,12 +2,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, FileText, Banknote } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Banknote, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { buildSchedule } from "@/lib/payroll/loan";
-import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher } from "@/lib/types";
+import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, PayrollRunCustomDef, CustomPayrollItem } from "@/lib/types";
 
 const MONTH_LABELS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "13th Month"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -30,6 +30,11 @@ export default function PayrollRunDetailPage() {
   const [lines, setLines] = useState<PayrollLine[]>([]);     // persisted (finalized)
   const [vouchers, setVouchers] = useState<PayrollVoucher[]>([]);
   const [pcb, setPcb] = useState<Record<string, number>>({});
+  const [customDefs, setCustomDefs] = useState<PayrollRunCustomDef[]>([]);
+  const [customAmounts, setCustomAmounts] = useState<Record<string, Record<string, number>>>({});
+  const [addingDef, setAddingDef] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newType, setNewType] = useState<"allowance" | "deduction">("allowance");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -81,6 +86,21 @@ export default function PayrollRunDetailPage() {
       setLines((pl as PayrollLine[]) ?? []);
       setVouchers((pv as PayrollVoucher[]) ?? []);
     }
+
+    // Load custom item definitions and amounts for this run
+    const { data: cDefs } = await supabase.from("payroll_run_custom_defs").select("*").eq("run_id", id).order("created_at");
+    const defsData = (cDefs as PayrollRunCustomDef[]) ?? [];
+    setCustomDefs(defsData);
+    if (defsData.length > 0) {
+      const { data: cAmts } = await supabase.from("payroll_run_custom_amounts").select("*").in("def_id", defsData.map(d => d.id));
+      const amtMap: Record<string, Record<string, number>> = {};
+      for (const a of (cAmts as { def_id: string; employee_id: string; amount: number }[]) ?? []) {
+        if (!amtMap[a.def_id]) amtMap[a.def_id] = {};
+        amtMap[a.def_id][a.employee_id] = Number(a.amount);
+      }
+      setCustomAmounts(amtMap);
+    }
+
     setLoading(false);
   }, [supabase, id]);
 
@@ -105,13 +125,46 @@ export default function PayrollRunDetailPage() {
         const row = buildSchedule(ln).find(x => x.year === run.year && x.month === run.month);
         return s + (row?.amount ?? 0);
       }, 0);
+      const customItems = customDefs.map(def => ({
+        label: def.label,
+        type: def.type,
+        amount: customAmounts[def.id]?.[e.id] ?? 0,
+      }));
       const line = calcLine({
         gross, age: ageAt(e.dob, run.year, ageMonth), employmentType: e.employment_type,
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
         manualPcb: pcb[e.id] || 0, eplDeduction: epl, is13thMonth: is13th, rates,
+        customItems,
       });
       return { emp: e, line };
     }).filter((x): x is ComputedRow => x !== null) : [];
+
+  async function addDef() {
+    if (!newLabel.trim() || !run) return;
+    const { data } = await supabase.from("payroll_run_custom_defs").insert({
+      run_id: run.id, label: newLabel.trim(), type: newType,
+    }).select().single();
+    if (data) {
+      const def = data as PayrollRunCustomDef;
+      setCustomDefs(d => [...d, def]);
+      setCustomAmounts(a => ({ ...a, [def.id]: {} }));
+    }
+    setNewLabel(""); setAddingDef(false);
+  }
+
+  async function deleteDef(defId: string) {
+    if (!confirm("Delete this custom item and all employee amounts?")) return;
+    await supabase.from("payroll_run_custom_defs").delete().eq("id", defId);
+    setCustomDefs(d => d.filter(x => x.id !== defId));
+    setCustomAmounts(a => { const n = { ...a }; delete n[defId]; return n; });
+  }
+
+  async function saveAmount(defId: string, empId: string, amount: number) {
+    await supabase.from("payroll_run_custom_amounts").upsert(
+      { def_id: defId, employee_id: empId, amount },
+      { onConflict: "def_id,employee_id" }
+    );
+  }
 
   // Totals (from computed for draft, persisted lines otherwise).
   const sumDraft = (pick: (l: CalcLine) => number) => computed.reduce((s, r) => s + pick(r.line), 0);
@@ -130,6 +183,7 @@ export default function PayrollRunDetailPage() {
         socso_ee: line.socso.ee, socso_er: line.socso.er,
         eis_ee: line.eis.ee, eis_er: line.eis.er,
         epl: line.eplDeduction, net: line.net, total_lcm: line.totalLcmPayment,
+        custom_items: line.customItems,
       }));
       if (lineRows.length) { const { error } = await supabase.from("payroll_lines").insert(lineRows); if (error) throw new Error(error.message); }
 
@@ -213,6 +267,92 @@ export default function PayrollRunDetailPage() {
 
       {isDraft && <p className="text-[11px] text-stone-400">Enter PCB per employee, then finalize. EPF/SOCSO/EIS are auto-calculated; EPL pulls from active loans.</p>}
 
+      {/* Custom Items — Finance Admin, DRAFT only */}
+      {isDraft && canFinalize && (
+        <div className="bg-white border border-stone-200 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-stone-700 flex-1">Custom Items</h2>
+            {!addingDef && (
+              <button onClick={() => setAddingDef(true)}
+                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5c8f]">
+                <Plus size={11} /> Add Item
+              </button>
+            )}
+          </div>
+
+          {addingDef && (
+            <div className="flex gap-2 items-end flex-wrap p-3 bg-stone-50 rounded-xl border border-stone-100">
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-[10px] text-stone-500 mb-1">Label</label>
+                <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addDef()}
+                  placeholder="e.g. Housing Allowance"
+                  className="w-full border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-stone-500 mb-1">Type</label>
+                <select value={newType} onChange={e => setNewType(e.target.value as "allowance" | "deduction")}
+                  className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]">
+                  <option value="allowance">Allowance (+)</option>
+                  <option value="deduction">Deduction (−)</option>
+                </select>
+              </div>
+              <button onClick={addDef}
+                className="px-3 py-1.5 bg-[#4a6da7] text-white rounded-lg text-sm font-semibold hover:bg-[#3d5c8f]">Add</button>
+              <button onClick={() => { setAddingDef(false); setNewLabel(""); }}
+                className="p-1.5 text-stone-400 hover:text-stone-600"><X size={14} /></button>
+            </div>
+          )}
+
+          {customDefs.length === 0 && !addingDef && (
+            <p className="text-[11px] text-stone-400">No custom items yet. Add allowances or deductions specific to this run — each with a per-employee amount.</p>
+          )}
+
+          {customDefs.map(def => (
+            <div key={def.id} className="border border-stone-100 rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 bg-stone-50 border-b border-stone-100">
+                <span className="text-sm font-semibold text-stone-700 flex-1">{def.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${def.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                  {def.type === "allowance" ? "Allowance +" : "Deduction −"}
+                </span>
+                <button onClick={() => deleteDef(def.id)} className="text-stone-300 hover:text-red-400 ml-1"><Trash2 size={13} /></button>
+              </div>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-stone-400">
+                    <th className="px-3 py-1 text-left font-medium">Employee</th>
+                    <th className="px-3 py-1 text-right font-medium">Amount (RM)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((emp, i) => (
+                    <tr key={emp.id} className={i % 2 === 0 ? "" : "bg-stone-50/50"}>
+                      <td className="px-3 py-0.5 text-stone-700">{emp.full_name}</td>
+                      <td className="px-3 py-0.5 text-right">
+                        <input
+                          type="number"
+                          value={customAmounts[def.id]?.[emp.id] || ""}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value) || 0;
+                            setCustomAmounts(a => ({ ...a, [def.id]: { ...(a[def.id] ?? {}), [emp.id]: v } }));
+                          }}
+                          onBlur={e => {
+                            const v = parseFloat(e.target.value) || 0;
+                            saveAmount(def.id, emp.id, v);
+                          }}
+                          className="w-24 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#4a6da7] outline-none bg-transparent"
+                          placeholder="—"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Lines table */}
       <div className="bg-white border border-stone-200 rounded-2xl p-4 overflow-x-auto">
         <table className="w-full text-[11px] border-collapse" style={{ minWidth: 1000 }}>
@@ -228,6 +368,7 @@ export default function PayrollRunDetailPage() {
               <th className="border border-stone-200 px-1.5 py-1 text-right">EIS EE</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">EIS ER</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
+              {customDefs.length > 0 && <th className="border border-stone-200 px-1.5 py-1 text-right">Custom</th>}
               <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Net</th>
             </tr>
           </thead>
@@ -247,9 +388,21 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.eis.ee)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.eis.er)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-500">{num(line.eplDeduction)}</td>
+                {customDefs.length > 0 && (
+                  <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-[10px]">
+                    {line.customAllowances > 0 && <span className="text-green-600">+{num(line.customAllowances)}</span>}
+                    {line.customDeductions > 0 && <span className={line.customAllowances > 0 ? " text-red-500 block" : "text-red-500"}>−{num(line.customDeductions)}</span>}
+                    {line.customAllowances === 0 && line.customDeductions === 0 && <span className="text-stone-300">—</span>}
+                  </td>
+                )}
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(line.net)}</td>
               </tr>
-            )) : lines.map(l => (
+            )) : lines.map(l => {
+              const lCustomItems = (l.custom_items as CustomPayrollItem[]) ?? [];
+              const lAllowances = lCustomItems.filter(i => i.type === "allowance").reduce((s, i) => s + Number(i.amount), 0);
+              const lDeductions = lCustomItems.filter(i => i.type === "deduction").reduce((s, i) => s + Number(i.amount), 0);
+              const hasCustom = lCustomItems.length > 0;
+              return (
               <tr key={l.id} className="hover:bg-stone-50">
                 <td className="border border-stone-200 px-1.5 py-1 font-medium text-stone-700">{l.employee_name}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.gross))}</td>
@@ -261,9 +414,16 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.eis_ee))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.eis_er))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-500">{num(Number(l.epl))}</td>
+                {hasCustom && (
+                  <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-[10px]">
+                    {lAllowances > 0 && <span className="text-green-600">+{num(lAllowances)}</span>}
+                    {lDeductions > 0 && <span className={lAllowances > 0 ? " text-red-500 block" : "text-red-500"}>−{num(lDeductions)}</span>}
+                  </td>
+                )}
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(Number(l.net))}</td>
               </tr>
-            ))}
+              );
+            })}
             <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7]">
               <td className="border border-stone-200 px-1.5 py-1">TOTAL</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.gross) : sumLines(l => l.gross))}</td>
@@ -275,6 +435,7 @@ export default function PayrollRunDetailPage() {
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eis.ee) : sumLines(l => l.eis_ee))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eis.er) : sumLines(l => l.eis_er))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eplDeduction) : sumLines(l => l.epl))}</td>
+              {customDefs.length > 0 && <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.customAllowances - l.customDeductions) : 0)}</td>}
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.net) : sumLines(l => l.net))}</td>
             </tr>
           </tbody>

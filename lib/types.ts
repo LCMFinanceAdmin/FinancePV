@@ -382,6 +382,20 @@ export interface PayrollRun {
   created_at: string;
 }
 
+export interface CustomPayrollItem {
+  label: string;
+  type: "allowance" | "deduction";
+  amount: number;
+}
+
+export interface PayrollRunCustomDef {
+  id: string;
+  run_id: string;
+  label: string;
+  type: "allowance" | "deduction";
+  created_at: string;
+}
+
 export interface PayrollLine {
   id: string;
   run_id: string;
@@ -395,6 +409,7 @@ export interface PayrollLine {
   epl: number;
   net: number;
   total_lcm: number;
+  custom_items: CustomPayrollItem[];
   created_at: string;
 }
 
