@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent, HandCoins, CalendarClock, Pencil, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import type { UserProfile, PayrollEmployee, EmploymentType, PostingType } from "@/lib/types";
+import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
 
 function postingLabel(e: PayrollEmployee): string {
   if (e.posting_type === "CHURCH") return e.church_name || "Church";
@@ -89,7 +89,49 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // custom items state (edit mode only)
+  const now = new Date();
+  const [itemYear, setItemYear] = useState(now.getFullYear());
+  const [itemMonth, setItemMonth] = useState(now.getMonth() + 1);
+  const [empCustomItems, setEmpCustomItems] = useState<PayrollEmployeeCustomItem[]>([]);
+  const [newItemLabel, setNewItemLabel] = useState("");
+  const [newItemType, setNewItemType] = useState<"allowance" | "deduction">("allowance");
+  const [newItemAmount, setNewItemAmount] = useState("");
+  const [addingItem, setAddingItem] = useState(false);
+  const [itemError, setItemError] = useState("");
+
   const isEdit = !!existing;
+
+  const loadCustomItems = useCallback(async () => {
+    if (!existing?.id) return;
+    const { data } = await supabase.from("payroll_employee_custom_items")
+      .select("*").eq("employee_id", existing.id).eq("year", itemYear).eq("month", itemMonth)
+      .order("created_at");
+    setEmpCustomItems((data as PayrollEmployeeCustomItem[]) ?? []);
+  }, [supabase, existing?.id, itemYear, itemMonth]);
+
+  useEffect(() => { if (isEdit) loadCustomItems(); }, [isEdit, loadCustomItems]);
+
+  async function addCustomItem() {
+    if (!newItemLabel.trim() || !newItemAmount) return;
+    const amount = parseFloat(newItemAmount);
+    if (isNaN(amount) || amount <= 0) { setItemError("Enter a valid positive amount."); return; }
+    setItemError("");
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error: e } = await supabase.from("payroll_employee_custom_items").insert({
+      employee_id: existing!.id, year: itemYear, month: itemMonth,
+      label: newItemLabel.trim(), type: newItemType, amount,
+      created_by: session?.user?.email ?? "",
+    });
+    if (e) { setItemError(e.message); return; }
+    setNewItemLabel(""); setNewItemAmount(""); setAddingItem(false);
+    loadCustomItems();
+  }
+
+  async function deleteCustomItem(itemId: string) {
+    await supabase.from("payroll_employee_custom_items").delete().eq("id", itemId);
+    loadCustomItems();
+  }
 
   // Load latest salary when editing
   useEffect(() => {
@@ -364,6 +406,85 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
               <div><label className={labelCls}>STM / Allowance <span className="font-normal text-stone-400">(if applicable)</span></label><input type="number" className={inputCls} value={stm} onChange={e => setStm(e.target.value)} /></div>
             </div>
           </div>
+
+          {/* Custom Allowances / Deductions (edit only) */}
+          {isEdit && existing && (
+            <div className="border-t border-stone-100 pt-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Custom Allowances / Deductions</p>
+              <div className="flex gap-2 items-end mb-3 flex-wrap">
+                <div>
+                  <label className={labelCls}>Month</label>
+                  <select value={itemMonth} onChange={e => setItemMonth(Number(e.target.value))}
+                    className="border border-stone-300 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#4a6da7]">
+                    {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                      <option key={i + 1} value={i + 1}>{m}</option>
+                    ))}
+                    <option value={13}>13th Month</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Year</label>
+                  <input type="number" value={itemYear} onChange={e => setItemYear(Number(e.target.value))}
+                    className="border border-stone-300 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#4a6da7] w-24" />
+                </div>
+              </div>
+
+              {empCustomItems.length === 0 ? (
+                <p className="text-[11px] text-stone-400 mb-2">No custom items for this period.</p>
+              ) : (
+                <div className="space-y-1.5 mb-3">
+                  {empCustomItems.map(item => (
+                    <div key={item.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-stone-100 bg-stone-50">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                        {item.type === "allowance" ? "+" : "−"}
+                      </span>
+                      <span className="text-sm text-stone-700 flex-1">{item.label}</span>
+                      <span className="text-sm font-mono font-semibold text-stone-700">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
+                      <button type="button" onClick={() => deleteCustomItem(item.id)}
+                        className="text-stone-300 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!addingItem ? (
+                <button type="button" onClick={() => setAddingItem(true)}
+                  className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-500 hover:border-[#4a6da7] hover:text-[#4a6da7] transition-colors">
+                  <Plus size={11} /> Add Item
+                </button>
+              ) : (
+                <div className="space-y-2 p-3 bg-stone-50 rounded-xl border border-stone-100">
+                  {itemError && <p className="text-[11px] text-red-600">{itemError}</p>}
+                  <div className="flex gap-2 flex-wrap">
+                    <input value={newItemLabel} onChange={e => setNewItemLabel(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addCustomItem()}
+                      placeholder="Label (e.g. Housing Allowance)"
+                      className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7] flex-1 min-w-[160px]" />
+                    <select value={newItemType} onChange={e => setNewItemType(e.target.value as "allowance" | "deduction")}
+                      className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]">
+                      <option value="allowance">Allowance +</option>
+                      <option value="deduction">Deduction −</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input type="number" value={newItemAmount} onChange={e => setNewItemAmount(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addCustomItem()}
+                      placeholder="Amount (RM)"
+                      className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7] w-36" />
+                    <button type="button" onClick={addCustomItem}
+                      disabled={!newItemLabel.trim() || !newItemAmount}
+                      className="px-3 py-1.5 bg-[#4a6da7] text-white rounded-lg text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-40">
+                      Add
+                    </button>
+                    <button type="button" onClick={() => { setAddingItem(false); setNewItemLabel(""); setNewItemAmount(""); setItemError(""); }}
+                      className="px-3 py-1.5 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Delete employee section (edit only) */}
           {isEdit && (
