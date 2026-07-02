@@ -205,6 +205,37 @@ export default function SubmitPVPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  // Read files shared via the OS share sheet (Web Share Target)
+  useEffect(() => {
+    if (!window.location.search.includes("from_share=1")) return;
+    if (!("caches" in window)) return;
+    (async () => {
+      try {
+        const cache = await caches.open("lcm-share-v1");
+        const meta = await cache.match("/share-cache/meta");
+        if (!meta) return;
+        const { count } = await meta.json() as { count: number };
+        const files: File[] = [];
+        for (let i = 0; i < count; i++) {
+          const res = await cache.match(`/share-cache/file-${i}`);
+          if (!res) continue;
+          const blob = await res.blob();
+          const rawName = res.headers.get("X-File-Name") || `shared-${i}.jpg`;
+          const name = decodeURIComponent(rawName);
+          files.push(new File([blob], name, { type: blob.type || "image/jpeg" }));
+          await cache.delete(`/share-cache/file-${i}`);
+        }
+        await cache.delete("/share-cache/meta");
+        if (files.length) handleFiles(files);
+        // Remove the query param from the URL without a page reload
+        const url = new URL(window.location.href);
+        url.searchParams.delete("from_share");
+        window.history.replaceState({}, "", url.toString());
+      } catch (_) { /* non-fatal */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
