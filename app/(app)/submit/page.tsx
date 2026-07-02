@@ -385,13 +385,29 @@ export default function SubmitPVPage() {
   }
   function removeLocation(loc: string) { saveLocations(customLocations.filter(l => l !== loc)); }
 
-  function handleFiles(files: FileList | null) {
+  function handleFiles(files: FileList | File[] | null) {
     if (!files) return;
     const newFiles = Array.from(files)
       .filter(f => f.type.startsWith("image/") || f.type === "application/pdf")
       .map(f => ({ file: f, previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : "" }));
     setAttachments(prev => [...prev, ...newFiles]);
   }
+
+  // Global paste handler — captures snipping tool / clipboard screenshots
+  useEffect(() => {
+    function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles = Array.from(items)
+        .filter(item => item.type.startsWith("image/"))
+        .map(item => item.getAsFile())
+        .filter((f): f is File => f !== null);
+      if (imageFiles.length) handleFiles(imageFiles);
+    }
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function removeAttachment(idx: number) {
     setAttachments(prev => {
       if (prev[idx]?.previewUrl) URL.revokeObjectURL(prev[idx].previewUrl);
@@ -635,10 +651,13 @@ export default function SubmitPVPage() {
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-        className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors ${dragOver ? "border-[#4a6da7] bg-blue-50" : "border-stone-200"}`}
+        className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors ${dragOver ? "border-[#4a6da7] bg-blue-50" : "border-stone-200"}`}
       >
         <Paperclip size={20} className="mx-auto text-stone-300 mb-2" />
-        <p className="text-xs text-stone-400 mb-3">Attach receipts, invoices, or photos</p>
+        <p className="text-xs text-stone-400 mb-1">Attach receipts, invoices, or photos</p>
+        <p className="text-[10px] text-stone-300 mb-3">
+          Drag &amp; drop · Paste screenshot (Ctrl+V) · Share from phone
+        </p>
         <div className="flex flex-wrap justify-center gap-2">
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-600 cursor-pointer hover:bg-stone-50 transition-colors font-medium">
             <Upload size={12} /> Choose File
