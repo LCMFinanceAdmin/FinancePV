@@ -409,6 +409,7 @@ export default function PayrollEmployeePage() {
       {slipMonth !== null && monthLines[slipMonth] && (
         <SlipModal emp={emp} month={MONTHS[slipMonth]} year={year}
           line={monthLines[slipMonth]} pcbVal={pcb[slipMonth] || 0}
+          salary={current}
           onClose={() => setSlipMonth(null)} />
       )}
     </div>
@@ -417,128 +418,274 @@ export default function PayrollEmployeePage() {
 
 // ─── Salary Slip Modal ────────────────────────────────────────────────────────
 
-function SlipModal({ emp, month, year, line, pcbVal, onClose }: {
+function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
   emp: PayrollEmployee; month: string; year: number;
-  line: CalcLine; pcbVal: number; onClose: () => void;
+  line: CalcLine; pcbVal: number; salary: PayrollSalary | null; onClose: () => void;
 }) {
-  function rm(n: number) { return `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+  function n2(n: number) { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function rm(n: number) { return `RM ${n2(n)}`; }
 
   const totalDeductions = line.epf.ee + line.socso.ee + line.eis.ee + pcbVal + line.eplDeduction;
+  const dept = emp.posting_type === "CHURCH"
+    ? `${emp.designation || "PASTOR"} - ${(emp.church_name || "").toUpperCase()}`
+    : emp.department || emp.designation || "—";
 
-  const plainText = [
-    `SALARY SLIP — ${month} ${year}`,
-    `LCM BANGSAR LUTHERAN CHURCH`,
-    `─────────────────────────────`,
-    `Employee:    ${emp.full_name}`,
-    `Emp No:      ${emp.emp_no}`,
-    `Designation: ${emp.designation || "—"}`,
-    `IC No:       ${emp.ic_no || "—"}`,
-    ``,
-    `EARNINGS`,
-    `  Gross Salary:             ${rm(line.gross)}`,
-    ``,
-    `DEDUCTIONS`,
-    `  EPF (Employee 11%):       ${rm(line.epf.ee)}`,
-    `  SOCSO (Employee):         ${rm(line.socso.ee)}`,
-    `  EIS (Employee):           ${rm(line.eis.ee)}`,
-    `  PCB (Income Tax):         ${rm(pcbVal)}`,
-    `  EPL Deduction:            ${rm(line.eplDeduction)}`,
-    `  ─────────────────────────`,
-    `  Total Deductions:         ${rm(totalDeductions)}`,
-    ``,
-    `NET PAY:                    ${rm(line.net)}`,
-    ``,
-    `EMPLOYER CONTRIBUTIONS (not deducted from pay)`,
-    `  EPF Employer:             ${rm(line.epf.er)}`,
-    `  SOCSO Employer:           ${rm(line.socso.er)}`,
-    `  EIS Employer:             ${rm(line.eis.er)}`,
-  ].join("\n");
+  // Salary components for EARNING section (non-zero only, except base)
+  const components: { label: string; amount: number }[] = [];
+  if (salary) {
+    components.push({ label: "Basic Salary", amount: Number(salary.base_salary) });
+    const incCarried = Number(salary.increment_carried);
+    const incCurrent = Number(salary.increment_current);
+    if (incCarried > 0) components.push({ label: "Increment (accumulated)", amount: incCarried });
+    if (incCurrent > 0) components.push({ label: "Current year increment", amount: incCurrent });
+    if (Number(salary.experience_bonus) > 0) components.push({ label: "Experience bonus", amount: Number(salary.experience_bonus) });
+    if (Number(salary.family_allowance) > 0) components.push({ label: "Family allowance", amount: Number(salary.family_allowance) });
+    if (Number(salary.stm_allowance) > 0) components.push({ label: "STM / Allowance", amount: Number(salary.stm_allowance) });
+  } else {
+    components.push({ label: "Basic Salary", amount: line.gross });
+  }
 
   const waText = [
-    `*SALARY SLIP — ${month} ${year}*`,
+    `*PAYSLIP — ${month} ${year}*`,
+    `Lutheran Church in Malaysia`,
     `Employee: ${emp.full_name} (${emp.emp_no})`,
-    `Gross: ${rm(line.gross)}`,
+    ``,
+    `Gross Pay: ${rm(line.gross)}`,
     `EPF: ${rm(line.epf.ee)} | SOCSO: ${rm(line.socso.ee)} | EIS: ${rm(line.eis.ee)} | PCB: ${rm(pcbVal)}`,
-    `Net Pay: *${rm(line.net)}*`,
+    `Total Deductions: ${rm(totalDeductions)}`,
+    `*Net Pay: ${rm(line.net)}*`,
   ].join("\n");
 
-  function shareWhatsApp() {
-    window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, "_blank");
-  }
+  const emailBody = [
+    `LUTHERAN CHURCH IN MALAYSIA`,
+    `PAYSLIP — ${month} ${year}`,
+    ``,
+    `Employee   : ${emp.full_name}`,
+    `NRIC       : ${emp.ic_no || "—"}`,
+    `Dept       : ${dept}`,
+    `Employee No: ${emp.emp_no}`,
+    `EPF No     : ${emp.epf_no || "—"}`,
+    `TIN (Tax)  : ${emp.tin || "—"}`,
+    ``,
+    `EARNING`,
+    ...components.map(c => `  ${c.label.padEnd(28)} ${n2(c.amount)}`),
+    `  ${"".padEnd(28, "─")}`,
+    `  GROSS PAY                    ${n2(line.gross)}`,
+    `  PCB (Monthly)                ${n2(pcbVal)}`,
+    ``,
+    `DEDUCTION`,
+    `  Employee EPF                 ${n2(line.epf.ee)}`,
+    `  Employee SOCSO               ${n2(line.socso.ee)}`,
+    `  Employee EIS                 ${n2(line.eis.ee)}`,
+    line.eplDeduction > 0 ? `  EPL Loan Deduction           ${n2(line.eplDeduction)}` : null,
+    `  ${"".padEnd(28, "─")}`,
+    `  TOTAL DEDUCTION              ${n2(totalDeductions)}`,
+    ``,
+    `  NET PAY                      ${n2(line.net)}`,
+    ``,
+    `EMPLOYER CONTRIBUTIONS (not deducted from pay)`,
+    `  EPF Employer  ${n2(line.epf.er)}  |  SOCSO Employer ${n2(line.socso.er)}  |  EIS Employer ${n2(line.eis.er)}`,
+  ].filter(l => l !== null).join("\n");
 
-  function shareEmail() {
-    window.open(`mailto:?subject=${encodeURIComponent(`Salary Slip ${month} ${year}`)}&body=${encodeURIComponent(plainText)}`, "_blank");
-  }
+  const tdC = "border border-stone-400 px-2 py-1 text-[12px]";
+  const tdR = `${tdC} text-right font-mono`;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print:bg-transparent print:inset-auto print:p-0">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl print:shadow-none print:rounded-none print:max-w-none print:w-auto">
-        {/* Modal header — hidden on print */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200 print:hidden">
-          <h2 className="text-base font-bold text-stone-800">Salary Slip — {month} {year}</h2>
-          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><X size={18} /></button>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 print:bg-transparent print:inset-auto print:p-0 print:block">
+      <div className="bg-white w-full max-w-3xl max-h-[96vh] overflow-y-auto shadow-2xl print:shadow-none print:max-w-none print:overflow-visible" style={{ fontFamily: "Arial, sans-serif" }}>
+
+        {/* Action bar — hidden on print */}
+        <div className="flex gap-2 px-4 py-3 border-b border-stone-200 print:hidden flex-wrap items-center">
+          <span className="text-sm font-semibold text-stone-700 mr-auto">Payslip — {month} {year}</span>
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 text-xs font-medium hover:bg-stone-50">
+            <Printer size={13} /> Print / Save PDF
+          </button>
+          <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, "_blank")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#25D366] text-white text-xs font-medium hover:opacity-90">
+            <Share2 size={13} /> WhatsApp
+          </button>
+          <button onClick={() => window.open(`mailto:?subject=${encodeURIComponent(`Payslip ${month} ${year} — ${emp.full_name}`)}&body=${encodeURIComponent(emailBody)}`, "_blank")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 text-xs font-medium hover:bg-stone-50">
+            <Share2 size={13} /> Email
+          </button>
+          <button onClick={onClose} className="px-3 py-1.5 border border-stone-200 text-stone-600 rounded-lg text-xs font-medium hover:bg-stone-50">Close</button>
         </div>
 
-        {/* Slip body */}
-        <div className="p-6 font-mono text-sm print:block">
-          <div className="text-center mb-4">
-            <div className="font-bold text-base">LCM BANGSAR LUTHERAN CHURCH</div>
-            <div className="font-bold">SALARY SLIP — {month} {year}</div>
-            <div className="text-stone-400">─────────────────────────────────────</div>
+        {/* ── PAYSLIP BODY ── */}
+        <div className="p-6 print:p-4">
+
+          {/* Title */}
+          <div className="text-center mb-3">
+            <div className="text-lg font-bold tracking-wide">LUTHERAN CHURCH IN MALAYSIA</div>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-4 mb-4 text-[13px]">
-            <div><span className="text-stone-500">Employee:</span> {emp.full_name}</div>
-            <div><span className="text-stone-500">Emp No:</span> {emp.emp_no}</div>
-            <div><span className="text-stone-500">Designation:</span> {emp.designation || "—"}</div>
-            <div><span className="text-stone-500">IC No:</span> {emp.ic_no || "—"}</div>
-          </div>
-
-          <div className="border-t border-stone-200 pt-3 mb-3">
-            <div className="font-bold text-stone-700 mb-1">EARNINGS</div>
-            <div className="flex justify-between"><span>Gross Salary</span><span>{rm(line.gross)}</span></div>
-          </div>
-
-          <div className="border-t border-stone-200 pt-3 mb-3">
-            <div className="font-bold text-stone-700 mb-1">DEDUCTIONS</div>
-            <div className="flex justify-between"><span>EPF (Employee 11%)</span><span>{rm(line.epf.ee)}</span></div>
-            <div className="flex justify-between"><span>SOCSO (Employee)</span><span>{rm(line.socso.ee)}</span></div>
-            <div className="flex justify-between"><span>EIS (Employee)</span><span>{rm(line.eis.ee)}</span></div>
-            <div className="flex justify-between"><span>PCB (Income Tax)</span><span>{rm(pcbVal)}</span></div>
-            <div className="flex justify-between"><span>EPL Deduction</span><span>{rm(line.eplDeduction)}</span></div>
-            <div className="border-t border-stone-200 mt-1 pt-1 flex justify-between font-semibold">
-              <span>Total Deductions</span><span>{rm(totalDeductions)}</span>
+          {/* Header info grid */}
+          <div className="flex gap-0 mb-0">
+            {/* Left: employee details */}
+            <table className="flex-1 border border-stone-400 text-[12px]" style={{ borderCollapse: "collapse" }}>
+              <tbody>
+                <tr><td className="border border-stone-400 px-2 py-0.5 font-bold w-24">Name</td><td className="border border-stone-400 px-2 py-0.5 font-bold">: {emp.full_name.toUpperCase()}</td></tr>
+                <tr><td className="border border-stone-400 px-2 py-0.5">NRIC</td><td className="border border-stone-400 px-2 py-0.5">: {emp.ic_no || "—"}</td></tr>
+                <tr><td className="border border-stone-400 px-2 py-0.5">DEPT</td><td className="border border-stone-400 px-2 py-0.5">: {dept.toUpperCase()}</td></tr>
+                <tr><td className="border border-stone-400 px-2 py-0.5">EMPLOYEE NO</td><td className="border border-stone-400 px-2 py-0.5">: {emp.emp_no}</td></tr>
+              </tbody>
+            </table>
+            {/* Right: statutory numbers + period */}
+            <div className="border border-stone-400 border-l-0 text-[12px] flex flex-col" style={{ minWidth: 200 }}>
+              <div className="border-b border-stone-400 px-3 py-1 flex flex-col items-center">
+                <span className="font-bold text-base">PAYSLIP</span>
+              </div>
+              <div className="border-b border-stone-400 px-3 py-1 text-center font-semibold">{month} {year}</div>
+              <div className="border-b border-stone-400 px-3 py-0.5 text-center text-[11px]">Monthly</div>
+              <div className="px-2 py-0.5 text-[11px]">SOCSO : {emp.ic_no || "—"}</div>
+              <div className="px-2 py-0.5 text-[11px]">EPF &nbsp;&nbsp; : {emp.epf_no || "—"}</div>
+              <div className="px-2 py-0.5 text-[11px]">TAX &nbsp;&nbsp; : {emp.tin || "—"}</div>
             </div>
           </div>
 
-          <div className="border-t-2 border-stone-800 pt-2 mb-4 flex justify-between font-bold text-base">
-            <span>NET PAY</span><span>{rm(line.net)}</span>
-          </div>
+          {/* Main two-column earnings / deductions table */}
+          <table className="w-full border border-stone-400 border-t-0 text-[12px]" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr className="bg-stone-100">
+                <th className={`${tdC} text-left w-[38%]`}>EARNING</th>
+                <th className={`${tdR} w-[12%]`}>RM</th>
+                <th className={`${tdC} text-left w-[38%]`}>DEDUCTION</th>
+                <th className={`${tdR} w-[12%]`}>RM</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Component rows — earning left, deduction right */}
+              {(() => {
+                const deductions = [
+                  { label: "Employee EPF", amount: line.epf.ee },
+                  { label: "Employee SOCSO", amount: line.socso.ee },
+                  { label: "Employee EIS", amount: line.eis.ee },
+                  ...(pcbVal > 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
+                  ...(line.eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: line.eplDeduction }] : []),
+                ];
+                const maxRows = Math.max(components.length, deductions.length);
+                const rows = [];
+                for (let i = 0; i < maxRows; i++) {
+                  const e = components[i];
+                  const d = deductions[i];
+                  rows.push(
+                    <tr key={i}>
+                      <td className={tdC}>{e?.label ?? ""}</td>
+                      <td className={tdR}>{e ? n2(e.amount) : ""}</td>
+                      <td className={tdC}>{d?.label ?? ""}</td>
+                      <td className={tdR}>{d ? n2(d.amount) : ""}</td>
+                    </tr>
+                  );
+                }
+                // Spacer row
+                rows.push(<tr key="spacer"><td className={tdC} style={{ height: 24 }}></td><td className={tdR}></td><td className={tdC}></td><td className={tdR}></td></tr>);
+                return rows;
+              })()}
+              {/* Gross pay / Total deduction row */}
+              <tr className="border-t-2 border-stone-500">
+                <td className={`${tdC} font-bold`}>GROSS PAY</td>
+                <td className={`${tdR} font-bold border-t-2 border-stone-500`} style={{ borderTop: "2px solid #44403c" }}>{n2(line.gross)}</td>
+                <td className={`${tdC} font-bold`}>TOTAL DEDUCTION</td>
+                <td className={`${tdR} font-bold`}>{n2(totalDeductions)}</td>
+              </tr>
+              <tr>
+                <td className={`${tdC} text-[11px] text-stone-500`}>PCB: Monthly: {n2(pcbVal)}</td>
+                <td className={tdR}></td>
+                <td className={tdC}></td>
+                <td className={tdR}></td>
+              </tr>
+              {/* Net pay */}
+              <tr>
+                <td className={tdC}></td>
+                <td className={tdR}></td>
+                <td className={`${tdC} font-bold text-right`}>Net Pay</td>
+                <td className={`${tdR} font-bold text-[14px]`}>{n2(line.net)}</td>
+              </tr>
+            </tbody>
+          </table>
 
-          <div className="border-t border-stone-200 pt-3 text-[12px] text-stone-500">
-            <div className="font-bold mb-1">EMPLOYER CONTRIBUTIONS (not deducted from pay)</div>
-            <div className="flex justify-between"><span>EPF Employer</span><span>{rm(line.epf.er)}</span></div>
-            <div className="flex justify-between"><span>SOCSO Employer</span><span>{rm(line.socso.er)}</span></div>
-            <div className="flex justify-between"><span>EIS Employer</span><span>{rm(line.eis.er)}</span></div>
-          </div>
-        </div>
+          {/* Bottom section: current month summary | deductions | church chop */}
+          <table className="w-full border border-stone-400 border-t-0 text-[11px]" style={{ borderCollapse: "collapse" }}>
+            <tbody>
+              <tr>
+                {/* Current month EE/ER/Total */}
+                <td className="border border-stone-400 px-2 py-1 align-top" style={{ width: "40%" }}>
+                  <div className="text-center font-semibold text-[10px] mb-1">{"<"}———————— CURRENT MONTH ————————{">"}</div>
+                  <table className="w-full text-[11px]" style={{ borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <td className="pr-1 w-20"></td>
+                        <td className="text-center font-semibold px-1">E.P.F</td>
+                        <td className="text-center font-semibold px-1">SOCSO</td>
+                        <td className="text-center font-semibold px-1">E.I.S</td>
+                        <td className="text-center font-semibold px-1">Tax</td>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="pr-1 font-semibold">EMPLOYEE :</td>
+                        <td className="text-right font-mono px-1">{n2(line.epf.ee)}</td>
+                        <td className="text-right font-mono px-1">{n2(line.socso.ee)}</td>
+                        <td className="text-right font-mono px-1">{n2(line.eis.ee)}</td>
+                        <td className="text-right font-mono px-1">{n2(pcbVal)}</td>
+                      </tr>
+                      <tr>
+                        <td className="pr-1 font-semibold">EMPLOYER :</td>
+                        <td className="text-right font-mono px-1">{n2(line.epf.er)}</td>
+                        <td className="text-right font-mono px-1">{n2(line.socso.er)}</td>
+                        <td className="text-right font-mono px-1">{n2(line.eis.er)}</td>
+                        <td className="px-1"></td>
+                      </tr>
+                      <tr className="border-t border-stone-300">
+                        <td className="pr-1 font-semibold">TOTAL :</td>
+                        <td className="text-right font-mono px-1">{n2(line.epf.ee + line.epf.er)}</td>
+                        <td className="text-right font-mono px-1">{n2(line.socso.ee + line.socso.er)}</td>
+                        <td className="text-right font-mono px-1">{n2(line.eis.ee + line.eis.er)}</td>
+                        <td className="px-1"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
 
-        {/* Action buttons — hidden on print */}
-        <div className="flex gap-2 px-5 py-4 border-t border-stone-200 print:hidden flex-wrap">
-          <button onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-stone-600 text-sm font-medium hover:bg-stone-50">
-            <Printer size={14} /> Print / Save PDF
-          </button>
-          <button onClick={shareWhatsApp}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#25D366] text-white text-sm font-medium hover:opacity-90">
-            <Share2 size={14} /> WhatsApp
-          </button>
-          <button onClick={shareEmail}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-200 text-stone-600 text-sm font-medium hover:bg-stone-50">
-            <Share2 size={14} /> Email
-          </button>
-          <button onClick={onClose} className="ml-auto px-4 py-2 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50">Close</button>
-        </div>
+                {/* EPL deduction */}
+                <td className="border border-stone-400 border-l-0 px-2 py-1 align-top text-center" style={{ width: "18%" }}>
+                  <div className="font-semibold text-[10px] mb-1">———DEDUCTION———</div>
+                  <div className="text-[10px] text-stone-500 mb-0.5">-Amt-</div>
+                  {line.eplDeduction > 0 ? (
+                    <><div className="text-[11px]">EPL</div><div className="font-mono text-right">{n2(line.eplDeduction)}</div></>
+                  ) : (
+                    <div className="text-stone-300 text-[10px]">—</div>
+                  )}
+                </td>
+
+                {/* Church chop */}
+                <td className="border border-stone-400 border-l-0 px-3 py-2 align-top" style={{ width: "42%" }}>
+                  <div className="text-center mb-1">
+                    {/* Blue stamp simulation */}
+                    <div style={{ color: "#1a4fa0", fontWeight: 700, fontSize: 11, letterSpacing: 1 }}>马来西亚基督教信义会</div>
+                    <div style={{ color: "#1a4fa0", fontWeight: 700, fontSize: 10, letterSpacing: 0.5 }}>LUTHERAN CHURCH IN MALAYSIA</div>
+                    <div style={{ color: "#1a4fa0", fontSize: 9 }}>Level 6, Luther Centre, No. 6, Jalan Utara,</div>
+                    <div style={{ color: "#1a4fa0", fontSize: 9 }}>46200 Petaling Jaya, Selangor.</div>
+                    <div style={{ color: "#1a4fa0", fontSize: 9 }}>Tel: 03-79565992 / 03-79560014</div>
+                    <div style={{ color: "#1a4fa0", fontSize: 9 }}>Fax: 03-79576953  Email: hq@lcm.org.my</div>
+                  </div>
+                  <div className="mt-3 text-[10px]">
+                    <div className="flex items-end gap-1 mb-2">
+                      <span className="font-semibold whitespace-nowrap">APPROVED BY</span>
+                      <div style={{ borderBottom: "1px solid #555", flex: 1, minWidth: 60 }} />
+                    </div>
+                    <div className="flex items-end gap-1">
+                      <span className="font-semibold whitespace-nowrap">RECEIVED BY</span>
+                      <div style={{ borderBottom: "1px solid #555", flex: 1, minWidth: 60 }} />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+        </div>{/* /payslip body */}
       </div>
     </div>
   );
