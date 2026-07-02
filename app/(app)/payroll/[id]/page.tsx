@@ -162,12 +162,35 @@ export default function PayrollEmployeePage() {
   const allLines = thirteenth ? [...monthLines, thirteenth] : monthLines;
   const sum = (pick: (l: CalcLine) => number) => allLines.reduce((s, l) => s + pick(l), 0);
 
+  // Unique custom item columns across the year, in first-appearance order
+  const customCols: { label: string; type: "allowance" | "deduction" }[] = [];
+  const _customSeen = new Set<string>();
+  for (let _m = 1; _m <= 13; _m++) {
+    for (const _ci of customItemsByMonth[_m] ?? []) {
+      if (!_customSeen.has(_ci.label)) { _customSeen.add(_ci.label); customCols.push({ label: _ci.label, type: _ci.type }); }
+    }
+  }
+
+  function customAmt(monthNum: number, col: { label: string }): number {
+    const found = (customItemsByMonth[monthNum] ?? []).find(i => i.label === col.label);
+    return found ? Number(found.amount) : 0;
+  }
+  function customColTotal(col: { label: string }): number {
+    return Array.from({ length: 13 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
+  }
+  function customColSubTotal(col: { label: string }): number {
+    return Array.from({ length: 12 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
+  }
+
   function exportCsv() {
-    const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SOCSO ER", "EIS EE", "EIS ER", "EPL", "Net", "Total LCM"];
-    const line = (label: string, l: CalcLine) => [label, l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction, l.net, l.totalLcmPayment];
-    const rows: (string | number)[][] = monthLines.map((l, i) => line(MONTHS[i], l));
-    if (thirteenth) rows.push(line("13th MTH", thirteenth));
-    rows.push(["ANNUAL", sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), sum(l => l.net), sum(l => l.totalLcmPayment)]);
+    const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
+    const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SOCSO ER", "EIS EE", "EIS ER", "EPL", ...customHead, "Net", "Total LCM"];
+    const mkRow = (label: string, l: CalcLine, monthNum: number) =>
+      [label, l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
+       ...customCols.map(c => customAmt(monthNum, c)), l.net, l.totalLcmPayment];
+    const rows: (string | number)[][] = monthLines.map((l, i) => mkRow(MONTHS[i], l, i + 1));
+    if (thirteenth) rows.push(mkRow("13th MTH", thirteenth, 13));
+    rows.push(["ANNUAL", sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
     const csv = [head, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -266,6 +289,12 @@ export default function PayrollEmployeePage() {
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EIS EE</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EIS ER</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
+                    {customCols.map(col => (
+                      <th key={col.label} className="border border-stone-200 px-1.5 py-1 text-right max-w-[90px]">
+                        <div className="truncate text-[11px]">{col.label}</div>
+                        <div className={`text-[9px] font-normal ${col.type === "allowance" ? "text-green-600" : "text-red-500"}`}>{col.type === "allowance" ? "+ allowance" : "− deduction"}</div>
+                      </th>
+                    ))}
                     <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Net</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Total LCM</th>
                     <th className="border border-stone-200 px-1 py-1 print:hidden w-14"></th>
@@ -290,6 +319,16 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.eis.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.eis.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
+                      {customCols.map(col => {
+                        const amt = customAmt(monthNum, col);
+                        return (
+                          <td key={col.label} className="border border-stone-200 px-1.5 py-1 text-right font-mono">
+                            {amt !== 0
+                              ? <span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{col.type === "allowance" ? "+" : "−"}{num(amt)}</span>
+                              : <span className="text-stone-200">—</span>}
+                          </td>
+                        );
+                      })}
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(l.net)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(l.totalLcmPayment)}</td>
                       <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
@@ -297,7 +336,7 @@ export default function PayrollEmployeePage() {
                           {canEdit && (
                             <button onClick={() => setEditingMonth(monthNum)} title="Add/edit custom items"
                               className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-semibold ${monthItems.length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
-                              {monthItems.length > 0 ? <><ListPlus size={10} />{monthItems.length}</> : <ListPlus size={11} />}
+                              <ListPlus size={11} />
                             </button>
                           )}
                           <button onClick={() => setSlipMonth(i)} title="Share salary slip"
@@ -321,6 +360,10 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
+                    {customCols.map(col => {
+                      const t = customColSubTotal(col);
+                      return <td key={col.label} className="border border-stone-200 px-1.5 py-1 text-right font-mono"><span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</span></td>;
+                    })}
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.net, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-[#4a6da7]">{num(monthLines.reduce((s, l) => s + l.totalLcmPayment, 0))}</td>
                     <td className="border border-stone-200 px-1 py-1 print:hidden"></td>
@@ -341,6 +384,16 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.eis.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.eis.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
+                      {customCols.map(col => {
+                        const amt = customAmt(13, col);
+                        return (
+                          <td key={col.label} className="border border-stone-200 px-1.5 py-1 text-right font-mono">
+                            {amt !== 0
+                              ? <span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{col.type === "allowance" ? "+" : "−"}{num(amt)}</span>
+                              : <span className="text-stone-200">—</span>}
+                          </td>
+                        );
+                      })}
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(thirteenth.net)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(thirteenth.totalLcmPayment)}</td>
                       <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
@@ -348,7 +401,7 @@ export default function PayrollEmployeePage() {
                           {canEdit && (
                             <button onClick={() => setEditingMonth(13)} title="Add/edit custom items"
                               className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-semibold ${(customItemsByMonth[13] ?? []).length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
-                              {(customItemsByMonth[13] ?? []).length > 0 ? <><ListPlus size={10} />{customItemsByMonth[13].length}</> : <ListPlus size={11} />}
+                              <ListPlus size={11} />
                             </button>
                           )}
                           <Share2 size={12} className="text-stone-200" />
@@ -356,7 +409,7 @@ export default function PayrollEmployeePage() {
                       </td>
                     </tr>
                   ) : (
-                    <tr><td colSpan={13} className="border border-stone-200 px-1.5 py-1 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
+                    <tr><td colSpan={13 + customCols.length} className="border border-stone-200 px-1.5 py-1 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
                   )}
                   {/* Annual total */}
                   <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7]">
@@ -370,6 +423,10 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
+                    {customCols.map(col => {
+                      const t = customColTotal(col);
+                      return <td key={col.label} className="border border-stone-200 px-1.5 py-1 text-right font-mono"><span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</span></td>;
+                    })}
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.net))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.totalLcmPayment))}</td>
                     <td className="border border-stone-200 px-1 py-1 print:hidden"></td>
