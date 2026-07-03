@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardBody } from "@/components/ui/card";
+import { SignaturePad } from "@/components/ui/signature-pad";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { CheckCircle, XCircle, AlertCircle, Building2, FileText } from "lucide-react";
 
@@ -31,6 +32,7 @@ export default function BamQueuePage() {
   const [actionPv, setActionPv] = useState<BAMPv | null>(null);
   const [actionType, setActionType] = useState<"APPROVE" | "REJECT" | null>(null);
   const [remarks, setRemarks] = useState("");
+  const [signatureData, setSignatureData] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [committee, setCommittee] = useState<{ email: string; full_name: string }[]>([]);
@@ -67,7 +69,7 @@ export default function BamQueuePage() {
 
     setPvs((data ?? []) as BAMPv[]);
 
-    // Current BAM Committee members (for the assignment panel)
+    // Committee members list (Finance Admin / BM can manage)
     const { data: members } = await supabase
       .from("user_roles").select("email,full_name").eq("role", "BAM_COMMITTEE").order("email");
     setCommittee((members as { email: string; full_name: string }[]) ?? []);
@@ -95,23 +97,50 @@ export default function BamQueuePage() {
 
   const isBuildingManager = userRole === "BUILDING_MANAGER";
   const isBamCommittee = userRole === "BAM_COMMITTEE";
+
   const isPending = (p: BAMPv) =>
     (isBamCommittee && p.status === "BAM_COMMITTEE_REVIEW") ||
     (isBuildingManager && p.status === "BAM_REVIEW") ||
     (isFinanceAdmin && p.status === "FINANCE_REVIEW");
+
   const pendingPvs = pvs.filter(isPending);
   const otherPvs = pvs.filter(p => !isPending(p));
+
+  // BAM Committee approval requires a signature; BM/Finance Admin do not
+  const needsSignature = isBamCommittee && actionType === "APPROVE" && actionPv?.status === "BAM_COMMITTEE_REVIEW";
+
+  function openAction(pv: BAMPv, type: "APPROVE" | "REJECT") {
+    setActionPv(pv);
+    setActionType(type);
+    setRemarks("");
+    setSignatureData("");
+  }
+
+  function closeAction() {
+    setActionPv(null);
+    setActionType(null);
+    setRemarks("");
+    setSignatureData("");
+  }
 
   async function submitAction() {
     if (!actionPv || !actionType) return;
     if (actionType === "REJECT" && !remarks.trim()) {
       showToast("Please enter a reason for rejection", false); return;
     }
+    if (needsSignature && !signatureData) {
+      showToast("Please sign before approving", false); return;
+    }
     setSubmitting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const endpoint = isFinanceAdmin ? "admin-action" : "bam-action";
-      const body: Record<string, unknown> = { pv_id: actionPv.id, action: isFinanceAdmin ? "REVIEW" : actionType, remarks };
+      const body: Record<string, unknown> = {
+        pv_id: actionPv.id,
+        action: isFinanceAdmin ? "REVIEW" : actionType,
+        remarks,
+        ...(signatureData ? { signature_data: signatureData } : {}),
+      };
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
@@ -121,7 +150,7 @@ export default function BamQueuePage() {
       if (!res.ok) throw new Error(result.error ?? "Action failed");
       const approveMsg = isFinanceAdmin ? "BAM PV sent to General Manager" : "BAM PV approved — sent to Finance Executive";
       showToast(actionType === "APPROVE" ? approveMsg : "BAM PV rejected");
-      setActionPv(null); setActionType(null); setRemarks("");
+      closeAction();
       load();
     } catch (err: unknown) {
       showToast((err as Error).message, false);
@@ -179,12 +208,19 @@ export default function BamQueuePage() {
       {(isBuildingManager || isFinanceAdmin) && (
         <div className="bg-white border border-stone-200 rounded-xl p-4">
           <h2 className="text-sm font-bold text-stone-700 mb-1">BAM Committee Members</h2>
-          <p className="text-xs text-stone-400 mb-3">Assign who verifies BAM PVs created by the Building/Event Manager. Use the person&apos;s Google account email.</p>
+          <p className="text-xs text-stone-400 mb-3">
+            Assign who verifies BAM PVs. Non-LCM emails use magic link login.
+          </p>
           {committee.length > 0 ? (
             <div className="space-y-1.5 mb-3">
               {committee.map(m => (
                 <div key={m.email} className="flex items-center gap-2 text-sm">
-                  <span className="flex-1 text-stone-700">{m.full_name && m.full_name !== m.email ? `${m.full_name} · ` : ""}{m.email}</span>
+                  <span className="flex-1 text-stone-700">
+                    {m.full_name && m.full_name !== m.email ? `${m.full_name} · ` : ""}{m.email}
+                    {!m.email.endsWith("@lcm.org.my") && (
+                      <span className="ml-1.5 text-[10px] text-amber-600 font-medium">(magic link)</span>
+                    )}
+                  </span>
                   <button onClick={() => assignCommittee("remove", m.email)} disabled={assigning}
                     className="text-xs text-red-600 hover:underline disabled:opacity-50">Remove</button>
                 </div>
@@ -195,7 +231,7 @@ export default function BamQueuePage() {
           )}
           <div className="flex items-center gap-2">
             <input type="email" value={newCommitteeEmail} onChange={e => setNewCommitteeEmail(e.target.value)}
-              placeholder="name@gmail.com"
+              placeholder="name@lcm.org.my or personal email"
               className="flex-1 border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
             <button onClick={() => assignCommittee("add", newCommitteeEmail.trim())} disabled={assigning || !newCommitteeEmail.trim()}
               className="bg-[#4a6da7] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#3d5c96] disabled:opacity-50 transition-colors">
@@ -205,8 +241,8 @@ export default function BamQueuePage() {
         </div>
       )}
 
-      {/* Pending action */}
-      {(isBuildingManager || isFinanceAdmin) && pendingPvs.length > 0 && (
+      {/* Pending action queue */}
+      {(isBuildingManager || isFinanceAdmin || isBamCommittee) && pendingPvs.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle size={16} className="text-orange-500" />
@@ -232,16 +268,16 @@ export default function BamQueuePage() {
                       <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount)}</div>
                       <div className="flex gap-2 mt-2">
                         <button
-                          onClick={() => { setActionPv(pv); setActionType("REJECT"); setRemarks(""); }}
+                          onClick={() => openAction(pv, "REJECT")}
                           className="flex items-center gap-1 text-xs text-red-600 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
                         >
                           <XCircle size={12} /> Reject
                         </button>
                         <button
-                          onClick={() => { setActionPv(pv); setActionType("APPROVE"); setRemarks(""); }}
+                          onClick={() => openAction(pv, "APPROVE")}
                           className="flex items-center gap-1 text-xs text-green-700 border border-green-200 px-2 py-1 rounded-lg hover:bg-green-50 transition-colors"
                         >
-                          <CheckCircle size={12} /> Approve
+                          <CheckCircle size={12} /> {isBamCommittee ? "Sign & Approve" : "Approve"}
                         </button>
                       </div>
                     </div>
@@ -253,7 +289,7 @@ export default function BamQueuePage() {
         </div>
       )}
 
-      {(isBuildingManager || isFinanceAdmin) && pendingPvs.length === 0 && (
+      {(isBuildingManager || isFinanceAdmin || isBamCommittee) && pendingPvs.length === 0 && (
         <Card>
           <CardBody className="py-8 text-center text-stone-400">
             <CheckCircle size={32} className="mx-auto mb-2 text-green-400" />
@@ -295,15 +331,26 @@ export default function BamQueuePage() {
       {/* Action modal */}
       {actionPv && actionType && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => { setActionPv(null); setActionType(null); }} />
-          <div className="relative w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-5 space-y-4">
+          <div className="absolute inset-0 bg-black/40" onClick={closeAction} />
+          <div className="relative w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-base font-bold text-stone-800">
-              {actionType === "APPROVE" ? "Approve" : "Reject"} BAM PV
+              {actionType === "APPROVE" ? (isBamCommittee ? "Sign & Approve" : "Approve") : "Reject"} BAM PV
             </h3>
             <div className="bg-stone-50 rounded-xl p-3 text-sm">
               <div className="font-semibold text-stone-800">{actionPv.pv_no} — {actionPv.payee_name}</div>
               <div className="text-stone-500">{formatCurrency(actionPv.amount)} · {actionPv.purpose}</div>
             </div>
+
+            {/* Signature pad — BAM Committee approving a BAM_COMMITTEE_REVIEW PV */}
+            {needsSignature && (
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 uppercase tracking-wide mb-1.5">
+                  Your Signature (Verified by — BAM Committee) *
+                </label>
+                <SignaturePad value={signatureData} onChange={setSignatureData} />
+              </div>
+            )}
+
             {actionType === "REJECT" && (
               <div>
                 <label className="block text-xs font-semibold text-stone-600 uppercase tracking-wide mb-1.5">
@@ -318,28 +365,36 @@ export default function BamQueuePage() {
                 />
               </div>
             )}
-            {actionType === "APPROVE" && (
+
+            {actionType === "APPROVE" && !needsSignature && (
               <p className="text-sm text-stone-500">
                 {isFinanceAdmin
                   ? "Approving will send this BAM PV to the General Manager for final approval."
                   : "Approving will send this BAM PV to the Finance Executive for finance review."}
               </p>
             )}
+
+            {actionType === "APPROVE" && needsSignature && (
+              <p className="text-sm text-stone-500">
+                Your signature will appear on the PV under &quot;Verified by (BAM Committee)&quot; and the PV will be sent to the Finance Executive.
+              </p>
+            )}
+
             <div className="flex gap-3">
               <button
-                onClick={() => { setActionPv(null); setActionType(null); }}
+                onClick={closeAction}
                 className="flex-1 py-2.5 rounded-xl border border-stone-200 text-sm text-stone-600 hover:bg-stone-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={submitAction}
-                disabled={submitting}
+                disabled={submitting || (needsSignature && !signatureData)}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 ${
                   actionType === "APPROVE" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"
                 }`}
               >
-                {submitting ? "Processing…" : actionType === "APPROVE" ? "Approve" : "Reject"}
+                {submitting ? "Processing…" : actionType === "APPROVE" ? (isBamCommittee ? "Sign & Approve" : "Approve") : "Reject"}
               </button>
             </div>
           </div>
