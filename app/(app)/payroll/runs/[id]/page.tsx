@@ -432,6 +432,31 @@ export default function PayrollRunDetailPage() {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function emailPayslip(opts: {
+  to: string; name: string; monthLabel: string; year: number;
+  pdfBlob: Blob; fileName: string;
+}): Promise<void> {
+  const pdfBase64 = await blobToBase64(opts.pdfBlob);
+  const res = await fetch("/api/send-payslip", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to: opts.to, name: opts.name, monthLabel: opts.monthLabel, year: opts.year, pdfBase64, fileName: opts.fileName }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to send email");
+  }
+}
+
 function fmtWaPhone(p: string): string {
   const d = p.replace(/\D/g, "");
   return d.startsWith("60") ? d : d.startsWith("0") ? "6" + d : "60" + d;
@@ -460,6 +485,8 @@ function SendPayslipModal({ run, rows, onClose }: {
   const [sending, setSending] = useState<string | null>(null);
   const [sentMap, setSentMap] = useState<Record<string, { email?: boolean; wa?: boolean }>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [sendingAll, setSendingAll] = useState(false);
+  const [allProgress, setAllProgress] = useState(0);
   const monthLabel = MONTH_LABELS[run.month];
 
   function effectiveMethod(row: PayslipRow): SendMethod | null {
@@ -526,11 +553,7 @@ function SendPayslipModal({ run, rows, onClose }: {
         setTimeout(() => URL.revokeObjectURL(url), 1500);
 
         if (m === "email" || m === "both") {
-          const subj = encodeURIComponent(`Your Salary Slip — ${monthLabel} ${run.year}`);
-          const body = encodeURIComponent(
-            `Dear ${row.emp.full_name},\n\nPlease find your salary slip for ${monthLabel} ${run.year} attached.\n\nRegards,\nLutheran Church in Malaysia Finance Office`
-          );
-          window.location.href = `mailto:${row.emp.email}?subject=${subj}&body=${body}`;
+          await emailPayslip({ to: row.emp.email, name: row.emp.full_name, monthLabel, year: run.year, pdfBlob: blob, fileName });
           result.email = true;
         }
 
@@ -553,6 +576,33 @@ function SendPayslipModal({ run, rows, onClose }: {
     } finally {
       setSending(null);
     }
+  }
+
+  async function sendAllEmails() {
+    const emailRows = rows.filter(r => r.emp.email);
+    if (!emailRows.length) return;
+    setSendingAll(true);
+    setAllProgress(0);
+    const { pdf } = await import("@react-pdf/renderer");
+    for (let i = 0; i < emailRows.length; i++) {
+      const row = emailRows[i];
+      try {
+        const blob = await pdf(
+          <PayslipPDF emp={row.emp} monthLabel={monthLabel} year={run.year}
+            salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
+            epfEe={row.epfEe} epfEr={row.epfEr} socsoEe={row.socsoEe} socsoEr={row.socsoEr}
+            eisEe={row.eisEe} eisEr={row.eisEr} eplDeduction={row.eplDeduction} net={row.net}
+            customItems={row.customItems} />
+        ).toBlob();
+        const fileName = `Payslip_${row.emp.full_name.replace(/\s+/g, "_")}_${monthLabel}_${run.year}.pdf`;
+        await emailPayslip({ to: row.emp.email, name: row.emp.full_name, monthLabel, year: run.year, pdfBlob: blob, fileName });
+        setSentMap(s => ({ ...s, [row.emp.id]: { ...s[row.emp.id], email: true } }));
+      } catch (e) {
+        setErrors(prev => ({ ...prev, [row.emp.id]: String(e) }));
+      }
+      setAllProgress(i + 1);
+    }
+    setSendingAll(false);
   }
 
   const methodBtn = (m: SendMethod, label: string) => (
@@ -619,11 +669,41 @@ function SendPayslipModal({ run, rows, onClose }: {
           })}
         </div>
 
-        <div className="px-5 py-3 border-t border-stone-100 flex justify-between items-center gap-3">
-          <p className="text-[10px] text-stone-400 leading-relaxed">
-            On mobile, the native share sheet opens — tap WhatsApp or Email to send. On desktop, the PDF downloads automatically, then WhatsApp opens directly to that contact&apos;s chat (no searching needed) — attach the downloaded PDF and tap Send.
-          </p>
-          <button onClick={onClose} className="shrink-0 px-4 py-1.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50">Close</button>
+        <div className="px-5 py-3 border-t border-stone-100 space-y-2">
+          {/* Send All Emails — visible when email is selected and there are email recipients */}
+          {(method === "email" || method === "both") && (() => {
+            const emailRows = rows.filter(r => r.emp.email);
+            const sentCount = emailRows.filter(r => sentMap[r.emp.id]?.email).length;
+            if (!emailRows.length) return null;
+            return (
+              <div className="flex items-center gap-3">
+                {sendingAll ? (
+                  <div className="flex-1">
+                    <div className="flex justify-between text-[10px] text-stone-500 mb-1">
+                      <span>Sending emails…</span>
+                      <span>{allProgress} / {emailRows.length}</span>
+                    </div>
+                    <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${(allProgress / emailRows.length) * 100}%` }} />
+                    </div>
+                  </div>
+                ) : sentCount === emailRows.length && sentCount > 0 ? (
+                  <p className="flex-1 text-[10px] text-green-600 font-medium">✓ All {sentCount} payslips emailed successfully.</p>
+                ) : (
+                  <button onClick={sendAllEmails} disabled={!!sending}
+                    className="flex-1 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                    Send All Emails ({emailRows.length} recipient{emailRows.length !== 1 ? "s" : ""})
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+          <div className="flex justify-between items-center gap-3">
+            <p className="text-[10px] text-stone-400 leading-relaxed">
+              Email sends the PDF directly. WhatsApp opens that contact&apos;s chat — attach the downloaded PDF and tap Send.
+            </p>
+            <button onClick={onClose} className="shrink-0 px-4 py-1.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50">Close</button>
+          </div>
         </div>
       </div>
     </div>
