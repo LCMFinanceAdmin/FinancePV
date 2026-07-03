@@ -27,14 +27,18 @@ const s = StyleSheet.create({
   empTable:   { flex: 1, borderWidth: BDR, borderColor: "#78716c" },
   empRow:     { flexDirection: "row", borderBottomWidth: BDR, borderColor: "#78716c" },
   empRowLast: { flexDirection: "row" },
-  empLbl:     { width: 72, padding: "2 4", fontFamily: "Helvetica-Bold", borderRightWidth: BDR, borderColor: "#78716c", fontSize: 8 },
-  empVal:     { flex: 1, padding: "2 4", fontSize: 8 },
+  // 4-column header: label | main value | statutory label | statutory value
+  hC1: { width: 78, padding: "2 4", fontFamily: "Helvetica-Bold", borderRightWidth: BDR, borderColor: "#78716c", fontSize: 8 },
+  hC2: { width: 135, padding: "2 4", fontSize: 8, borderRightWidth: BDR, borderColor: "#78716c" },
+  hC3: { width: 54, padding: "2 4", fontFamily: "Helvetica-Bold", borderRightWidth: BDR, borderColor: "#78716c", fontSize: 8 },
+  hC4: { flex: 1, padding: "2 4", fontSize: 8 },
+  hNameVal: { flex: 1, padding: "2 4", fontFamily: "Helvetica-Bold", fontSize: 8 },
 
-  slipBox:   { width: 155, borderWidth: BDR, borderColor: "#78716c", borderLeftWidth: 0 },
+  // PAYSLIP box — narrower, 3 items only
+  slipBox:   { width: 120, borderWidth: BDR, borderColor: "#78716c", borderLeftWidth: 0 },
   slipTitle: { borderBottomWidth: BDR, borderColor: "#78716c", padding: "3 4", textAlign: "center", fontFamily: "Helvetica-Bold", fontSize: 11 },
   slipPer:   { borderBottomWidth: BDR, borderColor: "#78716c", padding: "2 4", textAlign: "center", fontFamily: "Helvetica-Bold", fontSize: 9 },
-  slipSub:   { borderBottomWidth: BDR, borderColor: "#78716c", padding: "2 4", textAlign: "center", fontSize: 8 },
-  slipLine:  { padding: "1.5 4", fontSize: 8 },
+  slipSub:   { padding: "2 4", textAlign: "center", fontSize: 8 },
 
   // ── Main earn / deduct table ─────────────────────────────────────────────────
   mainTable: { borderWidth: BDR, borderColor: "#78716c", borderTopWidth: 0, marginBottom: 0 },
@@ -153,33 +157,41 @@ export function PayslipPDF({
         {/* Title */}
         <Text style={s.orgTitle}>LUTHERAN CHURCH IN MALAYSIA</Text>
 
-        {/* Header row: employee info | PAYSLIP box */}
+        {/* Header: 4-col employee table | narrow PAYSLIP box */}
         <View style={s.headerRow}>
           <View style={s.empTable}>
+            {/* Row 1: Name (value spans full width) */}
             <View style={s.empRow}>
-              <Text style={s.empLbl}>Name</Text>
-              <Text style={s.empVal}>: {emp.full_name.toUpperCase()}</Text>
+              <Text style={s.hC1}>Name</Text>
+              <Text style={s.hNameVal}>: {emp.full_name.toUpperCase()}</Text>
             </View>
+            {/* Row 2: NRIC | SOCSO */}
             <View style={s.empRow}>
-              <Text style={s.empLbl}>NRIC</Text>
-              <Text style={s.empVal}>: {emp.ic_no || "—"}</Text>
+              <Text style={s.hC1}>NRIC</Text>
+              <Text style={s.hC2}>: {emp.ic_no || "—"}</Text>
+              <Text style={s.hC3}>SOCSO :</Text>
+              <Text style={s.hC4}>{emp.ic_no || "—"}</Text>
             </View>
+            {/* Row 3: DEPT | EPF */}
             <View style={s.empRow}>
-              <Text style={s.empLbl}>DEPT</Text>
-              <Text style={s.empVal}>: {dept}</Text>
+              <Text style={s.hC1}>DEPT</Text>
+              <Text style={s.hC2}>: {dept}</Text>
+              <Text style={s.hC3}>EPF :</Text>
+              <Text style={s.hC4}>{emp.epf_no || "—"}</Text>
             </View>
+            {/* Row 4: EMPLOYEE NO | TAX */}
             <View style={s.empRowLast}>
-              <Text style={s.empLbl}>EMPLOYEE NO</Text>
-              <Text style={s.empVal}>: {emp.emp_no}</Text>
+              <Text style={s.hC1}>EMPLOYEE NO</Text>
+              <Text style={s.hC2}>: {emp.emp_no}</Text>
+              <Text style={s.hC3}>TAX :</Text>
+              <Text style={s.hC4}>{emp.tin || "—"}</Text>
             </View>
           </View>
+          {/* PAYSLIP box — 3 rows only */}
           <View style={s.slipBox}>
             <Text style={s.slipTitle}>PAYSLIP</Text>
             <Text style={s.slipPer}>{monthLabel.toUpperCase()} {year}</Text>
             <Text style={s.slipSub}>Monthly</Text>
-            <Text style={s.slipLine}>SOCSO : {emp.ic_no || "—"}</Text>
-            <Text style={s.slipLine}>EPF     : {emp.epf_no || "—"}</Text>
-            <Text style={s.slipLine}>TAX     : {emp.tin || "—"}</Text>
           </View>
         </View>
 
