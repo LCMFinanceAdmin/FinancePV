@@ -14,9 +14,8 @@ Deno.serve(async (req) => {
     const profile = await getProfileByEmail(db, user.email!);
     const role = profile?.role;
 
-    const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role);
-    const allowed = ["BUILDING_MANAGER", "BAM_COMMITTEE", "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
-    if (!allowed.includes(role)) return json({ error: "Not authorized for BAM actions" }, 403);
+    if (role !== "BUILDING_MANAGER" && role !== "BAM_COMMITTEE")
+      return json({ error: "Building Manager or BAM Committee only" }, 403);
 
     const { pv_id, action, remarks, signature_data } = await req.json();
     if (!["APPROVE", "REJECT"].includes(action)) return json({ error: "Invalid action" }, 400);
@@ -29,10 +28,10 @@ Deno.serve(async (req) => {
     const isBmStage = pv.status === "BAM_REVIEW";
     const isCommitteeStage = pv.status === "BAM_COMMITTEE_REVIEW";
 
-    if (isBmStage && role !== "BUILDING_MANAGER" && !isFinanceAdmin)
+    if (isBmStage && role !== "BUILDING_MANAGER")
       return json({ error: "Only the Building Manager can verify this PV" }, 403);
-    if (isCommitteeStage && role !== "BAM_COMMITTEE" && !isFinanceAdmin)
-      return json({ error: "Only the BAM Committee (or Finance Admin) can verify this PV" }, 403);
+    if (isCommitteeStage && role !== "BAM_COMMITTEE")
+      return json({ error: "Only the BAM Committee can verify this PV" }, 403);
     if (!isBmStage && !isCommitteeStage)
       return json({ error: "BAM PV is not awaiting your review" }, 400);
 
