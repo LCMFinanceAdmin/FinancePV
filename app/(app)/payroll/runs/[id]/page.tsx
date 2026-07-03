@@ -505,13 +505,20 @@ function SendPayslipModal({ run, rows, onClose }: {
       const file = new File([blob], fileName, { type: "application/pdf" });
       const result: { email?: boolean; wa?: boolean } = {};
 
-      if (navigator.canShare?.({ files: [file] })) {
-        // Mobile — native share sheet handles both Email and WhatsApp.
+      // Use the native share sheet only on real touch/mobile devices.
+      // navigator.canShare() returns true on Windows 11 too, which gives an
+      // unhelpful OS share dialog — so we check for touch capability instead.
+      const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+
+      if (isTouchDevice && navigator.canShare?.({ files: [file] })) {
+        // Mobile — native share sheet lets the user pick WhatsApp, Email, etc.
+        // The employee's contact appears at the top automatically.
         await navigator.share({ files: [file], title: `Payslip — ${monthLabel} ${run.year}` });
         result.email = m === "email" || m === "both";
         result.wa = m === "whatsapp" || m === "both";
       } else {
         // Desktop — download the PDF, then open each app with the contact pre-filled.
+        // For WhatsApp this navigates directly to that contact's chat (no contact search needed).
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url; a.download = fileName;
@@ -523,7 +530,6 @@ function SendPayslipModal({ run, rows, onClose }: {
           const body = encodeURIComponent(
             `Dear ${row.emp.full_name},\n\nPlease find your salary slip for ${monthLabel} ${run.year} attached.\n\nRegards,\nLutheran Church in Malaysia Finance Office`
           );
-          // Open the email client with the employee's address pre-filled.
           window.location.href = `mailto:${row.emp.email}?subject=${subj}&body=${body}`;
           result.email = true;
         }
@@ -531,7 +537,8 @@ function SendPayslipModal({ run, rows, onClose }: {
         if (m === "whatsapp" || m === "both") {
           const phone = row.emp.phone_no ? fmtWaPhone(row.emp.phone_no) : "";
           if (phone) {
-            // Delay slightly so the email client opens first when sending both.
+            // Opens WhatsApp Web / app with this exact contact pre-selected.
+            // Slight delay when sending both so the email client opens first.
             setTimeout(() => window.open(`https://wa.me/${phone}`, "_blank"), m === "both" ? 900 : 200);
           }
           result.wa = true;
