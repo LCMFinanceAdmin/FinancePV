@@ -1,6 +1,15 @@
 "use client";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Font, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary } from "@/lib/types";
+
+// Noto Sans SC supports Simplified Chinese (马来西亚基督教信义会 etc.)
+Font.register({
+  family: "NotoSansSC",
+  fonts: [
+    { src: "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2" },
+    { src: "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-700-normal.woff2", fontWeight: "bold" },
+  ],
+});
 
 function n(v: number) { return v.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -74,6 +83,7 @@ const s = StyleSheet.create({
   // Panel 3: church stamp + signatures
   p3: { flex: 42, padding: "4 6" },
   p3Blue: { color: BLUE, textAlign: "center" },
+  p3Chinese: { color: BLUE, fontSize: 11, fontFamily: "NotoSansSC", fontWeight: "bold", letterSpacing: 1, marginBottom: 2, textAlign: "center" },
   p3Name: { color: BLUE, fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 0.5, marginBottom: 1, textAlign: "center" },
   p3Addr: { color: BLUE, fontSize: 7, textAlign: "center", marginBottom: 1 },
   p3SigArea: { marginTop: 6 },
@@ -277,6 +287,7 @@ export function PayslipPDF({
 
           {/* Panel 3: Church stamp + signatures */}
           <View style={s.p3}>
+            <Text style={s.p3Chinese}>马来西亚基督教信义会</Text>
             <Text style={s.p3Name}>LUTHERAN CHURCH IN MALAYSIA</Text>
             <Text style={s.p3Addr}>Level 6, Luther Centre, No. 6, Jalan Utara,</Text>
             <Text style={s.p3Addr}>46200 Petaling Jaya, Selangor.</Text>
