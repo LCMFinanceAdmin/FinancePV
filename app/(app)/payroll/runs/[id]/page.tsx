@@ -451,39 +451,25 @@ interface PayslipRow {
 
 type SendMethod = "email" | "whatsapp" | "both";
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
 function SendPayslipModal({ run, rows, onClose }: {
   run: PayrollRun;
   rows: PayslipRow[];
   onClose: () => void;
 }) {
-  const supabase = createClient();
   const [method, setMethod] = useState<SendMethod>("both");
   const [sending, setSending] = useState<string | null>(null);
   const [sentMap, setSentMap] = useState<Record<string, { email?: boolean; wa?: boolean }>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const monthLabel = MONTH_LABELS[run.month];
 
-  const hasEmail = (row: PayslipRow) => !!row.emp.email;
-  const hasPhone = (row: PayslipRow) => !!row.emp.phone_no;
-
   function effectiveMethod(row: PayslipRow): SendMethod | null {
     const wantEmail = method === "email" || method === "both";
     const wantWa = method === "whatsapp" || method === "both";
-    const canEmail = hasEmail(row);
-    const canWa = hasPhone(row);
+    const canEmail = !!row.emp.email;
+    const canWa = !!row.emp.phone_no;
     if (wantEmail && wantWa && canEmail && canWa) return "both";
     if (wantEmail && canEmail) return "email";
     if (wantWa && canWa) return "whatsapp";
-    if (wantEmail && !canEmail && canWa) return "whatsapp"; // fallback
     return null;
   }
 
@@ -498,7 +484,7 @@ function SendPayslipModal({ run, rows, onClose }: {
 
   async function sendOne(row: PayslipRow) {
     setSending(row.emp.id);
-    setErrors(e => { const n = {...e}; delete n[row.emp.id]; return n; });
+    setErrors(e => { const n = { ...e }; delete n[row.emp.id]; return n; });
     const m = effectiveMethod(row);
     if (!m) { setSending(null); return; }
 
@@ -519,30 +505,37 @@ function SendPayslipModal({ run, rows, onClose }: {
       const file = new File([blob], fileName, { type: "application/pdf" });
       const result: { email?: boolean; wa?: boolean } = {};
 
-      // ── WhatsApp ──
-      if (m === "whatsapp" || m === "both") {
-        if (navigator.canShare?.({ files: [file] })) {
-          await navigator.share({ files: [file], title: `Payslip — ${monthLabel} ${run.year}` });
-        } else {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url; a.download = fileName;
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-          const phone = row.emp.phone_no ? fmtWaPhone(row.emp.phone_no) : "";
-          if (phone) setTimeout(() => window.open(`https://wa.me/${phone}`, "_blank"), 600);
-        }
-        result.wa = true;
-      }
+      if (navigator.canShare?.({ files: [file] })) {
+        // Mobile — native share sheet handles both Email and WhatsApp.
+        await navigator.share({ files: [file], title: `Payslip — ${monthLabel} ${run.year}` });
+        result.email = m === "email" || m === "both";
+        result.wa = m === "whatsapp" || m === "both";
+      } else {
+        // Desktop — download the PDF, then open each app with the contact pre-filled.
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
 
-      // ── Email ──
-      if ((m === "email" || m === "both") && row.emp.email) {
-        const pdfBase64 = await blobToBase64(blob);
-        const { error } = await supabase.functions.invoke("send-payslip-email", {
-          body: { to: row.emp.email, name: row.emp.full_name, monthLabel, year: run.year, pdfBase64, fileName },
-        });
-        if (error) throw new Error(error.message ?? "Email send failed");
-        result.email = true;
+        if (m === "email" || m === "both") {
+          const subj = encodeURIComponent(`Your Salary Slip — ${monthLabel} ${run.year}`);
+          const body = encodeURIComponent(
+            `Dear ${row.emp.full_name},\n\nPlease find your salary slip for ${monthLabel} ${run.year} attached.\n\nRegards,\nLutheran Church in Malaysia Finance Office`
+          );
+          // Open the email client with the employee's address pre-filled.
+          window.location.href = `mailto:${row.emp.email}?subject=${subj}&body=${body}`;
+          result.email = true;
+        }
+
+        if (m === "whatsapp" || m === "both") {
+          const phone = row.emp.phone_no ? fmtWaPhone(row.emp.phone_no) : "";
+          if (phone) {
+            // Delay slightly so the email client opens first when sending both.
+            setTimeout(() => window.open(`https://wa.me/${phone}`, "_blank"), m === "both" ? 900 : 200);
+          }
+          result.wa = true;
+        }
       }
 
       setSentMap(s => ({ ...s, [row.emp.id]: result }));
@@ -621,7 +614,7 @@ function SendPayslipModal({ run, rows, onClose }: {
 
         <div className="px-5 py-3 border-t border-stone-100 flex justify-between items-center gap-3">
           <p className="text-[10px] text-stone-400 leading-relaxed">
-            Email sends the PDF directly to the employee&apos;s inbox. WhatsApp on desktop downloads the PDF then opens the chat — attach it manually.
+            On mobile, the share sheet opens — tap Email or WhatsApp to send the PDF. On desktop, the PDF downloads then your email client / WhatsApp opens with the contact pre-filled — attach the PDF and send.
           </p>
           <button onClick={onClose} className="shrink-0 px-4 py-1.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50">Close</button>
         </div>
