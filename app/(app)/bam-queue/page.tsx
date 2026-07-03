@@ -96,11 +96,10 @@ export default function BamQueuePage() {
   const isBuildingManager = userRole === "BUILDING_MANAGER";
   const isBamCommittee = userRole === "BAM_COMMITTEE";
 
-  // Finance Admin can action both FINANCE_REVIEW and BAM_COMMITTEE_REVIEW (for testing / override)
   const isPending = (p: BAMPv) =>
     (isBamCommittee && p.status === "BAM_COMMITTEE_REVIEW") ||
     (isBuildingManager && p.status === "BAM_REVIEW") ||
-    (isFinanceAdmin && (p.status === "FINANCE_REVIEW" || p.status === "BAM_COMMITTEE_REVIEW"));
+    (isFinanceAdmin && p.status === "FINANCE_REVIEW");
 
   const pendingPvs = pvs.filter(isPending);
   const otherPvs = pvs.filter(p => !isPending(p));
@@ -114,11 +113,8 @@ export default function BamQueuePage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
-      // Finance Admin approving a FINANCE_REVIEW PV → admin-action (sends to GM)
-      // Anyone approving a BAM_COMMITTEE_REVIEW PV → bam-action (sends to Finance)
-      const isAdminFinanceReview = isFinanceAdmin && actionPv.status === "FINANCE_REVIEW";
-      const endpoint = isAdminFinanceReview ? "admin-action" : "bam-action";
-      const action = isAdminFinanceReview ? "REVIEW" : actionType;
+      const endpoint = isFinanceAdmin ? "admin-action" : "bam-action";
+      const action = isFinanceAdmin ? "REVIEW" : actionType;
 
       const body: Record<string, unknown> = { pv_id: actionPv.id, action, remarks };
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${endpoint}`, {
@@ -129,7 +125,7 @@ export default function BamQueuePage() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Action failed");
 
-      const approveMsg = isAdminFinanceReview
+      const approveMsg = isFinanceAdmin
         ? "BAM PV sent to General Manager"
         : "BAM PV approved — sent to Finance Executive";
       showToast(actionType === "APPROVE" ? approveMsg : "BAM PV rejected");
