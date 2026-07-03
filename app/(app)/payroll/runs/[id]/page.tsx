@@ -2,9 +2,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, FileText, Banknote } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Banknote, Send, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
+import { PayslipPDF } from "@/components/payroll/payslip-pdf";
 import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { buildSchedule } from "@/lib/payroll/loan";
 import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem } from "@/lib/types";
@@ -34,6 +35,7 @@ export default function PayrollRunDetailPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [showSendPayslip, setShowSendPayslip] = useState(false);
 
   async function loadUser() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -139,6 +141,43 @@ export default function PayrollRunDetailPage() {
     ? computed.some(r => r.line.customAllowances > 0 || r.line.customDeductions > 0)
     : lines.some(l => ((l.custom_items as CustomPayrollItem[]) ?? []).length > 0);
 
+  // Individual custom columns — one per unique label+type across all employees.
+  const runCustomCols: { label: string; type: "allowance" | "deduction" }[] = [];
+  const _rccSeen = new Set<string>();
+  const _allCItems: CustomPayrollItem[] = [
+    ...computed.flatMap(({ line }) => line.customItems as CustomPayrollItem[]),
+    ...lines.flatMap(l => (l.custom_items as CustomPayrollItem[]) ?? []),
+  ];
+  for (const item of _allCItems) {
+    const k = `${item.label}|${item.type}`;
+    if (!_rccSeen.has(k)) { _rccSeen.add(k); runCustomCols.push({ label: item.label, type: item.type }); }
+  }
+
+  // Data rows for Send Payslip modal.
+  const payslipRows = isDraft
+    ? computed.map(({ emp, line }) => ({
+        emp, salary: salByEmp[emp.id] ?? null,
+        gross: line.gross, pcbVal: pcb[emp.id] || 0,
+        epfEe: line.epf.ee, epfEr: line.epf.er,
+        socsoEe: line.socso.ee, socsoEr: line.socso.er,
+        eisEe: line.eis.ee, eisEr: line.eis.er,
+        eplDeduction: line.eplDeduction, net: line.net,
+        customItems: (line.customItems as CustomPayrollItem[]),
+      }))
+    : lines.map(l => {
+        const emp = employees.find(e => e.id === l.employee_id);
+        if (!emp) return null;
+        return {
+          emp, salary: salByEmp[emp.id] ?? null,
+          gross: Number(l.gross), pcbVal: Number(l.pcb),
+          epfEe: Number(l.epf_ee), epfEr: Number(l.epf_er),
+          socsoEe: Number(l.socso_ee), socsoEr: Number(l.socso_er),
+          eisEe: Number(l.eis_ee), eisEr: Number(l.eis_er),
+          eplDeduction: Number(l.epl), net: Number(l.net),
+          customItems: (l.custom_items as CustomPayrollItem[]) ?? [],
+        };
+      }).filter((x): x is NonNullable<typeof x> => x !== null);
+
   // Totals (from computed for draft, persisted lines otherwise).
   const sumDraft = (pick: (l: CalcLine) => number) => computed.reduce((s, r) => s + pick(r.line), 0);
   const sumLines = (pick: (l: PayrollLine) => number) => lines.reduce((s, l) => s + Number(pick(l)), 0);
@@ -228,12 +267,20 @@ export default function PayrollRunDetailPage() {
             {is13th && " · 13th month (EPF + PCB only; Orang Asli excluded)"}
           </p>
         </div>
-        {canFinalize && (
-          <button onClick={finalize} disabled={busy || rowCount === 0}
-            className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">
-            <CheckCircle2 size={16} /> {busy ? "Finalizing…" : "Finalize & Generate Vouchers"}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {rowCount > 0 && (
+            <button onClick={() => setShowSendPayslip(true)}
+              className="flex items-center gap-1.5 border border-green-600 text-green-700 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-green-50">
+              <Send size={15} /> Send Payslips
+            </button>
+          )}
+          {canFinalize && (
+            <button onClick={finalize} disabled={busy || rowCount === 0}
+              className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">
+              <CheckCircle2 size={16} /> {busy ? "Finalizing…" : "Finalize & Generate Vouchers"}
+            </button>
+          )}
+        </div>
       </div>
 
       {toast && <div className="text-sm text-white bg-green-600 rounded-lg px-3 py-2">{toast}</div>}
@@ -255,7 +302,13 @@ export default function PayrollRunDetailPage() {
               <th className="border border-stone-200 px-1.5 py-1 text-right">EIS EE</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">EIS ER</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
-              {hasAnyCustom && <th className="border border-stone-200 px-1.5 py-1 text-right">Custom</th>}
+              {runCustomCols.map(col => (
+                <th key={`${col.label}|${col.type}`}
+                  className={`border border-stone-200 px-1.5 py-1 text-right max-w-[70px] ${col.type === "allowance" ? "text-green-700" : "text-red-600"}`}>
+                  <div className="truncate text-[9px] leading-tight">{col.label}</div>
+                  <div className="text-[8px] font-normal opacity-60">{col.type === "allowance" ? "+allow" : "−ded"}</div>
+                </th>
+              ))}
               <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Net</th>
             </tr>
           </thead>
@@ -275,13 +328,17 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.eis.ee)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.eis.er)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-500">{num(line.eplDeduction)}</td>
-                {hasAnyCustom && (
-                  <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-[10px]">
-                    {line.customAllowances > 0 && <span className="text-green-600">+{num(line.customAllowances)}</span>}
-                    {line.customDeductions > 0 && <span className={line.customAllowances > 0 ? " text-red-500 block" : "text-red-500"}>−{num(line.customDeductions)}</span>}
-                    {line.customAllowances === 0 && line.customDeductions === 0 && <span className="text-stone-300">—</span>}
-                  </td>
-                )}
+                {runCustomCols.map(col => {
+                  const amt = (line.customItems as CustomPayrollItem[]).find(i => i.label === col.label && i.type === col.type)?.amount ?? 0;
+                  return (
+                    <td key={`${col.label}|${col.type}`}
+                      className={`border border-stone-200 px-1.5 py-1 text-right font-mono ${col.type === "allowance" ? "bg-green-50" : "bg-red-50"}`}>
+                      {amt !== 0
+                        ? <span className={col.type === "allowance" ? "text-green-600 text-[10px]" : "text-red-500 text-[10px]"}>{col.type === "allowance" ? "+" : "−"}{num(amt)}</span>
+                        : <span className="text-stone-200 text-[10px]">—</span>}
+                    </td>
+                  );
+                })}
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(line.net)}</td>
               </tr>
             )) : lines.map(l => {
@@ -300,13 +357,17 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.eis_ee))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.eis_er))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-500">{num(Number(l.epl))}</td>
-                {hasAnyCustom && (
-                  <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-[10px]">
-                    {lAllowances > 0 && <span className="text-green-600 block">+{num(lAllowances)}</span>}
-                    {lDeductions > 0 && <span className="text-red-500 block">−{num(lDeductions)}</span>}
-                    {lCustomItems.length === 0 && <span className="text-stone-300">—</span>}
-                  </td>
-                )}
+                {runCustomCols.map(col => {
+                  const amt = lCustomItems.find(i => i.label === col.label && i.type === col.type)?.amount ?? 0;
+                  return (
+                    <td key={`${col.label}|${col.type}`}
+                      className={`border border-stone-200 px-1.5 py-1 text-right font-mono ${col.type === "allowance" ? "bg-green-50" : "bg-red-50"}`}>
+                      {amt !== 0
+                        ? <span className={col.type === "allowance" ? "text-green-600 text-[10px]" : "text-red-500 text-[10px]"}>{col.type === "allowance" ? "+" : "−"}{num(amt)}</span>
+                        : <span className="text-stone-200 text-[10px]">—</span>}
+                    </td>
+                  );
+                })}
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(Number(l.net))}</td>
               </tr>
               );
@@ -322,24 +383,26 @@ export default function PayrollRunDetailPage() {
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eis.ee) : sumLines(l => l.eis_ee))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eis.er) : sumLines(l => l.eis_er))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eplDeduction) : sumLines(l => l.epl))}</td>
-              {hasAnyCustom && (
-                <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">
-                  {num(isDraft
-                    ? sumDraft(l => l.customAllowances - l.customDeductions)
-                    : lines.reduce((s, l) => {
-                        const items = (l.custom_items as CustomPayrollItem[]) ?? [];
-                        const allow = items.filter(i => i.type === "allowance").reduce((a, i) => a + Number(i.amount), 0);
-                        const ded = items.filter(i => i.type === "deduction").reduce((a, i) => a + Number(i.amount), 0);
-                        return s + allow - ded;
-                      }, 0)
-                  )}
-                </td>
-              )}
+              {runCustomCols.map(col => {
+                const colSum = isDraft
+                  ? computed.reduce((s, { line }) => s + ((line.customItems as CustomPayrollItem[]).find(i => i.label === col.label && i.type === col.type)?.amount ?? 0), 0)
+                  : lines.reduce((s, l) => s + (((l.custom_items as CustomPayrollItem[]) ?? []).find(i => i.label === col.label && i.type === col.type)?.amount ?? 0), 0);
+                return (
+                  <td key={`${col.label}|${col.type}`}
+                    className={`border border-stone-200 px-1.5 py-1 text-right font-mono font-bold ${col.type === "allowance" ? "text-green-600" : "text-red-500"}`}>
+                    {col.type === "allowance" ? "+" : "−"}{num(colSum)}
+                  </td>
+                );
+              })}
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.net) : sumLines(l => l.net))}</td>
             </tr>
           </tbody>
         </table>
       </div>
+
+      {showSendPayslip && run && (
+        <SendPayslipModal run={run} rows={payslipRows} onClose={() => setShowSendPayslip(false)} />
+      )}
 
       {/* Vouchers (after finalize) */}
       {!isDraft && vouchers.length > 0 && (
@@ -364,6 +427,113 @@ export default function PayrollRunDetailPage() {
           <p className="text-[11px] text-stone-400 mt-3">Salary voucher = total net to staff. Statutory vouchers = employee + employer contributions per body. Printable PDFs come in Phase 6.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+function fmtWaPhone(p: string): string {
+  const d = p.replace(/\D/g, "");
+  return d.startsWith("60") ? d : d.startsWith("0") ? "6" + d : "60" + d;
+}
+
+// ─── Send Payslip Modal ──────────────────────────────────────────────────────
+interface PayslipRow {
+  emp: PayrollEmployee;
+  salary: PayrollSalary | null;
+  gross: number; pcbVal: number;
+  epfEe: number; epfEr: number;
+  socsoEe: number; socsoEr: number;
+  eisEe: number; eisEr: number;
+  eplDeduction: number; net: number;
+  customItems: CustomPayrollItem[];
+}
+
+function SendPayslipModal({ run, rows, onClose }: {
+  run: PayrollRun;
+  rows: PayslipRow[];
+  onClose: () => void;
+}) {
+  const [sending, setSending] = useState<string | null>(null);
+  const [sent, setSent] = useState<Set<string>>(new Set());
+  const monthLabel = MONTH_LABELS[run.month];
+
+  async function sendOne(row: PayslipRow) {
+    setSending(row.emp.id);
+    try {
+      const { pdf } = await import("@react-pdf/renderer");
+      const blob = await pdf(
+        <PayslipPDF
+          emp={row.emp} monthLabel={monthLabel} year={run.year}
+          salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
+          epfEe={row.epfEe} epfEr={row.epfEr}
+          socsoEe={row.socsoEe} socsoEr={row.socsoEr}
+          eisEe={row.eisEe} eisEr={row.eisEr}
+          eplDeduction={row.eplDeduction} net={row.net}
+          customItems={row.customItems}
+        />
+      ).toBlob();
+      const fileName = `Payslip_${row.emp.full_name.replace(/\s+/g, "_")}_${monthLabel}_${run.year}.pdf`;
+      const file = new File([blob], fileName, { type: "application/pdf" });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        // Mobile: Web Share API → WhatsApp appears as a target
+        await navigator.share({ files: [file], title: `Payslip — ${monthLabel} ${run.year}` });
+      } else {
+        // Desktop: download PDF, then open WhatsApp with the employee's number
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const phone = row.emp.phone_no ? fmtWaPhone(row.emp.phone_no) : "";
+        const waUrl = phone ? `https://wa.me/${phone}` : "https://web.whatsapp.com/";
+        setTimeout(() => window.open(waUrl, "_blank"), 600);
+      }
+      setSent(s => new Set([...s, row.emp.id]));
+    } catch (e) {
+      if ((e as { name?: string }).name !== "AbortError") alert("Failed: " + String(e));
+    } finally {
+      setSending(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+          <div>
+            <h2 className="font-bold text-stone-800 text-sm">Send Payslips — {monthLabel} {run.year}</h2>
+            <p className="text-[11px] text-stone-500 mt-0.5">Each PDF is sent confidentially to the individual employee.</p>
+          </div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          {rows.map(row => (
+            <div key={row.emp.id} className="flex items-center gap-3 px-3 py-2.5 border border-stone-100 rounded-xl hover:bg-stone-50">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-stone-800 truncate">{row.emp.full_name}</div>
+                <div className="text-[11px] text-stone-500">{row.emp.designation} · Net: RM {num(row.net)}</div>
+                {row.emp.phone_no
+                  ? <div className="text-[10px] text-green-600 mt-0.5">{row.emp.phone_no}</div>
+                  : <div className="text-[10px] text-amber-600 mt-0.5">No phone number — will download PDF only</div>}
+              </div>
+              {sent.has(row.emp.id) ? (
+                <span className="shrink-0 text-[11px] px-2.5 py-1 bg-green-100 text-green-700 rounded-full font-semibold">Sent</span>
+              ) : (
+                <button onClick={() => sendOne(row)} disabled={sending === row.emp.id}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-[11px] font-semibold hover:bg-green-700 disabled:opacity-50">
+                  {sending === row.emp.id ? "Generating…" : row.emp.phone_no ? "Send via WhatsApp" : "Download PDF"}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="px-5 py-3 border-t border-stone-100 flex justify-between items-center">
+          <p className="text-[10px] text-stone-400">On mobile, use Share to send directly via WhatsApp. On desktop, the PDF downloads then WhatsApp opens.</p>
+          <button onClick={onClose} className="ml-4 shrink-0 px-4 py-1.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50">Close</button>
+        </div>
+      </div>
     </div>
   );
 }
