@@ -287,12 +287,20 @@ export default function WorksheetsPage() {
       await upsertWorkerFavourite();
 
       if (isNew || !editing?.id) {
-        const { data: wsNo } = await supabase.rpc("next_worksheet_no");
-        const { data: row, error } = await supabase.from("worker_worksheets")
-          .insert({ ...payload, worksheet_no: wsNo, created_by: userEmail, status: "DRAFT" })
-          .select("*").single();
-        if (error) throw new Error(error.message);
-        setEditing(row as WorkerWorksheet);
+        // Retry up to 3 times — next_worksheet_no() uses COUNT which can race
+        // on fast double-clicks; a fresh call after a duplicate conflict returns
+        // a higher number that no longer conflicts.
+        let row: WorkerWorksheet | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { data: wsNo } = await supabase.rpc("next_worksheet_no");
+          const { data: inserted, error } = await supabase.from("worker_worksheets")
+            .insert({ ...payload, worksheet_no: wsNo, created_by: userEmail, status: "DRAFT" })
+            .select("*").single();
+          if (!error) { row = inserted as WorkerWorksheet; break; }
+          if (!error.message.includes("duplicate") || attempt === 2) throw new Error(error.message);
+        }
+        if (!row) throw new Error("Failed to save worksheet after retries");
+        setEditing(row);
         setIsNew(false);
         showMsg(`Worksheet ${row.worksheet_no} saved`);
       } else {

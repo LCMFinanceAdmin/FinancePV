@@ -116,8 +116,13 @@ export default function SignatoriesPage() {
                     onChange={(e) => setUsers(us => us.map(x => x.id === u.id ? { ...x, full_name: e.target.value } : x))} />
                 </div>
                 <div>
-                  <label className="text-xs text-stone-400">Email (Google account)</label>
-                  <input className={inp} value={u.email} placeholder="name@lcm.org.my" disabled={!u.id.startsWith("new-")}
+                  <label className="text-xs text-stone-400">
+                    Email
+                    {u.email && !u.email.endsWith("@lcm.org.my") && (
+                      <span className="ml-1.5 text-[10px] text-amber-600 font-medium">(uses magic link login)</span>
+                    )}
+                  </label>
+                  <input className={inp} value={u.email} placeholder="name@lcm.org.my or personal email" disabled={!u.id.startsWith("new-")}
                     onChange={(e) => setUsers(us => us.map(x => x.id === u.id ? { ...x, email: e.target.value } : x))} />
                 </div>
               </div>

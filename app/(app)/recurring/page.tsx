@@ -431,6 +431,9 @@ export default function RecurringPage() {
     const allNos = [...alreadyRanItems.map(i => i.current_pv_no), ...created.map(c => c.pv_no)].filter(Boolean);
     const totalAmt = toInclude.reduce((s, i) => s + i.amount, 0);
     const { data: { user } } = await supabase.auth.getUser();
+    // Remove any stale non-master bulk run for this group before inserting fresh one
+    await supabase.from("bulk_pv_runs").delete()
+      .eq("group_name", groupName).eq("is_master", false);
     const { data: bulkRun } = await supabase.from("bulk_pv_runs").insert({
       group_name: groupName,
       run_by: user?.email ?? "",
@@ -799,12 +802,16 @@ export default function RecurringPage() {
       createdByGroup[c.group].nos.push(c.pv_no);
       createdByGroup[c.group].amount += c.amount;
     }
+    const runnerEmail = (await supabase.auth.getUser()).data.user?.email ?? "";
     const newGroupRuns: Record<string, string> = {};
     for (const [groupName, data] of Object.entries(createdByGroup)) {
       if (data.ids.length === 0) continue;
+      // Remove any stale non-master bulk run for this group before inserting fresh one
+      await supabase.from("bulk_pv_runs").delete()
+        .eq("group_name", groupName).eq("is_master", false);
       const { data: bulkRun } = await supabase.from("bulk_pv_runs").insert({
         group_name: groupName,
-        run_by: (await supabase.auth.getUser()).data.user?.email ?? "",
+        run_by: runnerEmail,
         run_date: new Date().toISOString(),
         pv_ids: data.ids,
         pv_nos: data.nos,

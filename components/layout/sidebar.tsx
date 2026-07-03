@@ -89,6 +89,14 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: "Staff Services",
+    items: [
+      { href: "/my-leaves",   label: "My Leaves",    icon: <CalendarDays size={16} />, show: () => true },
+      { href: "/leave-queue", label: "Leave Queue",   icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isGeneralManager || u.role === "BISHOP" },
+      { href: "/my-loans",    label: "My Loan (EPL)", icon: <HandCoins size={16} />, show: (u: UserProfile) => u.role !== "TREASURER" && u.email.endsWith("@lcm.org.my") },
+    ],
+  },
+  {
     label: "Testing",
     items: [
       { href: "/switch-role", label: "Switch Role", icon: <FlaskConical size={16} />, show: (u: UserProfile) => u.isTestAdmin },
