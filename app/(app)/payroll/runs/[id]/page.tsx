@@ -621,7 +621,7 @@ function SendPayslipModal({ run, rows, onClose }: {
 
         <div className="px-5 py-3 border-t border-stone-100 flex justify-between items-center gap-3">
           <p className="text-[10px] text-stone-400 leading-relaxed">
-            On mobile, the share sheet opens — tap Email or WhatsApp to send the PDF. On desktop, the PDF downloads then your email client / WhatsApp opens with the contact pre-filled — attach the PDF and send.
+            On mobile, the native share sheet opens — tap WhatsApp or Email to send. On desktop, the PDF downloads automatically, then WhatsApp opens directly to that contact&apos;s chat (no searching needed) — attach the downloaded PDF and tap Send.
           </p>
           <button onClick={onClose} className="shrink-0 px-4 py-1.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50">Close</button>
         </div>
