@@ -204,6 +204,12 @@ export default function PVDetailPage() {
   const [showFinanceSignModal, setShowFinanceSignModal] = useState(false);
   const [finSignLoading, setFinSignLoading]             = useState(false);
 
+  // BAM sign (Building Manager or BAM Committee PIC inline signing on the PV form)
+  const [showBamSignModal, setShowBamSignModal] = useState(false);
+  const [bamSignRole, setBamSignRole]           = useState<"BUILDING_MANAGER" | "BAM_COMMITTEE">("BAM_COMMITTEE");
+  const [bamSignLoading, setBamSignLoading]     = useState(false);
+  const [bamSignError, setBamSignError]         = useState("");
+
   // Comment
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [commentText, setCommentText]           = useState("");
@@ -557,6 +563,33 @@ export default function PVDetailPage() {
     }
   }
 
+  async function submitBamSign() {
+    if (!pv || !signatureData) return;
+    setBamSignLoading(true);
+    setBamSignError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/bam-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pv.id, action: "APPROVE", signature_data: signatureData, remarks: "" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Sign failed");
+      if (saveSigForNext) setSavedSig(signatureData);
+      setShowBamSignModal(false);
+      setSignatureData(""); setCanvasActive(false);
+      const label = bamSignRole === "BAM_COMMITTEE" ? "BAM Committee" : "Building Manager";
+      setActionToast({ msg: `Signed & approved by ${label} ✓`, ok: true });
+      const { data: fresh } = await supabase.from("pvs").select("*").eq("id", pv.id).single();
+      if (fresh) setPv(fresh as PV);
+    } catch (e: unknown) {
+      setBamSignError((e as Error).message);
+    } finally {
+      setBamSignLoading(false);
+    }
+  }
+
   async function submitComment() {
     if (!pv || !user || !commentText.trim()) return;
     setCommentLoading(true);
@@ -882,28 +915,14 @@ export default function PVDetailPage() {
               <span className="text-sm font-semibold text-orange-800">Building Manager Review</span>
               <span className="ml-auto text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">BAM PV</span>
             </div>
-            <p className="text-sm text-stone-600 mb-3">Review this BAM PV before it proceeds to the Finance Executive.</p>
+            <p className="text-sm text-stone-600 mb-3">
+              To approve, tap the <strong>Payment Raised by</strong> signature box on the voucher above and sign. To reject:
+            </p>
             <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={async () => {
-                  if (!confirm("Approve this BAM PV and send to Finance Executive?")) return;
-                  const { data: { session } } = await supabase.auth.getSession();
-                  const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/bam-action`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-                    body: JSON.stringify({ pv_id: pv.id, action: "APPROVE" }),
-                  });
-                  const json = await res.json();
-                  if (res.ok) { setPv(p => p ? { ...p, status: "FINANCE_REVIEW" } : p); }
-                  else alert(json.error);
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 transition-colors">
-                <CheckCircle2 size={14} /> Approve BAM PV
-              </button>
               <button
                 onClick={() => setShowRejectModal(true)}
                 className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
-                <XCircle size={14} /> Reject
+                <XCircle size={14} /> Reject BAM PV
               </button>
             </div>
           </div>
@@ -919,28 +938,14 @@ export default function PVDetailPage() {
               <span className="text-sm font-semibold text-orange-800">BAM Committee Verification</span>
               <span className="ml-auto text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">BAM PV</span>
             </div>
-            <p className="text-sm text-stone-600 mb-3">Verify this BAM PV created by the Building/Event Manager before it proceeds to the Finance Executive.</p>
+            <p className="text-sm text-stone-600 mb-3">
+              To verify, tap the <strong>Verified by (BAM Committee)</strong> signature box on the voucher above and sign. To reject:
+            </p>
             <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={async () => {
-                  if (!confirm("Verify this BAM PV and send to Finance Executive?")) return;
-                  const { data: { session } } = await supabase.auth.getSession();
-                  const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/bam-action`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-                    body: JSON.stringify({ pv_id: pv.id, action: "APPROVE" }),
-                  });
-                  const json = await res.json();
-                  if (res.ok) { setPv(p => p ? { ...p, status: "FINANCE_REVIEW" } : p); }
-                  else alert(json.error);
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 transition-colors">
-                <CheckCircle2 size={14} /> Verify BAM PV
-              </button>
               <button
                 onClick={() => setShowRejectModal(true)}
                 className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
-                <XCircle size={14} /> Reject
+                <XCircle size={14} /> Reject BAM PV
               </button>
             </div>
           </div>
@@ -1773,6 +1778,109 @@ export default function PVDetailPage() {
         </div>
       )}
 
+      {/* ── BAM Sign Modal (Building Manager or BAM Committee PIC inline signing) ── */}
+      {showBamSignModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+              <div>
+                <div className="text-base font-bold text-[#4a6da7]">
+                  {bamSignRole === "BAM_COMMITTEE" ? "Verify & Sign (BAM Committee)" : "Sign (Building / Event Manager)"}
+                </div>
+                <div className="text-xs text-stone-500 mt-0.5">
+                  {pv?.pv_no} · Signing will advance this PV to {bamSignRole === "BAM_COMMITTEE" ? "Finance Review" : "BAM Committee Review"}
+                </div>
+              </div>
+              <button onClick={() => setShowBamSignModal(false)} className="text-stone-400 hover:text-stone-600"><XIcon size={18} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {savedSig && (
+                <div className="border border-indigo-200 rounded-xl p-3 bg-indigo-50/50">
+                  <div className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1"><CheckCircle size={11} /> Saved Signature</div>
+                  <img src={savedSig} alt="saved sig" className="h-10 object-contain mb-2" />
+                  <button onClick={() => setSignatureData(savedSig)}
+                    className={`w-full text-xs py-1.5 rounded-lg font-semibold transition-colors border ${signatureData === savedSig ? "bg-indigo-600 text-white border-indigo-600" : "border-indigo-300 text-indigo-700 hover:bg-indigo-100"}`}>
+                    {signatureData === savedSig ? "✓ Using saved signature" : "Use saved signature"}
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5 mb-2"><PenLine size={12} /> Draw or upload signature</label>
+                <div className="flex gap-1 mb-2">
+                  <button onClick={() => setSigMode("draw")}
+                    className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "draw" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>Draw</button>
+                  <button onClick={() => setSigMode("upload")}
+                    className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${sigMode === "upload" ? "bg-indigo-100 border-indigo-300 text-indigo-700" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>Upload</button>
+                </div>
+                {sigMode === "draw" ? (
+                  <div className="space-y-2">
+                    <div className="relative rounded-xl overflow-hidden" style={{ touchAction: "none" }}>
+                      <div className={`border-2 rounded-xl overflow-hidden transition-colors ${canvasActive ? (isErasing ? "border-orange-400 bg-white" : "border-indigo-400 bg-white") : "border-dashed border-stone-300 bg-stone-50"}`}>
+                        <canvas ref={canvasRef} width={760} height={200}
+                          className={`w-full ${!canvasActive ? "cursor-pointer" : isErasing ? "cursor-cell" : "cursor-crosshair"}`}
+                          onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                          onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
+                        {!canvasActive && (
+                          <div className="absolute inset-0 flex items-center justify-center cursor-pointer" onClick={() => setCanvasActive(true)}>
+                            <span className="text-stone-400 text-xs">Click to start signing</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { clearCanvas(); setCanvasActive(false); setSignatureData(""); }}
+                        className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">Clear</button>
+                      <button type="button" onClick={() => setIsErasing(e => !e)}
+                        className={`text-xs border px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${isErasing ? "bg-orange-100 border-orange-300 text-orange-700" : "text-stone-500 hover:text-stone-700 border-stone-200 hover:bg-stone-50"}`}>
+                        <Eraser size={11} /> {isErasing ? "Erasing" : "Erase"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-300 rounded-xl p-4 cursor-pointer hover:bg-stone-50 transition-colors">
+                      <Upload size={18} className="text-stone-400 mb-1" />
+                      <span className="text-xs text-stone-500">Click to upload signature image</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleSigUpload} />
+                    </label>
+                    {signatureData && signatureData !== savedSig && (
+                      <div className="border border-stone-200 rounded-xl p-2 bg-white">
+                        <img src={signatureData} alt="preview" className="h-12 object-contain mx-auto" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {signatureData && (
+                <label className="flex items-center gap-2 text-xs text-stone-600 cursor-pointer">
+                  <input type="checkbox" checked={saveSigForNext} onChange={e => setSaveSigForNext(e.target.checked)} className="rounded" />
+                  Save as my default signature
+                </label>
+              )}
+            </div>
+
+            <div className="px-5 pb-4 border-t border-stone-200 pt-4 space-y-2">
+              {bamSignError && (
+                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{bamSignError}</div>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => { setShowBamSignModal(false); setBamSignError(""); }}
+                  className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm hover:bg-stone-50 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={submitBamSign} disabled={bamSignLoading || !signatureData}
+                  className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5 hover:bg-green-700 transition-colors">
+                  {bamSignLoading ? "Saving…" : <><CheckCircle size={14} /> Sign & {bamSignRole === "BAM_COMMITTEE" ? "Verify" : "Approve"}</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Signatory Approval Modal (sign + PIN) ─────────────────── */}
       {showSignModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -2167,6 +2275,12 @@ export default function PVDetailPage() {
                     title="Payment Raised by:"
                     role="Building / Event Manager"
                     approval={bmApproval}
+                    onClickSpace={user?.isBuildingManager && pv.status === "BAM_REVIEW" && !bmApproval ? () => {
+                      setBamSignRole("BUILDING_MANAGER");
+                      setSignatureData(""); setCanvasActive(false); setIsErasing(false);
+                      setSigMode("draw"); setSaveSigForNext(false); setBamSignError("");
+                      setShowBamSignModal(true);
+                    } : undefined}
                     pending={!bmApproval}
                     savedSigFallback={bmApproval?.email ? approverSigs[bmApproval.email] : undefined}
                   />
@@ -2178,6 +2292,12 @@ export default function PVDetailPage() {
                     approval={committeeApproval}
                     pending={!committeeApproval}
                     savedSigFallback={committeeApproval?.email ? approverSigs[committeeApproval.email] : undefined}
+                    onClickSpace={user?.isBamCommittee && pv.status === "BAM_COMMITTEE_REVIEW" && !committeeApproval ? () => {
+                      setBamSignRole("BAM_COMMITTEE");
+                      setSignatureData(""); setCanvasActive(false); setIsErasing(false);
+                      setSigMode("draw"); setSaveSigForNext(false); setBamSignError("");
+                      setShowBamSignModal(true);
+                    } : undefined}
                   />
                 </div>
               </div>
