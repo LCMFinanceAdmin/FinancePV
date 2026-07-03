@@ -59,9 +59,10 @@ export default function SignatoriesPage() {
       });
       if (error) { showToast("Error: " + error.message); setSaving(false); return; }
     } else {
-      await supabase.from("user_roles").update({
+      const { error } = await supabase.from("user_roles").update({
         full_name: u.full_name, role: u.role, ministries: u.ministries,
       }).eq("id", u.id);
+      if (error) { showToast("Error: " + error.message); setSaving(false); return; }
     }
     await load();
     setSaving(false);
