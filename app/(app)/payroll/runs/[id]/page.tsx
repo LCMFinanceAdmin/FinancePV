@@ -449,17 +449,59 @@ interface PayslipRow {
   customItems: CustomPayrollItem[];
 }
 
+type SendMethod = "email" | "whatsapp" | "both";
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 function SendPayslipModal({ run, rows, onClose }: {
   run: PayrollRun;
   rows: PayslipRow[];
   onClose: () => void;
 }) {
+  const supabase = createClient();
+  const [method, setMethod] = useState<SendMethod>("both");
   const [sending, setSending] = useState<string | null>(null);
-  const [sent, setSent] = useState<Set<string>>(new Set());
+  const [sentMap, setSentMap] = useState<Record<string, { email?: boolean; wa?: boolean }>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const monthLabel = MONTH_LABELS[run.month];
+
+  const hasEmail = (row: PayslipRow) => !!row.emp.email;
+  const hasPhone = (row: PayslipRow) => !!row.emp.phone_no;
+
+  function effectiveMethod(row: PayslipRow): SendMethod | null {
+    const wantEmail = method === "email" || method === "both";
+    const wantWa = method === "whatsapp" || method === "both";
+    const canEmail = hasEmail(row);
+    const canWa = hasPhone(row);
+    if (wantEmail && wantWa && canEmail && canWa) return "both";
+    if (wantEmail && canEmail) return "email";
+    if (wantWa && canWa) return "whatsapp";
+    if (wantEmail && !canEmail && canWa) return "whatsapp"; // fallback
+    return null;
+  }
+
+  function btnLabel(row: PayslipRow): string {
+    if (sending === row.emp.id) return "Generating…";
+    const m = effectiveMethod(row);
+    if (!m) return "No contact info";
+    if (m === "both") return "Send via Email + WhatsApp";
+    if (m === "email") return "Send via Email";
+    return "Send via WhatsApp";
+  }
 
   async function sendOne(row: PayslipRow) {
     setSending(row.emp.id);
+    setErrors(e => { const n = {...e}; delete n[row.emp.id]; return n; });
+    const m = effectiveMethod(row);
+    if (!m) { setSending(null); return; }
+
     try {
       const { pdf } = await import("@react-pdf/renderer");
       const blob = await pdf(
@@ -475,28 +517,50 @@ function SendPayslipModal({ run, rows, onClose }: {
       ).toBlob();
       const fileName = `Payslip_${row.emp.full_name.replace(/\s+/g, "_")}_${monthLabel}_${run.year}.pdf`;
       const file = new File([blob], fileName, { type: "application/pdf" });
+      const result: { email?: boolean; wa?: boolean } = {};
 
-      if (navigator.canShare?.({ files: [file] })) {
-        // Mobile: Web Share API → WhatsApp appears as a target
-        await navigator.share({ files: [file], title: `Payslip — ${monthLabel} ${run.year}` });
-      } else {
-        // Desktop: download PDF, then open WhatsApp with the employee's number
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = fileName;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        const phone = row.emp.phone_no ? fmtWaPhone(row.emp.phone_no) : "";
-        const waUrl = phone ? `https://wa.me/${phone}` : "https://web.whatsapp.com/";
-        setTimeout(() => window.open(waUrl, "_blank"), 600);
+      // ── WhatsApp ──
+      if (m === "whatsapp" || m === "both") {
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: `Payslip — ${monthLabel} ${run.year}` });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = fileName;
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          const phone = row.emp.phone_no ? fmtWaPhone(row.emp.phone_no) : "";
+          if (phone) setTimeout(() => window.open(`https://wa.me/${phone}`, "_blank"), 600);
+        }
+        result.wa = true;
       }
-      setSent(s => new Set([...s, row.emp.id]));
+
+      // ── Email ──
+      if ((m === "email" || m === "both") && row.emp.email) {
+        const pdfBase64 = await blobToBase64(blob);
+        const { error } = await supabase.functions.invoke("send-payslip-email", {
+          body: { to: row.emp.email, name: row.emp.full_name, monthLabel, year: run.year, pdfBase64, fileName },
+        });
+        if (error) throw new Error(error.message ?? "Email send failed");
+        result.email = true;
+      }
+
+      setSentMap(s => ({ ...s, [row.emp.id]: result }));
     } catch (e) {
-      if ((e as { name?: string }).name !== "AbortError") alert("Failed: " + String(e));
+      if ((e as { name?: string }).name !== "AbortError") {
+        setErrors(prev => ({ ...prev, [row.emp.id]: String(e) }));
+      }
     } finally {
       setSending(null);
     }
   }
+
+  const methodBtn = (m: SendMethod, label: string) => (
+    <button onClick={() => setMethod(m)}
+      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${method === m ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-200 hover:border-stone-300"}`}>
+      {label}
+    </button>
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -508,30 +572,58 @@ function SendPayslipModal({ run, rows, onClose }: {
           </div>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
         </div>
-        <div className="overflow-y-auto flex-1 p-4 space-y-2">
-          {rows.map(row => (
-            <div key={row.emp.id} className="flex items-center gap-3 px-3 py-2.5 border border-stone-100 rounded-xl hover:bg-stone-50">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-stone-800 truncate">{row.emp.full_name}</div>
-                <div className="text-[11px] text-stone-500">{row.emp.designation} · Net: RM {num(row.net)}</div>
-                {row.emp.phone_no
-                  ? <div className="text-[10px] text-green-600 mt-0.5">{row.emp.phone_no}</div>
-                  : <div className="text-[10px] text-amber-600 mt-0.5">No phone number — will download PDF only</div>}
-              </div>
-              {sent.has(row.emp.id) ? (
-                <span className="shrink-0 text-[11px] px-2.5 py-1 bg-green-100 text-green-700 rounded-full font-semibold">Sent</span>
-              ) : (
-                <button onClick={() => sendOne(row)} disabled={sending === row.emp.id}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-[11px] font-semibold hover:bg-green-700 disabled:opacity-50">
-                  {sending === row.emp.id ? "Generating…" : row.emp.phone_no ? "Send via WhatsApp" : "Download PDF"}
-                </button>
-              )}
-            </div>
-          ))}
+
+        {/* Method selector */}
+        <div className="px-5 py-3 border-b border-stone-100 flex items-center gap-2">
+          <span className="text-[11px] text-stone-500 mr-1">Send via:</span>
+          {methodBtn("email", "Email")}
+          {methodBtn("whatsapp", "WhatsApp")}
+          {methodBtn("both", "Both")}
         </div>
-        <div className="px-5 py-3 border-t border-stone-100 flex justify-between items-center">
-          <p className="text-[10px] text-stone-400">On mobile, use Share to send directly via WhatsApp. On desktop, the PDF downloads then WhatsApp opens.</p>
-          <button onClick={onClose} className="ml-4 shrink-0 px-4 py-1.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50">Close</button>
+
+        <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          {rows.map(row => {
+            const isSent = sentMap[row.emp.id];
+            const err = errors[row.emp.id];
+            const disabled = !effectiveMethod(row);
+            return (
+              <div key={row.emp.id} className="px-3 py-2.5 border border-stone-100 rounded-xl hover:bg-stone-50">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-stone-800 truncate">{row.emp.full_name}</div>
+                    <div className="text-[11px] text-stone-500">{row.emp.designation} · Net: RM {num(row.net)}</div>
+                    <div className="flex gap-3 mt-0.5">
+                      {row.emp.email
+                        ? <span className="text-[10px] text-blue-600">✉ {row.emp.email}</span>
+                        : <span className="text-[10px] text-stone-300">✉ no email</span>}
+                      {row.emp.phone_no
+                        ? <span className="text-[10px] text-green-600">📱 {row.emp.phone_no}</span>
+                        : <span className="text-[10px] text-stone-300">📱 no phone</span>}
+                    </div>
+                  </div>
+                  {isSent ? (
+                    <div className="shrink-0 flex flex-col items-end gap-0.5">
+                      {isSent.email && <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">Email sent</span>}
+                      {isSent.wa && <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">WhatsApp sent</span>}
+                    </div>
+                  ) : (
+                    <button onClick={() => sendOne(row)} disabled={!!sending || disabled}
+                      className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-50 ${disabled ? "bg-stone-100 text-stone-400 cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"}`}>
+                      {btnLabel(row)}
+                    </button>
+                  )}
+                </div>
+                {err && <p className="mt-1.5 text-[10px] text-red-600 bg-red-50 rounded px-2 py-1">{err}</p>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="px-5 py-3 border-t border-stone-100 flex justify-between items-center gap-3">
+          <p className="text-[10px] text-stone-400 leading-relaxed">
+            Email sends the PDF directly to the employee&apos;s inbox. WhatsApp on desktop downloads the PDF then opens the chat — attach it manually.
+          </p>
+          <button onClick={onClose} className="shrink-0 px-4 py-1.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50">Close</button>
         </div>
       </div>
     </div>

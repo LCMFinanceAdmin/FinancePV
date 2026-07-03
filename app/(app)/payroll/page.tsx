@@ -84,6 +84,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [bankName, setBankName] = useState(existing?.bank_name ?? "");
   const [bankAcct, setBankAcct] = useState(existing?.bank_acct ?? "");
   const [phoneNo, setPhoneNo] = useState(existing?.phone_no ?? "");
+  const [empEmail, setEmpEmail] = useState(existing?.email ?? "");
   const [status, setStatus] = useState(existing?.status ?? "ACTIVE");
   const [resignedDate, setResignedDate] = useState(existing?.resigned_date ?? "");
 
@@ -228,6 +229,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         bank_name: bankName.trim(),
         bank_acct: bankAcct.trim(),
         phone_no: phoneNo.trim(),
+        email: empEmail.trim(),
         status,
         resigned_date: status === "RESIGNED" ? (resignedDate || null) : null,
       };
@@ -382,6 +384,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
               </div>
               <div><label className={labelCls}>Bank Account</label><input className={inputCls} value={bankAcct} onChange={e => setBankAcct(e.target.value)} /></div>
               <div><label className={labelCls}>WhatsApp / Phone No.</label><input className={inputCls} value={phoneNo} onChange={e => setPhoneNo(e.target.value)} placeholder="0123456789" /></div>
+              <div><label className={labelCls}>Email Address</label><input className={inputCls} type="email" value={empEmail} onChange={e => setEmpEmail(e.target.value)} placeholder="name@email.com" /></div>
             </div>
           </div>
 

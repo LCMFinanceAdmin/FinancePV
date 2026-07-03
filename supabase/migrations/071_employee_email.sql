@@ -1,0 +1,1 @@
+ALTER TABLE payroll_employees ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT '';

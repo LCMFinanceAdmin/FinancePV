@@ -333,6 +333,7 @@ export interface PayrollEmployee {
   bank_name: string;
   bank_acct: string;
   phone_no: string;
+  email: string;
   status: PayrollEmployeeStatus;
   resigned_date: string | null;
   created_by: string;
