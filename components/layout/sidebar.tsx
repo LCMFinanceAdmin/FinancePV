@@ -7,6 +7,7 @@ import {
   RefreshCw, Users, Building2, Settings, LogOut,
   ChevronRight, Activity, ClipboardCheck, PiggyBank, FlaskConical,
   ShoppingCart, ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
+  Wallet, HandCoins, CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
@@ -58,8 +59,17 @@ const NAV_SECTIONS = [
     label: "Building / Event",
     items: [
       { href: "/submit?type=bam",    label: "Submit BAM PV",       icon: <Hammer size={16} />,    show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
-      { href: "/bam-queue",          label: "BAM Queue",           icon: <Building2 size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
+      { href: "/my-bam-pvs",         label: "My BAM PVs",          icon: <FileText size={16} />,  show: (u: UserProfile) => u.isBuildingManager },
+      { href: "/bam-queue",          label: "BAM Queue",           icon: <Building2 size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin || !!u.isBamCommittee },
       { href: "/recurring?type=bam", label: "BAM Recurring",       icon: <RefreshCw size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
+      { href: "/worksheets",         label: "Worksheets",          icon: <ClipboardList size={16} />, show: (u: UserProfile) => u.isBuildingManager },
+    ],
+  },
+  {
+    label: "Income & Collections",
+    items: [
+      { href: "/bookings", label: "Facility Bookings", icon: <CalendarDays size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
+      { href: "/income",   label: "Income Records",    icon: <TrendingUp size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
     ],
   },
   {
@@ -71,10 +81,19 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: "Income & Collections",
+    label: "Payroll",
     items: [
-      { href: "/bookings", label: "Facility Bookings", icon: <CalendarDays size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
-      { href: "/income",   label: "Income Records",    icon: <TrendingUp size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
+      { href: "/payroll", label: "Payroll", icon: <Wallet size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager },
+      { href: "/payroll/runs", label: "Payroll Runs", icon: <CalendarClock size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager },
+      { href: "/payroll/loans", label: "Employee Loans", icon: <HandCoins size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager || u.isSignatory },
+    ],
+  },
+  {
+    label: "Staff Services",
+    items: [
+      { href: "/my-leaves",   label: "My Leaves",    icon: <CalendarDays size={16} />, show: () => true },
+      { href: "/leave-queue", label: "Leave Queue",   icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isGeneralManager || u.role === "BISHOP" },
+      { href: "/my-loans",    label: "My Loan (EPL)", icon: <HandCoins size={16} />, show: (u: UserProfile) => u.role !== "TREASURER" && u.email.endsWith("@lcm.org.my") },
     ],
   },
   {
@@ -94,6 +113,7 @@ const TEST_ROLES = [
   { value: "SECRETARY",        label: "Secretary" },
   { value: "MINISTRY_HEAD",    label: "EXCO Member" },
   { value: "BUILDING_MANAGER", label: "Building/Event Mgr" },
+  { value: "BAM_COMMITTEE",    label: "BAM Committee PIC" },
   { value: "STAFF",            label: "Staff" },
 ];
 

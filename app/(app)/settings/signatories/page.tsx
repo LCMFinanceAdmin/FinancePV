@@ -8,14 +8,15 @@ import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff } from "lucide-react";
 const ROLES = [
   "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
   "GENERAL_MANAGER", "BISHOP", "TREASURER", "SECRETARY",
-  "MINISTRY_HEAD", "STAFF",
+  "MINISTRY_HEAD", "BUILDING_MANAGER", "BAM_COMMITTEE", "STAFF",
 ];
 
 const ROLE_LABELS: Record<string, string> = {
   FINANCE_ADMIN: "Finance Executive", FINANCE_ADMIN_2: "Accounts Executive",
   FINANCE_ADMIN_3: "Finance Executive 3", GENERAL_MANAGER: "General Manager",
   BISHOP: "Bishop", TREASURER: "Treasurer", SECRETARY: "Secretary",
-  MINISTRY_HEAD: "EXCO Member", STAFF: "Staff",
+  MINISTRY_HEAD: "EXCO Member", BUILDING_MANAGER: "Building / Event Manager",
+  BAM_COMMITTEE: "BAM Committee", STAFF: "Staff",
 };
 
 interface UserRole {
@@ -58,9 +59,10 @@ export default function SignatoriesPage() {
       });
       if (error) { showToast("Error: " + error.message); setSaving(false); return; }
     } else {
-      await supabase.from("user_roles").update({
+      const { error } = await supabase.from("user_roles").update({
         full_name: u.full_name, role: u.role, ministries: u.ministries,
       }).eq("id", u.id);
+      if (error) { showToast("Error: " + error.message); setSaving(false); return; }
     }
     await load();
     setSaving(false);
@@ -114,8 +116,13 @@ export default function SignatoriesPage() {
                     onChange={(e) => setUsers(us => us.map(x => x.id === u.id ? { ...x, full_name: e.target.value } : x))} />
                 </div>
                 <div>
-                  <label className="text-xs text-stone-400">Email (Google account)</label>
-                  <input className={inp} value={u.email} placeholder="name@lcm.org.my" disabled={!u.id.startsWith("new-")}
+                  <label className="text-xs text-stone-400">
+                    Email
+                    {u.email && !u.email.endsWith("@lcm.org.my") && (
+                      <span className="ml-1.5 text-[10px] text-amber-600 font-medium">(uses magic link login)</span>
+                    )}
+                  </label>
+                  <input className={inp} value={u.email} placeholder="name@lcm.org.my or personal email" disabled={!u.id.startsWith("new-")}
                     onChange={(e) => setUsers(us => us.map(x => x.id === u.id ? { ...x, email: e.target.value } : x))} />
                 </div>
               </div>

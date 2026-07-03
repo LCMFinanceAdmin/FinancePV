@@ -2,10 +2,15 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Mail, ArrowLeft, CheckCircle } from "lucide-react";
+
+type Screen = "main" | "email" | "sent";
 
 export default function LoginPage() {
+  const [screen, setScreen]   = useState<Screen>("main");
+  const [email, setEmail]     = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError]     = useState("");
 
   async function signInWithGoogle() {
     setLoading(true);
@@ -21,6 +26,20 @@ export default function LoginPage() {
     if (error) { setError(error.message); setLoading(false); }
   }
 
+  async function sendMagicLink() {
+    if (!email.trim()) return;
+    setLoading(true);
+    setError("");
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: { emailRedirectTo: `${location.origin}/auth/callback` },
+    });
+    setLoading(false);
+    if (error) { setError(error.message); return; }
+    setScreen("sent");
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-stone-50 px-4">
       <div className="w-full max-w-sm">
@@ -33,27 +52,123 @@ export default function LoginPage() {
           <p className="text-stone-500 text-sm mt-1">Payment Voucher System</p>
         </div>
 
-        {/* Card */}
         <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6">
-          <h2 className="text-base font-semibold text-stone-700 mb-1">Sign in to continue</h2>
-          <p className="text-sm text-stone-400 mb-5">Use your LCM Google account</p>
 
-          {error && (
-            <div className="mb-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              {error}
+          {/* ── Main screen ── */}
+          {screen === "main" && (
+            <>
+              <h2 className="text-base font-semibold text-stone-700 mb-1">Sign in to continue</h2>
+              <p className="text-sm text-stone-400 mb-5">Choose how you want to sign in</p>
+
+              {error && <ErrorBox msg={error} />}
+
+              <Button onClick={signInWithGoogle} loading={loading} className="w-full gap-3" size="lg">
+                <GoogleIcon />
+                Sign in with Google
+              </Button>
+
+              <p className="text-xs text-stone-400 text-center my-4">
+                For <span className="font-medium">@lcm.org.my</span> accounts
+              </p>
+
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-stone-200" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-white px-3 text-xs text-stone-400">or</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => { setError(""); setScreen("email"); }}
+                className="w-full flex items-center justify-center gap-2.5 border border-stone-200 rounded-xl py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors"
+              >
+                <Mail size={16} className="text-stone-500" />
+                Sign in with email link
+              </button>
+
+              <p className="text-xs text-stone-400 text-center mt-3">
+                For staff without a church email account
+              </p>
+            </>
+          )}
+
+          {/* ── Email entry screen ── */}
+          {screen === "email" && (
+            <>
+              <button
+                onClick={() => { setScreen("main"); setError(""); }}
+                className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 mb-4 transition-colors"
+              >
+                <ArrowLeft size={13} /> Back
+              </button>
+
+              <h2 className="text-base font-semibold text-stone-700 mb-1">Sign in with email</h2>
+              <p className="text-sm text-stone-400 mb-5">
+                We&apos;ll send a sign-in link to your email. No password needed.
+              </p>
+
+              {error && <ErrorBox msg={error} />}
+
+              <div className="space-y-3">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && sendMagicLink()}
+                  placeholder="your@email.com"
+                  autoFocus
+                  className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#4a6da7] transition-colors"
+                />
+                <Button
+                  onClick={sendMagicLink}
+                  loading={loading}
+                  disabled={!email.trim()}
+                  className="w-full"
+                  size="lg"
+                >
+                  Send sign-in link
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* ── Sent confirmation screen ── */}
+          {screen === "sent" && (
+            <div className="text-center py-2 space-y-3">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-1">
+                <CheckCircle size={24} className="text-green-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-stone-800 text-base">Check your email</p>
+                <p className="text-sm text-stone-500 mt-1">
+                  We sent a sign-in link to
+                </p>
+                <p className="text-sm font-medium text-[#4a6da7] mt-0.5 break-all">{email}</p>
+              </div>
+              <p className="text-xs text-stone-400 pt-1">
+                Click the link in the email to sign in. It expires in 1 hour.
+              </p>
+              <button
+                onClick={() => { setScreen("email"); setError(""); }}
+                className="text-xs text-stone-400 hover:text-stone-600 underline transition-colors"
+              >
+                Use a different email
+              </button>
             </div>
           )}
 
-          <Button onClick={signInWithGoogle} loading={loading} className="w-full gap-3" size="lg">
-            <GoogleIcon />
-            Sign in with Google
-          </Button>
-
-          <p className="text-xs text-stone-400 text-center mt-4">
-            Only authorised LCM staff can access this system
-          </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ErrorBox({ msg }: { msg: string }) {
+  return (
+    <div className="mb-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+      {msg}
     </div>
   );
 }
