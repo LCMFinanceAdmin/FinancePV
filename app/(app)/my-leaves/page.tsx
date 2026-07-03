@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/badge";
 
 interface LeaveType {
   code: string; name: string; days_per_year: number;
-  is_replacement: boolean; requires_doc: boolean; sort_order: number;
+  is_replacement: boolean; requires_doc: boolean; sort_order: number; active: boolean;
 }
 interface LeaveApp {
   id: string; leave_no: string; leave_type_code: string; start_date: string;
