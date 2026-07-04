@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
+import { TopBar } from "@/components/layout/top-bar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { PushSetup } from "@/components/push-setup";
 import { NotificationBanner } from "@/components/notification-banner";
@@ -55,9 +56,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <PushSetup />
       <NotificationBanner />
       <Sidebar user={user} ministryList={ministryList} />
-      <main className="flex-1 overflow-y-auto pb-20 md:pb-0 print:overflow-visible print:flex-none print:h-auto">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col min-h-0 print:block print:h-auto">
+        <TopBar user={user} />
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0 print:overflow-visible print:flex-none print:h-auto">
+          {children}
+        </main>
+      </div>
       <MobileNav user={user} ministryList={ministryList} />
     </div>
   );
