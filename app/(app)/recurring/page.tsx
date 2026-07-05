@@ -9,7 +9,7 @@ import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
   Search, Folder, FolderOpen, ChevronUp, FileText, RotateCcw,
-  AlertTriangle, CalendarDays,
+  AlertTriangle, CalendarDays, Layers, LayoutList,
 } from "lucide-react";
 
 const MALAYSIA_BANKS = [
@@ -145,6 +145,7 @@ export default function RecurringPage() {
     secondaryAction?: { label: string; onClick: () => void };
   } | null>(null);
   const [activeFilter, setActiveFilter] = useState<"due7" | "ready" | "atRisk" | null>(null);
+  const [viewMode, setViewMode] = useState<"library" | "all">("library");
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -867,6 +868,14 @@ export default function RecurringPage() {
     }
   }
 
+  const flatViewItems = (viewMode === "all" && !search)
+    ? [...entityItems].sort((a, b) => {
+        if (!a.next_due) return 1;
+        if (!b.next_due) return -1;
+        return new Date(a.next_due).getTime() - new Date(b.next_due).getTime();
+      })
+    : entityItems;
+
   const existingGroups = [...new Set(entityItems.map(i => i.group_name || "General"))].sort();
   const filteredProjects = projects.filter(p => !form.ministry || p.ministry === form.ministry);
 
@@ -1002,19 +1011,37 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-        <input
-          className="w-full pl-9 pr-8 py-2.5 border border-stone-200 rounded-xl text-sm outline-none focus:border-[#4a6da7] bg-white"
-          placeholder="Search by name, payee, amount, keyword…"
-          value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setActiveFilter(null); }}
-        />
-        {search && (
-          <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600">
-            <X size={14} />
+      {/* Search + View toggle */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+          <input
+            className="w-full pl-9 pr-8 py-2.5 border border-stone-200 rounded-xl text-sm outline-none focus:border-[#4a6da7] bg-white"
+            placeholder="Search by name, payee, amount, keyword…"
+            value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setActiveFilter(null); }}
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden bg-white shrink-0">
+          <button
+            onClick={() => setViewMode("library")}
+            title="Library — grouped by frequency"
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${viewMode === "library" ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}
+          >
+            <Layers size={13} /> Library
           </button>
-        )}
+          <button
+            onClick={() => setViewMode("all")}
+            title="View all expenses as a flat list"
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors border-l border-stone-200 ${viewMode === "all" ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}
+          >
+            <LayoutList size={13} /> All
+          </button>
+        </div>
       </div>
 
       {/* Filter banners */}
@@ -1477,42 +1504,51 @@ export default function RecurringPage() {
         <div className="text-center py-16 text-stone-400 text-sm">
           {search ? `No results for "${search}"` : activeFilter === "atRisk" ? "No at-risk expenses" : activeFilter === "ready" ? "All expenses are up to date" : activeFilter === "due7" ? "Nothing due in the next 7 days" : `No recurring expenses for ${entityTab} yet`}
         </div>
-      ) : search ? (
-        /* ── Flat search results view ── */
-        <div className="overflow-x-auto rounded-xl border border-stone-200">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                <th className="py-2.5 pl-3 w-8 text-left"></th>
-                <th className="py-2.5 w-8 text-left">No</th>
-                <th className="py-2.5 text-left">Description</th>
-                <th className="py-2.5 text-left">Payable To</th>
-                <th className="py-2.5 text-left">Duration</th>
-                <th className="py-2.5 text-left">Last Created PV</th>
-                <th className="py-2.5 text-left">Last Paid PV</th>
-                <th className="py-2.5 text-right pr-4">Amount</th>
-                <th className="py-2.5 w-40"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {entityItems.map((item, idx) => (
-                <RecurringRow
-                  key={item.id} item={item} rowNo={idx + 1}
-                  isSelected={selected.has(item.id)}
-                  lastPaid={lastPaidMap[item.id] ?? null}
-                  groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
-                  onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
-                  onEdit={() => openEdit(item)}
-                  onToggleActive={() => toggleActive(item)}
-                  onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
-                  onDelete={() => deleteItem(item.id)}
-                  onReset={() => resetItem(item.id)}
-                  showHistory={historyId === item.id}
-                  batchRunning={batchRunning}
-                />
-              ))}
-            </tbody>
-          </table>
+      ) : (search || viewMode === "all") ? (
+        /* ── Flat list view (search results or "All" mode) ── */
+        <div className="space-y-2">
+          {viewMode === "all" && !search && (
+            <div className="px-1 flex items-center justify-between">
+              <p className="text-xs text-stone-400">
+                {flatViewItems.length} expense{flatViewItems.length !== 1 ? "s" : ""} · sorted by next due date
+              </p>
+            </div>
+          )}
+          <div className="overflow-x-auto rounded-xl border border-stone-200">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                  <th className="py-2.5 pl-3 w-8 text-left"></th>
+                  <th className="py-2.5 w-8 text-left">No</th>
+                  <th className="py-2.5 text-left">Description</th>
+                  <th className="py-2.5 text-left">Payable To</th>
+                  <th className="py-2.5 text-left">Duration</th>
+                  <th className="py-2.5 text-left">Last Created PV</th>
+                  <th className="py-2.5 text-left">Last Paid PV</th>
+                  <th className="py-2.5 text-right pr-4">Amount</th>
+                  <th className="py-2.5 w-40"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {flatViewItems.map((item, idx) => (
+                  <RecurringRow
+                    key={item.id} item={item} rowNo={idx + 1}
+                    isSelected={selected.has(item.id)}
+                    lastPaid={lastPaidMap[item.id] ?? null}
+                    groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
+                    onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
+                    onEdit={() => openEdit(item)}
+                    onToggleActive={() => toggleActive(item)}
+                    onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
+                    onDelete={() => deleteItem(item.id)}
+                    onReset={() => resetItem(item.id)}
+                    showHistory={historyId === item.id}
+                    batchRunning={batchRunning}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="space-y-8">
