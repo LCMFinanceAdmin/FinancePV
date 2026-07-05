@@ -235,7 +235,7 @@ export default function WorksheetsPage() {
       worker_type: ws.worker_type, worker_name: ws.worker_name,
       bank_name: ws.bank_name ?? "", bank_account_no: ws.bank_account_no ?? "",
       period_type: ws.period_type,
-      period_label: ws.period_label, entries: ws.entries.length ? ws.entries : [{ date: "", hours: 0 }],
+      period_label: ws.period_label, entries: ws.entries.length ? ws.entries : [{ date: "", start_time: "", end_time: "", hours: 0, purpose: "" }],
       rate_per_hour: ws.rate_per_hour, total_hours: ws.total_hours, total_amount: ws.total_amount, notes: ws.notes,
     });
     if (ws.period_type === "MONTH") {

@@ -40,6 +40,7 @@ export interface UserProfile {
   isMinistryHead: boolean;
   isGeneralManager: boolean;
   isBuildingManager: boolean;
+  isBamCommittee?: boolean;
   isTestAdmin: boolean;
 }
 
@@ -225,6 +226,43 @@ export interface IncomeRecord {
   notes: string;
   created_by: string;
   created_at: string;
+}
+
+export type WorkerType = "PA_PERSONNEL" | "BUILDING_CARE_TAKER" | "RELA_PERSONNEL";
+
+export interface WorksheetEntry {
+  date: string;
+  start_time: string;
+  end_time: string;
+  hours: number;
+  purpose: string;
+}
+
+export interface WorkerWorksheet {
+  id: string;
+  worksheet_no: string;
+  worker_type: WorkerType;
+  worker_name: string;
+  bank_name: string;
+  bank_account_no: string;
+  period_type: "MONTH" | "DAYS";
+  period_label: string;
+  entries: WorksheetEntry[];
+  rate_per_hour: number;
+  total_hours: number;
+  total_amount: number;
+  notes: string;
+  status: "DRAFT" | "SIGNED" | "PV_RAISED";
+  worker_signature: string | null;
+  worker_signed_at: string | null;
+  bem_signature: string | null;
+  bem_signed_by: string | null;
+  bem_signed_at: string | null;
+  pdf_url: string | null;
+  pv_id: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface BulkRun {

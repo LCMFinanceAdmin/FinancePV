@@ -95,6 +95,15 @@ export function computedBadgeStatus(pv: { status?: string; approvals?: unknown[]
   return "PENDING_SIGNATORY";
 }
 
+// Returns hours between two "HH:MM" time strings. Handles overnight spans.
+export function hoursBetween(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let mins = (eh * 60 + em) - (sh * 60 + sm);
+  if (mins < 0) mins += 24 * 60;
+  return Math.round((mins / 60) * 100) / 100;
+}
+
 export function getLOATier(amount: number, paymentType = "GENERAL"): LOATier {
   if (paymentType === "ASSET_PURCHASE" && amount > 100000) {
     return { required: 2, roles: ["BISHOP", "SECRETARY", "TREASURER"], label: "EXCO required (E2)" };
