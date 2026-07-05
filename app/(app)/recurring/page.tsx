@@ -9,6 +9,7 @@ import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
   Search, Folder, FolderOpen, ChevronUp, FileText, RotateCcw,
+  AlertTriangle, CalendarDays,
 } from "lucide-react";
 
 const MALAYSIA_BANKS = [
@@ -143,6 +144,7 @@ export default function RecurringPage() {
     danger?: boolean;
     secondaryAction?: { label: string; onClick: () => void };
   } | null>(null);
+  const [activeFilter, setActiveFilter] = useState<"due7" | "ready" | "atRisk" | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -221,10 +223,49 @@ export default function RecurringPage() {
 
   useEffect(() => { load(); }, []);
 
-  // --- Derived: filter by entity + search, then group by freq → groupName ---
+  // --- All items for this entity tab (no search/filter — used for stat cards) ---
+  const tabItems = items.filter(item => {
+    const pvType = ((item as RecurringPV & { pv_type?: string }).pv_type || "LCM") as EntityKey;
+    return pvType === entityTab;
+  });
+
+  // --- Stat card computations ---
+  const _now = new Date();
+  const _in7Days = new Date(_now.getTime() + 7 * 86400000);
+  const _startOfMonth = new Date(_now.getFullYear(), _now.getMonth(), 1);
+
+  const statDueIn7 = tabItems.filter(i =>
+    i.active && !isExpiredItem(i) && !!i.next_due &&
+    new Date(i.next_due) >= _now && new Date(i.next_due) <= _in7Days &&
+    !isAlreadyRunThisPeriod(i)
+  );
+  const statAtRisk = tabItems.filter(i => {
+    if (!i.active || isExpiredItem(i)) return false;
+    const dueDate = i.next_due ? new Date(i.next_due) : null;
+    const daysUntilDue = dueDate ? (dueDate.getTime() - _now.getTime()) / 86400000 : null;
+    const notCreatedNearDue = !isAlreadyRunThisPeriod(i) && daysUntilDue !== null && daysUntilDue <= 7;
+    const createdNotApproved = isAlreadyRunThisPeriod(i) && !!i.current_pv_status &&
+      !["APPROVED", "PAID"].includes(i.current_pv_status);
+    return notCreatedNearDue || createdNotApproved;
+  });
+  const statReadyForPV = tabItems.filter(i =>
+    i.active && !isAlreadyRunThisPeriod(i) && !isExpiredItem(i)
+  );
+  const statPaidThisMonth = tabItems.filter(i =>
+    !!i.last_run && new Date(i.last_run) >= _startOfMonth
+  );
+
+  const statDueIn7Ids = new Set(statDueIn7.map(i => i.id));
+  const statAtRiskIds = new Set(statAtRisk.map(i => i.id));
+  const statReadyIds = new Set(statReadyForPV.map(i => i.id));
+
+  // --- Derived: filter by entity + search + active stat filter, then group by freq → groupName ---
   const entityItems = items.filter(item => {
     const pvType = ((item as RecurringPV & { pv_type?: string }).pv_type || "LCM") as EntityKey;
     if (pvType !== entityTab) return false;
+    if (activeFilter === "due7" && !statDueIn7Ids.has(item.id)) return false;
+    if (activeFilter === "ready" && !statReadyIds.has(item.id)) return false;
+    if (activeFilter === "atRisk" && !statAtRiskIds.has(item.id)) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -861,7 +902,7 @@ export default function RecurringPage() {
         {(isBuildingManager ? ENTITY_TABS.filter(t => t.key === "BAM") : ENTITY_TABS).map(tab => (
           <button
             key={tab.key}
-            onClick={() => { setEntityTab(tab.key); setSearch(""); }}
+            onClick={() => { setEntityTab(tab.key); setSearch(""); setActiveFilter(null); }}
             className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px ${
               entityTab === tab.key
                 ? `${tab.borderColor} ${tab.textColor}`
@@ -878,13 +919,96 @@ export default function RecurringPage() {
         ))}
       </div>
 
+      {/* ── Stat cards ── */}
+      {!loading && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+          {/* Due in 7 days */}
+          <button
+            onClick={() => setActiveFilter(f => f === "due7" ? null : "due7")}
+            className={`text-left p-4 rounded-2xl border transition-all ${
+              activeFilter === "due7"
+                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+                : "border-stone-200 bg-white hover:border-blue-200 hover:shadow-sm"
+            }`}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center">
+                <CalendarDays size={16} className="text-blue-600" />
+              </div>
+              {statDueIn7.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Due soon</span>
+              )}
+            </div>
+            <div className="text-2xl font-bold text-stone-800 leading-none mb-1">{statDueIn7.length}</div>
+            <div className="text-xs text-stone-500">Due in 7 days</div>
+          </button>
+
+          {/* Ready for PV */}
+          <button
+            onClick={() => setActiveFilter(f => f === "ready" ? null : "ready")}
+            className={`text-left p-4 rounded-2xl border transition-all ${
+              activeFilter === "ready"
+                ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200"
+                : "border-stone-200 bg-white hover:border-emerald-200 hover:shadow-sm"
+            }`}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center">
+                <CheckCircle2 size={16} className="text-emerald-600" />
+              </div>
+              {statReadyForPV.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Run now</span>
+              )}
+            </div>
+            <div className="text-2xl font-bold text-stone-800 leading-none mb-1">{statReadyForPV.length}</div>
+            <div className="text-xs text-stone-500">Ready for PV</div>
+          </button>
+
+          {/* Paid this month */}
+          <div className="text-left p-4 rounded-2xl border border-stone-200 bg-white">
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-9 h-9 rounded-xl bg-stone-100 flex items-center justify-center">
+                <CheckCircle2 size={16} className="text-stone-400" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-stone-800 leading-none mb-1">{statPaidThisMonth.length}</div>
+            <div className="text-xs text-stone-500">Paid this month</div>
+          </div>
+
+          {/* At risk */}
+          <button
+            onClick={() => setActiveFilter(f => f === "atRisk" ? null : "atRisk")}
+            className={`text-left p-4 rounded-2xl border transition-all ${
+              activeFilter === "atRisk"
+                ? "border-red-400 bg-red-50 ring-2 ring-red-200"
+                : statAtRisk.length > 0
+                  ? "border-red-200 bg-red-50/40 hover:border-red-300 hover:shadow-sm"
+                  : "border-stone-200 bg-white hover:border-stone-300 hover:shadow-sm"
+            }`}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${statAtRisk.length > 0 ? "bg-red-100" : "bg-stone-100"}`}>
+                <AlertTriangle size={16} className={statAtRisk.length > 0 ? "text-red-500" : "text-stone-400"} />
+              </div>
+              {statAtRisk.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Alert</span>
+              )}
+            </div>
+            <div className={`text-2xl font-bold leading-none mb-1 ${statAtRisk.length > 0 ? "text-red-600" : "text-stone-800"}`}>
+              {statAtRisk.length}
+            </div>
+            <div className="text-xs text-stone-500">At risk</div>
+          </button>
+        </div>
+      )}
+
       {/* Search */}
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
         <input
           className="w-full pl-9 pr-8 py-2.5 border border-stone-200 rounded-xl text-sm outline-none focus:border-[#4a6da7] bg-white"
           placeholder="Search by name, payee, amount, keyword…"
-          value={search} onChange={e => setSearch(e.target.value)}
+          value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setActiveFilter(null); }}
         />
         {search && (
           <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600">
@@ -892,6 +1016,35 @@ export default function RecurringPage() {
           </button>
         )}
       </div>
+
+      {/* Filter banners */}
+      {activeFilter === "atRisk" && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold">Showing at-risk expenses</span> — PV not created within 1 week of due date, created but pending approval, or overdue.
+          </div>
+          <button onClick={() => setActiveFilter(null)} className="shrink-0 text-red-400 hover:text-red-600"><X size={13} /></button>
+        </div>
+      )}
+      {activeFilter === "ready" && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700">
+          <CheckCircle2 size={13} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold">{statReadyForPV.length} expense{statReadyForPV.length !== 1 ? "s" : ""} ready for PV generation</span> — select items below, then use Run to generate vouchers.
+          </div>
+          <button onClick={() => setActiveFilter(null)} className="shrink-0 text-emerald-500 hover:text-emerald-700"><X size={13} /></button>
+        </div>
+      )}
+      {activeFilter === "due7" && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-700">
+          <CalendarDays size={13} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold">{statDueIn7.length} payment{statDueIn7.length !== 1 ? "s" : ""} due within 7 days</span> — ensure PVs are created and approved on time.
+          </div>
+          <button onClick={() => setActiveFilter(null)} className="shrink-0 text-blue-500 hover:text-blue-700"><X size={13} /></button>
+        </div>
+      )}
 
       {/* Toast */}
       {toast.msg && (
@@ -1322,7 +1475,7 @@ export default function RecurringPage() {
         <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
       ) : entityItems.length === 0 ? (
         <div className="text-center py-16 text-stone-400 text-sm">
-          {search ? `No results for "${search}"` : `No recurring expenses for ${entityTab} yet`}
+          {search ? `No results for "${search}"` : activeFilter === "atRisk" ? "No at-risk expenses" : activeFilter === "ready" ? "All expenses are up to date" : activeFilter === "due7" ? "Nothing due in the next 7 days" : `No recurring expenses for ${entityTab} yet`}
         </div>
       ) : search ? (
         /* ── Flat search results view ── */
