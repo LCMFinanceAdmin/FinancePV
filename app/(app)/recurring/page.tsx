@@ -1134,21 +1134,36 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Create / Edit form */}
+      {/* Create / Edit form — right-side drawer */}
       {showForm && (
-        <div className="bg-white border-2 border-stone-300 rounded-xl overflow-hidden">
-          {/* Form header */}
-          <div className="px-4 py-3 border-b-4 border-stone-800 bg-stone-800 flex items-center justify-between">
-            <p className="text-sm font-bold text-white">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
-            {(() => {
-              const tab = ENTITY_TABS.find(t => t.key === form.pv_type);
-              return tab ? (
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tab.badgeBg} ${tab.badgeText}`}>{tab.label}</span>
-              ) : null;
-            })()}
-          </div>
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => { setShowForm(false); setForm({ ...BLANK_FORM }); }}
+          />
+          {/* Drawer panel */}
+          <div className="relative w-full max-w-lg h-full bg-white shadow-2xl flex flex-col">
+            {/* Form header */}
+            <div className="px-5 py-4 bg-stone-900 flex items-center justify-between shrink-0">
+              <div>
+                <p className="text-sm font-bold text-white">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
+                {(() => {
+                  const tab = ENTITY_TABS.find(t => t.key === form.pv_type);
+                  return tab ? (
+                    <span className={`mt-1 inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${tab.badgeBg} ${tab.badgeText}`}>{tab.label}</span>
+                  ) : null;
+                })()}
+              </div>
+              <button
+                onClick={() => { setShowForm(false); setForm({ ...BLANK_FORM }); }}
+                className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-          <div className="divide-y-4 divide-stone-200">
+            <div className="flex-1 overflow-y-auto divide-y divide-stone-100">
 
             {/* ── Section 0: Entity ── (hidden for BEM, who is locked to BAM) */}
             {!form.id && !isBuildingManager && (
@@ -1369,11 +1384,12 @@ export default function RecurringPage() {
 
           </div>
 
-          {/* Save button */}
-          <div className="px-4 py-3 border-t-4 border-stone-200 bg-stone-50">
-            <Button onClick={save} loading={saving} className="w-full">
-              {form.id ? "Update Template" : "Save Recurring Expense"}
-            </Button>
+            {/* Save button */}
+            <div className="px-5 py-4 border-t border-stone-200 bg-stone-50 shrink-0">
+              <Button onClick={save} loading={saving} className="w-full">
+                {form.id ? "Update Template" : "Save Recurring Expense"}
+              </Button>
+            </div>
           </div>
         </div>
       )}
