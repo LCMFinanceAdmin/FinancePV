@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Card, CardBody } from "@/components/ui/card";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { CheckCircle, XCircle, AlertCircle, Building2, FileText } from "lucide-react";
+import { CheckCircle, XCircle, AlertCircle, Building2, FileText, Plus, Trash2 } from "lucide-react";
 
 interface BAMPv {
   id: string;
@@ -69,7 +69,7 @@ export default function BamQueuePage() {
 
     setPvs((data ?? []) as BAMPv[]);
 
-    // Committee members list (Finance Admin / BM can manage)
+    // Committee members list (for Finance Admin management panel)
     const { data: members } = await supabase
       .from("user_roles").select("email,full_name").eq("role", "BAM_COMMITTEE").order("email");
     setCommittee((members as { email: string; full_name: string }[]) ?? []);
@@ -134,6 +134,7 @@ export default function BamQueuePage() {
     setSubmitting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+
       const endpoint = isFinanceAdmin ? "admin-action" : "bam-action";
       const body: Record<string, unknown> = {
         pv_id: actionPv.id,
@@ -148,7 +149,10 @@ export default function BamQueuePage() {
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Action failed");
-      const approveMsg = isFinanceAdmin ? "BAM PV sent to General Manager" : "BAM PV approved — sent to Finance Executive";
+
+      const approveMsg = isFinanceAdmin
+        ? "BAM PV sent to General Manager"
+        : "BAM PV approved — sent to Finance Executive";
       showToast(actionType === "APPROVE" ? approveMsg : "BAM PV rejected");
       closeAction();
       load();
@@ -162,13 +166,13 @@ export default function BamQueuePage() {
   function statusBadge(status: string) {
     const map: Record<string, { label: string; color: string }> = {
       BAM_COMMITTEE_REVIEW: { label: "Awaiting BAM Committee", color: "bg-orange-100 text-orange-700" },
-      BAM_REVIEW:        { label: "Awaiting BM Review",      color: "bg-orange-100 text-orange-700" },
-      FINANCE_REVIEW:    { label: "Finance Review",           color: "bg-blue-100 text-blue-700" },
-      GM_REVIEW:         { label: "GM Approval",              color: "bg-purple-100 text-purple-700" },
-      PENDING_SIGNATORY: { label: "Signatory Signing",        color: "bg-indigo-100 text-indigo-700" },
-      APPROVED:          { label: "Approved",                 color: "bg-green-100 text-green-700" },
-      PAID:              { label: "Paid",                     color: "bg-emerald-100 text-emerald-700" },
-      REJECTED:          { label: "Rejected",                 color: "bg-red-100 text-red-700" },
+      BAM_REVIEW:        { label: "Awaiting BM Review",        color: "bg-orange-100 text-orange-700" },
+      FINANCE_REVIEW:    { label: "Finance Review",             color: "bg-blue-100 text-blue-700" },
+      GM_REVIEW:         { label: "GM Approval",               color: "bg-purple-100 text-purple-700" },
+      PENDING_SIGNATORY: { label: "Signatory Signing",         color: "bg-indigo-100 text-indigo-700" },
+      APPROVED:          { label: "Approved",                   color: "bg-green-100 text-green-700" },
+      PAID:              { label: "Paid",                       color: "bg-emerald-100 text-emerald-700" },
+      REJECTED:          { label: "Rejected",                   color: "bg-red-100 text-red-700" },
     };
     const s = map[status] ?? { label: status, color: "bg-stone-100 text-stone-600" };
     return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.color}`}>{s.label}</span>;
@@ -204,7 +208,7 @@ export default function BamQueuePage() {
         </div>
       )}
 
-      {/* BAM Committee management — BEM + Finance Executive assign the committee PIC(s) */}
+      {/* BAM Committee management panel — Finance Admin / Building Manager only */}
       {(isBuildingManager || isFinanceAdmin) && (
         <div className="bg-white border border-stone-200 rounded-xl p-4">
           <h2 className="text-sm font-bold text-stone-700 mb-1">BAM Committee Members</h2>
@@ -222,7 +226,9 @@ export default function BamQueuePage() {
                     )}
                   </span>
                   <button onClick={() => assignCommittee("remove", m.email)} disabled={assigning}
-                    className="text-xs text-red-600 hover:underline disabled:opacity-50">Remove</button>
+                    className="text-xs text-red-600 hover:underline disabled:opacity-50">
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               ))}
             </div>
@@ -234,8 +240,8 @@ export default function BamQueuePage() {
               placeholder="name@lcm.org.my or personal email"
               className="flex-1 border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
             <button onClick={() => assignCommittee("add", newCommitteeEmail.trim())} disabled={assigning || !newCommitteeEmail.trim()}
-              className="bg-[#4a6da7] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#3d5c96] disabled:opacity-50 transition-colors">
-              {assigning ? "…" : "Assign"}
+              className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#3d5c96] disabled:opacity-50 transition-colors">
+              <Plus size={14} /> {assigning ? "…" : "Assign"}
             </button>
           </div>
         </div>
@@ -368,7 +374,7 @@ export default function BamQueuePage() {
 
             {actionType === "APPROVE" && !needsSignature && (
               <p className="text-sm text-stone-500">
-                {isFinanceAdmin
+                {isFinanceAdmin && actionPv.status === "FINANCE_REVIEW"
                   ? "Approving will send this BAM PV to the General Manager for final approval."
                   : "Approving will send this BAM PV to the Finance Executive for finance review."}
               </p>

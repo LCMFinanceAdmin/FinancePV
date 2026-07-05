@@ -111,6 +111,7 @@ export function computedBadgeStatus(pv: { status?: string; approvals?: unknown[]
   return "PENDING_SIGNATORY";
 }
 
+
 export function getLOATier(amount: number, paymentType = "GENERAL"): LOATier {
   if (paymentType === "ASSET_PURCHASE" && amount > 100000) {
     return { required: 2, roles: ["BISHOP", "SECRETARY", "TREASURER"], label: "EXCO required (E2)" };

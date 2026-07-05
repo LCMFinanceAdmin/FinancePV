@@ -9,6 +9,7 @@ import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
   Search, Folder, FolderOpen, ChevronUp, FileText, RotateCcw,
+  AlertTriangle, CalendarDays, Layers, LayoutList, BookOpen, ArrowRight,
 } from "lucide-react";
 
 const MALAYSIA_BANKS = [
@@ -33,13 +34,132 @@ const FREQ_DISPLAY: Record<string, string> = {
 };
 
 type EntityKey = "LCM" | "BAM" | "LSC" | "HLE";
-const ENTITY_TABS: { key: EntityKey; label: string; color: string; textColor: string; borderColor: string; badgeBg: string; badgeText: string }[] = [
+const ENTITY_TABS: { key: EntityKey; label: string; subtitle?: string; color: string; textColor: string; borderColor: string; badgeBg: string; badgeText: string }[] = [
   { key: "LCM", label: "LCM",  color: "bg-[#4a6da7]", textColor: "text-[#4a6da7]", borderColor: "border-[#4a6da7]", badgeBg: "bg-blue-100", badgeText: "text-blue-700" },
   { key: "BAM", label: "BAM",  color: "bg-green-600",  textColor: "text-green-600",  borderColor: "border-green-600",  badgeBg: "bg-green-100", badgeText: "text-green-700" },
-  { key: "LSC", label: "LSC",  color: "bg-purple-600", textColor: "text-purple-600", borderColor: "border-purple-600", badgeBg: "bg-purple-100", badgeText: "text-purple-700" },
-  { key: "HLE", label: "HLE",  color: "bg-amber-500",  textColor: "text-amber-600",  borderColor: "border-amber-500",  badgeBg: "bg-amber-100", badgeText: "text-amber-700" },
+  { key: "LSC", label: "LSC",  subtitle: "RHB Bank",   color: "bg-purple-600", textColor: "text-purple-600", borderColor: "border-purple-600", badgeBg: "bg-purple-100", badgeText: "text-purple-700" },
+  { key: "HLE", label: "HLE",  subtitle: "Maybank",    color: "bg-amber-500",  textColor: "text-amber-600",  borderColor: "border-amber-500",  badgeBg: "bg-amber-100", badgeText: "text-amber-700" },
 ];
 const PAYMENT_METHODS = ["Bank transfer", "JomPAY", "Online Transfer", "Cheque", "Cash", "Auto Debit", "Other"];
+
+const PAYMENT_TYPE_CATALOG: Record<string, { category: string; templates: { name: string; purpose: string; frequency: string; group: string; payment_type?: string }[] }[]> = {
+  LCM: [
+    {
+      category: "Property & Premises",
+      templates: [
+        { name: "Office / Hall Rental", purpose: "Monthly rental payment for office or hall space", frequency: "MONTHLY", group: "Property" },
+        { name: "Utility Bills", purpose: "Monthly utility charges — electricity, water, gas", frequency: "MONTHLY", group: "Utilities" },
+        { name: "Building / Premises Maintenance", purpose: "Monthly building and premises maintenance", frequency: "MONTHLY", group: "Property" },
+      ],
+    },
+    {
+      category: "Personnel & Payroll",
+      templates: [
+        { name: "Staff Salary", purpose: "Monthly staff salary payment", frequency: "MONTHLY", group: "Payroll", payment_type: "PAYROLL" },
+        { name: "Professional / Consultant Fees", purpose: "Monthly professional services retainer", frequency: "MONTHLY", group: "Services" },
+        { name: "Staff Honorarium", purpose: "Monthly honorarium payment", frequency: "MONTHLY", group: "Payroll" },
+      ],
+    },
+    {
+      category: "Finance & Insurance",
+      templates: [
+        { name: "Loan / Financing Repayment", purpose: "Monthly loan repayment instalment", frequency: "MONTHLY", group: "Finance" },
+        { name: "Insurance Premium", purpose: "Annual insurance premium", frequency: "ANNUAL", group: "Insurance" },
+        { name: "Bank Charges", purpose: "Monthly bank charges and fees", frequency: "MONTHLY", group: "Finance" },
+      ],
+    },
+    {
+      category: "Services & Subscriptions",
+      templates: [
+        { name: "IT / Software Subscription", purpose: "Monthly software or cloud subscription", frequency: "MONTHLY", group: "IT" },
+        { name: "Cleaning Services", purpose: "Monthly cleaning and janitorial services", frequency: "MONTHLY", group: "Services" },
+        { name: "Security Services", purpose: "Monthly security services", frequency: "MONTHLY", group: "Services" },
+        { name: "Pest Control", purpose: "Quarterly pest control services", frequency: "QUARTERLY", group: "Services" },
+      ],
+    },
+  ],
+  BAM: [
+    {
+      category: "Lift & Mechanical",
+      templates: [
+        { name: "Lift Maintenance", purpose: "Monthly lift maintenance and service contract", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Air-Conditioning Maintenance", purpose: "Monthly air-conditioning system maintenance", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Generator / M&E Maintenance", purpose: "Quarterly mechanical and electrical system maintenance", frequency: "QUARTERLY", group: "Maintenance" },
+      ],
+    },
+    {
+      category: "Fire & Safety",
+      templates: [
+        { name: "Fire Protection System", purpose: "Quarterly fire protection system maintenance and inspection", frequency: "QUARTERLY", group: "Safety" },
+        { name: "Fire Extinguisher Service", purpose: "Annual fire extinguisher servicing", frequency: "ANNUAL", group: "Safety" },
+        { name: "Security System Maintenance", purpose: "Monthly security and CCTV system maintenance", frequency: "MONTHLY", group: "Safety" },
+      ],
+    },
+    {
+      category: "Grounds & Cleaning",
+      templates: [
+        { name: "Common Area Cleaning", purpose: "Monthly common area cleaning services", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Landscaping & Grounds", purpose: "Monthly landscaping and grounds keeping", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Pest Control", purpose: "Quarterly pest control services", frequency: "QUARTERLY", group: "Maintenance" },
+      ],
+    },
+    {
+      category: "Utilities & Insurance",
+      templates: [
+        { name: "Sewerage Treatment", purpose: "Monthly sewerage treatment services", frequency: "MONTHLY", group: "Utilities" },
+        { name: "Building Insurance", purpose: "Annual building and property insurance premium", frequency: "ANNUAL", group: "Insurance" },
+        { name: "Security / Guard Services", purpose: "Monthly security guard services", frequency: "MONTHLY", group: "Security" },
+      ],
+    },
+  ],
+  LSC: [
+    {
+      category: "Space & Premises",
+      templates: [
+        { name: "Venue / Space Rental", purpose: "Monthly venue rental payment — LSC RHB", frequency: "MONTHLY", group: "Property" },
+        { name: "Utilities", purpose: "Monthly utility charges — electricity, water", frequency: "MONTHLY", group: "Utilities" },
+      ],
+    },
+    {
+      category: "Personnel",
+      templates: [
+        { name: "Staff / Tutor Honorarium", purpose: "Monthly honorarium for staff or tutors", frequency: "MONTHLY", group: "Payroll" },
+        { name: "Facilitator / Speaker Fees", purpose: "Program facilitator or speaker fees", frequency: "QUARTERLY", group: "Services" },
+      ],
+    },
+    {
+      category: "Programs & Operations",
+      templates: [
+        { name: "Program Materials", purpose: "Course and program materials procurement", frequency: "QUARTERLY", group: "Programs" },
+        { name: "Insurance Premium", purpose: "Annual insurance premium for LSC", frequency: "ANNUAL", group: "Insurance" },
+      ],
+    },
+  ],
+  HLE: [
+    {
+      category: "Property Maintenance",
+      templates: [
+        { name: "Property Maintenance", purpose: "Monthly property maintenance and upkeep — HLE Maybank", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Ground Keeping", purpose: "Monthly ground keeping and landscaping services", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Pest Control", purpose: "Quarterly pest control services", frequency: "QUARTERLY", group: "Maintenance" },
+      ],
+    },
+    {
+      category: "Utilities",
+      templates: [
+        { name: "Utilities", purpose: "Monthly utility charges — electricity, water", frequency: "MONTHLY", group: "Utilities" },
+        { name: "Internet / Communications", purpose: "Monthly internet and communications services", frequency: "MONTHLY", group: "Utilities" },
+      ],
+    },
+    {
+      category: "Finance & Insurance",
+      templates: [
+        { name: "Property Financing Repayment", purpose: "Monthly property financing repayment instalment — Maybank", frequency: "MONTHLY", group: "Finance" },
+        { name: "Property Insurance", purpose: "Annual property insurance premium — HLE Maybank", frequency: "ANNUAL", group: "Insurance" },
+      ],
+    },
+  ],
+};
 
 interface LineItem { description: string; amount: number; }
 
@@ -143,6 +263,9 @@ export default function RecurringPage() {
     danger?: boolean;
     secondaryAction?: { label: string; onClick: () => void };
   } | null>(null);
+  const [activeFilter, setActiveFilter] = useState<"due7" | "ready" | "atRisk" | null>(null);
+  const [viewMode, setViewMode] = useState<"library" | "all">("library");
+  const [showPaymentBrowser, setShowPaymentBrowser] = useState(false);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -221,10 +344,49 @@ export default function RecurringPage() {
 
   useEffect(() => { load(); }, []);
 
-  // --- Derived: filter by entity + search, then group by freq → groupName ---
+  // --- All items for this entity tab (no search/filter — used for stat cards) ---
+  const tabItems = items.filter(item => {
+    const pvType = ((item as RecurringPV & { pv_type?: string }).pv_type || "LCM") as EntityKey;
+    return pvType === entityTab;
+  });
+
+  // --- Stat card computations ---
+  const _now = new Date();
+  const _in7Days = new Date(_now.getTime() + 7 * 86400000);
+  const _startOfMonth = new Date(_now.getFullYear(), _now.getMonth(), 1);
+
+  const statDueIn7 = tabItems.filter(i =>
+    i.active && !isExpiredItem(i) && !!i.next_due &&
+    new Date(i.next_due) >= _now && new Date(i.next_due) <= _in7Days &&
+    !isAlreadyRunThisPeriod(i)
+  );
+  const statAtRisk = tabItems.filter(i => {
+    if (!i.active || isExpiredItem(i)) return false;
+    const dueDate = i.next_due ? new Date(i.next_due) : null;
+    const daysUntilDue = dueDate ? (dueDate.getTime() - _now.getTime()) / 86400000 : null;
+    const notCreatedNearDue = !isAlreadyRunThisPeriod(i) && daysUntilDue !== null && daysUntilDue <= 7;
+    const createdNotApproved = isAlreadyRunThisPeriod(i) && !!i.current_pv_status &&
+      !["APPROVED", "PAID"].includes(i.current_pv_status);
+    return notCreatedNearDue || createdNotApproved;
+  });
+  const statReadyForPV = tabItems.filter(i =>
+    i.active && !isAlreadyRunThisPeriod(i) && !isExpiredItem(i)
+  );
+  const statPaidThisMonth = tabItems.filter(i =>
+    !!i.last_run && new Date(i.last_run) >= _startOfMonth
+  );
+
+  const statDueIn7Ids = new Set(statDueIn7.map(i => i.id));
+  const statAtRiskIds = new Set(statAtRisk.map(i => i.id));
+  const statReadyIds = new Set(statReadyForPV.map(i => i.id));
+
+  // --- Derived: filter by entity + search + active stat filter, then group by freq → groupName ---
   const entityItems = items.filter(item => {
     const pvType = ((item as RecurringPV & { pv_type?: string }).pv_type || "LCM") as EntityKey;
     if (pvType !== entityTab) return false;
+    if (activeFilter === "due7" && !statDueIn7Ids.has(item.id)) return false;
+    if (activeFilter === "ready" && !statReadyIds.has(item.id)) return false;
+    if (activeFilter === "atRisk" && !statAtRiskIds.has(item.id)) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -826,6 +988,14 @@ export default function RecurringPage() {
     }
   }
 
+  const flatViewItems = (viewMode === "all" && !search)
+    ? [...entityItems].sort((a, b) => {
+        if (!a.next_due) return 1;
+        if (!b.next_due) return -1;
+        return new Date(a.next_due).getTime() - new Date(b.next_due).getTime();
+      })
+    : entityItems;
+
   const existingGroups = [...new Set(entityItems.map(i => i.group_name || "General"))].sort();
   const filteredProjects = projects.filter(p => !form.ministry || p.ministry === form.ministry);
 
@@ -850,6 +1020,14 @@ export default function RecurringPage() {
               <FileText size={13} /> {masterMode ? "Cancel Master" : "Create Master"}
             </button>
           )}
+          {!showForm && (
+            <button
+              onClick={() => setShowPaymentBrowser(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 transition-colors"
+            >
+              <BookOpen size={13} /> Browse Types
+            </button>
+          )}
           <Button size="sm" onClick={showForm ? () => { setShowForm(false); setForm({ ...BLANK_FORM }); } : openNew}>
             {showForm ? <><X size={14} /> Cancel</> : <><Plus size={14} /> New Recurring</>}
           </Button>
@@ -861,37 +1039,174 @@ export default function RecurringPage() {
         {(isBuildingManager ? ENTITY_TABS.filter(t => t.key === "BAM") : ENTITY_TABS).map(tab => (
           <button
             key={tab.key}
-            onClick={() => { setEntityTab(tab.key); setSearch(""); }}
-            className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px ${
+            onClick={() => { setEntityTab(tab.key); setSearch(""); setActiveFilter(null); }}
+            className={`px-5 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px text-left ${
               entityTab === tab.key
                 ? `${tab.borderColor} ${tab.textColor}`
                 : "border-transparent text-stone-400 hover:text-stone-600 hover:border-stone-300"
             }`}
           >
-            {tab.label}
-            {entityTab === tab.key && overdue.length > 0 && (
-              <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                {overdue.length}
-              </span>
+            <div className="flex items-center gap-1.5">
+              {tab.label}
+              {entityTab === tab.key && overdue.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                  {overdue.length}
+                </span>
+              )}
+            </div>
+            {tab.subtitle && (
+              <div className={`text-[10px] font-normal leading-none -mt-0.5 ${entityTab === tab.key ? "opacity-70" : "opacity-50"}`}>
+                {tab.subtitle}
+              </div>
             )}
           </button>
         ))}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-        <input
-          className="w-full pl-9 pr-8 py-2.5 border border-stone-200 rounded-xl text-sm outline-none focus:border-[#4a6da7] bg-white"
-          placeholder="Search by name, payee, amount, keyword…"
-          value={search} onChange={e => setSearch(e.target.value)}
-        />
-        {search && (
-          <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600">
-            <X size={14} />
+      {/* ── Stat cards ── */}
+      {!loading && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+          {/* Due in 7 days */}
+          <button
+            onClick={() => setActiveFilter(f => f === "due7" ? null : "due7")}
+            className={`text-left p-4 rounded-2xl border transition-all ${
+              activeFilter === "due7"
+                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+                : "border-stone-200 bg-white hover:border-blue-200 hover:shadow-sm"
+            }`}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center">
+                <CalendarDays size={16} className="text-blue-600" />
+              </div>
+              {statDueIn7.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Due soon</span>
+              )}
+            </div>
+            <div className="text-2xl font-bold text-stone-800 leading-none mb-1">{statDueIn7.length}</div>
+            <div className="text-xs text-stone-500">Due in 7 days</div>
           </button>
-        )}
+
+          {/* Ready for PV */}
+          <button
+            onClick={() => setActiveFilter(f => f === "ready" ? null : "ready")}
+            className={`text-left p-4 rounded-2xl border transition-all ${
+              activeFilter === "ready"
+                ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200"
+                : "border-stone-200 bg-white hover:border-emerald-200 hover:shadow-sm"
+            }`}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center">
+                <CheckCircle2 size={16} className="text-emerald-600" />
+              </div>
+              {statReadyForPV.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Run now</span>
+              )}
+            </div>
+            <div className="text-2xl font-bold text-stone-800 leading-none mb-1">{statReadyForPV.length}</div>
+            <div className="text-xs text-stone-500">Ready for PV</div>
+          </button>
+
+          {/* Paid this month */}
+          <div className="text-left p-4 rounded-2xl border border-stone-200 bg-white">
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-9 h-9 rounded-xl bg-stone-100 flex items-center justify-center">
+                <CheckCircle2 size={16} className="text-stone-400" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-stone-800 leading-none mb-1">{statPaidThisMonth.length}</div>
+            <div className="text-xs text-stone-500">Paid this month</div>
+          </div>
+
+          {/* At risk */}
+          <button
+            onClick={() => setActiveFilter(f => f === "atRisk" ? null : "atRisk")}
+            className={`text-left p-4 rounded-2xl border transition-all ${
+              activeFilter === "atRisk"
+                ? "border-red-400 bg-red-50 ring-2 ring-red-200"
+                : statAtRisk.length > 0
+                  ? "border-red-200 bg-red-50/40 hover:border-red-300 hover:shadow-sm"
+                  : "border-stone-200 bg-white hover:border-stone-300 hover:shadow-sm"
+            }`}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${statAtRisk.length > 0 ? "bg-red-100" : "bg-stone-100"}`}>
+                <AlertTriangle size={16} className={statAtRisk.length > 0 ? "text-red-500" : "text-stone-400"} />
+              </div>
+              {statAtRisk.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Alert</span>
+              )}
+            </div>
+            <div className={`text-2xl font-bold leading-none mb-1 ${statAtRisk.length > 0 ? "text-red-600" : "text-stone-800"}`}>
+              {statAtRisk.length}
+            </div>
+            <div className="text-xs text-stone-500">At risk</div>
+          </button>
+        </div>
+      )}
+
+      {/* Search + View toggle */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+          <input
+            className="w-full pl-9 pr-8 py-2.5 border border-stone-200 rounded-xl text-sm outline-none focus:border-[#4a6da7] bg-white"
+            placeholder="Search by name, payee, amount, keyword…"
+            value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setActiveFilter(null); }}
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden bg-white shrink-0">
+          <button
+            onClick={() => setViewMode("library")}
+            title="Library — grouped by frequency"
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${viewMode === "library" ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}
+          >
+            <Layers size={13} /> Library
+          </button>
+          <button
+            onClick={() => setViewMode("all")}
+            title="View all expenses as a flat list"
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors border-l border-stone-200 ${viewMode === "all" ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}
+          >
+            <LayoutList size={13} /> All
+          </button>
+        </div>
       </div>
+
+      {/* Filter banners */}
+      {activeFilter === "atRisk" && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold">Showing at-risk expenses</span> — PV not created within 1 week of due date, created but pending approval, or overdue.
+          </div>
+          <button onClick={() => setActiveFilter(null)} className="shrink-0 text-red-400 hover:text-red-600"><X size={13} /></button>
+        </div>
+      )}
+      {activeFilter === "ready" && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700">
+          <CheckCircle2 size={13} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold">{statReadyForPV.length} expense{statReadyForPV.length !== 1 ? "s" : ""} ready for PV generation</span> — select items below, then use Run to generate vouchers.
+          </div>
+          <button onClick={() => setActiveFilter(null)} className="shrink-0 text-emerald-500 hover:text-emerald-700"><X size={13} /></button>
+        </div>
+      )}
+      {activeFilter === "due7" && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-700">
+          <CalendarDays size={13} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold">{statDueIn7.length} payment{statDueIn7.length !== 1 ? "s" : ""} due within 7 days</span> — ensure PVs are created and approved on time.
+          </div>
+          <button onClick={() => setActiveFilter(null)} className="shrink-0 text-blue-500 hover:text-blue-700"><X size={13} /></button>
+        </div>
+      )}
 
       {/* Toast */}
       {toast.msg && (
@@ -954,21 +1269,36 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Create / Edit form */}
+      {/* Create / Edit form — right-side drawer */}
       {showForm && (
-        <div className="bg-white border-2 border-stone-300 rounded-xl overflow-hidden">
-          {/* Form header */}
-          <div className="px-4 py-3 border-b-4 border-stone-800 bg-stone-800 flex items-center justify-between">
-            <p className="text-sm font-bold text-white">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
-            {(() => {
-              const tab = ENTITY_TABS.find(t => t.key === form.pv_type);
-              return tab ? (
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tab.badgeBg} ${tab.badgeText}`}>{tab.label}</span>
-              ) : null;
-            })()}
-          </div>
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => { setShowForm(false); setForm({ ...BLANK_FORM }); }}
+          />
+          {/* Drawer panel */}
+          <div className="relative w-full max-w-lg h-full bg-white shadow-2xl flex flex-col">
+            {/* Form header */}
+            <div className="px-5 py-4 bg-stone-900 flex items-center justify-between shrink-0">
+              <div>
+                <p className="text-sm font-bold text-white">{form.id ? "Edit Recurring Expense" : "New Recurring Expense"}</p>
+                {(() => {
+                  const tab = ENTITY_TABS.find(t => t.key === form.pv_type);
+                  return tab ? (
+                    <span className={`mt-1 inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${tab.badgeBg} ${tab.badgeText}`}>{tab.label}</span>
+                  ) : null;
+                })()}
+              </div>
+              <button
+                onClick={() => { setShowForm(false); setForm({ ...BLANK_FORM }); }}
+                className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-          <div className="divide-y-4 divide-stone-200">
+            <div className="flex-1 overflow-y-auto divide-y divide-stone-100">
 
             {/* ── Section 0: Entity ── (hidden for BEM, who is locked to BAM) */}
             {!form.id && !isBuildingManager && (
@@ -1189,11 +1519,12 @@ export default function RecurringPage() {
 
           </div>
 
-          {/* Save button */}
-          <div className="px-4 py-3 border-t-4 border-stone-200 bg-stone-50">
-            <Button onClick={save} loading={saving} className="w-full">
-              {form.id ? "Update Template" : "Save Recurring Expense"}
-            </Button>
+            {/* Save button */}
+            <div className="px-5 py-4 border-t border-stone-200 bg-stone-50 shrink-0">
+              <Button onClick={save} loading={saving} className="w-full">
+                {form.id ? "Update Template" : "Save Recurring Expense"}
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -1322,44 +1653,54 @@ export default function RecurringPage() {
         <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
       ) : entityItems.length === 0 ? (
         <div className="text-center py-16 text-stone-400 text-sm">
-          {search ? `No results for "${search}"` : `No recurring expenses for ${entityTab} yet`}
+          {search ? `No results for "${search}"` : activeFilter === "atRisk" ? "No at-risk expenses" : activeFilter === "ready" ? "All expenses are up to date" : activeFilter === "due7" ? "Nothing due in the next 7 days" : `No recurring expenses for ${entityTab} yet`}
         </div>
-      ) : search ? (
-        /* ── Flat search results view ── */
-        <div className="overflow-x-auto rounded-xl border border-stone-200">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                <th className="py-2.5 pl-3 w-8 text-left"></th>
-                <th className="py-2.5 w-8 text-left">No</th>
-                <th className="py-2.5 text-left">Description</th>
-                <th className="py-2.5 text-left">Payable To</th>
-                <th className="py-2.5 text-left">Duration</th>
-                <th className="py-2.5 text-left">Last Created PV</th>
-                <th className="py-2.5 text-left">Last Paid PV</th>
-                <th className="py-2.5 text-right pr-4">Amount</th>
-                <th className="py-2.5 w-40"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {entityItems.map((item, idx) => (
-                <RecurringRow
-                  key={item.id} item={item} rowNo={idx + 1}
-                  isSelected={selected.has(item.id)}
-                  lastPaid={lastPaidMap[item.id] ?? null}
-                  groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
-                  onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
-                  onEdit={() => openEdit(item)}
-                  onToggleActive={() => toggleActive(item)}
-                  onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
-                  onDelete={() => deleteItem(item.id)}
-                  onReset={() => resetItem(item.id)}
-                  showHistory={historyId === item.id}
-                  batchRunning={batchRunning}
-                />
-              ))}
-            </tbody>
-          </table>
+      ) : (search || viewMode === "all") ? (
+        /* ── Flat list view (search results or "All" mode) ── */
+        <div className="space-y-2">
+          {viewMode === "all" && !search && (
+            <div className="px-1 flex items-center justify-between">
+              <p className="text-xs text-stone-400">
+                {flatViewItems.length} expense{flatViewItems.length !== 1 ? "s" : ""} · sorted by next due date
+              </p>
+            </div>
+          )}
+          <div className="overflow-x-auto rounded-xl border border-stone-200">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                  <th className="py-2.5 pl-3 w-8 text-left"></th>
+                  <th className="py-2.5 w-8 text-left">No</th>
+                  <th className="py-2.5 text-left">Description</th>
+                  <th className="py-2.5 text-left">Payable To</th>
+                  <th className="py-2.5 text-left">Duration</th>
+                  <th className="py-2.5 text-left">Last Created PV</th>
+                  <th className="py-2.5 text-left">Last Paid PV</th>
+                  <th className="py-2.5 text-right pr-4">Amount</th>
+                  <th className="py-2.5 w-40"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {flatViewItems.map((item, idx) => (
+                  <RecurringRow
+                    key={item.id} item={item} rowNo={idx + 1}
+                    isSelected={selected.has(item.id)}
+                    isAtRisk={statAtRiskIds.has(item.id)}
+                    lastPaid={lastPaidMap[item.id] ?? null}
+                    groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
+                    onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
+                    onEdit={() => openEdit(item)}
+                    onToggleActive={() => toggleActive(item)}
+                    onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
+                    onDelete={() => deleteItem(item.id)}
+                    onReset={() => resetItem(item.id)}
+                    showHistory={historyId === item.id}
+                    batchRunning={batchRunning}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="space-y-8">
@@ -1512,6 +1853,7 @@ export default function RecurringPage() {
                                   <RecurringRow
                                     key={item.id} item={item} rowNo={idx + 1}
                                     isSelected={selected.has(item.id)}
+                                    isAtRisk={statAtRiskIds.has(item.id)}
                                     lastPaid={lastPaidMap[item.id] ?? null}
                                     onToggleSelect={() => {
                                       setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
@@ -1542,6 +1884,86 @@ export default function RecurringPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Payment Type Browser */}
+      {showPaymentBrowser && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-0 sm:px-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPaymentBrowser(false)} />
+          <div className="relative w-full sm:max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-stone-200 flex items-center justify-between shrink-0">
+              <div>
+                <p className="text-sm font-bold text-stone-800">Browse Payment Types</p>
+                <p className="text-xs text-stone-400 mt-0.5">Select a template to pre-fill the form</p>
+              </div>
+              <button onClick={() => setShowPaymentBrowser(false)}
+                className="p-2 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+            {/* Entity pill strip */}
+            <div className="px-5 py-2 bg-stone-50 border-b border-stone-100 shrink-0 flex items-center gap-2">
+              <span className="text-[11px] text-stone-400">Showing templates for:</span>
+              {ENTITY_TABS.map(t => (
+                <span key={t.key}
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${t.key === entityTab ? `${t.badgeBg} ${t.badgeText}` : "bg-stone-100 text-stone-400"}`}>
+                  {t.key}
+                </span>
+              ))}
+            </div>
+            {/* Scrollable catalog */}
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-6">
+              {(PAYMENT_TYPE_CATALOG[entityTab] ?? []).map(cat => (
+                <div key={cat.category}>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">{cat.category}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {cat.templates.map(t => (
+                      <button
+                        key={t.name}
+                        onClick={() => {
+                          setForm({
+                            ...BLANK_FORM,
+                            ...entityDefaults(entityTab),
+                            name: t.name,
+                            purpose: t.purpose,
+                            frequency: t.frequency,
+                            group_name: t.group,
+                            payment_type: t.payment_type ?? "GENERAL",
+                          });
+                          setShowPaymentBrowser(false);
+                          setShowForm(true);
+                        }}
+                        className="text-left p-3 rounded-xl border border-stone-200 hover:border-[#4a6da7] hover:bg-blue-50/30 transition-all group"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-sm text-stone-700 group-hover:text-[#4a6da7] transition-colors">{t.name}</span>
+                          <ArrowRight size={13} className="shrink-0 mt-0.5 text-stone-300 group-hover:text-[#4a6da7] transition-colors" />
+                        </div>
+                        <div className="text-[11px] text-stone-400 mt-0.5 line-clamp-2">{t.purpose}</div>
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">
+                            {FREQ_LABELS[t.frequency] ?? t.frequency}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{t.group}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-stone-100 bg-stone-50 shrink-0">
+              <button
+                onClick={() => { setShowPaymentBrowser(false); openNew(); }}
+                className="text-xs text-[#4a6da7] hover:text-[#3d5a8e] font-semibold transition-colors"
+              >
+                + Create a blank recurring expense instead
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1675,8 +2097,8 @@ function RecurringCard({ item, isSelected, onToggleSelect, onEdit, onToggleActiv
 }
 
 // --- Recurring Row (table view) ---
-function RecurringRow({ item, rowNo, isSelected, lastPaid, groupLabel, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
-  item: RecurringPV; rowNo: number; isSelected: boolean;
+function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
+  item: RecurringPV; rowNo: number; isSelected: boolean; isAtRisk?: boolean;
   lastPaid: { id: string; pv_no: string; paid_at: string } | null;
   groupLabel?: string;
   onToggleSelect: () => void; onEdit: () => void; onToggleActive: () => void;
@@ -1733,6 +2155,7 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, groupLabel, onToggleS
         isSelected ? "bg-blue-50/60"
         : alreadyRan ? "bg-green-50/30"
         : isExpired ? "opacity-50"
+        : isAtRisk ? "bg-red-50/40 hover:bg-red-50/60"
         : "hover:bg-stone-50/70"
       }`}>
         <td className="py-2.5 pl-3 pr-2">
