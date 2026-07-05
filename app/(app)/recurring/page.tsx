@@ -9,7 +9,7 @@ import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
   Search, Folder, FolderOpen, ChevronUp, FileText, RotateCcw,
-  AlertTriangle, CalendarDays, Layers, LayoutList,
+  AlertTriangle, CalendarDays, Layers, LayoutList, BookOpen, ArrowRight,
 } from "lucide-react";
 
 const MALAYSIA_BANKS = [
@@ -41,6 +41,125 @@ const ENTITY_TABS: { key: EntityKey; label: string; color: string; textColor: st
   { key: "HLE", label: "HLE",  color: "bg-amber-500",  textColor: "text-amber-600",  borderColor: "border-amber-500",  badgeBg: "bg-amber-100", badgeText: "text-amber-700" },
 ];
 const PAYMENT_METHODS = ["Bank transfer", "JomPAY", "Online Transfer", "Cheque", "Cash", "Auto Debit", "Other"];
+
+const PAYMENT_TYPE_CATALOG: Record<string, { category: string; templates: { name: string; purpose: string; frequency: string; group: string; payment_type?: string }[] }[]> = {
+  LCM: [
+    {
+      category: "Property & Premises",
+      templates: [
+        { name: "Office / Hall Rental", purpose: "Monthly rental payment for office or hall space", frequency: "MONTHLY", group: "Property" },
+        { name: "Utility Bills", purpose: "Monthly utility charges — electricity, water, gas", frequency: "MONTHLY", group: "Utilities" },
+        { name: "Building / Premises Maintenance", purpose: "Monthly building and premises maintenance", frequency: "MONTHLY", group: "Property" },
+      ],
+    },
+    {
+      category: "Personnel & Payroll",
+      templates: [
+        { name: "Staff Salary", purpose: "Monthly staff salary payment", frequency: "MONTHLY", group: "Payroll", payment_type: "PAYROLL" },
+        { name: "Professional / Consultant Fees", purpose: "Monthly professional services retainer", frequency: "MONTHLY", group: "Services" },
+        { name: "Staff Honorarium", purpose: "Monthly honorarium payment", frequency: "MONTHLY", group: "Payroll" },
+      ],
+    },
+    {
+      category: "Finance & Insurance",
+      templates: [
+        { name: "Loan / Financing Repayment", purpose: "Monthly loan repayment instalment", frequency: "MONTHLY", group: "Finance" },
+        { name: "Insurance Premium", purpose: "Annual insurance premium", frequency: "ANNUAL", group: "Insurance" },
+        { name: "Bank Charges", purpose: "Monthly bank charges and fees", frequency: "MONTHLY", group: "Finance" },
+      ],
+    },
+    {
+      category: "Services & Subscriptions",
+      templates: [
+        { name: "IT / Software Subscription", purpose: "Monthly software or cloud subscription", frequency: "MONTHLY", group: "IT" },
+        { name: "Cleaning Services", purpose: "Monthly cleaning and janitorial services", frequency: "MONTHLY", group: "Services" },
+        { name: "Security Services", purpose: "Monthly security services", frequency: "MONTHLY", group: "Services" },
+        { name: "Pest Control", purpose: "Quarterly pest control services", frequency: "QUARTERLY", group: "Services" },
+      ],
+    },
+  ],
+  BAM: [
+    {
+      category: "Lift & Mechanical",
+      templates: [
+        { name: "Lift Maintenance", purpose: "Monthly lift maintenance and service contract", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Air-Conditioning Maintenance", purpose: "Monthly air-conditioning system maintenance", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Generator / M&E Maintenance", purpose: "Quarterly mechanical and electrical system maintenance", frequency: "QUARTERLY", group: "Maintenance" },
+      ],
+    },
+    {
+      category: "Fire & Safety",
+      templates: [
+        { name: "Fire Protection System", purpose: "Quarterly fire protection system maintenance and inspection", frequency: "QUARTERLY", group: "Safety" },
+        { name: "Fire Extinguisher Service", purpose: "Annual fire extinguisher servicing", frequency: "ANNUAL", group: "Safety" },
+        { name: "Security System Maintenance", purpose: "Monthly security and CCTV system maintenance", frequency: "MONTHLY", group: "Safety" },
+      ],
+    },
+    {
+      category: "Grounds & Cleaning",
+      templates: [
+        { name: "Common Area Cleaning", purpose: "Monthly common area cleaning services", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Landscaping & Grounds", purpose: "Monthly landscaping and grounds keeping", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Pest Control", purpose: "Quarterly pest control services", frequency: "QUARTERLY", group: "Maintenance" },
+      ],
+    },
+    {
+      category: "Utilities & Insurance",
+      templates: [
+        { name: "Sewerage Treatment", purpose: "Monthly sewerage treatment services", frequency: "MONTHLY", group: "Utilities" },
+        { name: "Building Insurance", purpose: "Annual building and property insurance premium", frequency: "ANNUAL", group: "Insurance" },
+        { name: "Security / Guard Services", purpose: "Monthly security guard services", frequency: "MONTHLY", group: "Security" },
+      ],
+    },
+  ],
+  LSC: [
+    {
+      category: "Space & Premises",
+      templates: [
+        { name: "Venue / Space Rental", purpose: "Monthly venue rental payment — LSC RHB", frequency: "MONTHLY", group: "Property" },
+        { name: "Utilities", purpose: "Monthly utility charges — electricity, water", frequency: "MONTHLY", group: "Utilities" },
+      ],
+    },
+    {
+      category: "Personnel",
+      templates: [
+        { name: "Staff / Tutor Honorarium", purpose: "Monthly honorarium for staff or tutors", frequency: "MONTHLY", group: "Payroll" },
+        { name: "Facilitator / Speaker Fees", purpose: "Program facilitator or speaker fees", frequency: "QUARTERLY", group: "Services" },
+      ],
+    },
+    {
+      category: "Programs & Operations",
+      templates: [
+        { name: "Program Materials", purpose: "Course and program materials procurement", frequency: "QUARTERLY", group: "Programs" },
+        { name: "Insurance Premium", purpose: "Annual insurance premium for LSC", frequency: "ANNUAL", group: "Insurance" },
+      ],
+    },
+  ],
+  HLE: [
+    {
+      category: "Property Maintenance",
+      templates: [
+        { name: "Property Maintenance", purpose: "Monthly property maintenance and upkeep — HLE Maybank", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Ground Keeping", purpose: "Monthly ground keeping and landscaping services", frequency: "MONTHLY", group: "Maintenance" },
+        { name: "Pest Control", purpose: "Quarterly pest control services", frequency: "QUARTERLY", group: "Maintenance" },
+      ],
+    },
+    {
+      category: "Utilities",
+      templates: [
+        { name: "Utilities", purpose: "Monthly utility charges — electricity, water", frequency: "MONTHLY", group: "Utilities" },
+        { name: "Internet / Communications", purpose: "Monthly internet and communications services", frequency: "MONTHLY", group: "Utilities" },
+      ],
+    },
+    {
+      category: "Finance & Insurance",
+      templates: [
+        { name: "Property Financing Repayment", purpose: "Monthly property financing repayment instalment — Maybank", frequency: "MONTHLY", group: "Finance" },
+        { name: "Property Insurance", purpose: "Annual property insurance premium — HLE Maybank", frequency: "ANNUAL", group: "Insurance" },
+      ],
+    },
+  ],
+};
 
 interface LineItem { description: string; amount: number; }
 
@@ -146,6 +265,7 @@ export default function RecurringPage() {
   } | null>(null);
   const [activeFilter, setActiveFilter] = useState<"due7" | "ready" | "atRisk" | null>(null);
   const [viewMode, setViewMode] = useState<"library" | "all">("library");
+  const [showPaymentBrowser, setShowPaymentBrowser] = useState(false);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -898,6 +1018,14 @@ export default function RecurringPage() {
               }`}
             >
               <FileText size={13} /> {masterMode ? "Cancel Master" : "Create Master"}
+            </button>
+          )}
+          {!showForm && (
+            <button
+              onClick={() => setShowPaymentBrowser(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 transition-colors"
+            >
+              <BookOpen size={13} /> Browse Types
             </button>
           )}
           <Button size="sm" onClick={showForm ? () => { setShowForm(false); setForm({ ...BLANK_FORM }); } : openNew}>
@@ -1747,6 +1875,86 @@ export default function RecurringPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Payment Type Browser */}
+      {showPaymentBrowser && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-0 sm:px-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPaymentBrowser(false)} />
+          <div className="relative w-full sm:max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-stone-200 flex items-center justify-between shrink-0">
+              <div>
+                <p className="text-sm font-bold text-stone-800">Browse Payment Types</p>
+                <p className="text-xs text-stone-400 mt-0.5">Select a template to pre-fill the form</p>
+              </div>
+              <button onClick={() => setShowPaymentBrowser(false)}
+                className="p-2 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+            {/* Entity pill strip */}
+            <div className="px-5 py-2 bg-stone-50 border-b border-stone-100 shrink-0 flex items-center gap-2">
+              <span className="text-[11px] text-stone-400">Showing templates for:</span>
+              {ENTITY_TABS.map(t => (
+                <span key={t.key}
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${t.key === entityTab ? `${t.badgeBg} ${t.badgeText}` : "bg-stone-100 text-stone-400"}`}>
+                  {t.key}
+                </span>
+              ))}
+            </div>
+            {/* Scrollable catalog */}
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-6">
+              {(PAYMENT_TYPE_CATALOG[entityTab] ?? []).map(cat => (
+                <div key={cat.category}>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">{cat.category}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {cat.templates.map(t => (
+                      <button
+                        key={t.name}
+                        onClick={() => {
+                          setForm({
+                            ...BLANK_FORM,
+                            ...entityDefaults(entityTab),
+                            name: t.name,
+                            purpose: t.purpose,
+                            frequency: t.frequency,
+                            group_name: t.group,
+                            payment_type: t.payment_type ?? "GENERAL",
+                          });
+                          setShowPaymentBrowser(false);
+                          setShowForm(true);
+                        }}
+                        className="text-left p-3 rounded-xl border border-stone-200 hover:border-[#4a6da7] hover:bg-blue-50/30 transition-all group"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-sm text-stone-700 group-hover:text-[#4a6da7] transition-colors">{t.name}</span>
+                          <ArrowRight size={13} className="shrink-0 mt-0.5 text-stone-300 group-hover:text-[#4a6da7] transition-colors" />
+                        </div>
+                        <div className="text-[11px] text-stone-400 mt-0.5 line-clamp-2">{t.purpose}</div>
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">
+                            {FREQ_LABELS[t.frequency] ?? t.frequency}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{t.group}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-stone-100 bg-stone-50 shrink-0">
+              <button
+                onClick={() => { setShowPaymentBrowser(false); openNew(); }}
+                className="text-xs text-[#4a6da7] hover:text-[#3d5a8e] font-semibold transition-colors"
+              >
+                + Create a blank recurring expense instead
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
