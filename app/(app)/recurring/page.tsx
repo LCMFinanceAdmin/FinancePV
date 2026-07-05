@@ -34,11 +34,11 @@ const FREQ_DISPLAY: Record<string, string> = {
 };
 
 type EntityKey = "LCM" | "BAM" | "LSC" | "HLE";
-const ENTITY_TABS: { key: EntityKey; label: string; color: string; textColor: string; borderColor: string; badgeBg: string; badgeText: string }[] = [
+const ENTITY_TABS: { key: EntityKey; label: string; subtitle?: string; color: string; textColor: string; borderColor: string; badgeBg: string; badgeText: string }[] = [
   { key: "LCM", label: "LCM",  color: "bg-[#4a6da7]", textColor: "text-[#4a6da7]", borderColor: "border-[#4a6da7]", badgeBg: "bg-blue-100", badgeText: "text-blue-700" },
   { key: "BAM", label: "BAM",  color: "bg-green-600",  textColor: "text-green-600",  borderColor: "border-green-600",  badgeBg: "bg-green-100", badgeText: "text-green-700" },
-  { key: "LSC", label: "LSC",  color: "bg-purple-600", textColor: "text-purple-600", borderColor: "border-purple-600", badgeBg: "bg-purple-100", badgeText: "text-purple-700" },
-  { key: "HLE", label: "HLE",  color: "bg-amber-500",  textColor: "text-amber-600",  borderColor: "border-amber-500",  badgeBg: "bg-amber-100", badgeText: "text-amber-700" },
+  { key: "LSC", label: "LSC",  subtitle: "RHB Bank",   color: "bg-purple-600", textColor: "text-purple-600", borderColor: "border-purple-600", badgeBg: "bg-purple-100", badgeText: "text-purple-700" },
+  { key: "HLE", label: "HLE",  subtitle: "Maybank",    color: "bg-amber-500",  textColor: "text-amber-600",  borderColor: "border-amber-500",  badgeBg: "bg-amber-100", badgeText: "text-amber-700" },
 ];
 const PAYMENT_METHODS = ["Bank transfer", "JomPAY", "Online Transfer", "Cheque", "Cash", "Auto Debit", "Other"];
 
@@ -1040,17 +1040,24 @@ export default function RecurringPage() {
           <button
             key={tab.key}
             onClick={() => { setEntityTab(tab.key); setSearch(""); setActiveFilter(null); }}
-            className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px ${
+            className={`px-5 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px text-left ${
               entityTab === tab.key
                 ? `${tab.borderColor} ${tab.textColor}`
                 : "border-transparent text-stone-400 hover:text-stone-600 hover:border-stone-300"
             }`}
           >
-            {tab.label}
-            {entityTab === tab.key && overdue.length > 0 && (
-              <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                {overdue.length}
-              </span>
+            <div className="flex items-center gap-1.5">
+              {tab.label}
+              {entityTab === tab.key && overdue.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                  {overdue.length}
+                </span>
+              )}
+            </div>
+            {tab.subtitle && (
+              <div className={`text-[10px] font-normal leading-none -mt-0.5 ${entityTab === tab.key ? "opacity-70" : "opacity-50"}`}>
+                {tab.subtitle}
+              </div>
             )}
           </button>
         ))}
@@ -1678,6 +1685,7 @@ export default function RecurringPage() {
                   <RecurringRow
                     key={item.id} item={item} rowNo={idx + 1}
                     isSelected={selected.has(item.id)}
+                    isAtRisk={statAtRiskIds.has(item.id)}
                     lastPaid={lastPaidMap[item.id] ?? null}
                     groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
                     onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
@@ -1845,6 +1853,7 @@ export default function RecurringPage() {
                                   <RecurringRow
                                     key={item.id} item={item} rowNo={idx + 1}
                                     isSelected={selected.has(item.id)}
+                                    isAtRisk={statAtRiskIds.has(item.id)}
                                     lastPaid={lastPaidMap[item.id] ?? null}
                                     onToggleSelect={() => {
                                       setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
@@ -2088,8 +2097,8 @@ function RecurringCard({ item, isSelected, onToggleSelect, onEdit, onToggleActiv
 }
 
 // --- Recurring Row (table view) ---
-function RecurringRow({ item, rowNo, isSelected, lastPaid, groupLabel, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
-  item: RecurringPV; rowNo: number; isSelected: boolean;
+function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
+  item: RecurringPV; rowNo: number; isSelected: boolean; isAtRisk?: boolean;
   lastPaid: { id: string; pv_no: string; paid_at: string } | null;
   groupLabel?: string;
   onToggleSelect: () => void; onEdit: () => void; onToggleActive: () => void;
@@ -2146,6 +2155,7 @@ function RecurringRow({ item, rowNo, isSelected, lastPaid, groupLabel, onToggleS
         isSelected ? "bg-blue-50/60"
         : alreadyRan ? "bg-green-50/30"
         : isExpired ? "opacity-50"
+        : isAtRisk ? "bg-red-50/40 hover:bg-red-50/60"
         : "hover:bg-stone-50/70"
       }`}>
         <td className="py-2.5 pl-3 pr-2">
