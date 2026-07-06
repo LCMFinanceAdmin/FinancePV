@@ -478,48 +478,158 @@ export default function WorksheetsPage() {
 
   // ── List view ──────────────────────────────────────────────────────────
   if (!editing) {
+    // Derived status for display — SIGNED means both signatures are present
+    // and it's ready to generate a PV; partial signatures stay as "Awaiting".
+    function wsDisplayStatus(ws: WorkerWorksheet): "DRAFT" | "AWAITING" | "READY" | "PV_RAISED" {
+      if (ws.status === "PV_RAISED") return "PV_RAISED";
+      if (ws.status === "SIGNED") return "READY";
+      if (ws.worker_signature || ws.bem_signature) return "AWAITING";
+      return "DRAFT";
+    }
+
+    const DISPLAY_LABEL: Record<string, string> = {
+      DRAFT: "Draft",
+      AWAITING: "Awaiting signatures",
+      READY: "Ready for PV",
+      PV_RAISED: "PV raised",
+    };
+    const DISPLAY_CHIP: Record<string, string> = {
+      DRAFT: "bg-stone-100 text-stone-500",
+      AWAITING: "bg-amber-100 text-amber-700",
+      READY: "bg-blue-100 text-blue-700",
+      PV_RAISED: "bg-green-100 text-green-700",
+    };
+
+    const TYPE_BADGE: Record<WorkerType, string> = {
+      PA_PERSONNEL: "bg-purple-100 text-purple-700",
+      BUILDING_CARE_TAKER: "bg-blue-100 text-blue-700",
+      RELA_PERSONNEL: "bg-teal-100 text-teal-700",
+    };
+
+    // Stat counts
+    const statDraft    = list.filter(ws => wsDisplayStatus(ws) === "DRAFT").length;
+    const statAwaiting = list.filter(ws => wsDisplayStatus(ws) === "AWAITING").length;
+    const statReady    = list.filter(ws => wsDisplayStatus(ws) === "READY").length;
+    const statRaised   = list.filter(ws => wsDisplayStatus(ws) === "PV_RAISED").length;
+
+    function workerInitials(name: string) {
+      const parts = name.trim().split(" ").filter(Boolean);
+      if (parts.length === 0) return "?";
+      if (parts.length === 1) return parts[0][0].toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+
+    const AVATAR_COLORS: Record<WorkerType, string> = {
+      PA_PERSONNEL: "bg-purple-100 text-purple-700",
+      BUILDING_CARE_TAKER: "bg-blue-100 text-blue-700",
+      RELA_PERSONNEL: "bg-teal-100 text-teal-700",
+    };
+
+    function sessionOrHoursLabel(ws: WorkerWorksheet) {
+      const entries = (ws.entries as WorksheetEntry[]) ?? [];
+      if (isSessionRate(ws.worker_type)) {
+        const n = entries.filter(e => e.date && e.start_time && e.end_time).length;
+        return `${n} session${n !== 1 ? "s" : ""}`;
+      }
+      return `${ws.total_hours} hrs`;
+    }
+
     return (
-      <div className="p-5 max-w-3xl mx-auto space-y-4">
+      <div className="p-5 max-w-3xl mx-auto space-y-5">
         {toast.msg && (
           <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-500"}`}>{toast.msg}</div>
         )}
-        <div className="flex items-center justify-between">
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
           <div>
+            <p className="text-xs text-stone-400 mb-0.5">Building / Event · Worksheets</p>
             <h1 className="text-xl font-bold text-stone-800">Worker Worksheets</h1>
-            <p className="text-sm text-stone-400">PA Personnel, Building Care Taker &amp; RELA Personnel — hours, rate &amp; signatures before raising a PV</p>
           </div>
-          <Button onClick={openNew}><Plus size={15} /> New Worksheet</Button>
+          <Button onClick={openNew}><Plus size={14} /> New worksheet</Button>
         </div>
 
-        {loading ? (
-          <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>
-        ) : list.length === 0 ? (
-          <div className="bg-white border border-stone-200 rounded-2xl p-8 text-center text-stone-400 text-sm">No worksheets yet.</div>
-        ) : (
-          <div className="bg-white border border-stone-200 rounded-2xl divide-y divide-stone-100">
-            {list.map(ws => (
-              <button key={ws.id} onClick={() => openExisting(ws)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-stone-50 transition-colors">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                    <span className="text-xs font-semibold text-stone-600">{ws.worksheet_no}</span>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_CHIP[ws.status]}`}>{STATUS_LABEL[ws.status]}</span>
-                    <span className="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded-full">{WORKER_TYPE_LABEL[ws.worker_type]}</span>
-                  </div>
-                  <div className="text-sm text-stone-700">{ws.worker_name}</div>
-                  <div className="text-xs text-stone-400 mt-0.5">{ws.period_label} · {ws.total_hours} hrs @ {formatCurrency(ws.rate_per_hour)}/hr</div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="text-sm font-semibold text-stone-700">{formatCurrency(ws.total_amount)}</div>
-                  <span onClick={e => { e.stopPropagation(); deleteWorksheet(ws); }} className="p-1.5 text-stone-300 hover:text-red-500 rounded-lg">
-                    <Trash2 size={14} />
-                  </span>
-                  <ChevronRight size={16} className="text-stone-300" />
-                </div>
-              </button>
+        {/* Stat cards */}
+        {!loading && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Draft",               count: statDraft,    color: "text-stone-700" },
+              { label: "Awaiting signatures", count: statAwaiting, color: "text-amber-600" },
+              { label: "Ready for PV",        count: statReady,    color: "text-blue-600"  },
+              { label: "PV raised",           count: statRaised,   color: "text-green-600" },
+            ].map(s => (
+              <div key={s.label} className="bg-white border border-stone-200 rounded-2xl p-4">
+                <div className={`text-2xl font-bold leading-none mb-1 ${s.color}`}>{s.count}</div>
+                <div className="text-xs text-stone-400">{s.label}</div>
+              </div>
             ))}
           </div>
         )}
+
+        {/* List */}
+        {loading ? (
+          <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>
+        ) : list.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-2xl p-10 text-center">
+            <p className="text-sm text-stone-400 mb-3">No worksheets yet.</p>
+            <Button onClick={openNew}><Plus size={14} /> Start a new worksheet</Button>
+          </div>
+        ) : (
+          <div>
+            <p className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-3">Recent worksheets</p>
+            <div className="bg-white border border-stone-200 rounded-2xl divide-y divide-stone-100 overflow-hidden">
+              {list.map(ws => {
+                const ds = wsDisplayStatus(ws);
+                return (
+                  <button key={ws.id} onClick={() => openExisting(ws)}
+                    className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-stone-50/70 transition-colors group">
+
+                    {/* Avatar */}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${AVATAR_COLORS[ws.worker_type]}`}>
+                      {workerInitials(ws.worker_name)}
+                    </div>
+
+                    {/* Name + type */}
+                    <div className="w-40 shrink-0">
+                      <div className="text-sm font-semibold text-stone-800 leading-tight truncate">{ws.worker_name || "—"}</div>
+                      <span className={`inline-block mt-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[ws.worker_type]}`}>
+                        {WORKER_TYPE_LABEL[ws.worker_type]}
+                      </span>
+                    </div>
+
+                    {/* Purpose + worksheet no */}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-stone-700 truncate">{ws.period_label || "—"}</div>
+                      <div className="text-xs text-stone-400 mt-0.5">{ws.worksheet_no}</div>
+                    </div>
+
+                    {/* Sessions / hours */}
+                    <div className="text-xs text-stone-500 w-20 shrink-0 text-right">
+                      {sessionOrHoursLabel(ws)}
+                    </div>
+
+                    {/* Amount */}
+                    <div className="text-sm font-bold text-stone-800 w-24 shrink-0 text-right">
+                      {formatCurrency(ws.total_amount)}
+                    </div>
+
+                    {/* Status badge */}
+                    <div className="w-36 shrink-0 flex justify-end items-center gap-2">
+                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${DISPLAY_CHIP[ds]}`}>
+                        {DISPLAY_LABEL[ds]}
+                      </span>
+                      <span onClick={e => { e.stopPropagation(); deleteWorksheet(ws); }}
+                        className="p-1 text-stone-200 hover:text-red-400 rounded transition-colors opacity-0 group-hover:opacity-100">
+                        <Trash2 size={13} />
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {confirmDelete && (
           <ConfirmDialog
             title="Delete worksheet"
