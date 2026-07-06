@@ -189,6 +189,13 @@ const BLANK_FORM = {
 };
 type FormState = typeof BLANK_FORM & { id?: string };
 
+function parseGroupPath(groupName: string): { folder: string; subfolder: string | null } {
+  const sep = " / ";
+  const idx = groupName.indexOf(sep);
+  if (idx > 0) return { folder: groupName.slice(0, idx), subfolder: groupName.slice(idx + sep.length) };
+  return { folder: groupName, subfolder: null };
+}
+
 function isExpiredItem(item: RecurringPV) {
   return item.term_type === "FIXED" && item.term_end_date && item.next_due
     && new Date(item.next_due) > new Date(item.term_end_date);
@@ -266,6 +273,8 @@ export default function RecurringPage() {
   const [activeFilter, setActiveFilter] = useState<"due7" | "ready" | "atRisk" | null>(null);
   const [viewMode, setViewMode] = useState<"library" | "all">("library");
   const [showPaymentBrowser, setShowPaymentBrowser] = useState(false);
+  const [navFreq, setNavFreq] = useState<string | null>(null);
+  const [navFolder, setNavFolder] = useState<string | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -1039,7 +1048,7 @@ export default function RecurringPage() {
         {(isBuildingManager ? ENTITY_TABS.filter(t => t.key === "BAM") : ENTITY_TABS).map(tab => (
           <button
             key={tab.key}
-            onClick={() => { setEntityTab(tab.key); setSearch(""); setActiveFilter(null); }}
+            onClick={() => { setEntityTab(tab.key); setSearch(""); setActiveFilter(null); setNavFreq(null); setNavFolder(null); }}
             className={`px-5 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px text-left ${
               entityTab === tab.key
                 ? `${tab.borderColor} ${tab.textColor}`
@@ -1703,188 +1712,242 @@ export default function RecurringPage() {
           </div>
         </div>
       ) : (
-        <div className="space-y-8">
-          {FREQ_ORDER.filter(freq => byFreq[freq]).map(freq => {
-            const freqGroups = byFreq[freq];
-            const freqTotal = Object.values(freqGroups).flat().length;
-            const tab = ENTITY_TABS.find(t => t.key === entityTab)!;
+        /* ── Library folder navigation ── */
+        (() => {
+          const tab = ENTITY_TABS.find(t => t.key === entityTab)!;
+
+          // ── Level 0: frequency rows ──────────────────────────────────────
+          if (!navFreq) {
             return (
-              <div key={freq}>
-                {/* Frequency section header */}
-                <div className="flex items-center gap-2 mb-4">
-                  <div className={`w-1 h-5 rounded-full ${tab.color}`} />
-                  <h2 className="text-sm font-bold text-stone-700">{FREQ_DISPLAY[freq]}</h2>
-                  <span className="text-xs text-stone-400">({freqTotal})</span>
+              <div className="space-y-2">
+                {FREQ_ORDER.filter(freq => byFreq[freq]).map(freq => {
+                  const freqItems = Object.values(byFreq[freq]).flat();
+                  const freqTotal = freqItems.length;
+                  const totalAmt = freqItems.reduce((s, i) => s + i.amount, 0);
+                  const nextDue = freqItems.map(i => i.next_due).filter(Boolean).sort()[0];
+                  return (
+                    <button key={freq} onClick={() => { setNavFreq(freq); setNavFolder(null); }}
+                      className="w-full flex items-center gap-4 px-5 py-4 bg-white border border-stone-200 rounded-2xl hover:border-stone-300 hover:shadow-sm text-left transition-all group">
+                      <div className={`w-1.5 h-10 rounded-full shrink-0 ${tab.color}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold text-stone-800">{FREQ_DISPLAY[freq]}</div>
+                        <div className="text-xs text-stone-400 mt-0.5">{freqTotal} recurring payment{freqTotal !== 1 ? "s" : ""}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-bold text-stone-800">{formatCurrency(totalAmt)}</div>
+                        {nextDue && <div className="text-xs text-stone-400 mt-0.5">Next run {formatDate(nextDue)}</div>}
+                      </div>
+                      <ChevronRight size={16} className="text-stone-300 group-hover:text-stone-500 shrink-0 transition-colors" />
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          // Derive folder map for selected frequency
+          const freqGroups = byFreq[navFreq] ?? {};
+          const folderMap: Record<string, RecurringPV[]> = {};
+          Object.entries(freqGroups).forEach(([groupName, gItems]) => {
+            const { folder } = parseGroupPath(groupName);
+            if (!folderMap[folder]) folderMap[folder] = [];
+            folderMap[folder].push(...(gItems as RecurringPV[]));
+          });
+          const folderNames = Object.keys(folderMap).sort();
+
+          // ── Level 1: folder cards ────────────────────────────────────────
+          if (!navFolder) {
+            return (
+              <div>
+                {/* Breadcrumb */}
+                <div className="flex items-center gap-1.5 mb-5 text-xs">
+                  <button onClick={() => setNavFreq(null)}
+                    className="text-stone-400 hover:text-stone-700 transition-colors">Payment library</button>
+                  <ChevronRight size={12} className="text-stone-300" />
+                  <span className="font-semibold text-stone-700">{FREQ_DISPLAY[navFreq]}</span>
                 </div>
 
-                {/* Group folders within this frequency */}
-                <div className="space-y-4 pl-3">
-                  {Object.keys(freqGroups).sort((a, b) => a.localeCompare(b)).map(groupName => {
-                    const groupItems = freqGroups[groupName];
-                    const key = `${freq}:${groupName}`;
-                    const collapsed = !expandedGroups.has(key);
-                    const isRenaming = renamingGroup === groupName;
-                    const eligible = groupItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
-                    const isMasterChecked = masterSelected.has(groupName);
+                <p className="text-sm font-semibold text-stone-600 mb-3">{FREQ_DISPLAY[navFreq]} folders</p>
+
+                {/* Master mode inline panel */}
+                {masterMode && entityTab === "LCM" && (
+                  <div className="rounded-xl border-2 border-violet-300 bg-violet-50 px-4 py-3 space-y-2.5 mb-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-bold text-violet-800">
+                        {masterSelected.size === 0
+                          ? "Tick folders below to include in a Master Voucher"
+                          : `${masterSelected.size} folder${masterSelected.size > 1 ? "s" : ""} selected: ${[...masterSelected].join(", ")}`}
+                      </p>
+                      <button onClick={() => { setMasterMode(false); setMasterSelected(new Set()); setMasterName(""); }}
+                        className="shrink-0 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-violet-100 transition-colors">
+                        <X size={15} />
+                      </button>
+                    </div>
+                    {masterSelected.size > 0 && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="flex-1 border border-violet-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-violet-500 bg-white"
+                          placeholder="Master name (e.g. Monthly Recurring Jul 2026)"
+                          value={masterName}
+                          onChange={e => setMasterName(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter" && masterName.trim()) createMaster(); }}
+                        />
+                        <button onClick={createMaster} disabled={!masterName.trim() || creatingMaster}
+                          className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                          <FileText size={14} /> {creatingMaster ? "Creating…" : "Create Master"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Folder cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {folderNames.map(folder => {
+                    const fItems = folderMap[folder];
+                    const dueCount   = fItems.filter(i => statDueIn7Ids.has(i.id)).length;
+                    const atRiskCount = fItems.filter(i => statAtRiskIds.has(i.id)).length;
+                    const readyCount = fItems.filter(i => statReadyIds.has(i.id)).length;
+                    const isMasterChecked = masterSelected.has(folder);
                     return (
-                      <div key={key}>
-                        {/* Group folder header — click anywhere to expand */}
-                        <div
-                          className="flex items-center gap-2 mb-2 pb-2 border-b border-stone-100 cursor-pointer hover:bg-stone-50/70 rounded-lg px-1 -mx-1 transition-colors"
-                          onClick={e => {
-                            // Don't toggle when clicking interactive children
-                            const target = e.target as HTMLElement;
-                            if (target.closest("button,a,input,label")) return;
-                            if (!isRenaming) toggleExpand(freq, groupName);
-                          }}
-                        >
-                          {/* Master select checkbox */}
-                          {masterMode && entityTab === "LCM" && (
-                            <input
-                              type="checkbox"
-                              checked={isMasterChecked}
-                              onChange={e => {
-                                e.stopPropagation();
-                                setMasterSelected(s => {
-                                  const n = new Set(s);
-                                  if (n.has(groupName)) n.delete(groupName);
-                                  else n.add(groupName);
-                                  return n;
-                                });
-                              }}
-                              onClick={e => e.stopPropagation()}
-                              className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer shrink-0"
-                            />
-                          )}
-                          <span className="text-stone-400">
-                            {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                          </span>
-                          {collapsed
-                            ? <Folder size={14} className="text-amber-500 shrink-0" />
-                            : <FolderOpen size={14} className="text-amber-500 shrink-0" />
-                          }
-
-                          {isRenaming ? (
-                            <input
-                              autoFocus
-                              value={renameValue}
-                              onChange={e => setRenameValue(e.target.value)}
-                              onBlur={saveGroupRename}
-                              onKeyDown={e => { if (e.key === "Enter") saveGroupRename(); if (e.key === "Escape") setRenamingGroup(null); }}
-                              onClick={e => e.stopPropagation()}
-                              className="font-semibold text-stone-700 border-b-2 border-[#4a6da7] outline-none bg-transparent text-sm"
-                            />
-                          ) : (
-                            <span
-                              title="Double-click to rename"
-                              onDoubleClick={e => { e.stopPropagation(); setRenamingGroup(groupName); setRenameValue(groupName); }}
-                              className="font-semibold text-stone-700 text-sm select-none"
-                            >
-                              {groupName}
-                            </span>
-                          )}
-                          <span className="text-xs text-stone-400 font-normal">({groupItems.length})</span>
-
-                          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-                            {!collapsed && (
-                              <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none" onClick={e => e.stopPropagation()}>
-                                <GroupCheckbox groupItems={groupItems} selected={selected} onToggle={() => toggleSelectGroup(groupItems)} />
-                                Select all
-                              </label>
-                            )}
-                            {!collapsed && eligible.length > 0 && (
-                              <button onClick={e => { e.stopPropagation(); runFolder(freq, groupName); }}
-                                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors whitespace-nowrap">
-                                <Play size={10} /> Run Folder
-                              </button>
-                            )}
-                            {(() => {
-                              const hasBulkRun = !!groupBulkRuns[groupName];
-                              const selectedInGroup = groupItems.filter(i => selected.has(i.id));
-                              const ranWithoutBulk = !hasBulkRun && groupItems.some(i => isAlreadyRunThisPeriod(i) && i.current_pv_id);
-                              const canCreate = selectedInGroup.length > 0 || ranWithoutBulk;
-                              const createCount = selectedInGroup.length > 0
-                                ? selectedInGroup.length
-                                : groupItems.filter(i => isAlreadyRunThisPeriod(i) && i.current_pv_id).length;
-                              return (
-                                <>
-                                  {hasBulkRun ? (
-                                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                                      <a href={`/bulk-pvs/${groupBulkRuns[groupName]}`}
-                                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap">
-                                        <FileText size={10} /> View Bulk PV
-                                      </a>
-                                      <button onClick={() => deleteBulkRun(groupName)} title="Remove bulk PV record"
-                                        className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                                        <Trash2 size={13} />
-                                      </button>
-                                    </div>
-                                  ) : canCreate ? (
-                                    <button onClick={e => { e.stopPropagation(); createGroupBulkPV(groupName, groupItems); }} disabled={batchRunning}
-                                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
-                                      <FileText size={10} /> Create Bulk PV{createCount > 0 ? ` (${createCount})` : ""}
-                                    </button>
-                                  ) : null}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </div>
-
-                        {/* Table view */}
-                        {!collapsed && (
-                          <div className="overflow-x-auto rounded-xl border border-stone-200">
-                            <table className="w-full text-sm border-collapse">
-                              <thead>
-                                <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                                  <th className="py-2.5 pl-3 w-8 text-left"></th>
-                                  <th className="py-2.5 w-8 text-left">No</th>
-                                  <th className="py-2.5 text-left">Description</th>
-                                  <th className="py-2.5 text-left">Payable To</th>
-                                  <th className="py-2.5 text-left">Duration</th>
-                                  <th className="py-2.5 text-left">Last Created PV</th>
-                                  <th className="py-2.5 text-left">Last Paid PV</th>
-                                  <th className="py-2.5 text-right pr-4">Amount</th>
-                                  <th className="py-2.5 w-40"></th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-stone-100">
-                                {groupItems.map((item, idx) => (
-                                  <RecurringRow
-                                    key={item.id} item={item} rowNo={idx + 1}
-                                    isSelected={selected.has(item.id)}
-                                    isAtRisk={statAtRiskIds.has(item.id)}
-                                    lastPaid={lastPaidMap[item.id] ?? null}
-                                    onToggleSelect={() => {
-                                      setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
-                                    }}
-                                    onEdit={() => openEdit(item)}
-                                    onToggleActive={() => toggleActive(item)}
-                                    onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
-                                    onDelete={() => deleteItem(item.id)}
-                                    onReset={() => resetItem(item.id)}
-                                    showHistory={historyId === item.id}
-                                    batchRunning={batchRunning}
-                                  />
-                                ))}
-                              </tbody>
-                            </table>
-                            <div className="border-t border-stone-200 px-4 py-2.5 bg-stone-50/50">
-                              <button onClick={() => openNewInGroup(freq, groupName)}
-                                className="flex items-center gap-1.5 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5a8e] transition-colors">
-                                <Plus size={13} /> Add Expense
-                              </button>
-                            </div>
+                      <button key={folder} onClick={() => setNavFolder(folder)}
+                        className="relative bg-white border border-stone-200 rounded-2xl p-4 text-left hover:border-stone-300 hover:shadow-sm transition-all group">
+                        {/* Master checkbox */}
+                        {masterMode && entityTab === "LCM" && (
+                          <div className="absolute top-3 right-3" onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={isMasterChecked}
+                              onChange={() => setMasterSelected(s => { const n = new Set(s); if (n.has(folder)) n.delete(folder); else n.add(folder); return n; })}
+                              className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer" />
                           </div>
                         )}
-                      </div>
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${tab.badgeBg}`}>
+                          <FolderOpen size={16} className={tab.textColor} />
+                        </div>
+                        <div className="text-sm font-bold text-stone-800 leading-tight mb-1">{folder}</div>
+                        <div className="text-xs text-stone-400 mb-2.5">{fItems.length} item{fItems.length !== 1 ? "s" : ""}</div>
+                        {atRiskCount > 0
+                          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">{atRiskCount} at risk</span>
+                          : dueCount > 0
+                          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{dueCount} due soon</span>
+                          : readyCount > 0
+                          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{readyCount} ready for PV</span>
+                          : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">All scheduled</span>
+                        }
+                      </button>
                     );
                   })}
                 </div>
               </div>
             );
-          })}
-        </div>
+          }
+
+          // ── Level 2: items within folder ─────────────────────────────────
+          const folderItems = folderMap[navFolder] ?? [];
+          // For bulk run / run-folder ops, find the exact group_name keys under this folder
+          const groupNamesInFolder = Object.keys(freqGroups).filter(g => parseGroupPath(g).folder === navFolder);
+          const primaryGroup = groupNamesInFolder[0] ?? navFolder;
+          const eligible = folderItems.filter(i => !isExpiredItem(i) && !isAlreadyRunThisPeriod(i));
+          const hasBulkRun = groupNamesInFolder.some(g => !!groupBulkRuns[g]);
+          const bulkRunId = groupNamesInFolder.map(g => groupBulkRuns[g]).find(Boolean);
+
+          return (
+            <div>
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-1.5 mb-4 text-xs">
+                <button onClick={() => { setNavFreq(null); setNavFolder(null); }}
+                  className="text-stone-400 hover:text-stone-700 transition-colors">Payment library</button>
+                <ChevronRight size={12} className="text-stone-300" />
+                <button onClick={() => setNavFolder(null)}
+                  className="text-stone-400 hover:text-stone-700 transition-colors">{FREQ_DISPLAY[navFreq]}</button>
+                <ChevronRight size={12} className="text-stone-300" />
+                <span className="font-semibold text-stone-700">{navFolder}</span>
+              </div>
+
+              {/* Folder action bar */}
+              <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <FolderOpen size={15} className="text-amber-500" />
+                  <span className="text-sm font-bold text-stone-800">{navFolder}</span>
+                  <span className="text-xs text-stone-400">({folderItems.length})</span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
+                    <GroupCheckbox groupItems={folderItems} selected={selected}
+                      onToggle={() => toggleSelectGroup(folderItems)} />
+                    Select all
+                  </label>
+                  {eligible.length > 0 && (
+                    <button onClick={() => runFolder(navFreq, primaryGroup)}
+                      className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors whitespace-nowrap">
+                      <Play size={10} /> Run Folder
+                    </button>
+                  )}
+                  {hasBulkRun ? (
+                    <div className="flex items-center gap-1">
+                      <a href={`/bulk-pvs/${bulkRunId}`}
+                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap">
+                        <FileText size={10} /> View Bulk PV
+                      </a>
+                      <button onClick={() => deleteBulkRun(primaryGroup)} title="Remove bulk PV record"
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ) : folderItems.some(i => selected.has(i.id)) || folderItems.some(i => isAlreadyRunThisPeriod(i) && i.current_pv_id) ? (
+                    <button onClick={() => createGroupBulkPV(primaryGroup, folderItems.filter(i => selected.has(i.id) || (isAlreadyRunThisPeriod(i) && i.current_pv_id)))}
+                      disabled={batchRunning}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                      <FileText size={10} /> Create Bulk PV
+                    </button>
+                  ) : null}
+                  <button onClick={() => openNewInGroup(navFreq, primaryGroup)}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 transition-colors whitespace-nowrap">
+                    <Plus size={13} /> Add Expense
+                  </button>
+                </div>
+              </div>
+
+              {/* Items table */}
+              <div className="overflow-x-auto rounded-xl border border-stone-200">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                      <th className="py-2.5 pl-3 w-8 text-left"></th>
+                      <th className="py-2.5 w-8 text-left">No</th>
+                      <th className="py-2.5 text-left">Description</th>
+                      <th className="py-2.5 text-left">Payable To</th>
+                      <th className="py-2.5 text-left">Duration</th>
+                      <th className="py-2.5 text-left">Last Created PV</th>
+                      <th className="py-2.5 text-left">Last Paid PV</th>
+                      <th className="py-2.5 text-right pr-4">Amount</th>
+                      <th className="py-2.5 w-40"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {folderItems.map((item, idx) => (
+                      <RecurringRow
+                        key={item.id} item={item} rowNo={idx + 1}
+                        isSelected={selected.has(item.id)}
+                        isAtRisk={statAtRiskIds.has(item.id)}
+                        lastPaid={lastPaidMap[item.id] ?? null}
+                        groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
+                        onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
+                        onEdit={() => openEdit(item)}
+                        onToggleActive={() => toggleActive(item)}
+                        onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
+                        onDelete={() => deleteItem(item.id)}
+                        onReset={() => resetItem(item.id)}
+                        showHistory={historyId === item.id}
+                        batchRunning={batchRunning}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()
+
       )}
 
       {/* Payment Type Browser */}
