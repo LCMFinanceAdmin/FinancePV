@@ -116,6 +116,8 @@ export default function WorksheetsPage() {
   const [savingWorker, setSavingWorker] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "AWAITING" | "READY" | "PV_RAISED">("ALL");
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleRows, setScheduleRows] = useState<{ date: string; start_time: string; end_time: string; purpose: string }[]>([]);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -218,6 +220,84 @@ export default function WorksheetsPage() {
       };
     });
   }
+
+  // ── Schedule modal helpers ─────────────────────────────────────────────
+  type ScheduleRow = { date: string; start_time: string; end_time: string; purpose: string };
+  type ScheduleTemplate = { dayOfWeek: number; start_time: string; end_time: string; purpose: string }[];
+
+  function scheduleTemplateKey() {
+    const name = form.worker_name.trim().toLowerCase().replace(/\s+/g, "_");
+    return `bam_schedule_${name || form.worker_type}`;
+  }
+
+  function openScheduleModal() {
+    const [y, m] = month.split("-").map(Number);
+    const numDays = new Date(y, m, 0).getDate();
+    const rows: ScheduleRow[] = Array.from({ length: numDays }, (_, i) => ({
+      date: `${month}-${String(i + 1).padStart(2, "0")}`,
+      start_time: "", end_time: "", purpose: "",
+    }));
+    // Pre-fill from existing entries
+    form.entries.forEach(e => {
+      if (!e.date) return;
+      const idx = rows.findIndex(r => r.date === e.date);
+      if (idx >= 0) rows[idx] = { ...rows[idx], start_time: e.start_time ?? "", end_time: e.end_time ?? "", purpose: e.purpose ?? "" };
+    });
+    // Auto-apply template if no existing entries filled in yet
+    const hasExisting = form.entries.some(e => e.date && (e.start_time || e.end_time));
+    if (!hasExisting) {
+      try {
+        const raw = localStorage.getItem(scheduleTemplateKey());
+        if (raw) {
+          const tmpl: ScheduleTemplate = JSON.parse(raw);
+          rows.forEach((row, i) => {
+            const dow = new Date(row.date + "T12:00:00").getDay();
+            const t = tmpl.find(t => t.dayOfWeek === dow);
+            if (t) rows[i] = { ...row, start_time: t.start_time, end_time: t.end_time, purpose: t.purpose };
+          });
+        }
+      } catch { /* ignore bad localStorage */ }
+    }
+    setScheduleRows(rows);
+    setShowScheduleModal(true);
+  }
+
+  function loadScheduleTemplate() {
+    try {
+      const raw = localStorage.getItem(scheduleTemplateKey());
+      if (!raw) { showMsg("No saved template for this worker", false); return; }
+      const tmpl: ScheduleTemplate = JSON.parse(raw);
+      setScheduleRows(prev => prev.map(row => {
+        const dow = new Date(row.date + "T12:00:00").getDay();
+        const t = tmpl.find(t => t.dayOfWeek === dow);
+        return t ? { ...row, start_time: t.start_time, end_time: t.end_time, purpose: t.purpose } : row;
+      }));
+      showMsg("Template loaded — review and apply");
+    } catch { showMsg("Could not load template", false); }
+  }
+
+  function saveScheduleTemplate() {
+    const seen = new Set<number>();
+    const tmpl: ScheduleTemplate = scheduleRows
+      .map(row => ({ dayOfWeek: new Date(row.date + "T12:00:00").getDay(), start_time: row.start_time, end_time: row.end_time, purpose: row.purpose }))
+      .filter(t => { if (seen.has(t.dayOfWeek)) return false; seen.add(t.dayOfWeek); return true; });
+    localStorage.setItem(scheduleTemplateKey(), JSON.stringify(tmpl));
+    showMsg("Schedule saved as template");
+  }
+
+  function applySchedule() {
+    const entries = scheduleRows
+      .filter(r => r.start_time && r.end_time)
+      .map(r => ({ date: r.date, start_time: r.start_time, end_time: r.end_time, hours: hoursBetween(r.start_time, r.end_time), purpose: r.purpose }));
+    setForm(f => ({ ...f, entries: entries.length > 0 ? entries : [{ date: "", start_time: "", end_time: "", hours: 0, purpose: "" }] }));
+    setShowScheduleModal(false);
+  }
+
+  const scheduleWorkingDays = scheduleRows.filter(r => r.start_time && r.end_time).length;
+  const scheduleTotalHours = Math.round(scheduleRows.reduce((s, r) => {
+    if (!r.start_time || !r.end_time) return s;
+    return s + hoursBetween(r.start_time, r.end_time);
+  }, 0) * 10) / 10;
 
   function openNew() {
     setForm(BLANK);
@@ -780,7 +860,7 @@ export default function WorksheetsPage() {
                       <label className={label}>Month</label>
                       <input type="month" className={inp} value={month} onChange={e => setMonth(e.target.value)} />
                     </div>
-                    <Button type="button" variant="secondary" size="sm" onClick={fillMonthDays}>
+                    <Button type="button" variant="secondary" size="sm" onClick={openScheduleModal}>
                       Fill days of month
                     </Button>
                   </div>
@@ -899,6 +979,112 @@ export default function WorksheetsPage() {
               <Button onClick={saveWorksheet} loading={saving} disabled={editing.status === "PV_RAISED"} className="w-full">
                 {editing.id ? "Save changes" : "Save worksheet"}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Schedule modal ── */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowScheduleModal(false)} />
+          <div className="relative w-full max-w-2xl max-h-[88vh] bg-white rounded-2xl shadow-2xl flex flex-col">
+
+            {/* Modal header */}
+            <div className="bg-stone-900 px-5 py-4 rounded-t-2xl flex items-center justify-between shrink-0">
+              <div>
+                <p className="text-xs text-stone-400 mb-0.5">Monthly schedule</p>
+                <p className="text-sm font-bold text-white">
+                  {new Date(month + "-01T12:00:00").toLocaleDateString("en-MY", { month: "long", year: "numeric" })}
+                  {form.worker_name ? ` · ${form.worker_name}` : ""}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={loadScheduleTemplate}
+                  className="text-xs text-stone-300 hover:text-white px-2.5 py-1.5 rounded-lg border border-stone-700 hover:border-stone-500 transition-colors">
+                  Load template
+                </button>
+                <button onClick={saveScheduleTemplate}
+                  className="text-xs text-stone-300 hover:text-white px-2.5 py-1.5 rounded-lg border border-stone-700 hover:border-stone-500 transition-colors">
+                  Save as template
+                </button>
+                <button onClick={() => setShowScheduleModal(false)}
+                  className="p-1.5 text-stone-400 hover:text-white hover:bg-stone-800 rounded-lg transition-colors ml-1">
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Spreadsheet grid */}
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead className="bg-stone-50 sticky top-0 z-10 border-b border-stone-200">
+                  <tr>
+                    <th className="text-left text-xs font-semibold text-stone-400 px-4 py-2.5 w-28">Day</th>
+                    <th className="text-left text-xs font-semibold text-stone-400 px-2 py-2.5 w-32">Start</th>
+                    <th className="text-left text-xs font-semibold text-stone-400 px-2 py-2.5 w-32">End</th>
+                    <th className="text-left text-xs font-semibold text-stone-400 px-2 py-2.5 w-14">Hrs</th>
+                    <th className="text-left text-xs font-semibold text-stone-400 px-2 py-2.5">Purpose / remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scheduleRows.map((row, idx) => {
+                    const d = new Date(row.date + "T12:00:00");
+                    const dayName = d.toLocaleDateString("en-MY", { weekday: "short" });
+                    const dayNum = d.getDate();
+                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                    const worked = !!(row.start_time && row.end_time);
+                    const hrs = worked ? hoursBetween(row.start_time, row.end_time) : null;
+                    return (
+                      <tr key={row.date}
+                        className={`border-b border-stone-100 ${isWeekend ? "bg-stone-50/60" : "hover:bg-stone-50/40"}`}>
+                        <td className="px-4 py-2">
+                          <span className="font-semibold text-stone-700">{dayName}</span>
+                          <span className="text-stone-400 ml-1.5">{dayNum}</span>
+                          {isWeekend && <div className="text-[10px] text-stone-400 leading-none mt-0.5">Weekend</div>}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="time"
+                            className="w-[108px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
+                            value={row.start_time}
+                            onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, start_time: e.target.value } : r))} />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="time"
+                            className="w-[108px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
+                            value={row.end_time}
+                            onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, end_time: e.target.value } : r))} />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <span className={`font-semibold ${worked ? "text-stone-700" : "text-stone-300"}`}>
+                            {hrs != null ? `${hrs}h` : "—"}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7] disabled:bg-transparent disabled:border-transparent disabled:text-stone-300"
+                            placeholder={worked ? "Remarks…" : ""}
+                            disabled={!worked}
+                            value={row.purpose}
+                            onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, purpose: e.target.value } : r))} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal footer */}
+            <div className="px-5 py-4 border-t border-stone-200 bg-stone-50 rounded-b-2xl shrink-0 flex items-center justify-between gap-3">
+              <div className="text-xs text-stone-500">
+                <span className="font-semibold text-stone-700">{scheduleWorkingDays}</span> working days ·{" "}
+                <span className="font-semibold text-stone-700">{scheduleTotalHours}</span> hrs total
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => setShowScheduleModal(false)}>Cancel</Button>
+                <Button onClick={applySchedule}>Apply to worksheet</Button>
+              </div>
             </div>
           </div>
         </div>
