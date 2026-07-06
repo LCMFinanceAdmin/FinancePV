@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
 import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
 import type { WorkerWorksheet, WorkerType, WorksheetEntry } from "@/lib/types";
-import { Plus, Trash2, FileCheck2, FileText, Star, X } from "lucide-react";
+import { Plus, Trash2, FileCheck2, FileText, Star, X, Search } from "lucide-react";
 
 const WORKER_TYPE_LABEL: Record<WorkerType, string> = {
   PA_PERSONNEL: "PA Personnel",
@@ -114,6 +114,8 @@ export default function WorksheetsPage() {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [workers, setWorkers] = useState<BamWorker[]>([]);
   const [savingWorker, setSavingWorker] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "AWAITING" | "READY" | "PV_RAISED">("ALL");
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -522,6 +524,13 @@ export default function WorksheetsPage() {
   const statReady    = list.filter(ws => wsDisplayStatus(ws) === "READY").length;
   const statRaised   = list.filter(ws => wsDisplayStatus(ws) === "PV_RAISED").length;
 
+  const filteredList = list.filter(ws => {
+    if (statusFilter !== "ALL" && wsDisplayStatus(ws) !== statusFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return ws.worker_name.toLowerCase().includes(q) || (ws.worksheet_no ?? "").toLowerCase().includes(q);
+  });
+
   // Editor-only derived values (safe to compute even when editing is null
   // because they're only consumed inside the drawer where editing is non-null)
   const bothSigned  = !!editing?.worker_signature && !!editing?.bem_signature;
@@ -542,20 +551,49 @@ export default function WorksheetsPage() {
         <Button onClick={openNew}><Plus size={14} /> New worksheet</Button>
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* ── Stat cards (click to filter by status) ── */}
       {!loading && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: "Draft",               count: statDraft,    color: "text-stone-700" },
-            { label: "Awaiting signatures", count: statAwaiting, color: "text-amber-600" },
-            { label: "Ready for PV",        count: statReady,    color: "text-blue-600"  },
-            { label: "PV raised",           count: statRaised,   color: "text-green-600" },
-          ].map(s => (
-            <div key={s.label} className="bg-white border border-stone-200 rounded-2xl p-4">
+          {([
+            { key: "DRAFT"     as const, label: "Draft",               count: statDraft,    color: "text-stone-700", ring: "ring-stone-400"  },
+            { key: "AWAITING"  as const, label: "Awaiting signatures", count: statAwaiting, color: "text-amber-600", ring: "ring-amber-400"  },
+            { key: "READY"     as const, label: "Ready for PV",        count: statReady,    color: "text-blue-600",  ring: "ring-blue-400"   },
+            { key: "PV_RAISED" as const, label: "PV raised",           count: statRaised,   color: "text-green-600", ring: "ring-green-400"  },
+          ]).map(s => (
+            <button key={s.key}
+              onClick={() => setStatusFilter(f => f === s.key ? "ALL" : s.key)}
+              className={`bg-white border border-stone-200 rounded-2xl p-4 text-left transition-all ${statusFilter === s.key ? `ring-2 ${s.ring}` : "hover:border-stone-300"}`}>
               <div className={`text-2xl font-bold leading-none mb-1 ${s.color}`}>{s.count}</div>
               <div className="text-xs text-stone-400">{s.label}</div>
-            </div>
+            </button>
           ))}
+        </div>
+      )}
+
+      {/* ── Search + active-filter bar ── */}
+      {!loading && list.length > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+            <input
+              className="w-full border border-stone-200 rounded-xl pl-8 pr-8 py-2 text-sm outline-none focus:border-[#4a6da7]"
+              placeholder="Search by name or worksheet no…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            {search && (
+              <button onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-300 hover:text-stone-500">
+                <X size={13} />
+              </button>
+            )}
+          </div>
+          {statusFilter !== "ALL" && (
+            <button onClick={() => setStatusFilter("ALL")}
+              className="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-700 px-3 py-2 border border-stone-200 rounded-xl bg-white whitespace-nowrap">
+              <X size={11} /> {DISPLAY_LABEL[statusFilter]}
+            </button>
+          )}
         </div>
       )}
 
@@ -567,11 +605,19 @@ export default function WorksheetsPage() {
           <p className="text-sm text-stone-400 mb-3">No worksheets yet.</p>
           <Button onClick={openNew}><Plus size={14} /> Start a new worksheet</Button>
         </div>
+      ) : filteredList.length === 0 ? (
+        <div className="bg-white border border-stone-200 rounded-2xl p-8 text-center">
+          <p className="text-sm text-stone-400">No worksheets match your search.</p>
+          <button onClick={() => { setSearch(""); setStatusFilter("ALL"); }}
+            className="mt-2 text-xs text-[#4a6da7] hover:underline">Clear filters</button>
+        </div>
       ) : (
         <div>
-          <p className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-3">Recent worksheets</p>
+          <p className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-3">
+            {filteredList.length === list.length ? "Recent worksheets" : `${filteredList.length} of ${list.length} worksheets`}
+          </p>
           <div className="bg-white border border-stone-200 rounded-2xl divide-y divide-stone-100 overflow-hidden">
-            {list.map(ws => {
+            {filteredList.map(ws => {
               const ds = wsDisplayStatus(ws);
               return (
                 <button key={ws.id} onClick={() => openExisting(ws)}
