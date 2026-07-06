@@ -9,7 +9,7 @@ import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
   Search, Folder, FolderOpen, ChevronUp, FileText, RotateCcw,
-  AlertTriangle, CalendarDays, Layers, LayoutList, BookOpen, ArrowRight,
+  AlertTriangle, CalendarDays, Layers, LayoutList, BookOpen, ArrowRight, Check,
 } from "lucide-react";
 
 const MALAYSIA_BANKS = [
@@ -189,6 +189,8 @@ const BLANK_FORM = {
 };
 type FormState = typeof BLANK_FORM & { id?: string };
 
+const WIZARD_STEPS = ["Basics", "Payee & coding", "Purpose & items", "Review"];
+
 function parseGroupPath(groupName: string): { folder: string; subfolder: string | null } {
   const sep = " / ";
   const idx = groupName.indexOf(sep);
@@ -239,6 +241,7 @@ export default function RecurringPage() {
   const [isBuildingManager, setIsBuildingManager] = useState(false);
   const [form, setForm] = useState<FormState>({ ...BLANK_FORM });
   const [showForm, setShowForm] = useState(false);
+  const [formStep, setFormStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [ministries, setMinistries] = useState<string[]>([]);
@@ -788,6 +791,9 @@ export default function RecurringPage() {
   function selectAllOverdue() { setSelected(new Set(overdue.map(i => i.id))); }
 
   // --- Form ---
+  // Restart the wizard at step 1 every time the form opens (create, edit, or template browser)
+  useEffect(() => { if (showForm) setFormStep(0); }, [showForm]);
+
   function setField(k: string, v: unknown) { setForm(f => ({ ...f, [k]: v })); }
 
   function entityDefaults(tab: EntityKey) {
@@ -1278,16 +1284,16 @@ export default function RecurringPage() {
         </div>
       )}
 
-      {/* Create / Edit form — right-side drawer */}
+      {/* Create / Edit form — 4-step wizard modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-black/50"
             onClick={() => { setShowForm(false); setForm({ ...BLANK_FORM }); }}
           />
-          {/* Drawer panel */}
-          <div className="relative w-full max-w-lg h-full bg-white shadow-2xl flex flex-col">
+          {/* Modal panel */}
+          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             {/* Form header */}
             <div className="px-5 py-4 bg-stone-900 flex items-center justify-between shrink-0">
               <div>
@@ -1307,7 +1313,34 @@ export default function RecurringPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto divide-y divide-stone-100">
+            {/* Step indicator */}
+            <div className="px-5 py-3 bg-stone-50 border-b border-stone-200 shrink-0">
+              <div className="flex items-center">
+                {WIZARD_STEPS.map((label, i) => (
+                  <div key={label} className={`flex items-center min-w-0 ${i < WIZARD_STEPS.length - 1 ? "flex-1" : ""}`}>
+                    <button
+                      type="button"
+                      onClick={() => { if (i < formStep) setFormStep(i); }}
+                      className={`flex items-center gap-1.5 shrink-0 ${i < formStep ? "cursor-pointer" : "cursor-default"}`}
+                    >
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors ${
+                        i < formStep ? "bg-green-500 text-white" : i === formStep ? "bg-stone-900 text-white" : "bg-stone-200 text-stone-500"
+                      }`}>
+                        {i < formStep ? <Check size={11} /> : i + 1}
+                      </span>
+                      <span className={`text-[11px] font-semibold whitespace-nowrap ${i === formStep ? "text-stone-900" : "text-stone-400"}`}>{label}</span>
+                    </button>
+                    {i < WIZARD_STEPS.length - 1 && <div className={`flex-1 h-px mx-2 ${i < formStep ? "bg-green-400" : "bg-stone-200"}`} />}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+
+            {/* ── Step 1: Basics ── */}
+            {formStep === 0 && (
+            <div className="divide-y divide-stone-100">
 
             {/* ── Section 0: Entity ── (hidden for BEM, who is locked to BAM) */}
             {!form.id && !isBuildingManager && (
@@ -1378,6 +1411,13 @@ export default function RecurringPage() {
                 </div>
               )}
             </div>
+
+            </div>
+            )}
+
+            {/* ── Step 2: Payee & coding ── */}
+            {formStep === 1 && (
+            <div className="divide-y divide-stone-100">
 
             {/* ── Section 2: Payee Details ── */}
             <div className="px-4 py-3">
@@ -1458,6 +1498,13 @@ export default function RecurringPage() {
               )}
             </div>
 
+            </div>
+            )}
+
+            {/* ── Step 3: Purpose & items ── */}
+            {formStep === 2 && (
+            <div className="divide-y divide-stone-100">
+
             {/* ── Section 4: Purpose & Description ── */}
             <div className="px-4 py-3">
               <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-2">Purpose & Description</p>
@@ -1526,13 +1573,93 @@ export default function RecurringPage() {
               </div>
             </div>
 
+            </div>
+            )}
+
+            {/* ── Step 4: Review ── */}
+            {formStep === 3 && (() => {
+              const tab = ENTITY_TABS.find(t => t.key === form.pv_type);
+              const rows: [string, string][] = [
+                ["Entity", tab?.label ?? form.pv_type],
+                ["Template name", form.name || "—"],
+                ["Group / Folder", form.group_name || "—"],
+                ["Frequency", FREQ_LABELS[form.frequency] ?? form.frequency],
+                ["Term", form.term_type === "FIXED" ? `Fixed term${form.term_end_date ? ` — ends ${formatDate(form.term_end_date)}` : ""}` : "Ongoing"],
+                ["Commenced", form.commenced_date ? form.commenced_date.slice(0, 7) : "—"],
+                ["Payee", form.payee_name || "—"],
+                ["Payment method", form.payment_method],
+                ["Bank", form.payee_bank_name ? `${form.payee_bank_name}${form.payee_bank_acct ? ` · ${form.payee_bank_acct}` : ""}` : "—"],
+                ["Ministry", form.pv_type === "BAM" ? "Property" : form.ministry || "—"],
+                ["Department", form.dept || "—"],
+                ["Project", form.project || "—"],
+                ["Purpose", form.purpose || "—"],
+              ];
+              const items = form.line_items.filter(li => li.description.trim() || Number(li.amount));
+              return (
+                <div className="px-5 py-4 space-y-3">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-500">Review before saving</p>
+                  <div className="rounded-xl border border-stone-200 divide-y divide-stone-100 overflow-hidden">
+                    {rows.map(([k, v]) => (
+                      <div key={k} className="grid grid-cols-[140px_1fr] px-3 py-1.5 text-sm">
+                        <span className="text-xs font-medium text-stone-400 pt-0.5">{k}</span>
+                        <span className="font-semibold text-stone-800">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-xl border border-stone-200 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_130px] bg-stone-100 px-3 py-1.5">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-stone-500">Line items</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-stone-500 text-right">Amount (RM)</span>
+                    </div>
+                    {items.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-stone-400">No line items entered.</p>
+                    ) : items.map((li, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_130px] px-3 py-1.5 border-t border-stone-100 text-sm">
+                        <span className="text-stone-700 font-medium pr-2">{li.description || `Item ${i + 1}`}</span>
+                        <span className="text-right font-mono font-medium text-stone-800">{formatCurrency(Number(li.amount) || 0)}</span>
+                      </div>
+                    ))}
+                    <div className="grid grid-cols-[1fr_130px] px-3 py-1.5 border-t-2 border-stone-300 bg-stone-50">
+                      <span className="text-xs font-black text-stone-700">Total</span>
+                      <span className="text-right font-mono font-black text-stone-900 text-sm">{formatCurrency(lineTotal())}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
           </div>
 
-            {/* Save button */}
-            <div className="px-5 py-4 border-t border-stone-200 bg-stone-50 shrink-0">
-              <Button onClick={save} loading={saving} className="w-full">
-                {form.id ? "Update Template" : "Save Recurring Expense"}
-              </Button>
+            {/* Wizard footer */}
+            <div className="px-5 py-4 border-t border-stone-200 bg-stone-50 shrink-0 flex items-center gap-2">
+              {formStep > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFormStep(s => s - 1)}
+                  className="px-4 py-2 rounded-lg border border-stone-300 text-sm font-semibold text-stone-600 hover:bg-stone-100 transition-colors"
+                >
+                  Back
+                </button>
+              )}
+              <div className="flex-1" />
+              {formStep < WIZARD_STEPS.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (formStep === 0 && !form.name.trim()) { showMsg("Enter a template name first", false); return; }
+                    if (formStep === 1 && !form.payee_name.trim()) { showMsg("Enter the payee name first", false); return; }
+                    if (formStep === 2 && !form.purpose.trim()) { showMsg("Enter the purpose first", false); return; }
+                    setFormStep(s => s + 1);
+                  }}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800 transition-colors"
+                >
+                  Next <ArrowRight size={14} />
+                </button>
+              ) : (
+                <Button onClick={save} loading={saving}>
+                  {form.id ? "Update Template" : "Save Recurring Expense"}
+                </Button>
+              )}
             </div>
           </div>
         </div>
