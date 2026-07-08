@@ -1379,10 +1379,28 @@ export default function RecurringPage() {
                     <option value="Fire Protection System" />
                   </datalist>
                 </Field>
-                <Field label="Group / Folder">
-                  <input className={inp} list="group-list" value={form.group_name} onChange={e => setField("group_name", e.target.value)} placeholder="e.g. Allowances" />
-                  <datalist id="group-list">{existingGroups.map(g => <option key={g} value={g} />)}</datalist>
-                </Field>
+                {(() => {
+                  const gp = parseGroupPath(form.group_name || "");
+                  const topFolders = [...new Set(existingGroups.map(g => parseGroupPath(g).folder))].sort();
+                  const subFolders = [...new Set(existingGroups
+                    .map(g => parseGroupPath(g))
+                    .filter(p => p.folder === gp.folder && p.subfolder)
+                    .map(p => p.subfolder as string))].sort();
+                  const setPath = (folder: string, sub: string) =>
+                    setField("group_name", sub.trim() ? `${folder.trim() || "General"} / ${sub.trim()}` : folder.trim());
+                  return (<>
+                    <Field label="Folder">
+                      <input className={inp} list="folder-list" value={gp.folder}
+                        onChange={e => setPath(e.target.value, gp.subfolder ?? "")} placeholder="e.g. Allowances" />
+                      <datalist id="folder-list">{topFolders.map(g => <option key={g} value={g} />)}</datalist>
+                    </Field>
+                    <Field label="Subfolder (optional)">
+                      <input className={inp} list="subfolder-list" value={gp.subfolder ?? ""}
+                        onChange={e => setPath(gp.folder, e.target.value)} placeholder="e.g. Clergy allowances" />
+                      <datalist id="subfolder-list">{subFolders.map(g => <option key={g} value={g} />)}</datalist>
+                    </Field>
+                  </>);
+                })()}
                 <Field label="Frequency">
                   <select className={inp} value={form.frequency} onChange={e => setField("frequency", e.target.value)}>
                     {FREQ_OPTIONS.map(f => <option key={f} value={f}>{FREQ_LABELS[f]}</option>)}
@@ -1852,6 +1870,9 @@ export default function RecurringPage() {
                   const freqTotal = freqItems.length;
                   const totalAmt = freqItems.reduce((s, i) => s + i.amount, 0);
                   const nextDue = freqItems.map(i => i.next_due).filter(Boolean).sort()[0];
+                  const atRiskCount = freqItems.filter(i => statAtRiskIds.has(i.id)).length;
+                  const dueCount = freqItems.filter(i => statDueIn7Ids.has(i.id)).length;
+                  const readyCount = freqItems.filter(i => statReadyIds.has(i.id)).length;
                   return (
                     <button key={freq} onClick={() => { setNavFreq(freq); setNavFolder(null); }}
                       className="w-full flex items-center gap-4 px-5 py-4 bg-white border border-stone-200 rounded-2xl hover:border-stone-300 hover:shadow-sm text-left transition-all group">
@@ -1859,6 +1880,23 @@ export default function RecurringPage() {
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-bold text-stone-800">{FREQ_DISPLAY[freq]}</div>
                         <div className="text-xs text-stone-400 mt-0.5">{freqTotal} recurring payment{freqTotal !== 1 ? "s" : ""}</div>
+                      </div>
+                      <div className="hidden sm:flex items-center gap-1 shrink-0">
+                        {atRiskCount > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{atRiskCount} at risk
+                          </span>
+                        )}
+                        {dueCount > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{dueCount} due soon
+                          </span>
+                        )}
+                        {readyCount > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{readyCount} ready for PV
+                          </span>
+                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-sm font-bold text-stone-800">{formatCurrency(totalAmt)}</div>
@@ -1952,14 +1990,28 @@ export default function RecurringPage() {
                         </div>
                         <div className="text-sm font-bold text-stone-800 leading-tight mb-1">{folder}</div>
                         <div className="text-xs text-stone-400 mb-2.5">{fItems.length} item{fItems.length !== 1 ? "s" : ""}</div>
-                        {atRiskCount > 0
-                          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">{atRiskCount} at risk</span>
-                          : dueCount > 0
-                          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{dueCount} due soon</span>
-                          : readyCount > 0
-                          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{readyCount} ready for PV</span>
-                          : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">All scheduled</span>
-                        }
+                        <div className="flex flex-wrap gap-1">
+                          {atRiskCount > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{atRiskCount} at risk
+                            </span>
+                          )}
+                          {dueCount > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{dueCount} due soon
+                            </span>
+                          )}
+                          {readyCount > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{readyCount} ready for PV
+                            </span>
+                          )}
+                          {atRiskCount === 0 && dueCount === 0 && readyCount === 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-50 text-stone-500 border border-stone-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-stone-300" />All scheduled
+                            </span>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
