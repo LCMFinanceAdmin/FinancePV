@@ -2,11 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2 } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
-import { installmentForMonth } from "@/lib/payroll/loan";
+import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem } from "@/lib/types";
 import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
 
@@ -79,6 +79,7 @@ export default function PayrollEmployeePage() {
   const [customItemsByMonth, setCustomItemsByMonth] = useState<Record<number, PayrollEmployeeCustomItem[]>>({});
   const [editingMonth, setEditingMonth] = useState<number | null>(null); // 1-13
   const [showYearlySheet, setShowYearlySheet] = useState(false);
+  const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "documents">("overview");
 
   const refreshCustomItems = useCallback(async () => {
     const { data: items } = await supabase.from("payroll_employee_custom_items")
@@ -114,7 +115,7 @@ export default function PayrollEmployeePage() {
     const [{ data: e }, { data: s }, { data: ln }] = await Promise.all([
       supabase.from("payroll_employees").select("*").eq("id", id).single(),
       supabase.from("payroll_salary").select("*").eq("employee_id", id).order("effective_from", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("employee_loans").select("*").eq("employee_id", id).eq("status", "ACTIVE"),
+      supabase.from("employee_loans").select("*").eq("employee_id", id).order("created_at", { ascending: false }),
     ]);
     setEmp(e as PayrollEmployee);
     setSalaries((s as PayrollSalary[]) ?? []);
@@ -223,23 +224,71 @@ export default function PayrollEmployeePage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2.5 mt-4 text-sm">
-          <Field label="I/C No" value={emp.ic_no || "—"} />
-          <Field label="Date of Birth // Age" value={`${fmtDate(emp.dob)} // ${ageFrom(emp.dob)}`} />
-          <Field label="Commenced // Service" value={`${fmtDate(emp.date_commenced)} // ${yearsOfService(emp.date_commenced)}`} />
-          <Field label="Original base (commencement)" value={emp.commencement_base ? formatCurrency(emp.commencement_base) : "—"} />
-          <Field label="Posting" value={`${emp.posting_type === "CHURCH" ? "Church" : emp.posting_type === "OFFICE" ? "Office" : "Other"} — ${posting || "—"}`} />
-          <Field label="Marital Status" value={`${emp.marital_status || "—"}${emp.marital_status ? (emp.spouse_working ? " · spouse working" : " · spouse not working") : ""}`} />
-          <Field label="Children (<18 / college)" value={`${emp.children_under_18} / ${emp.children_in_college}`} />
-          <Field label="EPF No." value={emp.epf_no || "—"} />
-          <Field label="Voluntary EPF" value={emp.epf_voluntary_ee_amount ? formatCurrency(emp.epf_voluntary_ee_amount) : "—"} />
-          <Field label="TIN (Tax)" value={emp.tin || "—"} />
-          <Field label="Employer Tax Ref" value={emp.employer_tax_ref || "—"} />
-          <Field label="Bank" value={emp.bank_name ? `${emp.bank_name} · ${emp.bank_acct}` : "—"} />
+        {/* Tab bar */}
+        <div className="flex items-center gap-0.5 mt-4 -mb-5 -mx-5 px-3 border-t border-stone-100 overflow-x-auto print:hidden">
+          {([
+            ["overview", "Overview", User],
+            ["salary", "Salary & Allowances", Wallet],
+            ["sheet", "Yearly Sheet", Table2],
+            ["payslips", "Payslips", Receipt],
+            ["loans", "Loans", HandCoins],
+            ["documents", "Documents", FolderOpen],
+          ] as const).map(([key, label, Icon]) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
+                tab === key ? "border-[#4a6da7] text-[#4a6da7]" : "border-transparent text-stone-400 hover:text-stone-600"}`}>
+              <Icon size={14} /> {label}
+              {key === "loans" && loans.filter(l => l.status === "ACTIVE").length > 0 && (
+                <span className="text-[10px] px-1.5 rounded-full bg-[#4a6da7]/10 text-[#4a6da7] font-bold">{loans.filter(l => l.status === "ACTIVE").length}</span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
+      {/* ── Overview tab ── */}
+      {tab === "overview" && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
+              <div className="text-[11px] font-semibold text-stone-400">Gross / month</div>
+              <div className="text-lg font-bold text-[#4a6da7] font-mono mt-0.5">{formatCurrency(fullGrossVal)}</div>
+            </div>
+            <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
+              <div className="text-[11px] font-semibold text-stone-400">Annual net ({year})</div>
+              <div className="text-lg font-bold text-stone-700 font-mono mt-0.5">{formatCurrency(sum(l => l.net))}</div>
+            </div>
+            <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
+              <div className="text-[11px] font-semibold text-stone-400">Active loans</div>
+              <div className="text-lg font-bold text-stone-700 mt-0.5">{loans.filter(l => l.status === "ACTIVE").length}</div>
+            </div>
+            <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
+              <div className="text-[11px] font-semibold text-stone-400">Service</div>
+              <div className="text-lg font-bold text-stone-700 mt-0.5">{yearsOfService(emp.date_commenced)}</div>
+            </div>
+          </div>
+          <div className="bg-white border border-stone-200 rounded-2xl p-5">
+            <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5 mb-3"><User size={15} className="text-[#4a6da7]" /> Personal Data</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2.5 text-sm">
+              <Field label="I/C No" value={emp.ic_no || "—"} />
+              <Field label="Date of Birth // Age" value={`${fmtDate(emp.dob)} // ${ageFrom(emp.dob)}`} />
+              <Field label="Commenced // Service" value={`${fmtDate(emp.date_commenced)} // ${yearsOfService(emp.date_commenced)}`} />
+              <Field label="Original base (commencement)" value={emp.commencement_base ? formatCurrency(emp.commencement_base) : "—"} />
+              <Field label="Posting" value={`${emp.posting_type === "CHURCH" ? "Church" : emp.posting_type === "OFFICE" ? "Office" : "Other"} — ${posting || "—"}`} />
+              <Field label="Marital Status" value={`${emp.marital_status || "—"}${emp.marital_status ? (emp.spouse_working ? " · spouse working" : " · spouse not working") : ""}`} />
+              <Field label="Children (<18 / college)" value={`${emp.children_under_18} / ${emp.children_in_college}`} />
+              <Field label="EPF No." value={emp.epf_no || "—"} />
+              <Field label="Voluntary EPF" value={emp.epf_voluntary_ee_amount ? formatCurrency(emp.epf_voluntary_ee_amount) : "—"} />
+              <Field label="TIN (Tax)" value={emp.tin || "—"} />
+              <Field label="Employer Tax Ref" value={emp.employer_tax_ref || "—"} />
+              <Field label="Bank" value={emp.bank_name ? `${emp.bank_name} · ${emp.bank_acct}` : "—"} />
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Current salary breakdown */}
+      {tab === "salary" && (
       <div className="bg-white border border-stone-200 rounded-2xl p-5">
         <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5 mb-3"><Wallet size={15} className="text-[#4a6da7]" /> Current Salary</h2>
         {!current ? (
@@ -259,8 +308,10 @@ export default function PayrollEmployeePage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Computed yearly sheet grid */}
+      {tab === "sheet" && (
       <div className="bg-white border border-stone-200 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5"><Table2 size={15} className="text-[#4a6da7]" /> Yearly Sheet — {year}</h2>
@@ -277,10 +328,10 @@ export default function PayrollEmployeePage() {
           <p className="text-sm text-stone-400">Add salary components to compute the sheet.</p>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[72vh] rounded-lg">
               <table className="w-full text-[14px] border-collapse" style={{ minWidth: 1000 }}>
                 <thead>
-                  <tr className="bg-stone-100 text-stone-600">
+                  <tr className="text-stone-600 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-stone-100 [&>th]:shadow-[inset_0_-2px_0_#d6d3d1]">
                     <th className="border border-stone-200 px-1.5 py-1 text-left">Month</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">Gross</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">PCB</th>
@@ -307,7 +358,7 @@ export default function PayrollEmployeePage() {
                     const monthNum = i + 1;
                     const monthItems = customItemsByMonth[monthNum] ?? [];
                     return (
-                    <tr key={i} className="hover:bg-stone-50">
+                    <tr key={i} className="odd:bg-stone-50/50 hover:bg-blue-50/40">
                       <td className="border border-stone-200 px-1.5 py-1 font-semibold text-stone-600">{MONTHS[i]}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.gross)}</td>
                       <td className="border border-stone-200 px-0.5 py-0.5 text-right">
@@ -351,7 +402,7 @@ export default function PayrollEmployeePage() {
                     );
                   })}
                   {/* Sub-total (12 months) */}
-                  <tr className="bg-stone-50 font-semibold">
+                  <tr className="bg-stone-100 font-semibold [&>td]:border-t-2 [&>td]:border-t-stone-300">
                     <td className="border border-stone-200 px-1.5 py-1">SUB-T (12)</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.gross, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.pcb, 0))}</td>
@@ -372,7 +423,7 @@ export default function PayrollEmployeePage() {
                   </tr>
                   {/* 13th month */}
                   {thirteenth ? (
-                    <tr>
+                    <tr className="bg-blue-50/40">
                       <td className="border border-stone-200 px-1.5 py-1 font-semibold text-stone-600">13th MTH</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.gross)}</td>
                       <td className="border border-stone-200 px-0.5 py-0.5 text-right">
@@ -414,7 +465,7 @@ export default function PayrollEmployeePage() {
                     <tr><td colSpan={13 + customCols.length} className="border border-stone-200 px-1.5 py-1 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
                   )}
                   {/* Annual total */}
-                  <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7]">
+                  <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7] [&>td]:border-t-2 [&>td]:border-t-[#4a6da7]/40">
                     <td className="border border-stone-200 px-1.5 py-1">ANNUAL</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.gross))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.pcb))}</td>
@@ -445,8 +496,10 @@ export default function PayrollEmployeePage() {
           </>
         )}
       </div>
+      )}
 
       {/* Salary revision history + difference analysis */}
+      {tab === "salary" && (
       <div className="bg-white border border-stone-200 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5"><Clock size={15} className="text-[#4a6da7]" /> Revision History</h2>
@@ -509,6 +562,113 @@ export default function PayrollEmployeePage() {
           </div>
         )}
       </div>
+      )}
+
+      {/* ── Payslips tab ── */}
+      {tab === "payslips" && (
+        <div className="bg-white border border-stone-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5"><Receipt size={15} className="text-[#4a6da7]" /> Payslips — {year}</h2>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setYear(y => y - 1)} className="px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50">‹</button>
+              <span className="text-sm font-semibold text-stone-700 w-12 text-center">{year}</span>
+              <button onClick={() => setYear(y => y + 1)} className="px-2 py-1 text-xs rounded-lg border border-stone-200 hover:bg-stone-50">›</button>
+            </div>
+          </div>
+          {!current ? (
+            <p className="text-sm text-stone-400">Add salary components first — payslips are generated from the yearly sheet.</p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {monthLines.map((l, i) => (
+                <button key={i} onClick={() => setSlipMonth(i)}
+                  className="text-left border border-stone-200 rounded-xl px-3.5 py-3 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all group">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-stone-700">{MONTHS[i]} {year}</span>
+                    <Share2 size={13} className="text-stone-300 group-hover:text-[#4a6da7] transition-colors" />
+                  </div>
+                  <div className="text-[11px] text-stone-400 mt-1">Net pay</div>
+                  <div className="text-sm font-mono font-semibold text-stone-700">{formatCurrency(l.net)}</div>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="text-[11px] text-stone-400 mt-3">Click a month to preview, print or share the salary slip.</p>
+        </div>
+      )}
+
+      {/* ── Loans tab ── */}
+      {tab === "loans" && (
+        <div className="bg-white border border-stone-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5"><HandCoins size={15} className="text-[#4a6da7]" /> Employee Loans</h2>
+            <Link href="/payroll/loans" className="flex items-center gap-1 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5c8f] transition-colors">
+              Loan register <ExternalLink size={12} />
+            </Link>
+          </div>
+          {loans.length === 0 ? (
+            <p className="text-sm text-stone-400">No loans on record for this employee.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {loans.map(ln => {
+                const nowY = new Date().getFullYear();
+                const nowM = new Date().getMonth() + 1;
+                const remaining = ln.status === "ACTIVE" ? outstandingAfter(ln, nowY, nowM) : ln.status === "SETTLED" ? 0 : ln.term_months;
+                const paidCount = ln.term_months - remaining;
+                const total = totalRepayable(ln);
+                const paidAmt = Array.from({ length: Math.max(0, paidCount) }, (_, i) => installmentAmount(ln, i + 1)).reduce((s, a) => s + a, 0);
+                const balance = Math.max(0, total - paidAmt);
+                const statusStyle: Record<string, string> = {
+                  ACTIVE: "bg-green-100 text-green-700",
+                  SETTLED: "bg-stone-100 text-stone-500",
+                  PENDING: "bg-amber-100 text-amber-700",
+                  REJECTED: "bg-red-100 text-red-600",
+                };
+                return (
+                  <div key={ln.id} className="border border-stone-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-stone-700 font-mono">{ln.loan_no}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${statusStyle[ln.status] ?? "bg-stone-100 text-stone-500"}`}>{ln.status}</span>
+                      </div>
+                      <span className="text-xs text-stone-400">Started {fmtDate(ln.start_month)}</span>
+                    </div>
+                    {ln.purpose && <p className="text-xs text-stone-500 mt-1">{ln.purpose}</p>}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 mt-3 text-sm">
+                      <Field label="Principal" value={formatCurrency(ln.principal)} />
+                      <Field label="Instalment" value={`${formatCurrency(ln.monthly_installment)} / mth`} />
+                      <Field label="Term" value={`${paidCount} / ${ln.term_months} months`} />
+                      <Field label="Outstanding" value={formatCurrency(balance)} />
+                    </div>
+                    {ln.status === "ACTIVE" && (
+                      <div className="mt-3">
+                        <div className="h-1.5 rounded-full bg-stone-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-[#4a6da7] transition-all" style={{ width: `${ln.term_months > 0 ? Math.min(100, (paidCount / ln.term_months) * 100) : 0}%` }} />
+                        </div>
+                        <p className="text-[10px] text-stone-400 mt-1">Repayments appear in the EPL column of the yearly sheet from {fmtDate(ln.start_month)}.</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Documents tab (maintenance file arrives in the next chunk) ── */}
+      {tab === "documents" && (
+        <div className="bg-white border border-stone-200 rounded-2xl p-5">
+          <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5 mb-3"><FolderOpen size={15} className="text-[#4a6da7]" /> Maintenance File</h2>
+          <div className="text-center py-10">
+            <FolderOpen size={32} className="mx-auto text-stone-300 mb-3" />
+            <p className="text-sm font-semibold text-stone-500">Document maintenance file coming next</p>
+            <p className="text-xs text-stone-400 mt-1 max-w-sm mx-auto">
+              Employment letters, LHDN / tax letters, visas & permits, agreements and correspondence will be
+              stored here in folders with expiry tracking.
+            </p>
+          </div>
+        </div>
+      )}
 
       {showRevision && current && (
         <RevisionModal employeeId={emp.id} latest={current} onClose={() => setShowRevision(false)} onSaved={() => { setShowRevision(false); load(); }} />
