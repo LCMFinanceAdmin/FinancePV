@@ -1,13 +1,23 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent, HandCoins, CalendarClock, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent, HandCoins, CalendarClock, Pencil, Trash2, Users, CheckCircle2, AlertTriangle, ArrowRight, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
 
 const MONTH_SHORT_DIR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
 function monthShortDir(m: number): string { return MONTH_SHORT_DIR[m - 1] ?? String(m); }
+
+const MONTH_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December","13th Month"];
+function periodLabel(year: number, month: number): string { return `${MONTH_FULL[month - 1] ?? month} ${year}`; }
+
+type PayrollRunLite = { id: string; year: number; month: number; status: string; finalized_at: string | null };
+
+// Compliance check: active employees should have IC, EPF no and bank details on file.
+function missingDetails(e: PayrollEmployee): boolean {
+  return !e.ic_no || !e.epf_no || !e.bank_name || !e.bank_acct;
+}
 
 function itemAppliesToMonth(item: { year: number; month: number; is_recurring: boolean; recur_until_year: number | null; recur_until_month: number | null }, targetYear: number, targetMonth: number): boolean {
   if (!item.is_recurring) return item.year === targetYear && item.month === targetMonth;
@@ -600,6 +610,10 @@ export default function PayrollPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showStatus, setShowStatus] = useState<"ACTIVE" | "RESIGNED" | "ALL">("ACTIVE");
+  const [tagFilter, setTagFilter] = useState<"" | "PASTOR" | "STAFF" | "CONTRACT" | "OFFICE" | "CHURCH">("");
+  const [missingOnly, setMissingOnly] = useState(false);
+  const [runs, setRuns] = useState<PayrollRunLite[]>([]);
+  const [lastRunCount, setLastRunCount] = useState<number | null>(null);
   const [modalEmp, setModalEmp] = useState<PayrollEmployee | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null); // row being confirmed for delete
@@ -641,6 +655,20 @@ export default function PayrollPage() {
         + Number(s.experience_bonus) + Number(s.family_allowance) + Number(s.stm_allowance));
     }
     setSalaryByEmp(seen);
+    // recent runs → dashboard stats & checklist
+    const { data: runRows } = await supabase.from("payroll_runs")
+      .select("id,year,month,status,finalized_at")
+      .order("year", { ascending: false }).order("month", { ascending: false }).limit(14);
+    const runList = (runRows as PayrollRunLite[]) ?? [];
+    setRuns(runList);
+    const latestFinalized = runList.find(r => ["FINALIZED", "PAID"].includes(r.status));
+    if (latestFinalized) {
+      const { count } = await supabase.from("payroll_lines")
+        .select("id", { count: "exact", head: true }).eq("run_id", latestFinalized.id);
+      setLastRunCount(count ?? 0);
+    } else {
+      setLastRunCount(null);
+    }
     setLoading(false);
   }, [supabase]);
 
@@ -658,6 +686,12 @@ export default function PayrollPage() {
 
   const filtered = employees.filter(e => {
     if (showStatus !== "ALL" && e.status !== showStatus) return false;
+    if (tagFilter === "PASTOR" && !e.is_pastor) return false;
+    if (tagFilter === "STAFF" && !e.is_staff) return false;
+    if (tagFilter === "CONTRACT" && e.employment_type !== "CONTRACT") return false;
+    if (tagFilter === "OFFICE" && e.posting_type !== "OFFICE") return false;
+    if (tagFilter === "CHURCH" && e.posting_type !== "CHURCH") return false;
+    if (missingOnly && !missingDetails(e)) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return e.full_name.toLowerCase().includes(q) || e.emp_no.toLowerCase().includes(q)
@@ -665,21 +699,34 @@ export default function PayrollPage() {
       || postingLabel(e).toLowerCase().includes(q);
   });
 
+  // ── Dashboard derivations ──
+  const activeEmps = employees.filter(e => e.status === "ACTIVE");
+  const missingList = activeEmps.filter(missingDetails);
+  const latestFinal = runs.find(r => ["FINALIZED", "PAID"].includes(r.status));
+  const today = new Date();
+  const curYear = today.getFullYear();
+  const curMonth = today.getMonth() + 1;
+  const currentRun = runs.find(r => r.year === curYear && r.month === curMonth);
+  const currentDone = !!currentRun && ["FINALIZED", "PAID"].includes(currentRun.status);
+  const nextYear = curMonth === 12 ? curYear + 1 : curYear;
+  const nextMonth = curMonth === 12 ? 1 : curMonth + 1;
+  const allGood = currentDone && missingList.length === 0;
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-stone-800 flex items-center gap-2"><Wallet size={22} className="text-[#4a6da7]" /> Payroll</h1>
-          <p className="text-sm text-stone-500 mt-0.5">Employee salary records & yearly sheets</p>
+          <h1 className="text-2xl font-bold text-stone-800 flex items-center gap-2"><Wallet size={22} className="text-[#4a6da7]" /> Payroll & People</h1>
+          <p className="text-sm text-stone-500 mt-0.5">Employee records, salaries, payroll runs & payslips</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Link href="/payroll/runs" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-stone-50 transition-colors">
+          <Link href="/payroll/runs" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50 hover:border-[#4a6da7]/40 hover:text-[#4a6da7] transition-colors">
             <CalendarClock size={15} /> Runs
           </Link>
-          <Link href="/payroll/loans" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-stone-50 transition-colors">
+          <Link href="/payroll/loans" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50 hover:border-[#4a6da7]/40 hover:text-[#4a6da7] transition-colors">
             <HandCoins size={15} /> Loans
           </Link>
-          <Link href="/payroll/rates" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-stone-50 transition-colors">
+          <Link href="/payroll/rates" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50 hover:border-[#4a6da7]/40 hover:text-[#4a6da7] transition-colors">
             <Percent size={15} /> Rates
           </Link>
           {canEdit && (
@@ -691,26 +738,160 @@ export default function PayrollPage() {
         </div>
       </div>
 
-      {/* Search + status filter */}
-      <div className="flex items-center gap-2">
-        <div className="flex-1 relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, emp no, designation, posting…"
-            className="w-full border border-stone-300 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]" />
+      {/* ── Stat cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <button onClick={() => { setShowStatus("ACTIVE"); setTagFilter(""); setMissingOnly(false); }}
+          className="bg-white border border-stone-200 rounded-2xl px-4 py-3.5 text-left hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
+          <div className="flex items-center gap-2 text-xs font-semibold text-stone-400 mb-1"><Users size={13} className="text-[#4a6da7]" /> Employees</div>
+          <div className="text-2xl font-bold text-stone-800">{activeEmps.length}</div>
+          <div className="text-[11px] text-stone-400 mt-0.5">active staff</div>
+        </button>
+        <Link href="/payroll/runs"
+          className="bg-white border border-stone-200 rounded-2xl px-4 py-3.5 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
+          <div className="flex items-center gap-2 text-xs font-semibold text-stone-400 mb-1"><CheckCircle2 size={13} className="text-[#4a6da7]" /> Payroll finalized</div>
+          <div className="text-lg font-bold text-stone-800 leading-8">{latestFinal ? periodLabel(latestFinal.year, latestFinal.month) : "—"}</div>
+          <div className="text-[11px] text-stone-400 mt-0.5">{latestFinal ? "last finalized run" : "no run finalized yet"}</div>
+        </Link>
+        <Link href={latestFinal ? `/payroll/runs/${latestFinal.id}` : "/payroll/runs"}
+          className="bg-white border border-stone-200 rounded-2xl px-4 py-3.5 hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
+          <div className="flex items-center gap-2 text-xs font-semibold text-stone-400 mb-1"><FileText size={13} className="text-[#4a6da7]" /> Payslips</div>
+          <div className="text-2xl font-bold text-stone-800">{lastRunCount ?? "—"}</div>
+          <div className="text-[11px] text-stone-400 mt-0.5">in last finalized run</div>
+        </Link>
+        <button onClick={() => { setMissingOnly(m => !m); setShowStatus("ACTIVE"); setTagFilter(""); }}
+          className={`bg-white border rounded-2xl px-4 py-3.5 text-left hover:shadow-sm transition-all ${
+            missingOnly ? "border-red-400 ring-1 ring-red-200" : missingList.length > 0 ? "border-red-200" : "border-stone-200 hover:border-[#4a6da7]/40"}`}>
+          <div className="flex items-center gap-2 text-xs font-semibold text-stone-400 mb-1">
+            <AlertTriangle size={13} className={missingList.length > 0 ? "text-red-500" : "text-[#4a6da7]"} /> Compliance alerts
+          </div>
+          <div className={`text-2xl font-bold ${missingList.length > 0 ? "text-red-600" : "text-stone-800"}`}>{missingList.length}</div>
+          <div className="text-[11px] text-stone-400 mt-0.5">{missingList.length > 0 ? "missing statutory / bank details" : "all records complete"}</div>
+        </button>
+      </div>
+
+      {/* ── Checklist + quick access ── */}
+      <div className="grid lg:grid-cols-3 gap-3">
+        <div className="lg:col-span-2 bg-white border border-stone-200 rounded-2xl px-4 py-4">
+          <p className="text-sm font-bold text-stone-800 mb-3">{allGood ? "Everything is up to date" : "This month at a glance"}</p>
+          <div className="space-y-2.5">
+            {/* Current month payroll */}
+            <div className="flex items-start gap-2.5">
+              {currentDone
+                ? <CheckCircle2 size={16} className="text-green-500 mt-0.5 shrink-0" />
+                : <AlertTriangle size={16} className="text-amber-500 mt-0.5 shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-stone-700">
+                  {currentDone
+                    ? `${periodLabel(curYear, curMonth)} payroll completed`
+                    : currentRun
+                    ? `${periodLabel(curYear, curMonth)} payroll is still in draft`
+                    : `${periodLabel(curYear, curMonth)} payroll not started`}
+                </p>
+                <p className="text-[11px] text-stone-400 mt-0.5">
+                  {currentDone ? "Vouchers generated — payslips can be sent from the run page."
+                    : currentRun ? "Review the figures and finalize the run."
+                    : "Create the run from Payroll Runs when ready."}
+                </p>
+              </div>
+              {!currentDone && (
+                <Link href={currentRun ? `/payroll/runs/${currentRun.id}` : "/payroll/runs"}
+                  className="shrink-0 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5c8f] transition-colors">
+                  {currentRun ? "Open run" : "Start"}
+                </Link>
+              )}
+            </div>
+            {/* Employee records */}
+            <div className="flex items-start gap-2.5">
+              {missingList.length === 0
+                ? <CheckCircle2 size={16} className="text-green-500 mt-0.5 shrink-0" />
+                : <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-stone-700">
+                  {missingList.length === 0 ? "Employee records checked" : `${missingList.length} employee${missingList.length > 1 ? "s" : ""} missing statutory or bank details`}
+                </p>
+                <p className="text-[11px] text-stone-400 mt-0.5">
+                  {missingList.length === 0 ? "All required IC, EPF and bank details are on file." : "IC, EPF number or bank account is incomplete."}
+                </p>
+              </div>
+              {missingList.length > 0 && (
+                <button onClick={() => { setMissingOnly(true); setShowStatus("ACTIVE"); setTagFilter(""); }}
+                  className="shrink-0 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5c8f] transition-colors">
+                  Show
+                </button>
+              )}
+            </div>
+            {/* Next payroll */}
+            <div className="flex items-start gap-2.5">
+              <CalendarClock size={16} className="text-stone-400 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-stone-700">Next payroll — {periodLabel(nextYear, nextMonth)}</p>
+                <p className="text-[11px] text-stone-400 mt-0.5">Prepare from the 18th of the month.</p>
+              </div>
+            </div>
+          </div>
         </div>
-        <select value={showStatus} onChange={e => setShowStatus(e.target.value as "ACTIVE" | "RESIGNED" | "ALL")}
-          className="border border-stone-300 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]">
-          <option value="ACTIVE">Active</option>
-          <option value="RESIGNED">Resigned</option>
-          <option value="ALL">All</option>
-        </select>
+
+        {/* Quick access */}
+        <div className="bg-white border border-stone-200 rounded-2xl px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2.5">Quick access</p>
+          <div className="space-y-1">
+            {[
+              { href: "/payroll/runs", label: currentDone ? "Payroll runs" : `Run ${periodLabel(curYear, curMonth)} payroll`, sub: "Review deductions and net pay" },
+              { href: "/payroll/loans", label: "Employee loans", sub: "Applications and repayments" },
+              { href: "/payroll/rates", label: "Statutory rates", sub: "EPF, SOCSO, EIS tables" },
+            ].map(l => (
+              <Link key={l.href} href={l.href}
+                className="flex items-center gap-2 px-2 py-1.5 -mx-2 rounded-lg hover:bg-blue-50/50 transition-colors group">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-[#4a6da7]">{l.label}</p>
+                  <p className="text-[11px] text-stone-400">{l.sub}</p>
+                </div>
+                <ArrowRight size={13} className="text-stone-300 group-hover:text-[#4a6da7] shrink-0 transition-colors" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Search + filters ── */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, emp no, designation, posting…"
+              className="w-full border border-stone-300 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#4a6da7] bg-white" />
+          </div>
+          <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden text-sm font-semibold bg-white">
+            {([["ACTIVE", "Active"], ["RESIGNED", "Former"], ["ALL", "All"]] as const).map(([val, label]) => (
+              <button key={val} onClick={() => setShowStatus(val)}
+                className={`px-3.5 py-2.5 transition-colors ${showStatus === val ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {([["PASTOR", "Pastor"], ["STAFF", "Staff"], ["CONTRACT", "Contract"], ["OFFICE", "Office"], ["CHURCH", "Church"]] as const).map(([val, label]) => (
+            <button key={val} onClick={() => setTagFilter(t => t === val ? "" : val)}
+              className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                tagFilter === val ? "bg-[#4a6da7] text-white border-transparent" : "bg-white text-stone-500 border-stone-200 hover:border-[#4a6da7]/40"}`}>
+              {label}
+            </button>
+          ))}
+          {missingOnly && (
+            <button onClick={() => setMissingOnly(false)}
+              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors">
+              Missing details <X size={11} />
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
         <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-stone-400 text-sm">
-          {search ? `No employees match "${search}"` : "No employees yet."}
+          {search ? `No employees match "${search}"` : missingOnly ? "No employees with missing details — all records complete." : tagFilter ? "No employees match this filter." : "No employees yet."}
         </div>
       ) : (
         <div className="space-y-2">
