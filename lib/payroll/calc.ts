@@ -77,7 +77,9 @@ export function resolveEpfRates(input: { age: number; employmentType: Employment
 }
 
 // Annual increment effective month: joined before July → effective Jan; after July → effective July.
-export function incrementEffectiveMonth(dateCommenced: string | null): number {
+// A per-employee override (1 or 7) takes precedence for T&C-carved exceptions.
+export function incrementEffectiveMonth(dateCommenced: string | null, override?: number | null): number {
+  if (override === 1 || override === 7) return override;
   if (!dateCommenced) return 1;
   const joinMonth = new Date(dateCommenced).getMonth() + 1; // 1-based
   return joinMonth < 7 ? 1 : 7;
@@ -101,10 +103,10 @@ export function fullGross(s: SalaryComponents): number {
 
 // Gross for a given month, applying increment timing (current-year increment only
 // from its effective month). The 13th month always uses the full gross.
-export function grossForMonth(s: SalaryComponents, dateCommenced: string | null, month: number, is13th: boolean): number {
+export function grossForMonth(s: SalaryComponents, dateCommenced: string | null, month: number, is13th: boolean, incrementMonthOverride?: number | null): number {
   const full = fullGross(s);
   if (is13th) return full;
-  const eff = incrementEffectiveMonth(dateCommenced);
+  const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
   return month >= eff ? full : full - Number(s.increment_current);
 }
 

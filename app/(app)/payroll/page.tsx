@@ -82,6 +82,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [priorExp, setPriorExp] = useState(String(existing?.prior_experience_years ?? 0));
   const [isOrangAsli, setIsOrangAsli] = useState(existing?.is_orang_asli ?? false);
   const [dateCommenced, setDateCommenced] = useState(existing?.date_commenced ?? "");
+  const [incrementOverride, setIncrementOverride] = useState(existing?.increment_month_override != null ? String(existing.increment_month_override) : "");
   const [postingType, setPostingType] = useState<PostingType>(existing?.posting_type ?? "OFFICE");
   const [churchName, setChurchName] = useState(existing?.church_name ?? "");
   const [department, setDepartment] = useState(existing?.department ?? "");
@@ -230,6 +231,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         prior_experience_years: parseInt(priorExp) || 0,
         is_orang_asli: isOrangAsli,
         date_commenced: dateCommenced || null,
+        increment_month_override: incrementOverride ? parseInt(incrementOverride) : null,
         posting_type: postingType,
         church_name: postingType === "CHURCH" ? churchName.trim() : "",
         department: postingType === "OFFICE" ? department.trim() : "",
@@ -339,6 +341,14 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
             <div><label className={labelCls}>Date of Birth</label><input type="date" className={inputCls} value={dob ?? ""} onChange={e => setDob(e.target.value)} /></div>
             <div><label className={labelCls}>Designation</label><input className={inputCls} value={designation} onChange={e => setDesignation(e.target.value)} /></div>
             <div><label className={labelCls}>Date Commenced</label><input type="date" className={inputCls} value={dateCommenced ?? ""} onChange={e => setDateCommenced(e.target.value)} /></div>
+            <div>
+              <label className={labelCls}>Increment Month</label>
+              <select className={inputCls} value={incrementOverride} onChange={e => setIncrementOverride(e.target.value)}>
+                <option value="">Automatic ({dateCommenced && new Date(dateCommenced).getMonth() + 1 < 7 ? "January" : "July"} — based on join date)</option>
+                <option value="1">January (override)</option>
+                <option value="7">July (override)</option>
+              </select>
+            </div>
             <div>
               <label className={labelCls}>Employment Type</label>
               <select className={inputCls} value={employmentType} onChange={e => setEmploymentType(e.target.value as EmploymentType)}>

@@ -138,10 +138,10 @@ export default function PayrollEmployeePage() {
   // Current-year increment takes effect in Jan (joined before July) or July (joined after July).
   // Persistence with runs arrives in Phase 5.
   const fullGrossVal = current ? grossOf(current) : 0;
-  const effMonth = incrementEffectiveMonth(emp.date_commenced);
+  const effMonth = incrementEffectiveMonth(emp.date_commenced, emp.increment_month_override);
   const eplForMonth = (m: number) => loans.reduce((s, ln) => s + installmentForMonth(ln, year, m), 0);
   const monthLines: CalcLine[] = current ? MONTHS.map((_, i) => calcLine({
-    gross: grossForMonth(current, emp.date_commenced, i + 1, false),
+    gross: grossForMonth(current, emp.date_commenced, i + 1, false, emp.increment_month_override),
     age: ageAt(emp.dob, year, i + 1),
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
@@ -492,7 +492,10 @@ export default function PayrollEmployeePage() {
             <p className="text-[11px] text-stone-400 mt-3">
               EPF / SOCSO / EIS auto-calculated from the {rates ? year : "default"} rate table (<Link href="/payroll/rates" className="text-[#4a6da7] hover:underline">edit rates</Link>);
               <span className="font-semibold"> PCB entered manually</span> per month (click a PCB cell).
-              Current-year increment takes effect from <span className="font-semibold">{MONTHS[effMonth - 1]}</span> (joined {effMonth === 1 ? "before" : "after"} July).
+              Current-year increment takes effect from <span className="font-semibold">{MONTHS[effMonth - 1]}</span>{" "}
+              {emp.increment_month_override != null
+                ? <span className="text-amber-600 font-semibold">(manual override)</span>
+                : `(joined ${effMonth === 1 ? "before" : "after"} July)`}.
               Figures are saved when a payroll run is generated (Phase 5).
             </p>
           </>

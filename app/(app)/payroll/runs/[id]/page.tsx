@@ -135,7 +135,7 @@ export default function PayrollRunDetailPage() {
     .map(e => {
       const sal = salByEmp[e.id];
       if (!sal) return null;
-      const gross = grossForMonth(sal, e.date_commenced, ageMonth, is13th);
+      const gross = grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override);
       const epl = is13th ? 0 : (loansByEmp[e.id] ?? []).reduce((s, ln) => {
         const row = buildSchedule(ln).find(x => x.year === run.year && x.month === run.month);
         return s + (row?.amount ?? 0);
