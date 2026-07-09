@@ -63,6 +63,13 @@ function daysInMonth(monthStr: string): string[] {
   const count = new Date(y, m, 0).getDate();
   return Array.from({ length: count }, (_, i) => `${monthStr}-${String(i + 1).padStart(2, "0")}`);
 }
+// Seed an empty time field with the current hour but always :00 minutes —
+// a round default is far more useful to edit from than whatever minute the
+// clock happened to read when the field was opened.
+function defaultTimeNow(): string {
+  return `${String(new Date().getHours()).padStart(2, "0")}:00`;
+}
+
 // Hours for an entry — derived from its time range; falls back to a raw
 // stored number for older rows that were entered before time-range tracking.
 function entryHours(e: WorksheetEntry): number {
@@ -332,20 +339,7 @@ export default function WorksheetsPage() {
   function updateEntry(idx: number, patch: Partial<WorksheetEntry>) {
     setForm(f => ({ ...f, entries: f.entries.map((e, i) => i === idx ? { ...e, ...patch } : e) }));
   }
-  function addEntry() {
-    setForm(f => {
-      // Default a new session's time/purpose to the previous session's, so
-      // managers entering a run of identical shifts aren't starting from blank each time.
-      const last = [...f.entries].reverse().find(e => e.start_time && e.end_time);
-      return {
-        ...f,
-        entries: [...f.entries, {
-          date: "", hours: 0,
-          start_time: last?.start_time ?? "", end_time: last?.end_time ?? "", purpose: last?.purpose ?? "",
-        }],
-      };
-    });
-  }
+  function addEntry() { setForm(f => ({ ...f, entries: [...f.entries, { date: "", start_time: "", end_time: "", hours: 0, purpose: "" }] })); }
   function removeEntry(idx: number) {
     setForm(f => ({ ...f, entries: f.entries.length > 1 ? f.entries.filter((_, i) => i !== idx) : f.entries }));
   }
@@ -900,10 +894,12 @@ export default function WorksheetsPage() {
                           <div className="flex items-center gap-2">
                             <input type="date" className={`${inp} flex-1`} value={e.date} onChange={ev => updateEntry(idx, { date: ev.target.value })} />
                             <input type="time" className="w-[105px] border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]"
-                              value={e.start_time ?? ""} onChange={ev => updateEntry(idx, { start_time: ev.target.value })} />
+                              value={e.start_time ?? ""} onChange={ev => updateEntry(idx, { start_time: ev.target.value })}
+                              onFocus={() => { if (!e.start_time) updateEntry(idx, { start_time: defaultTimeNow() }); }} />
                             <span className="text-stone-400 text-xs shrink-0">to</span>
                             <input type="time" className="w-[105px] border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]"
-                              value={e.end_time ?? ""} onChange={ev => updateEntry(idx, { end_time: ev.target.value })} />
+                              value={e.end_time ?? ""} onChange={ev => updateEntry(idx, { end_time: ev.target.value })}
+                              onFocus={() => { if (!e.end_time) updateEntry(idx, { end_time: defaultTimeNow() }); }} />
                             <span className="text-xs font-semibold text-stone-600 whitespace-nowrap w-12 text-right">{hrs > 0 ? `${hrsDisplay}h` : "—"}</span>
                             {form.entries.length > 1 && (
                               <button type="button" onClick={() => removeEntry(idx)} className="p-1 text-stone-300 hover:text-red-500"><Trash2 size={13} /></button>
@@ -1060,13 +1056,15 @@ export default function WorksheetsPage() {
                           <input type="time"
                             className="w-[108px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
                             value={row.start_time}
-                            onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, start_time: e.target.value } : r))} />
+                            onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, start_time: e.target.value } : r))}
+                            onFocus={() => { if (!row.start_time) setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, start_time: defaultTimeNow() } : r)); }} />
                         </td>
                         <td className="px-2 py-1.5">
                           <input type="time"
                             className="w-[108px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
                             value={row.end_time}
-                            onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, end_time: e.target.value } : r))} />
+                            onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, end_time: e.target.value } : r))}
+                            onFocus={() => { if (!row.end_time) setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, end_time: defaultTimeNow() } : r)); }} />
                         </td>
                         <td className="px-2 py-1.5">
                           <span className={`font-semibold ${worked ? "text-stone-700" : "text-stone-300"}`}>

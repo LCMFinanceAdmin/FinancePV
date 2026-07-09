@@ -857,7 +857,7 @@ export default function RecurringPage() {
       pv_label: form.pv_label,
       payment_type: form.payment_type, line_items: filledItems,
       term_type: form.term_type, term_end_date: form.term_end_date || null,
-      final_payment_note: form.final_payment_note, group_name: form.group_name || "General",
+      final_payment_note: form.final_payment_note, group_name: (form.group_name || "General").trim() || "General",
       commenced_date: form.commenced_date || null,
       pv_type: form.pv_type || entityTab,
     };
@@ -1386,8 +1386,11 @@ export default function RecurringPage() {
                     .map(g => parseGroupPath(g))
                     .filter(p => p.folder === gp.folder && p.subfolder)
                     .map(p => p.subfolder as string))].sort();
+                  // Don't trim while typing — trimming a just-typed trailing space on every
+                  // keystroke made it impossible to type a second word (the space kept getting
+                  // erased before the next character landed). Trimming happens once, on save.
                   const setPath = (folder: string, sub: string) =>
-                    setField("group_name", sub.trim() ? `${folder.trim() || "General"} / ${sub.trim()}` : folder.trim());
+                    setField("group_name", sub ? `${folder || "General"} / ${sub}` : folder);
                   return (<>
                     <Field label="Folder">
                       <input className={inp} list="folder-list" value={gp.folder}
