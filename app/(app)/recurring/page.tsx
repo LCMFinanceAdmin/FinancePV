@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -278,6 +278,9 @@ export default function RecurringPage() {
   const [showPaymentBrowser, setShowPaymentBrowser] = useState(false);
   const [navFreq, setNavFreq] = useState<string | null>(null);
   const [navFolder, setNavFolder] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ kind: "folder" | "subfolder"; freq: string; folder: string; subfolder?: string } | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [renaming, setRenaming] = useState(false);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -891,6 +894,119 @@ export default function RecurringPage() {
     });
   }
 
+  // --- Folder / subfolder management ---
+  // Computed against the full unfiltered `items` list (not the search/stat-filtered
+  // `entityItems`) so a folder rename or delete always covers everything actually in it.
+  function groupNamesForFolder(freq: string, folder: string): string[] {
+    return [...new Set(
+      items
+        .filter(i => ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab)
+        .filter(i => (i.frequency || "MONTHLY") === freq)
+        .map(i => i.group_name || "General")
+        .filter(g => parseGroupPath(g).folder === folder)
+    )];
+  }
+
+  function openRenameFolder(freq: string, folder: string) {
+    setRenameTarget({ kind: "folder", freq, folder });
+    setRenameInput(folder);
+  }
+  function openRenameSubfolder(freq: string, folder: string, subfolder: string) {
+    setRenameTarget({ kind: "subfolder", freq, folder, subfolder });
+    setRenameInput(subfolder);
+  }
+
+  async function saveRename() {
+    if (!renameTarget) return;
+    const newName = renameInput.trim();
+    if (!newName) { setRenameTarget(null); return; }
+    setRenaming(true);
+    try {
+      if (renameTarget.kind === "folder") {
+        if (newName === renameTarget.folder) { setRenameTarget(null); setRenaming(false); return; }
+        const groupNames = groupNamesForFolder(renameTarget.freq, renameTarget.folder);
+        for (const gName of groupNames) {
+          const { subfolder } = parseGroupPath(gName);
+          const newGroupName = subfolder ? `${newName} / ${subfolder}` : newName;
+          const { error } = await supabase.from("recurring_pvs")
+            .update({ group_name: newGroupName })
+            .eq("group_name", gName).eq("pv_type", entityTab).eq("frequency", renameTarget.freq);
+          if (error) throw new Error(error.message);
+        }
+        setItems(is => is.map(i => {
+          if (((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") !== entityTab) return i;
+          if ((i.frequency || "MONTHLY") !== renameTarget.freq) return i;
+          const gName = i.group_name || "General";
+          if (!groupNames.includes(gName)) return i;
+          const { subfolder } = parseGroupPath(gName);
+          return { ...i, group_name: subfolder ? `${newName} / ${subfolder}` : newName };
+        }));
+        setNavFolder(nf => nf === renameTarget.folder ? newName : nf);
+      } else {
+        const oldGroupName = `${renameTarget.folder} / ${renameTarget.subfolder}`;
+        const newGroupName = `${renameTarget.folder} / ${newName}`;
+        if (newGroupName === oldGroupName) { setRenameTarget(null); setRenaming(false); return; }
+        const { error } = await supabase.from("recurring_pvs")
+          .update({ group_name: newGroupName })
+          .eq("group_name", oldGroupName).eq("pv_type", entityTab).eq("frequency", renameTarget.freq);
+        if (error) throw new Error(error.message);
+        setItems(is => is.map(i =>
+          i.group_name === oldGroupName && (i.frequency || "MONTHLY") === renameTarget.freq
+            && ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab
+            ? { ...i, group_name: newGroupName } : i
+        ));
+      }
+      setRenameTarget(null);
+      showMsg("Renamed");
+    } catch (e) {
+      showMsg(e instanceof Error ? e.message : "Rename failed", false);
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  function deleteFolder(freq: string, folder: string) {
+    const groupNames = groupNamesForFolder(freq, folder);
+    const targetIds = items
+      .filter(i => ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab)
+      .filter(i => (i.frequency || "MONTHLY") === freq)
+      .filter(i => groupNames.includes(i.group_name || "General"))
+      .map(i => i.id);
+    const hasSubfolders = groupNames.some(g => parseGroupPath(g).subfolder);
+    setConfirmModal({
+      title: `Delete "${folder}"?`,
+      msg: `This deletes the folder${hasSubfolders ? ", every subfolder inside it," : ""} and all ${targetIds.length} recurring expense${targetIds.length !== 1 ? "s" : ""} within. This cannot be undone.`,
+      danger: true,
+      onOk: async () => {
+        const { error } = await supabase.from("recurring_pvs").delete().in("id", targetIds);
+        if (error) { showMsg(error.message, false); return; }
+        setItems(is => is.filter(i => !targetIds.includes(i.id)));
+        setNavFolder(nf => nf === folder ? null : nf);
+        showMsg(`Deleted "${folder}" (${targetIds.length} expense${targetIds.length !== 1 ? "s" : ""})`);
+      },
+    });
+  }
+
+  function deleteSubfolder(freq: string, folder: string, subfolder: string) {
+    const groupName = `${folder} / ${subfolder}`;
+    const targetIds = items
+      .filter(i => ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab)
+      .filter(i => (i.frequency || "MONTHLY") === freq)
+      .filter(i => (i.group_name || "General") === groupName)
+      .map(i => i.id);
+    setConfirmModal({
+      title: `Delete "${subfolder}"?`,
+      msg: `This deletes the subfolder and all ${targetIds.length} recurring expense${targetIds.length !== 1 ? "s" : ""} within it. "${folder}" and its other subfolders are unaffected. This cannot be undone.`,
+      danger: true,
+      onOk: async () => {
+        const { error } = await supabase.from("recurring_pvs").delete().in("id", targetIds);
+        if (error) { showMsg(error.message, false); return; }
+        setItems(is => is.filter(i => !targetIds.includes(i.id)));
+        showMsg(`Deleted "${subfolder}" (${targetIds.length} expense${targetIds.length !== 1 ? "s" : ""})`);
+      },
+    });
+  }
+
   function calcNextDue(freq: string) {
     const d = new Date();
     if (freq === "WEEKLY")      d.setDate(d.getDate() + 7);
@@ -1259,6 +1375,32 @@ export default function RecurringPage() {
         </div>
       )}
 
+      {/* Rename folder / subfolder modal */}
+      {renameTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <p className="text-sm font-bold text-stone-800">
+              {renameTarget.kind === "folder" ? "Rename folder" : "Rename subfolder"}
+            </p>
+            {renameTarget.kind === "subfolder" && (
+              <p className="text-xs text-stone-400 -mt-2">in {renameTarget.folder}</p>
+            )}
+            <input autoFocus value={renameInput} onChange={e => setRenameInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && renameInput.trim()) saveRename(); if (e.key === "Escape") setRenameTarget(null); }}
+              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+            <div className="flex flex-col gap-2 pt-1">
+              <button onClick={saveRename} disabled={renaming || !renameInput.trim()}
+                className="w-full px-4 py-2.5 text-sm rounded-xl font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] disabled:opacity-50 transition-colors">
+                {renaming ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setRenameTarget(null)}
+                className="w-full px-4 py-2 text-sm rounded-xl border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
 
       {/* Batch progress */}
@@ -1988,6 +2130,21 @@ export default function RecurringPage() {
                               className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer" />
                           </div>
                         )}
+                        {/* Edit / delete folder */}
+                        {!masterMode && (
+                          <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={e => { e.stopPropagation(); openRenameFolder(navFreq, folder); }}
+                              title="Rename folder"
+                              className="p-1 rounded-lg text-stone-300 hover:text-[#4a6da7] hover:bg-stone-100 transition-colors">
+                              <Pencil size={12} />
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); deleteFolder(navFreq, folder); }}
+                              title="Delete folder"
+                              className="p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        )}
                         <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${tab.badgeBg}`}>
                           <FolderOpen size={16} className={tab.textColor} />
                         </div>
@@ -2032,6 +2189,17 @@ export default function RecurringPage() {
           const hasBulkRun = groupNamesInFolder.some(g => !!groupBulkRuns[g]);
           const bulkRunId = groupNamesInFolder.map(g => groupBulkRuns[g]).find(Boolean);
 
+          // Group items by subfolder so each subfolder gets its own rename/delete controls.
+          // Key "" = items directly in the folder, with no subfolder.
+          const subfolderMap: Record<string, RecurringPV[]> = {};
+          folderItems.forEach(item => {
+            const { subfolder } = parseGroupPath(item.group_name || "General");
+            const key = subfolder ?? "";
+            (subfolderMap[key] ??= []).push(item);
+          });
+          const directItems = subfolderMap[""] ?? [];
+          const subfolderNames = Object.keys(subfolderMap).filter(k => k !== "").sort();
+
           return (
             <div>
               {/* Breadcrumb */}
@@ -2051,6 +2219,14 @@ export default function RecurringPage() {
                   <FolderOpen size={15} className="text-amber-500" />
                   <span className="text-sm font-bold text-stone-800">{navFolder}</span>
                   <span className="text-xs text-stone-400">({folderItems.length})</span>
+                  <button onClick={() => openRenameFolder(navFreq, navFolder)} title="Rename folder"
+                    className="p-1 rounded-lg text-stone-300 hover:text-[#4a6da7] hover:bg-stone-100 transition-colors">
+                    <Pencil size={12} />
+                  </button>
+                  <button onClick={() => deleteFolder(navFreq, navFolder)} title="Delete folder"
+                    className="p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                    <Trash2 size={12} />
+                  </button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
@@ -2106,7 +2282,7 @@ export default function RecurringPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
-                    {folderItems.map((item, idx) => (
+                    {directItems.map((item, idx) => (
                       <RecurringRow
                         key={item.id} item={item} rowNo={idx + 1}
                         isSelected={selected.has(item.id)}
@@ -2122,6 +2298,44 @@ export default function RecurringPage() {
                         showHistory={historyId === item.id}
                         batchRunning={batchRunning}
                       />
+                    ))}
+                    {subfolderNames.map(sf => (
+                      <Fragment key={sf}>
+                        <tr className="bg-stone-50">
+                          <td colSpan={9} className="px-3 py-2">
+                            <div className="flex items-center gap-1.5">
+                              <Folder size={12} className="text-stone-400 shrink-0" />
+                              <span className="text-xs font-bold text-stone-600">{sf}</span>
+                              <span className="text-[11px] text-stone-400">({subfolderMap[sf].length})</span>
+                              <button onClick={() => openRenameSubfolder(navFreq, navFolder, sf)} title="Rename subfolder"
+                                className="p-1 rounded-lg text-stone-300 hover:text-[#4a6da7] hover:bg-stone-100 transition-colors">
+                                <Pencil size={11} />
+                              </button>
+                              <button onClick={() => deleteSubfolder(navFreq, navFolder, sf)} title="Delete subfolder"
+                                className="p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {subfolderMap[sf].map((item, idx) => (
+                          <RecurringRow
+                            key={item.id} item={item} rowNo={idx + 1}
+                            isSelected={selected.has(item.id)}
+                            isAtRisk={statAtRiskIds.has(item.id)}
+                            lastPaid={lastPaidMap[item.id] ?? null}
+                            groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
+                            onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
+                            onEdit={() => openEdit(item)}
+                            onToggleActive={() => toggleActive(item)}
+                            onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
+                            onDelete={() => deleteItem(item.id)}
+                            onReset={() => resetItem(item.id)}
+                            showHistory={historyId === item.id}
+                            batchRunning={batchRunning}
+                          />
+                        ))}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
