@@ -9,6 +9,7 @@ import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine,
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem } from "@/lib/types";
 import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
+import { EmployeeDocuments } from "@/components/payroll/employee-documents";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
@@ -655,20 +656,8 @@ export default function PayrollEmployeePage() {
         </div>
       )}
 
-      {/* ── Documents tab (maintenance file arrives in the next chunk) ── */}
-      {tab === "documents" && (
-        <div className="bg-white border border-stone-200 rounded-2xl p-5">
-          <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5 mb-3"><FolderOpen size={15} className="text-[#4a6da7]" /> Maintenance File</h2>
-          <div className="text-center py-10">
-            <FolderOpen size={32} className="mx-auto text-stone-300 mb-3" />
-            <p className="text-sm font-semibold text-stone-500">Document maintenance file coming next</p>
-            <p className="text-xs text-stone-400 mt-1 max-w-sm mx-auto">
-              Employment letters, LHDN / tax letters, visas & permits, agreements and correspondence will be
-              stored here in folders with expiry tracking.
-            </p>
-          </div>
-        </div>
-      )}
+      {/* ── Documents tab — maintenance file ── */}
+      {tab === "documents" && <EmployeeDocuments employeeId={emp.id} canEdit={canEdit} />}
 
       {showRevision && current && (
         <RevisionModal employeeId={emp.id} latest={current} onClose={() => setShowRevision(false)} onSaved={() => { setShowRevision(false); load(); }} />
