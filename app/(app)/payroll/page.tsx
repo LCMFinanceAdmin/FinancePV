@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent, HandCoins, CalendarClock, Pencil, Trash2, Users, CheckCircle2, AlertTriangle, ArrowRight, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
+import { logPayrollAudit } from "@/lib/payroll/audit";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
 
 const MONTH_SHORT_DIR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
@@ -200,6 +201,10 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
       await supabase.from("employee_loans").delete().eq("employee_id", existing.id);
       const { error: e } = await supabase.from("payroll_employees").delete().eq("id", existing.id);
       if (e) throw new Error(e.message);
+      await logPayrollAudit(supabase, {
+        action: "EMPLOYEE_DELETED", entity: existing.full_name,
+        detail: `Employee ${existing.emp_no} and all salary & loan records deleted`,
+      });
       onSaved();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Delete failed");
@@ -272,8 +277,16 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
               reason: "Updated via employee edit",
               created_by: user.email,
             });
+            await logPayrollAudit(supabase, {
+              action: "SALARY_CHANGE", entity: fullName.trim(), employeeId: existing!.id,
+              detail: `Components changed via employee edit — gross RM ${Object.values(newVals).reduce((s, v) => s + v, 0).toFixed(2)}`,
+            });
           }
         }
+        await logPayrollAudit(supabase, {
+          action: "EMPLOYEE_UPDATED", entity: fullName.trim(), employeeId: existing!.id,
+          detail: status === "RESIGNED" ? `Record updated — status RESIGNED (${resignedDate || "no date"})` : "Record updated",
+        });
       } else {
         const { data: empNoRow } = await supabase.rpc("next_emp_no");
         const { data: created, error: e } = await supabase.from("payroll_employees")
@@ -292,6 +305,10 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           increment_current: parseFloat(incrementCurrent) || 0,
           reason: "Initial salary",
           created_by: user.email,
+        });
+        await logPayrollAudit(supabase, {
+          action: "EMPLOYEE_CREATED", entity: fullName.trim(), employeeId: created!.id,
+          detail: `New employee — base salary RM ${baseAmt.toFixed(2)}`,
         });
       }
       onSaved();
@@ -675,9 +692,14 @@ export default function PayrollPage() {
   useEffect(() => { loadUser(); loadEmployees(); }, [loadEmployees]);
 
   async function deleteEmployee(id: string) {
+    const emp = employees.find(e => e.id === id);
     await supabase.from("payroll_salary").delete().eq("employee_id", id);
     await supabase.from("employee_loans").delete().eq("employee_id", id);
     await supabase.from("payroll_employees").delete().eq("id", id);
+    await logPayrollAudit(supabase, {
+      action: "EMPLOYEE_DELETED", entity: emp?.full_name ?? id,
+      detail: `Employee ${emp?.emp_no ?? ""} and all salary & loan records deleted`,
+    });
     setDeletingId(null);
     loadEmployees();
   }
@@ -839,6 +861,7 @@ export default function PayrollPage() {
               { href: "/payroll/runs", label: currentDone ? "Payroll runs" : `Run ${periodLabel(curYear, curMonth)} payroll`, sub: "Review deductions and net pay" },
               { href: "/payroll/loans", label: "Employee loans", sub: "Applications and repayments" },
               { href: "/payroll/rates", label: "Statutory rates", sub: "EPF, SOCSO, EIS tables" },
+              { href: "/payroll/audit", label: "Audit trail", sub: "Who changed what, and when" },
             ].map(l => (
               <Link key={l.href} href={l.href}
                 className="flex items-center gap-2 px-2 py-1.5 -mx-2 rounded-lg hover:bg-blue-50/50 transition-colors group">

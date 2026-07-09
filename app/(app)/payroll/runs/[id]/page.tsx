@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
 import { BankExportModal } from "@/components/payroll/bank-export-modal";
 import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
+import { logPayrollAudit } from "@/lib/payroll/audit";
 import { buildSchedule } from "@/lib/payroll/loan";
 import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem } from "@/lib/types";
 
@@ -247,6 +248,10 @@ export default function PayrollRunDetailPage() {
         total_gross: tGross, total_net: tNet, total_employer: tEr, total_lcm: tGross + tEr,
       }).eq("id", run.id);
 
+      await logPayrollAudit(supabase, {
+        action: "RUN_FINALIZED", entity: `${MONTH_LABELS[run.month]} ${run.year}`,
+        detail: `${computed.length} employees · gross RM ${num(tGross)} · net RM ${num(tNet)}`,
+      });
       setToast("Run finalized — vouchers generated");
       setTimeout(() => setToast(""), 3000);
       load();
@@ -265,6 +270,10 @@ export default function PayrollRunDetailPage() {
     await supabase.from("payroll_vouchers").update({ status: "PAID", paid_at: new Date().toISOString() }).eq("id", v.id);
     const remaining = vouchers.filter(x => x.id !== v.id && x.status !== "PAID").length;
     if (remaining === 0) await supabase.from("payroll_runs").update({ status: "PAID" }).eq("id", run!.id);
+    await logPayrollAudit(supabase, {
+      action: "VOUCHER_PAID", entity: `${MONTH_LABELS[run!.month]} ${run!.year}`,
+      detail: `${v.kind} voucher (${v.payee}) marked paid — RM ${num(Number(v.total_amount))}`,
+    });
     load();
   }
 
@@ -560,6 +569,7 @@ function SendPayslipModal({ run, rows, onClose }: {
   rows: PayslipRow[];
   onClose: () => void;
 }) {
+  const supabase = createClient();
   const [method, setMethod] = useState<SendMethod>("both");
   const [sending, setSending] = useState<string | null>(null);
   const [sentMap, setSentMap] = useState<Record<string, { email?: boolean; wa?: boolean }>>({});
@@ -648,6 +658,10 @@ function SendPayslipModal({ run, rows, onClose }: {
       }
 
       setSentMap(s => ({ ...s, [row.emp.id]: result }));
+      await logPayrollAudit(supabase, {
+        action: "PAYSLIPS_SENT", entity: `${monthLabel} ${run.year}`, employeeId: row.emp.id,
+        detail: `Payslip sent to ${row.emp.full_name} via ${result.email && result.wa ? "email + WhatsApp" : result.email ? "email" : "WhatsApp"}`,
+      });
     } catch (e) {
       if ((e as { name?: string }).name !== "AbortError") {
         setErrors(prev => ({ ...prev, [row.emp.id]: String(e) }));
@@ -681,6 +695,10 @@ function SendPayslipModal({ run, rows, onClose }: {
       }
       setAllProgress(i + 1);
     }
+    await logPayrollAudit(supabase, {
+      action: "PAYSLIPS_SENT", entity: `${monthLabel} ${run.year}`,
+      detail: `Bulk email — ${emailRows.length} payslips sent`,
+    });
     setSendingAll(false);
   }
 

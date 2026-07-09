@@ -5,6 +5,7 @@ import { ArrowLeft, HandCoins, Plus, X, ChevronDown, ChevronRight, CheckCircle, 
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { buildSchedule, totalRepayable, outstandingAfter } from "@/lib/payroll/loan";
+import { logPayrollAudit } from "@/lib/payroll/audit";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import type { UserProfile, PayrollEmployee, EmployeeLoan, PVApproval, LoanStatus, LoanSignature, LoanSignatures } from "@/lib/types";
 
@@ -102,6 +103,10 @@ function LoanModal({ user, employees, onClose, onSaved }: {
         if (attachmentPath) await supabase.storage.from("employee-docs").remove([attachmentPath]);
         throw new Error(e.message);
       }
+      await logPayrollAudit(supabase, {
+        action: "LOAN_APPLIED", entity: String(loanNo ?? ""), employeeId,
+        detail: `${selectedEmp?.full_name ?? ""} — ${formatCurrency(p)} × ${t} months, applicant signed`,
+      });
       onSaved();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -205,6 +210,10 @@ function SignModal({ loan, blockKey, user, onClose, onSigned }: {
         updated_at: new Date().toISOString(),
       }).eq("id", loan.id);
       if (e) throw new Error(e.message);
+      await logPayrollAudit(supabase, {
+        action: "LOAN_SIGNED", entity: loan.loan_no, employeeId: loan.employee_id,
+        detail: `Signed as ${roleLabel} by ${user.full_name}${allSigned ? " — all signatures complete, loan ACTIVE & locked" : ""}`,
+      });
       onSigned();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Signing failed");
@@ -348,6 +357,11 @@ export default function PayrollLoansPage() {
     const { error } = await supabase.from("employee_loans")
       .update({ approvals: updated, status, updated_at: new Date().toISOString() }).eq("id", loan.id);
     if (error) { setToast(error.message); return; }
+    await logPayrollAudit(supabase, {
+      action: action === "REJECTED" ? "LOAN_REJECTED" : "LOAN_APPROVED_LEGACY",
+      entity: loan.loan_no, employeeId: loan.employee_id,
+      detail: `${action} by ${user.full_name} (${user.role})${status === "ACTIVE" ? " — loan ACTIVE" : ""}`,
+    });
     setToast(action === "REJECTED" ? "Loan rejected" : status === "ACTIVE" ? "Loan approved & active" : "Approval recorded");
     setTimeout(() => setToast(""), 3000);
     loadLoans();
@@ -358,6 +372,10 @@ export default function PayrollLoansPage() {
     const { error } = await supabase.from("employee_loans")
       .update({ status: "REJECTED", updated_at: new Date().toISOString() }).eq("id", loan.id);
     if (error) { setToast(error.message); return; }
+    await logPayrollAudit(supabase, {
+      action: "LOAN_REJECTED", entity: loan.loan_no, employeeId: loan.employee_id,
+      detail: `Rejected by ${user.full_name} (${user.role})`,
+    });
     setToast("Loan application rejected");
     setTimeout(() => setToast(""), 3000);
     loadLoans();

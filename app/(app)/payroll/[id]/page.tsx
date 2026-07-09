@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
+import { logPayrollAudit } from "@/lib/payroll/audit";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem } from "@/lib/types";
 import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
 import { EmployeeDocuments } from "@/components/payroll/employee-documents";
@@ -1562,6 +1563,12 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
         created_by: session?.user?.email ?? "",
       });
       if (e) throw new Error(e.message);
+      const newGross = (["base_salary", "increment_carried", "increment_current", "experience_bonus", "family_allowance", "stm_allowance"] as const)
+        .reduce((s, k) => s + (parseFloat(vals[k]) || 0), 0);
+      await logPayrollAudit(supabase, {
+        action: "SALARY_CHANGE", employeeId,
+        detail: `Revision effective ${effectiveFrom} — gross RM ${num(newGross)} (${reason.trim() || "Salary revision"})`,
+      });
       onSaved();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");

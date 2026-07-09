@@ -4,6 +4,7 @@
 // always opened through short-lived signed URLs.
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { logPayrollAudit } from "@/lib/payroll/audit";
 import {
   FolderOpen, Folder, Upload, Download, Eye, Trash2, Pencil, X,
   AlertTriangle, FileText, Image as ImageIcon, File, Loader2,
@@ -120,6 +121,10 @@ export function EmployeeDocuments({ employeeId, canEdit }: { employeeId: string;
       if (doc.file_path) await supabase.storage.from("employee-docs").remove([doc.file_path]);
       const { error: e } = await supabase.from("employee_documents").delete().eq("id", doc.id);
       if (e) throw new Error(e.message);
+      await logPayrollAudit(supabase, {
+        action: "DOC_DELETE", entity: doc.title, employeeId,
+        detail: `Deleted from ${folderLabel(doc.folder)}${doc.file_name ? ` (${doc.file_name})` : ""}`,
+      });
       setDeletingId(null);
       load();
     } catch (e: unknown) {
@@ -307,6 +312,10 @@ function DocumentModal({ employeeId, existing, defaultFolder, onClose, onSaved }
           notes: notes.trim(), updated_at: new Date().toISOString(),
         }).eq("id", existing!.id);
         if (e) throw new Error(e.message);
+        await logPayrollAudit(supabase, {
+          action: "DOC_UPDATE", entity: title.trim(), employeeId,
+          detail: `Details updated in ${FOLDERS.find(f => f.key === folder)?.label ?? folder}`,
+        });
       } else {
         const safeName = file!.name.replace(/[^\w.\-]+/g, "_");
         const path = `${employeeId}/${Date.now()}_${safeName}`;
@@ -325,6 +334,10 @@ function DocumentModal({ employeeId, existing, defaultFolder, onClose, onSaved }
           await supabase.storage.from("employee-docs").remove([path]);
           throw new Error(e.message);
         }
+        await logPayrollAudit(supabase, {
+          action: "DOC_UPLOAD", entity: title.trim(), employeeId,
+          detail: `${file!.name} uploaded to ${FOLDERS.find(f => f.key === folder)?.label ?? folder}${expiry ? `, expires ${expiry}` : ""}`,
+        });
       }
       onSaved();
     } catch (e: unknown) {

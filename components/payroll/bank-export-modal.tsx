@@ -5,6 +5,7 @@
 // full account and IC numbers are confidential.
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { logPayrollAudit } from "@/lib/payroll/audit";
 import { X, FileSpreadsheet, AlertTriangle, Download, CheckCircle2, Loader2 } from "lucide-react";
 import type { PayrollEmployee, PayrollLine } from "@/lib/types";
 
@@ -170,6 +171,10 @@ export function BankExportModal({ runId, periodLabel, lines, empById, onClose, o
       const { error: upErr } = await supabase.storage.from("employee-docs")
         .upload(path, blob, { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       if (upErr) throw new Error(`Could not store the export: ${upErr.message}`);
+      await logPayrollAudit(supabase, {
+        action: "BANK_EXPORT", entity: periodLabel,
+        detail: `${fileName} — ${valid.length} payments, RM ${total.toLocaleString("en-MY", { minimumFractionDigits: 2 })}${invalid.length ? `, ${invalid.length} excluded` : ""}`,
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = fileName; a.click();
