@@ -2,10 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, FileText, Banknote, Send, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Banknote, Send, X, FileSpreadsheet, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
+import { BankExportModal } from "@/components/payroll/bank-export-modal";
 import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { buildSchedule } from "@/lib/payroll/loan";
 import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem } from "@/lib/types";
@@ -36,6 +37,8 @@ export default function PayrollRunDetailPage() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [showSendPayslip, setShowSendPayslip] = useState(false);
+  const [showBankExport, setShowBankExport] = useState(false);
+  const [storedExports, setStoredExports] = useState<{ name: string; path: string; created_at: string }[]>([]);
 
   async function loadUser() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -61,7 +64,7 @@ export default function PayrollRunDetailPage() {
 
     const [{ data: rateRow }, { data: emps }, { data: sals }, { data: lns }] = await Promise.all([
       supabase.from("payroll_statutory_rates").select("*").eq("year", runRow.year).maybeSingle(),
-      supabase.from("payroll_employees").select("*").eq("status", "ACTIVE").order("full_name"),
+      supabase.from("payroll_employees").select("*").order("full_name"),
       supabase.from("payroll_salary").select("*").order("effective_from", { ascending: false }),
       supabase.from("employee_loans").select("*").eq("status", "ACTIVE"),
     ]);
@@ -104,6 +107,13 @@ export default function PayrollRunDetailPage() {
     }
     setEmpCustomItems(customByEmp);
 
+    // Stored bank exports for this run (private bucket, listed by prefix)
+    const { data: exports } = await supabase.storage.from("employee-docs").list(`bank-exports/${id}`);
+    setStoredExports((exports ?? [])
+      .filter(f => f.name.endsWith(".xlsx"))
+      .map(f => ({ name: f.name.replace(/^\d+_/, ""), path: `bank-exports/${id}/${f.name}`, created_at: f.created_at ?? "" }))
+      .sort((a, b) => b.path.localeCompare(a.path)));
+
     setLoading(false);
   }, [supabase, id]);
 
@@ -119,6 +129,7 @@ export default function PayrollRunDetailPage() {
 
   // Live computation for DRAFT runs.
   const computed: ComputedRow[] = isDraft ? employees
+    .filter(e => e.status === "ACTIVE")
     .filter(e => !(is13th && e.is_orang_asli))
     .map(e => {
       const sal = salByEmp[e.id];
@@ -244,6 +255,12 @@ export default function PayrollRunDetailPage() {
     } finally { setBusy(false); }
   }
 
+  async function downloadExport(path: string, name: string) {
+    const { data, error } = await supabase.storage.from("employee-docs").createSignedUrl(path, 600, { download: name });
+    if (error || !data?.signedUrl) { setToast(error?.message ?? "Could not open export"); return; }
+    window.open(data.signedUrl, "_blank");
+  }
+
   async function markVoucherPaid(v: PayrollVoucher) {
     await supabase.from("payroll_vouchers").update({ status: "PAID", paid_at: new Date().toISOString() }).eq("id", v.id);
     const remaining = vouchers.filter(x => x.id !== v.id && x.status !== "PAID").length;
@@ -274,6 +291,12 @@ export default function PayrollRunDetailPage() {
               <Send size={15} /> Send Payslips
             </button>
           )}
+          {!isDraft && user?.isFinanceAdmin && lines.length > 0 && (
+            <button onClick={() => setShowBankExport(true)}
+              className="flex items-center gap-1.5 border border-[#4a6da7] text-[#4a6da7] px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50">
+              <FileSpreadsheet size={15} /> Export Bank File
+            </button>
+          )}
           {canFinalize && (
             <button onClick={finalize} disabled={busy || rowCount === 0}
               className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">
@@ -286,6 +309,28 @@ export default function PayrollRunDetailPage() {
       {toast && <div className="text-sm text-white bg-green-600 rounded-lg px-3 py-2">{toast}</div>}
 
       {isDraft && <p className="text-[11px] text-stone-400">Enter PCB per employee, then finalize. EPF/SOCSO/EIS are auto-calculated; EPL pulls from active loans. Custom allowances/deductions are added per employee on their payroll page.</p>}
+
+      {/* Summary stat cards */}
+      {rowCount > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          {([
+            ["Employees", String(rowCount), ""],
+            ["Gross", num(isDraft ? sumDraft(l => l.gross) : sumLines(l => l.gross)), "RM"],
+            ["Deductions", num(isDraft
+              ? sumDraft(l => l.pcb + l.epf.ee + l.socso.ee + l.eis.ee + l.eplDeduction)
+              : sumLines(l => Number(l.pcb) + Number(l.epf_ee) + Number(l.socso_ee) + Number(l.eis_ee) + Number(l.epl))), "RM"],
+            ["Net pay", num(isDraft ? sumDraft(l => l.net) : sumLines(l => l.net)), "RM"],
+            ["Total LCM cost", num(isDraft ? sumDraft(l => l.totalLcmPayment) : sumLines(l => l.total_lcm)), "RM"],
+          ] as const).map(([label, value, prefix]) => (
+            <div key={label} className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
+              <div className="text-[11px] font-semibold text-stone-400">{label}</div>
+              <div className={`text-base font-bold font-mono mt-0.5 ${label === "Net pay" || label === "Total LCM cost" ? "text-[#4a6da7]" : "text-stone-700"}`}>
+                {prefix ? `${prefix} ` : ""}{value}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Lines table */}
       <div className="bg-white border border-stone-200 rounded-2xl p-4 overflow-x-auto">
@@ -426,6 +471,40 @@ export default function PayrollRunDetailPage() {
           </div>
           <p className="text-[11px] text-stone-400 mt-3">Salary voucher = total net to staff. Statutory vouchers = employee + employer contributions per body. Printable PDFs come in Phase 6.</p>
         </div>
+      )}
+
+      {/* Bank exports stored under this run */}
+      {!isDraft && storedExports.length > 0 && (
+        <div className="bg-white border border-stone-200 rounded-2xl p-5">
+          <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5 mb-3">
+            <FileSpreadsheet size={15} className="text-green-600" /> Bank Exports
+          </h2>
+          <div className="space-y-1.5">
+            {storedExports.map(f => (
+              <div key={f.path} className="flex items-center gap-3 px-3 py-2 border border-stone-100 rounded-xl">
+                <FileSpreadsheet size={14} className="text-green-600 shrink-0" />
+                <span className="text-sm font-mono text-stone-700 flex-1 min-w-0 truncate">{f.name}</span>
+                {f.created_at && <span className="text-[11px] text-stone-400 shrink-0">{new Date(f.created_at).toLocaleString("en-MY", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>}
+                <button onClick={() => downloadExport(f.path, f.name)}
+                  className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 shrink-0">
+                  <Download size={11} /> Download
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-stone-400 mt-3">Files are stored privately and downloaded via short-lived signed links.</p>
+        </div>
+      )}
+
+      {showBankExport && run && (
+        <BankExportModal
+          runId={run.id}
+          periodLabel={`${MONTH_LABELS[run.month]} ${run.year}`}
+          lines={lines}
+          empById={Object.fromEntries(employees.map(e => [e.id, e]))}
+          onClose={() => setShowBankExport(false)}
+          onStored={() => load()}
+        />
       )}
     </div>
   );
