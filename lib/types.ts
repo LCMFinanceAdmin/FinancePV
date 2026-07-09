@@ -436,6 +436,20 @@ export interface PayrollVoucher {
 
 export type LoanStatus = "PENDING" | "ACTIVE" | "SETTLED" | "REJECTED" | "CANCELLED";
 
+export interface LoanSignature {
+  name: string;
+  email: string;
+  role: string;
+  signature: string; // PNG data URL drawn on the signature pad
+  signed_at: string;
+}
+
+export interface LoanSignatures {
+  applicant?: LoanSignature;
+  bishop?: LoanSignature;
+  treasurer?: LoanSignature;
+}
+
 export interface EmployeeLoan {
   id: string;
   loan_no: string;
@@ -449,6 +463,9 @@ export interface EmployeeLoan {
   agreement_url: string;
   status: LoanStatus;
   approvals: PVApproval[];
+  signatures: LoanSignatures | null;
+  attachment_path: string;
+  attachment_name: string;
   created_by: string;
   created_at: string;
   updated_at: string;
