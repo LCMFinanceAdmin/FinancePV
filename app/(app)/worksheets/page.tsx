@@ -332,7 +332,20 @@ export default function WorksheetsPage() {
   function updateEntry(idx: number, patch: Partial<WorksheetEntry>) {
     setForm(f => ({ ...f, entries: f.entries.map((e, i) => i === idx ? { ...e, ...patch } : e) }));
   }
-  function addEntry() { setForm(f => ({ ...f, entries: [...f.entries, { date: "", start_time: "", end_time: "", hours: 0, purpose: "" }] })); }
+  function addEntry() {
+    setForm(f => {
+      // Default a new session's time/purpose to the previous session's, so
+      // managers entering a run of identical shifts aren't starting from blank each time.
+      const last = [...f.entries].reverse().find(e => e.start_time && e.end_time);
+      return {
+        ...f,
+        entries: [...f.entries, {
+          date: "", hours: 0,
+          start_time: last?.start_time ?? "", end_time: last?.end_time ?? "", purpose: last?.purpose ?? "",
+        }],
+      };
+    });
+  }
   function removeEntry(idx: number) {
     setForm(f => ({ ...f, entries: f.entries.length > 1 ? f.entries.filter((_, i) => i !== idx) : f.entries }));
   }

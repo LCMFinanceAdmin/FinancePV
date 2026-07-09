@@ -61,7 +61,7 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
     e.preventDefault();
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
     ctx.strokeStyle = "#1c1917";
     const pos = getPos(e.nativeEvent as MouseEvent | TouchEvent, canvas);
@@ -86,9 +86,14 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
     onChange("");
   }
 
+  // A disabled box with a saved signature is styled distinctly from an empty
+  // one, so a small/faint stroke doesn't get mistaken for "not signed".
+  const signedLocked = disabled && !isEmpty;
+
   return (
     <div className="space-y-1.5">
-      <div className={`relative border rounded-xl overflow-hidden ${disabled ? "bg-stone-50 border-stone-200" : "border-stone-300 bg-white"}`}>
+      <div className={`relative border rounded-xl overflow-hidden ${
+        signedLocked ? "bg-green-50/50 border-green-200" : disabled ? "bg-stone-50 border-stone-200" : "border-stone-300 bg-white"}`}>
         <canvas
           ref={canvasRef}
           width={480}
@@ -107,6 +112,11 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <span className="text-xs text-stone-300">Draw signature here</span>
           </div>
+        )}
+        {signedLocked && (
+          <span className="absolute bottom-1.5 right-2 text-[9px] font-bold text-green-600 bg-white/80 px-1.5 py-0.5 rounded-full pointer-events-none">
+            Signed
+          </span>
         )}
       </div>
       {!disabled && !isEmpty && (
