@@ -98,6 +98,7 @@ export interface PV {
   biller_code: string;
   cheque_no: string;
   ref_no: string;
+  ref_no_2: string;
   dept_head_name: string;
   dept_head_email: string;
   updated_at: string | null;

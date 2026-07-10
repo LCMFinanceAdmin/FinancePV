@@ -60,7 +60,7 @@ function formatFileSize(b: number) {
 interface FormData {
   applicant_name: string; applicant_email: string; dept: string; pvDate: string;
   payee_name: string; payment_method: string; payee_bank_name: string;
-  payee_bank_acct: string; cheque_no: string; biller_code: string; ref_no: string;
+  payee_bank_acct: string; cheque_no: string; biller_code: string; ref_no: string; ref_no_2: string;
   ministry: string; project: string; purpose: string;
   line_items: PVLineItem[];
   sig_applicant_name: string; sig_applicant_confirm: boolean;
@@ -71,7 +71,7 @@ const EMPTY_FORM: FormData = {
   pvDate: new Date().toISOString().slice(0, 10),
   payee_name: "", payment_method: "Online Transfer",
   payee_bank_name: "", payee_bank_acct: "",
-  cheque_no: "", biller_code: "", ref_no: "",
+  cheque_no: "", biller_code: "", ref_no: "", ref_no_2: "",
   ministry: "", project: "", purpose: "",
   line_items: [{ description: "", amount: 0, date: "" }],
   sig_applicant_name: "", sig_applicant_confirm: false,
@@ -613,6 +613,7 @@ export default function SubmitPVPage() {
           cheque_no: form.cheque_no,
           biller_code: form.biller_code,
           ref_no: form.ref_no,
+          ref_no_2: form.ref_no_2,
           purpose: form.purpose,
           amount: displayAmount,
           line_items: isTravelClaim
@@ -705,7 +706,9 @@ export default function SubmitPVPage() {
   const isCheque  = form.payment_method === "Cheque";
   const isJomPay  = form.payment_method === "JomPay";
   const isCash    = form.payment_method === "Cash";
-  const isTransfer = !isCheque && !isJomPay && !isCash;
+  // Payee bank details matter for a transfer and are still useful reference for a
+  // cheque (which account it'll be deposited into) — only Cash and JomPay skip them.
+  const showBankAccount = !isCash && !isJomPay;
 
   // ── Section completion + summary (for mobile accordion) ────────────────
   const sectionComplete = [
@@ -908,7 +911,14 @@ export default function SubmitPVPage() {
           <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
         </div>
       </div>
-      {isTransfer && <>
+      {isCheque && (
+        <div>
+          <label className={mLabel}>Cheque No.</label>
+          <input className={mInput} value={form.cheque_no}
+            onChange={e => setField("cheque_no", e.target.value)} placeholder="Cheque number" />
+        </div>
+      )}
+      {showBankAccount && <>
         <div>
           <label className={mLabel}>Payee Bank</label>
           <div className="relative">
@@ -921,24 +931,29 @@ export default function SubmitPVPage() {
           </div>
         </div>
         <div>
-          <label className={mLabel}>Account Number <span className="text-red-400">*</span></label>
+          <label className={mLabel}>Account Number {isCheque ? "" : <span className="text-red-400">*</span>}</label>
           <input className={mInput} value={form.payee_bank_acct}
             onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="Bank account number" />
         </div>
       </>}
-      {isCheque && (
-        <div>
-          <label className={mLabel}>Cheque No.</label>
-          <input className={mInput} value={form.cheque_no}
-            onChange={e => setField("cheque_no", e.target.value)} placeholder="Cheque number" />
-        </div>
-      )}
       {isJomPay && (
-        <div>
-          <label className={mLabel}>Biller Code</label>
-          <input className={mInput} value={form.biller_code}
-            onChange={e => setField("biller_code", e.target.value)} placeholder="JomPay biller code" />
-        </div>
+        <>
+          <div>
+            <label className={mLabel}>Biller Code</label>
+            <input className={mInput} value={form.biller_code}
+              onChange={e => setField("biller_code", e.target.value)} placeholder="JomPay biller code" />
+          </div>
+          <div>
+            <label className={mLabel}>Ref-1</label>
+            <input className={mInput} value={form.ref_no}
+              onChange={e => setField("ref_no", e.target.value)} placeholder="Reference 1" />
+          </div>
+          <div>
+            <label className={mLabel}>Ref-2 (optional)</label>
+            <input className={mInput} value={form.ref_no_2}
+              onChange={e => setField("ref_no_2", e.target.value)} placeholder="Reference 2" />
+          </div>
+        </>
       )}
     </div>,
 
@@ -1507,7 +1522,13 @@ export default function SubmitPVPage() {
               </InlineSelect>
             </Row>
 
-            {isTransfer && (
+            {isCheque && (
+              <Row label="Cheque No. 支票号码">
+                <input className={uline} value={form.cheque_no}
+                  onChange={e => setField("cheque_no", e.target.value)} placeholder="Cheque number" />
+              </Row>
+            )}
+            {showBankAccount && (
               <Row label="Payee Bank A/C No 收款人账户号码">
                 <InlineSelect value={form.payee_bank_name} onChange={v => setField("payee_bank_name", v)} className="max-w-[180px]">
                   <option value="">— Select bank —</option>
@@ -1515,20 +1536,24 @@ export default function SubmitPVPage() {
                 </InlineSelect>
                 <span className="text-stone-400 text-xs shrink-0">A/C:</span>
                 <input className={`${uline} flex-1`} value={form.payee_bank_acct}
-                  onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="Account number" required={isTransfer} />
-              </Row>
-            )}
-            {isCheque && (
-              <Row label="Cheque No. 支票号码">
-                <input className={uline} value={form.cheque_no}
-                  onChange={e => setField("cheque_no", e.target.value)} placeholder="Cheque number" />
+                  onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="Account number" required={!isCheque} />
               </Row>
             )}
             {isJomPay && (
-              <Row label="Biller Code 账单代码">
-                <input className={uline} value={form.biller_code}
-                  onChange={e => setField("biller_code", e.target.value)} placeholder="JomPay biller code" />
-              </Row>
+              <>
+                <Row label="Biller Code 账单代码">
+                  <input className={uline} value={form.biller_code}
+                    onChange={e => setField("biller_code", e.target.value)} placeholder="JomPay biller code" />
+                </Row>
+                <Row label="Ref-1">
+                  <input className={uline} value={form.ref_no}
+                    onChange={e => setField("ref_no", e.target.value)} placeholder="Reference 1" />
+                </Row>
+                <Row label="Ref-2 (optional)">
+                  <input className={uline} value={form.ref_no_2}
+                    onChange={e => setField("ref_no_2", e.target.value)} placeholder="Reference 2" />
+                </Row>
+              </>
             )}
 
             {pvType !== "HLE" && (

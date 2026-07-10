@@ -167,6 +167,7 @@ interface RecurringPV {
   id: string; name: string; frequency: string; next_due: string | null;
   last_run: string | null; active: boolean; payee_name: string;
   payee_bank_name: string; payee_bank_acct: string; payment_method: string;
+  biller_code: string; ref_no: string; ref_no_2: string; cheque_no: string;
   amount: number; ministry: string; dept: string; project: string;
   purpose: string; pv_label: string; payment_type: string;
   line_items: LineItem[]; term_type: string; term_end_date: string | null;
@@ -182,6 +183,7 @@ const BLANK_FORM = {
   name: "", frequency: "MONTHLY", next_due: "", active: true,
   payee_name: "", payee_bank_name: "", payee_bank_acct: "",
   payment_method: "Bank transfer", amount: 0,
+  biller_code: "", ref_no: "", ref_no_2: "", cheque_no: "",
   ministry: "", dept: "", project: "", purpose: "", description: "", pv_label: "",
   payment_type: "GENERAL", line_items: [{ description: "", amount: 0 }] as LineItem[],
   term_type: "INFINITE", term_end_date: "", final_payment_note: "",
@@ -583,6 +585,7 @@ export default function RecurringPage() {
               applicant_email: u?.email, applicant_name: u?.email,
               payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
               payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
+              biller_code: item.biller_code, ref_no: item.ref_no, ref_no_2: item.ref_no_2, cheque_no: item.cheque_no,
               ministry: item.ministry, dept: item.dept, project: item.project,
               purpose: item.purpose, pv_label: item.pv_label, amount: item.amount,
               payment_type: item.payment_type, line_items: lineItems, pvDate: today,
@@ -824,6 +827,8 @@ export default function RecurringPage() {
       next_due: item.next_due ?? "", active: item.active,
       payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
       payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
+      biller_code: item.biller_code ?? "", ref_no: item.ref_no ?? "",
+      ref_no_2: item.ref_no_2 ?? "", cheque_no: item.cheque_no ?? "",
       amount: item.amount, ministry: item.ministry, dept: item.dept,
       project: item.project ?? "", purpose: item.purpose, description: item.description ?? "",
       pv_label: item.pv_label ?? "",
@@ -855,6 +860,7 @@ export default function RecurringPage() {
       name: form.name, frequency: form.frequency, next_due: form.next_due || null,
       active: form.active, payee_name: form.payee_name, payee_bank_name: form.payee_bank_name,
       payee_bank_acct: form.payee_bank_acct, payment_method: form.payment_method,
+      biller_code: form.biller_code, ref_no: form.ref_no, ref_no_2: form.ref_no_2, cheque_no: form.cheque_no,
       amount: effectiveAmount, ministry: form.ministry, dept: form.dept,
       project: form.project, purpose: form.purpose, description: form.description,
       pv_label: form.pv_label,
@@ -1064,6 +1070,7 @@ export default function RecurringPage() {
             applicant_email: user?.email, applicant_name: user?.email,
             payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
             payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
+            biller_code: item.biller_code, ref_no: item.ref_no, ref_no_2: item.ref_no_2, cheque_no: item.cheque_no,
             ministry: item.ministry, dept: item.dept, project: item.project,
             purpose, pv_label: item.pv_label, amount: item.amount,
             payment_type: item.payment_type, line_items: lineItems, pvDate: today,
@@ -1594,15 +1601,43 @@ export default function RecurringPage() {
                     {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </Field>
-                <Field label="Bank Name">
-                  <select className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)}>
-                    <option value="">— Select bank —</option>
-                    {MALAYSIA_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                </Field>
-                <Field label="Account No.">
-                  <input className={inp} value={form.payee_bank_acct} onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="e.g. 1234 5678 9012" />
-                </Field>
+                {(() => {
+                  const isCheque = form.payment_method === "Cheque";
+                  const isJomPay = form.payment_method === "JomPAY";
+                  const isCash = form.payment_method === "Cash";
+                  // Bank details still matter for a cheque (which account it'll be
+                  // deposited into) — only Cash and JomPay skip them.
+                  const showBankAccount = !isCash && !isJomPay;
+                  return (<>
+                    {isCheque && (
+                      <Field label="Cheque No.">
+                        <input className={inp} value={form.cheque_no} onChange={e => setField("cheque_no", e.target.value)} placeholder="Cheque number" />
+                      </Field>
+                    )}
+                    {showBankAccount && (<>
+                      <Field label="Bank Name">
+                        <select className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)}>
+                          <option value="">— Select bank —</option>
+                          {MALAYSIA_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Account No.">
+                        <input className={inp} value={form.payee_bank_acct} onChange={e => setField("payee_bank_acct", e.target.value)} placeholder="e.g. 1234 5678 9012" />
+                      </Field>
+                    </>)}
+                    {isJomPay && (<>
+                      <Field label="Biller Code">
+                        <input className={inp} value={form.biller_code} onChange={e => setField("biller_code", e.target.value)} placeholder="JomPAY biller code" />
+                      </Field>
+                      <Field label="Ref-1">
+                        <input className={inp} value={form.ref_no} onChange={e => setField("ref_no", e.target.value)} placeholder="Reference 1" />
+                      </Field>
+                      <Field label="Ref-2 (optional)">
+                        <input className={inp} value={form.ref_no_2} onChange={e => setField("ref_no_2", e.target.value)} placeholder="Reference 2" />
+                      </Field>
+                    </>)}
+                  </>);
+                })()}
               </div>
             </div>
 
@@ -1751,7 +1786,17 @@ export default function RecurringPage() {
                 ["Commenced", form.commenced_date ? form.commenced_date.slice(0, 7) : "—"],
                 ["Payee", form.payee_name || "—"],
                 ["Payment method", form.payment_method],
-                ["Bank", form.payee_bank_name ? `${form.payee_bank_name}${form.payee_bank_acct ? ` · ${form.payee_bank_acct}` : ""}` : "—"],
+                ...(form.payment_method === "Cheque"
+                  ? [["Cheque No.", form.cheque_no || "—"] as [string, string]]
+                  : form.payment_method === "JomPAY"
+                  ? [
+                      ["Biller Code", form.biller_code || "—"] as [string, string],
+                      ["Ref-1 / Ref-2", `${form.ref_no || "—"}${form.ref_no_2 ? ` / ${form.ref_no_2}` : ""}`] as [string, string],
+                    ]
+                  : []),
+                ...(form.payment_method === "Cash" || form.payment_method === "JomPAY"
+                  ? []
+                  : [["Bank", form.payee_bank_name ? `${form.payee_bank_name}${form.payee_bank_acct ? ` · ${form.payee_bank_acct}` : ""}` : "—"] as [string, string]]),
                 ["Ministry", form.pv_type === "BAM" ? "Property" : form.ministry || "—"],
                 ["Department", form.dept || "—"],
                 ["Project", form.project || "—"],
@@ -2758,6 +2803,7 @@ function RunNowModal({ item, ministries, projects, onClose, onDone, onError, cal
         applicant_email: user?.email, applicant_name: user?.email,
         payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
         payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
+        biller_code: item.biller_code, ref_no: item.ref_no, ref_no_2: item.ref_no_2, cheque_no: item.cheque_no,
         ministry: item.ministry, dept: item.dept, project: item.project,
         purpose, pv_label: item.pv_label, amount: item.amount,
         payment_type: item.payment_type, line_items: lineItems, pvDate: today,
