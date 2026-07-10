@@ -163,6 +163,7 @@ export default function SubmitPVPage() {
   const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
   const [claimBanner, setClaimBanner] = useState<{ id: string; claim_no: string; claimant: string } | null>(null);
   const [worksheetBanner, setWorksheetBanner] = useState<{ id: string; worksheet_no: string; worker_name: string } | null>(null);
+  const [typeRestricted, setTypeRestricted] = useState(false); // ?type= link requested a form this account can't submit
   const [isTravelClaim, setIsTravelClaim] = useState(false);
   const [travelItems, setTravelItems] = useState<TravelItem[]>([{ ...EMPTY_TRAVEL_ITEM }]);
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
@@ -254,6 +255,15 @@ export default function SubmitPVPage() {
         setIsFinanceAdmin(isFA);
         // Building Manager can only submit BAM PVs
         if (isBM) setPvType("BAM");
+        // A ?type= link may request a form this account isn't allowed to submit
+        // (BAM/LSC/HLE are hard-gated server-side too) — catch it here so the
+        // person isn't left filling out a whole form only to hit a 403 at the end.
+        const canBAM = isFA || isBM;
+        const canLscHle = isFA;
+        if ((pvType === "BAM" && !canBAM) || ((pvType === "LSC" || pvType === "HLE") && !canLscHle)) {
+          setPvType("LCM");
+          setTypeRestricted(true);
+        }
         if (isFA && profile?.saved_signature) {
           setSavedSig(profile.saved_signature);
           setFinSigData(profile.saved_signature);
@@ -1202,6 +1212,18 @@ export default function SubmitPVPage() {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {typeRestricted && (
+            <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm">
+              <span className="text-amber-700 flex-1 text-xs">The form type in your link isn&apos;t available to your account — showing the general LCM form instead.</span>
+              <button type="button" onClick={() => setTypeRestricted(false)} className="text-amber-500 text-xs shrink-0">Dismiss</button>
+            </div>
+          )}
+          {!isFinanceAdmin && userRole === "" && form.applicant_email && (
+            <div className="mx-4 mt-4 px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600">
+              You&apos;re submitting as <strong>{form.applicant_email}</strong>. Check on this and any other
+              submissions under <strong>My PVs</strong>, signing in with this same email.
+            </div>
+          )}
           {claimBanner && (
             <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
               <span className="text-green-700 font-semibold shrink-0">📋 {claimBanner.claim_no || "GM Claim"}</span>
@@ -1324,6 +1346,18 @@ export default function SubmitPVPage() {
         </div>
       )}
 
+      {typeRestricted && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm">
+          <span className="text-amber-700 flex-1">The form type in your link isn&apos;t available to your account — showing the general LCM form instead.</span>
+          <button type="button" onClick={() => setTypeRestricted(false)} className="text-amber-500 hover:text-amber-700 text-xs shrink-0">Dismiss</button>
+        </div>
+      )}
+      {!isFinanceAdmin && userRole === "" && form.applicant_email && (
+        <div className="mb-4 px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-600">
+          You&apos;re submitting as <strong>{form.applicant_email}</strong>. You can check on this and any other
+          submissions you make under <strong>My PVs</strong>, using this same email to sign in.
+        </div>
+      )}
       {claimBanner && (
         <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
           <span className="text-green-700 font-semibold shrink-0">📋 {claimBanner.claim_no || "GM Claim"}</span>
