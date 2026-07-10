@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
 import {
   Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle,
-  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images,
+  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images, Link2,
 } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import type { PVLineItem } from "@/lib/types";
@@ -164,6 +164,16 @@ export default function SubmitPVPage() {
   const [claimBanner, setClaimBanner] = useState<{ id: string; claim_no: string; claimant: string } | null>(null);
   const [worksheetBanner, setWorksheetBanner] = useState<{ id: string; worksheet_no: string; worker_name: string } | null>(null);
   const [typeRestricted, setTypeRestricted] = useState(false); // ?type= link requested a form this account can't submit
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  function copyShareLink() {
+    const typeParam = pvType.toLowerCase();
+    const url = `${location.origin}/submit?type=${typeParam}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  }
   const [isTravelClaim, setIsTravelClaim] = useState(false);
   const [travelItems, setTravelItems] = useState<TravelItem[]>([{ ...EMPTY_TRAVEL_ITEM }]);
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
@@ -1320,7 +1330,7 @@ export default function SubmitPVPage() {
 
       {/* PV Type toggle — Finance Exec can choose; Building Manager is locked to BAM */}
       {canSubmitBAM && (
-        <div className="mb-5 flex flex-wrap gap-2">
+        <div className="mb-5 flex flex-wrap items-center gap-2">
           {!isBuildingManagerRole && (
             <button type="button" onClick={() => setPvType("LCM")}
               className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "LCM" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}>
@@ -1343,6 +1353,11 @@ export default function SubmitPVPage() {
               Highlands <span className="text-[10px] opacity-80">(MAYBANK)</span>
             </button>
           )}
+          <button type="button" onClick={copyShareLink}
+            title="Copy a shareable link that opens this form pre-set to the selected type"
+            className="ml-1 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-dashed border-stone-300 text-stone-500 hover:border-[#4a6da7] hover:text-[#4a6da7] transition-colors">
+            {linkCopied ? <><CheckCircle size={13} className="text-green-600" /> Copied!</> : <><Link2 size={13} /> Copy link</>}
+          </button>
         </div>
       )}
 
