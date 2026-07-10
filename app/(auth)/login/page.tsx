@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,18 @@ import { Mail, ArrowLeft, CheckCircle } from "lucide-react";
 
 type Screen = "main" | "email" | "sent";
 
+// useSearchParams() requires a Suspense boundary during static prerendering,
+// or Vercel's build fails on this route — see Next.js error "useSearchParams()
+// should be wrapped in a suspense boundary".
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-stone-50" />}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "";
   const [screen, setScreen]   = useState<Screen>("main");
