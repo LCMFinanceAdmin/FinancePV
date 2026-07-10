@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Mail, ArrowLeft, CheckCircle } from "lucide-react";
@@ -7,10 +8,20 @@ import { Mail, ArrowLeft, CheckCircle } from "lucide-react";
 type Screen = "main" | "email" | "sent";
 
 export default function LoginPage() {
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") ?? "";
   const [screen, setScreen]   = useState<Screen>("main");
   const [email, setEmail]     = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+
+  // Carries the page the user was trying to reach (e.g. a shared /submit
+  // link) through the OAuth / magic-link round trip via /auth/callback.
+  function callbackUrl() {
+    const url = new URL("/auth/callback", location.origin);
+    if (next) url.searchParams.set("next", next);
+    return url.toString();
+  }
 
   async function signInWithGoogle() {
     setLoading(true);
@@ -19,7 +30,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${location.origin}/auth/callback`,
+        redirectTo: callbackUrl(),
         queryParams: { hd: "lcm.org.my" },
       },
     });
@@ -33,7 +44,7 @@ export default function LoginPage() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim().toLowerCase(),
-      options: { emailRedirectTo: `${location.origin}/auth/callback` },
+      options: { emailRedirectTo: callbackUrl() },
     });
     setLoading(false);
     if (error) { setError(error.message); return; }

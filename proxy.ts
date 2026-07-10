@@ -15,7 +15,13 @@ export function proxy(request: NextRequest) {
   );
 
   if (!hasSession) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    // Preserve the original destination so a shared link (e.g. /submit?type=lcm)
+    // survives the magic-link / Google sign-in round trip instead of always
+    // dropping the user on /dashboard.
+    const loginUrl = new URL("/login", request.url);
+    const next = pathname + request.nextUrl.search;
+    if (next !== "/") loginUrl.searchParams.set("next", next);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
