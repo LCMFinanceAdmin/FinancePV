@@ -1,12 +1,20 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
-import { CheckCircle, XCircle, ShieldCheck, Eye, EyeOff } from "lucide-react";
+import {
+  CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
+  Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText,
+} from "lucide-react";
+
+function isImage(url: string) {
+  return /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i.test(url);
+}
 
 type TabKey = "pending" | "my_pvs" | "ministry";
 
@@ -24,6 +32,15 @@ export default function ExcoPage() {
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [hasPin, setHasPin] = useState(false);
   const [showPinSetup, setShowPinSetup] = useState(false);
+  const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+
+  const toggleDocs = useCallback((pvId: string) => {
+    setExpandedDocs(prev => {
+      const n = new Set(prev);
+      n.has(pvId) ? n.delete(pvId) : n.add(pvId);
+      return n;
+    });
+  }, []);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -46,7 +63,7 @@ export default function ExcoPage() {
       setHasPin(profile?.has_pin ?? false);
       const ministries: string[] = profile?.ministries ?? [];
 
-      const PV_COLS = "id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals";
+      const PV_COLS = "id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals,attachments";
 
       const [pendingRes, myRes, ministryRes] = await Promise.all([
         ministries.length
@@ -162,7 +179,11 @@ export default function ExcoPage() {
         </CardBody></Card>
       ) : (
         <div className="space-y-3">
-          {pvList.map((pv) => (
+          {pvList.map((pv) => {
+            const attachments = (pv.attachments as string[] | undefined) ?? [];
+            const hasAttach = attachments.length > 0;
+            const docsOpen = expandedDocs.has(pv.id!);
+            return (
             <Card key={pv.id} className={selected?.id === pv.id ? "border-[#4a6da7]" : ""}>
               <div className="px-4 py-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
@@ -177,6 +198,52 @@ export default function ExcoPage() {
                   </div>
                   <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
                 </div>
+
+                <div className="flex items-center gap-2">
+                  {hasAttach && (
+                    <button
+                      onClick={() => toggleDocs(pv.id!)}
+                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600 transition-colors">
+                      <Paperclip size={10} />
+                      {attachments.length} Doc{attachments.length !== 1 ? "s" : ""}
+                      {docsOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                    </button>
+                  )}
+                  <Link href={`/my-pvs/${pv.id}`}
+                    className="flex items-center gap-1 text-[10px] text-stone-400 hover:text-[#4a6da7] transition-colors">
+                    <ExternalLink size={10} /> View full PV
+                  </Link>
+                </div>
+
+                {docsOpen && hasAttach && (
+                  <div className="border-t border-stone-100 pt-3">
+                    <p className="text-xs font-semibold text-stone-500 mb-2 flex items-center gap-1">
+                      <Paperclip size={11} /> Supporting Documents ({attachments.length})
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {attachments.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                          className="group relative block">
+                          {isImage(url) ? (
+                            <div className="w-24 h-24 rounded-lg overflow-hidden border border-stone-200 hover:border-[#4a6da7] transition-colors">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt={`Attachment ${i + 1}`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-stone-200 hover:border-[#4a6da7] bg-white transition-colors">
+                              <FileText size={16} className="text-stone-400" />
+                              <span className="text-xs text-stone-600 max-w-[100px] truncate">
+                                {url.split("/").pop() ?? `File ${i + 1}`}
+                              </span>
+                              <ExternalLink size={10} className="text-stone-400 shrink-0" />
+                            </div>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {isActionTab && (
                   selected?.id === pv.id ? (
@@ -211,7 +278,8 @@ export default function ExcoPage() {
                 )}
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
