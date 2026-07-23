@@ -988,12 +988,6 @@ export default function WorksheetsPage() {
                   </div>
                   <p className="text-xs text-stone-400">Hand the device to the worker to sign on the left, then save. Sign on the right to verify — once both are saved you can generate the PV.</p>
 
-                  {bothSigned && (
-                    <Button variant="secondary" size="sm" className="w-full" loading={viewingPdf} onClick={viewWorksheet}>
-                      <Eye size={14} /> View Worksheet
-                    </Button>
-                  )}
-
                   {editing.status === "PV_RAISED" && (
                     <div className="space-y-2">
                       <div className="text-center text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-xl py-2.5">PV already raised from this worksheet.</div>
@@ -1012,6 +1006,11 @@ export default function WorksheetsPage() {
 
             {/* Pinned footer */}
             <div className="px-5 py-4 border-t border-stone-200 bg-stone-50 shrink-0 space-y-2">
+              {bothSigned && (
+                <Button variant="secondary" loading={viewingPdf} onClick={viewWorksheet} className="w-full">
+                  <Eye size={15} /> View Worksheet
+                </Button>
+              )}
               {canGenerate && (
                 <Button onClick={generatePV} loading={generating} className="w-full bg-green-600 hover:bg-green-700">
                   <FileCheck2 size={15} /> Generate PV
