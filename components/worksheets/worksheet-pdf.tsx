@@ -54,12 +54,15 @@ function SigBox({ label, signature, signedBy, signedAt }: { label: string; signa
   const signed = !!signature;
   return (
     <View style={{ flex: 1, padding: "8pt 10pt" }}>
-      <View style={[s.row, { alignItems: "center", justifyContent: "space-between", marginBottom: 6 }]}>
+      {/* Label and the "Signed" tag stack rather than sit side-by-side — a
+          longer label (e.g. "Verified by — Building/Event Manager") has no
+          room to collide with anything else regardless of its length. */}
+      <View style={{ marginBottom: 6 }}>
         <Text style={[s.bold, s.tiny]}>{label}</Text>
-        {signed && <Text style={[s.tiny, { color: "#15803d" }]}>✓ Signed</Text>}
+        {signed && <Text style={[s.tiny, { color: "#15803d", marginTop: 1 }]}>✓ Signed</Text>}
       </View>
       <View style={{
-        height: 46, borderRadius: 3, padding: "5pt 6pt",
+        height: 46, borderRadius: 3, padding: "5pt 6pt", overflow: "hidden",
         border: signed ? "0.8pt solid #d1d5db" : "0.8pt dashed #d1d5db",
         backgroundColor: signed ? "#fff" : "#fafafa",
       }}>

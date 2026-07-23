@@ -106,12 +106,12 @@ function SigBlock({ title, role, approval, pending, onClickSpace, savedSigFallba
       <div className="text-[13px] text-stone-800 mb-1">({role})</div>
       {/* Signature space — always clickable when onClickSpace provided */}
       <div
-        className={`flex-1 border-b border-black mb-1 min-h-[56px] relative ${onClickSpace ? "cursor-pointer group hover:bg-indigo-50/60 active:bg-indigo-100 transition-colors rounded-t" : ""}`}
+        className={`flex-1 border-b border-black mb-1 min-h-[56px] relative overflow-hidden ${onClickSpace ? "cursor-pointer group hover:bg-indigo-50/60 active:bg-indigo-100 transition-colors rounded-t" : ""}`}
         onClick={onClickSpace ?? undefined}
       >
         {displaySig && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={displaySig} alt="signature" className="h-10 object-contain absolute bottom-1 left-0" />
+          <img src={displaySig} alt="signature" className="h-10 max-w-full object-contain absolute bottom-1 left-0" />
         )}
         {onClickSpace && !approval && (
           <div className="absolute inset-0 flex items-center justify-center print:hidden">
@@ -2435,10 +2435,10 @@ export default function PVDetailPage() {
                       <div className="grid grid-cols-2 gap-2 flex-1">
                         {sigSlots.map((appr, i) => (
                           <div key={i} className="flex flex-col">
-                            <div className="border-b border-black min-h-[40px] mb-1 relative">
+                            <div className="border-b border-black min-h-[40px] mb-1 relative overflow-hidden">
                               {(appr?.signature_data || (appr?.email && approverSigs[appr.email])) && (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img src={appr.signature_data || approverSigs[appr.email!]} alt="sig" className="h-8 object-contain absolute bottom-0.5 left-0" />
+                                <img src={appr.signature_data || approverSigs[appr.email!]} alt="sig" className="h-8 max-w-full object-contain absolute bottom-0.5 left-0" />
                               )}
                               {appr && !appr.signature_data && !approverSigs[appr.email ?? ''] && (
                                 <div className="flex items-center gap-0.5 h-full text-[12px] text-green-700 absolute bottom-0.5">

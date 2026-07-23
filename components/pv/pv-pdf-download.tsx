@@ -64,7 +64,7 @@ const s = StyleSheet.create({
 
 function SigBox({ approval, label, subtitle }: { approval?: PVApproval; label: string; subtitle?: string }) {
   return (
-    <View style={{ flex: 1, padding: "6pt 8pt" }}>
+    <View style={{ flex: 1, padding: "6pt 8pt", overflow: "hidden" }}>
       <View style={[s.borderB, { paddingBottom: 2, marginBottom: 4 }]}>
         <Text style={[s.bold, s.tiny]}>{label}</Text>
         {subtitle ? <Text style={s.tiny}>{subtitle}</Text> : null}
@@ -259,7 +259,7 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
         {/* BAM voucher: raised by Building/Event Manager + verified by BAM Committee */}
         {isBamPV && (
           <View style={[s.row, { marginTop: 8, gap: 0 }]}>
-            <View style={[s.border, { flex: 1, padding: "6pt 8pt", borderRight: "none" }]}>
+            <View style={[s.border, { flex: 1, padding: "6pt 8pt", borderRight: "none", overflow: "hidden" }]}>
               <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Payment Raised by:</Text>
               <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(Building / Event Manager)</Text>
               {bmApproval?.signature_data ? (
@@ -272,7 +272,7 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
                 <Text style={s.tiny}>Date: {fmtDate(bmApproval?.timestamp ?? pv.submitted_at)}</Text>
               </View>
             </View>
-            <View style={[s.border, { flex: 1, padding: "6pt 8pt" }]}>
+            <View style={[s.border, { flex: 1, padding: "6pt 8pt", overflow: "hidden" }]}>
               <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by:</Text>
               <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(BAM Committee)</Text>
               {committeeApproval?.signature_data ? (
@@ -296,7 +296,7 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
 
         {/* Applicant signature */}
         {!isBamPV && showApplicantSig && (
-          <View style={[s.border, { marginTop: 8, padding: "6pt 8pt" }]}>
+          <View style={[s.border, { marginTop: 8, padding: "6pt 8pt", overflow: "hidden" }]}>
             <Text style={[s.bold, s.tiny, { marginBottom: 3 }]}>{"Applicant's Signature:"}</Text>
             {pv.applicant_signature_data ? (
               <Image src={pv.applicant_signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
@@ -311,7 +311,7 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
 
         {/* EXCO / Ministry Head verification */}
         {!isBamPV && showExcoSection && (
-          <View style={[s.border, { marginTop: 6, padding: "6pt 8pt" }]}>
+          <View style={[s.border, { marginTop: 6, padding: "6pt 8pt", overflow: "hidden" }]}>
             <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by:</Text>
             <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By EXCO Member / Dept Head in Charge)</Text>
             {excoApproval?.signature_data ? (
@@ -366,7 +366,7 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
                   {Array.from({ length: loa.required }).map((_, i) => {
                     const appr = sigApprovals[i];
                     return (
-                      <View key={i} style={{ flex: 1, alignItems: "center", paddingHorizontal: 2 }}>
+                      <View key={i} style={{ flex: 1, alignItems: "center", paddingHorizontal: 2, overflow: "hidden" }}>
                         {appr?.signature_data ? (
                           <Image src={appr.signature_data} style={{ height: 40, width: "100%", objectFit: "contain" }} />
                         ) : (

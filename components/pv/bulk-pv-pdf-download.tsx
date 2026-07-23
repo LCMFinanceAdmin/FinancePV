@@ -204,7 +204,7 @@ function BatchSummaryDocument({
                     </View>
                   )}
                 </View>
-                <View style={{ width: COL.sig, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
+                <View style={{ width: COL.sig, padding: "4pt 6pt", borderRight: "1pt solid #000", overflow: "hidden" }}>
                   <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>General Manager</Text>
                   {gm?.signature_data
                     ? <Image src={gm.signature_data} style={{ height: 22, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
@@ -216,7 +216,7 @@ function BatchSummaryDocument({
                     <View style={{ borderBottom: "0.5pt solid #aaa", height: 1 }} />
                   </View>
                 </View>
-                <View style={{ width: COL.sig, padding: "4pt 6pt" }}>
+                <View style={{ width: COL.sig, padding: "4pt 6pt", overflow: "hidden" }}>
                   <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>Signatory</Text>
                   {sa?.signature_data
                     ? <Image src={sa.signature_data} style={{ height: 22, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
@@ -254,7 +254,7 @@ function BatchSummaryDocument({
         </View>
 
         {/* ── Finance signature ── */}
-        <View style={{ marginTop: 12 }}>
+        <View style={{ marginTop: 12, overflow: "hidden" }}>
           <Text style={[st.bold, st.small, { marginBottom: 3 }]}>Prepared by (Finance Executive):</Text>
           {finSigData
             ? <Image src={finSigData} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
@@ -400,7 +400,7 @@ function MasterCoverPage({
               <Text style={[st.bold, { fontSize: 8, textAlign: "right" }]}>{fmt(g.total)}</Text>
             </View>
             {/* GM sig — shows digital sig if signed, blank lines if not */}
-            <View style={{ width: MC.sig, padding: "4pt 6pt", borderRight: "1pt solid #000" }}>
+            <View style={{ width: MC.sig, padding: "4pt 6pt", borderRight: "1pt solid #000", overflow: "hidden" }}>
               {gmApproval?.signature_data
                 ? <Image src={gmApproval.signature_data} style={{ height: 28, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
                 : <View style={{ flex: 1 }} />}
@@ -411,7 +411,7 @@ function MasterCoverPage({
               </View>
             </View>
             {/* Signatory sig — shows digital sig if signed, blank lines if not */}
-            <View style={{ width: MC.sig, padding: "4pt 6pt" }}>
+            <View style={{ width: MC.sig, padding: "4pt 6pt", overflow: "hidden" }}>
               {sigApproval?.signature_data
                 ? <Image src={sigApproval.signature_data} style={{ height: 28, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
                 : <View style={{ flex: 1 }} />}
@@ -445,7 +445,7 @@ function MasterCoverPage({
       </View>
 
       {/* ── Finance signature ── */}
-      <View style={{ marginTop: 12 }}>
+      <View style={{ marginTop: 12, overflow: "hidden" }}>
         <Text style={[st.bold, st.small, { marginBottom: 3 }]}>Prepared by (Finance Executive):</Text>
         {finSigData
           ? <Image src={finSigData} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
