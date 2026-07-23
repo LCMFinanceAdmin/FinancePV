@@ -1,23 +1,100 @@
 @import "tailwindcss";
 
 :root {
-  --brand: #4a6da7;
-  --brand-2: #6b9ac4;
-  --brand-dark: #3a5a8f;
+  --brand: #2563eb;
+  --brand-2: #60a5fa;
+  --brand-dark: #173a72;
+  --ink: #16335e;
+  --muted: #667994;
+  --line: #dce9fb;
+  --cloud: #f5f9ff;
+  --card: rgba(255, 255, 255, .9);
+  --shadow: 0 12px 32px rgba(68, 120, 190, .10), 0 2px 8px rgba(68, 120, 190, .05);
 }
 
 * { box-sizing: border-box; }
-
 html, body { height: 100%; }
+body { background: var(--cloud); color: var(--ink); }
+button, input, textarea, select { font: inherit; }
+input, textarea, select { outline: none; }
+input:focus, textarea:focus, select:focus {
+  border-color: #75a8fa !important;
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, .16);
+}
+
+/* Cloudlight application shell. Print views deliberately remain untouched. */
+.cloudlight-app {
+  background:
+    radial-gradient(circle at 78% -10%, rgba(185, 224, 255, .7), transparent 31rem),
+    radial-gradient(circle at 48% 115%, rgba(221, 211, 255, .35), transparent 37rem),
+    linear-gradient(135deg, #fafdff 0%, #f3f8ff 54%, #fbfcff 100%);
+}
+.cloudlight-main {
+  background: transparent;
+}
+.cloudlight-main > * {
+  animation: cloudlight-enter .42s ease-out both;
+}
+.cloudlight-app h1, .cloudlight-app h2, .cloudlight-app h3 { color: var(--ink); letter-spacing: -.025em; }
+@media screen {
+  .cloudlight-app h1 { font-size: clamp(1.5rem, 2vw, 2rem); line-height: 1.15; }
+  .cloudlight-app h2 { font-size: clamp(1.18rem, 1.5vw, 1.45rem); }
+}
+.cloudlight-app .bg-white { background-color: var(--card); }
+.cloudlight-app .bg-stone-50 { background-color: rgba(242, 248, 255, .7); }
+.cloudlight-app .rounded-xl.border,
+.cloudlight-app .rounded-2xl.border { box-shadow: 0 8px 22px rgba(71, 123, 191, .08); }
+.cloudlight-app .border-stone-100,
+.cloudlight-app .border-stone-200,
+.cloudlight-app .border-stone-300 { border-color: var(--line); }
+.cloudlight-app .text-stone-800,
+.cloudlight-app .text-stone-700 { color: var(--ink); }
+.cloudlight-app .text-stone-600 { color: #4d6383; }
+.cloudlight-app .text-stone-500,
+.cloudlight-app .text-stone-400 { color: #7b8da7; }
+.cloudlight-app input:not([type="checkbox"]):not([type="radio"]),
+.cloudlight-app select,
+.cloudlight-app textarea {
+  border-color: #d6e5f8;
+  background-color: rgba(255, 255, 255, .92);
+  border-radius: .8rem;
+}
+.cloudlight-app table { border-color: var(--line); }
+.cloudlight-app th { color: #496582; background-color: #f2f7ff; }
+.cloudlight-app tr { border-color: #e3edf9; }
+.cloudlight-app tbody tr:hover { background-color: rgba(239, 247, 255, .72); }
+.cloudlight-app ::selection { background: #bfdbfe; color: #16335e; }
+.cloudlight-app * { scrollbar-color: #b7cef0 transparent; }
+.cloudlight-app *::-webkit-scrollbar { width: .65rem; height: .65rem; }
+.cloudlight-app *::-webkit-scrollbar-thumb { background: #c5d8f3; border: 2px solid transparent; background-clip: padding-box; border-radius: 99px; }
+
+.cloudlight-page {
+  width: min(100%, 1440px);
+  margin-inline: auto;
+  padding: 2rem clamp(1.25rem, 3vw, 3.25rem) 4.5rem;
+}
+.cloudlight-card {
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.cloudlight-glass {
+  border: 1px solid rgba(255,255,255,.78);
+  background: linear-gradient(135deg, rgba(255,255,255,.91), rgba(246,250,255,.76));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+@keyframes cloudlight-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}
 
 @media print {
-  html, body { height: auto !important; }
-}
-
-input, textarea, select {
-  outline: none;
-}
-
-input:focus, textarea:focus, select:focus {
-  ring: 2px solid var(--brand);
+  html, body { height: auto !important; background: white !important; }
+  .cloudlight-app, .cloudlight-main { background: white !important; }
+  .cloudlight-main > * { animation: none !important; }
 }

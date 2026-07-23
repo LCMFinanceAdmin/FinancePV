@@ -86,8 +86,9 @@ export default function LeaveQueuePage() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
-    <div className="p-5 max-w-2xl mx-auto space-y-5">
+    <div className="cloudlight-page max-w-5xl space-y-6">
       <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Staff services</p>
         <h1 className="text-xl font-bold text-stone-800">Leave Queue</h1>
         <p className="text-sm text-stone-400">Review and approve leave applications assigned to you</p>
       </div>
@@ -100,9 +101,12 @@ export default function LeaveQueuePage() {
 
       {/* Reject modal */}
       {rejectTarget && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-            <h2 className="font-bold text-stone-800">Reject Leave Application</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md space-y-4 rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Leave request</p>
+              <h2 className="font-bold text-stone-800">Reject Leave Application</h2>
+            </div>
             <p className="text-sm text-stone-500">{rejectTarget.leave_no} — {rejectTarget.applicant_name}</p>
             <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
               rows={3} placeholder="Reason for rejection (required)…"
@@ -121,11 +125,11 @@ export default function LeaveQueuePage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1.5">
+      <div className="flex w-fit gap-1 rounded-2xl border border-[#dbe9fb] bg-[#edf6ff] p-1.5">
         {(["pending", "history"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              tab === t ? "bg-[#4a6da7] text-white" : "bg-white border border-stone-200 text-stone-600 hover:bg-stone-50"
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+              tab === t ? "bg-[#2563eb] text-white shadow-sm" : "text-stone-600 hover:bg-white"
             }`}>
             {t === "pending" ? `Pending (${pending.length})` : "History"}
           </button>
@@ -163,7 +167,7 @@ export default function LeaveQueuePage() {
                   </div>
                 </div>
 
-                <div className="bg-stone-50 rounded-xl p-3 space-y-1">
+                <div className="rounded-xl bg-[#f4f9ff] p-3 space-y-1">
                   <div className="flex gap-2 text-xs">
                     <span className="text-stone-400 w-16 shrink-0">Period</span>
                     <span className="text-stone-700 font-medium">{formatDate(app.start_date)} → {formatDate(app.end_date)}</span>
@@ -207,7 +211,7 @@ export default function LeaveQueuePage() {
           {history.length === 0 ? (
             <div className="py-12 text-center text-stone-400 text-sm">No history yet</div>
           ) : history.map(app => (
-            <div key={app.id} className="bg-white border border-stone-200 rounded-xl px-4 py-3 space-y-2">
+            <div key={app.id} className="cloudlight-card rounded-2xl px-4 py-3 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold text-stone-500">{app.leave_no}</span>

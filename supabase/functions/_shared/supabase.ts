@@ -20,10 +20,27 @@ export function getUserClient(jwt: string) {
 export async function getProfileByEmail(
   db: ReturnType<typeof getServiceClient>,
   email: string,
-  columns = "role,full_name,saved_signature,saved_signatures",
+  columns = "role,full_name",
 ) {
   const { data } = await db.from("user_roles").select(columns).eq("email", email).limit(1);
-  return data?.[0] ?? null;
+  const profile = data?.[0];
+  if (!profile) return null;
+
+  // PIN hashes and reusable signatures intentionally live outside the broadly
+  // readable directory profile. This helper runs only in service-role actions.
+  const { data: credentials } = await db
+    .from("user_security_credentials")
+    .select("pin_hash,has_pin,saved_signatures")
+    .eq("email", email)
+    .maybeSingle();
+
+  return {
+    ...profile,
+    pin_hash: credentials?.pin_hash ?? null,
+    has_pin: credentials?.has_pin ?? false,
+    saved_signature: null,
+    saved_signatures: credentials?.saved_signatures ?? {},
+  };
 }
 
 export function getLOATier(amount: number, paymentType = "GENERAL") {
@@ -44,7 +61,7 @@ export function isSignatoryApprovalFinal(approvals: { role: string; action: stri
   // In production, change officerApprovals.length to use distinct roles:
   // const distinctRoles = new Set(officerApprovals.map(a => a.role)).size;
   // return distinctRoles >= 2;
-  return officerApprovals.length >= 2;
+  return new Set(officerApprovals.map((approval) => approval.role)).size >= 2;
   // ───────────────────────────────────────────────────────────────────
 }
 

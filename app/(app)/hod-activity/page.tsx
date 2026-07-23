@@ -226,9 +226,10 @@ export default function ExcoActivityPage() {
   }
 
   return (
-    <div className="p-5 max-w-4xl mx-auto space-y-4">
+    <div className="cloudlight-page max-w-6xl space-y-5">
       {/* Header */}
       <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Approval oversight</p>
         <h1 className="text-xl font-bold text-stone-800">Finance Activity</h1>
         <p className="text-sm text-stone-400">
           {isFinanceAdmin || isSeniorRole
@@ -289,7 +290,7 @@ export default function ExcoActivityPage() {
 
       {/* PV Cards */}
       {filtered.length === 0 ? (
-        <div className="bg-white border border-stone-200 rounded-xl py-14 text-center text-stone-400 text-sm">
+        <div className="cloudlight-card rounded-2xl py-14 text-center text-sm text-stone-400">
           No PVs found
         </div>
       ) : (
@@ -301,7 +302,7 @@ export default function ExcoActivityPage() {
             const hasAttach   = attachments.length > 0;
 
             return (
-              <div key={pv.id} className="bg-white border border-stone-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
+              <div key={pv.id} className="cloudlight-card overflow-hidden rounded-2xl transition-shadow hover:shadow-[0_12px_30px_rgba(41,87,149,0.12)]">
                 {/* Main PV row */}
                 <div className="px-5 py-3.5 flex items-start gap-3">
                   <div className="flex-1 min-w-0">
@@ -447,9 +448,12 @@ export default function ExcoActivityPage() {
 
       {/* ── Reject modal ── */}
       {rejectTarget && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-            <h2 className="text-base font-bold text-stone-800">Reject PV</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md space-y-4 rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Approval decision</p>
+              <h2 className="text-base font-bold text-stone-800">Reject PV</h2>
+            </div>
             <p className="text-sm text-stone-500">{rejectTarget.pv_no} — {rejectTarget.payee_name}</p>
             <textarea value={rejectRemarks} onChange={e => setRejectRemarks(e.target.value)}
               placeholder="Reason for rejection (required)…"
@@ -475,11 +479,14 @@ export default function ExcoActivityPage() {
 
       {/* ── Signatory modal ── */}
       {sigModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-            <h2 className="text-base font-bold text-stone-800">
-              {sigModal.action === "APPROVED" ? "Approve PV" : "Reject PV"}
-            </h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md space-y-4 rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Signatory action</p>
+              <h2 className="text-base font-bold text-stone-800">
+                {sigModal.action === "APPROVED" ? "Approve PV" : "Reject PV"}
+              </h2>
+            </div>
             <p className="text-sm text-stone-500">{sigModal.pv.pv_no} — {sigModal.pv.payee_name}</p>
             <p className="text-xs text-stone-400">{formatCurrency(sigModal.pv.amount!)}</p>
             {sigModal.action === "REJECTED" && (

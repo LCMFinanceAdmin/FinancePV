@@ -375,9 +375,10 @@ export default function BulkPVPage() {
     async function load() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return;
-      const [{ data: runData }, { data: profile }] = await Promise.all([
+      const [{ data: runData }, { data: profile }, { data: security }] = await Promise.all([
         supabase.from("bulk_pv_runs").select("*").eq("id", id).single(),
         supabase.from("user_roles").select("*").eq("email", authUser.email).single(),
+        supabase.rpc("get_my_security_context").single(),
       ]);
       if (!runData) { setLoading(false); return; }
       setRun(runData as BulkRun);
@@ -439,17 +440,20 @@ export default function BulkPVPage() {
         isTestAdmin: false,
       });
       // Load saved signature for current user
-      if (profile?.saved_signature) setSavedSig(profile.saved_signature);
+      const securityContext = security as {
+        saved_signatures?: Record<string, string> | null;
+      } | null;
+      const ownSignature = securityContext?.saved_signatures?.[role] ?? "";
+      if (ownSignature) setSavedSig(ownSignature);
       // Load the Finance Executive's (run_by's) saved signature + full name for display
       let finSig = "";
       let finName = runData.run_by;
-      if (!isFinanceAdmin || !profile?.saved_signature) {
+      if (!isFinanceAdmin || !ownSignature) {
         const { data: runByProfile } = await supabase.from("user_roles")
-          .select("saved_signature,full_name").eq("email", runData.run_by).single();
-        finSig = runByProfile?.saved_signature ?? "";
+          .select("full_name").eq("email", runData.run_by).single();
         finName = runByProfile?.full_name || runData.run_by;
       } else {
-        finSig = profile.saved_signature ?? "";
+        finSig = ownSignature;
         finName = profile.full_name || runData.run_by;
       }
       // Fallback: if no profile signature, pull Finance Exec signature from the PV approvals
@@ -681,7 +685,10 @@ export default function BulkPVPage() {
         throw new Error(json.error || "Sign failed");
       }
       if (saveSigForNext && signatureData) {
-        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
+        await supabase.rpc("save_my_role_signature", {
+          signature_role: user.role,
+          signature_data: signatureData,
+        });
         setSavedSig(signatureData);
       }
       setShowSignModal(false);
@@ -706,7 +713,10 @@ export default function BulkPVPage() {
         await callAdminAction(pv.id, "FINANCE_SIGN", extras);
       }
       if (signatureData && saveSigForNext) {
-        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
+        await supabase.rpc("save_my_role_signature", {
+          signature_role: user.role,
+          signature_data: signatureData,
+        });
         setSavedSig(signatureData);
       }
       if (signatureData) setFinSigData(signatureData);

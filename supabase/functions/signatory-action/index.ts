@@ -157,8 +157,10 @@ Deno.serve(async (req) => {
 
     const approvals = [...(pv.approvals || [])];
     // ── TESTING MODE: duplicate-signing allowed ──────────────────────
-    // const alreadySigned = approvals.some((a: { role: string }) => a.role === profile.role);
-    // if (alreadySigned) return json({ error: "You have already acted on this PV" }, 400);
+    const alreadySigned = approvals.some((a: { role: string; action: string }) =>
+      a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action)
+    );
+    if (alreadySigned) return json({ error: "You have already acted on this PV" }, 400);
     // ────────────────────────────────────────────────────────────────
 
     const entry: Record<string, unknown> = {
@@ -173,7 +175,9 @@ Deno.serve(async (req) => {
       // Persist per-role signature via service role (bypasses RLS)
       if (action === "APPROVED") {
         const sigs = { ...(profile?.saved_signatures as Record<string, string> || {}), [profile.role]: signature_data };
-        await db.from("user_roles").update({ saved_signatures: sigs }).eq("email", user.email!);
+        await db.from("user_security_credentials").upsert({
+          email: user.email!, saved_signatures: sigs, updated_at: now,
+        }, { onConflict: "email" });
       }
     } else if (roleSig) {
       entry.signature_data = roleSig;

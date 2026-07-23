@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
     const { target_user_id, pin } = await req.json();
     if (!pin || !/^\d{6}$/.test(pin)) return json({ error: "PIN must be 6 digits" }, 400);
 
-    let userId = target_user_id;
+    let targetEmail = user.email!;
 
     if (target_user_id) {
       // Admin setting someone else's PIN — must be Finance Executive
@@ -29,15 +29,23 @@ Deno.serve(async (req) => {
       if (!["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(caller?.role)) {
         return json({ error: "Finance Executive only" }, 403);
       }
+      const { data: target } = await db.from("user_roles").select("email").eq("id", target_user_id).maybeSingle();
+      if (!target?.email) return json({ error: "Target user not found" }, 404);
+      targetEmail = target.email;
     } else {
       // Self-service — user sets their own PIN (Google login already verified identity)
-      const self = await getProfileByEmail(db, user.email!, "id");
+      const self = await getProfileByEmail(db, user.email!, "email");
       if (!self) return json({ error: "User not found in system" }, 404);
-      userId = self.id;
     }
 
     const hash = await hashPin(pin);
-    await db.from("user_roles").update({ pin_hash: hash, has_pin: true }).eq("id", userId);
+    const { error: saveError } = await db.from("user_security_credentials").upsert({
+      email: targetEmail,
+      pin_hash: hash,
+      has_pin: true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "email" });
+    if (saveError) return json({ error: "Failed to save PIN" }, 500);
 
     return json({ ok: true });
   } catch (err) {

@@ -16,7 +16,7 @@ interface EmployeeLoan {
   term_months: number; status: string; purpose: string; start_month: string;
 }
 interface LoanRepayment {
-  year: number; month: number; amount: number; balance_after: number;
+  loan_id: string; year: number; month: number; amount: number; balance_after: number;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -85,12 +85,13 @@ export default function MyLoansPage() {
       .select("id").eq("email", email).single();
 
     if (empData?.id) {
-      const [{ data: loans }, { data: reps }] = await Promise.all([
-        supabase.from("employee_loans").select("*").eq("employee_id", empData.id)
-          .in("status", ["ACTIVE", "SETTLED"]).order("created_at", { ascending: false }),
-        supabase.from("loan_repayments").select("year,month,amount,balance_after")
-          .eq("loan_id", empData.id).order("year").order("month"),
-      ]);
+      const { data: loans } = await supabase.from("employee_loans").select("*").eq("employee_id", empData.id)
+        .in("status", ["ACTIVE", "SETTLED"]).order("created_at", { ascending: false });
+      const loanIds = (loans ?? []).map((loan: EmployeeLoan) => loan.id);
+      const { data: reps } = loanIds.length > 0
+        ? await supabase.from("loan_repayments").select("loan_id,year,month,amount,balance_after")
+          .in("loan_id", loanIds).order("year").order("month")
+        : { data: [] as LoanRepayment[] };
       setActiveLoans(loans ?? []);
       setRepayments(reps ?? []);
     }
@@ -136,9 +137,7 @@ export default function MyLoansPage() {
 
   async function cancelApp(id: string) {
     setCancellingId(id);
-    const { error } = await supabase.from("loan_applications")
-      .update({ status: "CANCELLED", updated_at: new Date().toISOString() })
-      .eq("id", id).eq("applicant_email", userEmail);
+    const { error } = await supabase.rpc("withdraw_my_loan_application", { application_id: id });
     setCancellingId(null);
     if (error) { showMsg("Failed to cancel", false); return; }
     showMsg("Application cancelled");
@@ -152,9 +151,10 @@ export default function MyLoansPage() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
-    <div className="p-5 max-w-2xl mx-auto space-y-5">
+    <div className="cloudlight-page max-w-5xl space-y-6">
       <div className="flex justify-between items-start">
         <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Staff services</p>
           <h1 className="text-xl font-bold text-stone-800">My EPL Loan</h1>
           <p className="text-sm text-stone-400">Employee Personal Loan — apply and track repayments</p>
         </div>
@@ -176,7 +176,7 @@ export default function MyLoansPage() {
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-stone-600">Active / Past Loans</h2>
           {activeLoans.map(loan => {
-            const loanReps = repayments.filter(() => true); // all reps for this employee
+            const loanReps = repayments.filter((repayment) => repayment.loan_id === loan.id);
             const totalPaid = loanReps.reduce((s, r) => s + Number(r.amount), 0);
             const balance = loanReps.length > 0 ? loanReps[loanReps.length - 1].balance_after : loan.principal;
             const pct = loan.principal > 0 ? Math.min(100, (totalPaid / loan.principal) * 100) : 0;
@@ -203,8 +203,8 @@ export default function MyLoansPage() {
                       <span>Paid: {formatCurrency(totalPaid)}</span>
                       <span>Balance: {formatCurrency(balance)}</span>
                     </div>
-                    <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-[#4a6da7] rounded-full" style={{ width: `${pct}%` }} />
+                    <div className="h-2 bg-[#eaf3ff] rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-[#60a5fa] to-[#818cf8] rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                   {loan.start_month && (
@@ -224,7 +224,7 @@ export default function MyLoansPage() {
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-stone-600">Applications</h2>
           {loanApps.map(app => (
-            <div key={app.id} className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 space-y-2">
+            <div key={app.id} className="cloudlight-card rounded-2xl px-4 py-3.5 space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -275,10 +275,13 @@ export default function MyLoansPage() {
 
       {/* Apply Modal */}
       {showApply && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/35 p-4 backdrop-blur-[2px] sm:items-center">
+          <div className="w-full max-w-md max-h-[90vh] space-y-4 overflow-y-auto rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <div className="flex justify-between items-center">
-              <h2 className="text-base font-bold text-stone-800">EPL Loan Application</h2>
+              <div>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Employee Personal Loan</p>
+                <h2 className="text-base font-bold text-stone-800">EPL Loan Application</h2>
+              </div>
               <button onClick={() => setShowApply(false)} className="text-stone-400 hover:text-stone-600">
                 <X size={18} />
               </button>

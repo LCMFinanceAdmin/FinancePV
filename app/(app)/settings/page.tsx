@@ -11,15 +11,16 @@ const SECTIONS = [
 
 export default function SettingsPage() {
   return (
-    <div className="p-5 max-w-xl mx-auto space-y-4">
+    <div className="cloudlight-page max-w-4xl space-y-5">
       <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
         <h1 className="text-xl font-bold text-stone-800">Settings</h1>
         <p className="text-sm text-stone-400">Finance Executive controls</p>
       </div>
       <div className="space-y-2">
         {SECTIONS.map((s) => (
           <Link key={s.href} href={s.href}>
-            <Card className="hover:border-[#4a6da7]/40 hover:shadow-sm transition-all cursor-pointer">
+            <Card className="cursor-pointer rounded-2xl transition-all hover:border-[#75a8f2] hover:shadow-[0_12px_30px_rgba(41,87,149,0.12)]">
               <CardBody className="flex items-center gap-4">
                 <div className="p-2.5 rounded-xl bg-[#4a6da7]/10 text-[#4a6da7]">{s.icon}</div>
                 <div>

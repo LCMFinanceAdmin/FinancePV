@@ -133,7 +133,9 @@ Deno.serve(async (req) => {
       if (body.signature_data) {
         entry.signature_data = body.signature_data;
         const sigsReview = { ...(profile?.saved_signatures as Record<string, string> || {}), [profile.role]: body.signature_data };
-        await db.from("user_roles").update({ saved_signatures: sigsReview }).eq("email", user.email!);
+        await db.from("user_security_credentials").upsert({
+          email: user.email!, saved_signatures: sigsReview, updated_at: now,
+        }, { onConflict: "email" });
       } else if (roleSigReview) {
         entry.signature_data = roleSigReview;
       }
@@ -308,7 +310,9 @@ Deno.serve(async (req) => {
       if (body.signature_data) {
         entry.signature_data = body.signature_data;
         const sigsFSign = { ...(profile?.saved_signatures as Record<string, string> || {}), [profile.role]: body.signature_data };
-        await db.from("user_roles").update({ saved_signatures: sigsFSign }).eq("email", user.email!);
+        await db.from("user_security_credentials").upsert({
+          email: user.email!, saved_signatures: sigsFSign, updated_at: now,
+        }, { onConflict: "email" });
       } else if (roleSigFSign) {
         entry.signature_data = roleSigFSign;
       }

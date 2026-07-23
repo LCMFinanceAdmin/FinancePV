@@ -104,8 +104,11 @@ export default function LookupsPage() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
-    <div className="p-5 max-w-2xl mx-auto space-y-6">
-      <h1 className="text-xl font-bold text-stone-800">Lookups Management</h1>
+    <div className="cloudlight-page max-w-5xl space-y-6">
+      <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
+        <h1 className="text-xl font-bold text-stone-800">Lookups Management</h1>
+      </div>
 
       {toast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-3 bg-green-600 text-white rounded-xl text-sm shadow-lg">{toast}</div>
@@ -197,7 +200,7 @@ function DeptRow({ dept, onChange, onSave, onDelete, saving }: {
   onSave: () => void; onDelete: () => void; saving: boolean;
 }) {
   return (
-    <div className="border border-stone-100 rounded-lg p-3 space-y-2">
+    <div className="rounded-2xl border border-[#dbe9fb] bg-[#fbfdff] p-3 space-y-2">
       <div className="flex gap-2">
         <input className={`${inp} flex-1`} value={dept.name} placeholder="Department name"
           onChange={(e) => onChange({ ...dept, name: e.target.value })} />

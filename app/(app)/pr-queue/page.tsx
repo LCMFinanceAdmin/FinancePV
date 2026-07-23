@@ -98,7 +98,7 @@ export default function PRQueuePage() {
   }
 
   return (
-    <div className="p-5 max-w-3xl mx-auto space-y-4">
+    <div className="cloudlight-page max-w-5xl space-y-5">
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toastOk ? "bg-green-600" : "bg-red-500"}`}>
           {toast}
@@ -108,6 +108,7 @@ export default function PRQueuePage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Approvals workspace</p>
           <h1 className="text-xl font-bold text-stone-800">Purchase Request Queue</h1>
           <p className="text-sm text-stone-400">Review and approve purchase requests from EXCO Members</p>
         </div>
@@ -127,8 +128,8 @@ export default function PRQueuePage() {
 
       {/* PIN Modal */}
       {pinModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 px-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-sm space-y-4 rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-5 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <div className="flex items-center justify-between">
               <div>
                 <div className={`text-base font-bold ${pinModal.action === "APPROVE" ? "text-green-700" : "text-red-600"}`}>
@@ -173,7 +174,7 @@ export default function PRQueuePage() {
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : prs.length === 0 ? (
-        <div className="text-center py-12 text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
+        <div className="cloudlight-card rounded-2xl py-12 text-center text-sm text-stone-400">
           No purchase requests awaiting review
         </div>
       ) : (
@@ -196,7 +197,7 @@ export default function PRQueuePage() {
                       checked={isChecked} onChange={() => toggleOne(pr.id)} />
                   </div>
 
-                  <div className={`flex-1 bg-white border rounded-2xl overflow-hidden ${isChecked ? "border-[#4a6da7]/50" : "border-stone-200"}`}>
+                  <div className={`flex-1 overflow-hidden rounded-2xl border shadow-[0_8px_24px_rgba(41,87,149,0.06)] ${isChecked ? "border-[#75a8f2] bg-[#edf6ff]" : "border-[#dbe9fb] bg-white"}`}>
                     <div className="px-4 py-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
@@ -243,7 +244,7 @@ export default function PRQueuePage() {
 
                     {/* Expanded quotation details */}
                     {isOpen && (
-                      <div className="border-t border-stone-100 px-4 py-3 bg-stone-50 space-y-3">
+                      <div className="space-y-3 border-t border-[#dbe9fb] bg-[#f4f9ff] px-4 py-3">
                         {pr.line_items?.length > 0 && (
                           <div>
                             <div className="text-xs font-medium text-stone-500 mb-1.5">Quotation Items</div>

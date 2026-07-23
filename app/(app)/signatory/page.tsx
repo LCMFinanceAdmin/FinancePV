@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
+import { ApprovalPath } from "@/components/ui/approval-path";
 import { formatCurrency, formatDate, getLOATier, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import {
@@ -89,13 +90,16 @@ export default function SignatoryPage() {
       ]);
 
       if (authUser) {
-        const { data: profile } = await supabase.from("user_roles")
-          .select("role,saved_signature,saved_signatures").eq("email", authUser.email!).single();
+        const [{ data: profile }, { data: security }] = await Promise.all([
+          supabase.from("user_roles").select("role").eq("email", authUser.email!).single(),
+          supabase.rpc("get_my_security_context").single(),
+        ]);
         const role = profile?.role ?? "STAFF";
         setCurrentUser({ email: authUser.email!, role });
         setStatusFilter(role === "GENERAL_MANAGER" ? "pending" : "pending_signatory");
-        const sigs = profile?.saved_signatures as Record<string, string> | null;
-        const roleSig = sigs?.[role] ?? profile?.saved_signature ?? "";
+        const sigs = (security as { saved_signatures?: Record<string, string> | null } | null)
+          ?.saved_signatures;
+        const roleSig = sigs?.[role] ?? "";
         if (roleSig) setSavedSig(roleSig);
       }
 
@@ -230,10 +234,10 @@ export default function SignatoryPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user && currentUser) {
-        const { data: profile } = await supabase.from("user_roles")
-          .select("saved_signatures").eq("email", user.email!).single();
-        const sigs = { ...(profile?.saved_signatures as Record<string, string> || {}), [currentUser.role]: capturedSig };
-        await supabase.from("user_roles").update({ saved_signatures: sigs }).eq("email", user.email!);
+        await supabase.rpc("save_my_role_signature", {
+          signature_role: currentUser.role,
+          signature_data: capturedSig,
+        });
         setSavedSig(capturedSig);
       }
     } finally {
@@ -578,11 +582,12 @@ export default function SignatoryPage() {
   }
 
   return (
-    <div className="p-5 max-w-3xl mx-auto space-y-4">
+    <div className="cloudlight-page max-w-5xl space-y-5">
 
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-stone-800">Signatory Queue</h1>
+        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Approvals</div>
+        <h1 className="text-2xl font-bold text-stone-800">Signatory Queue</h1>
         <p className="text-sm text-stone-400">
           {statusFilter === "pending"           ? (isGM ? "PVs pending your verification" : "Payment vouchers awaiting your approval") :
            statusFilter === "pending_signatory" ? "PVs pending Treasurer / Bishop / Secretary approval" :
@@ -590,6 +595,8 @@ export default function SignatoryPage() {
            "Payment vouchers that have been paid"}
         </p>
       </div>
+
+      <ApprovalPath currentIndex={isGM ? 0 : 2} />
 
       {/* Search + Ministry filter */}
       <div className="flex gap-2">

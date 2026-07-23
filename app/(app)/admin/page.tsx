@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardBody } from "@/components/ui/card";
+import { ApprovalPath } from "@/components/ui/approval-path";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV, PVStatus } from "@/lib/types";
@@ -70,11 +71,14 @@ export default function AdminPage() {
   });
 
   return (
-    <div className="p-5 max-w-4xl mx-auto space-y-4">
+    <div className="cloudlight-page max-w-6xl space-y-5">
       <div>
+        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Approvals workspace</div>
         <h1 className="text-xl font-bold text-stone-800">Finance Executive</h1>
         <p className="text-sm text-stone-400">Review and process all payment vouchers</p>
       </div>
+
+      <ApprovalPath currentIndex={0} />
 
       {toast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-3 bg-green-600 text-white rounded-xl text-sm shadow-lg">{toast}</div>

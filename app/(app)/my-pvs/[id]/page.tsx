@@ -280,13 +280,15 @@ export default function PVDetailPage() {
     async function load() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return;
-      const [{ data: pvData }, { data: profile }] = await Promise.all([
+      const [{ data: pvData }, { data: profile }, { data: security }] = await Promise.all([
         supabase.from("pvs").select("*").eq("id", id).single(),
         supabase.from("user_roles").select("*").eq("email", authUser.email).single(),
+        supabase.rpc("get_my_security_context").single(),
       ]);
       const role = profile?.role ?? "STAFF";
-      const sigs = profile?.saved_signatures as Record<string, string> | null;
-      const roleSig = sigs?.[role] ?? profile?.saved_signature ?? "";
+      const sigs = (security as { saved_signatures?: Record<string, string> | null } | null)
+        ?.saved_signatures;
+      const roleSig = sigs?.[role] ?? "";
       if (roleSig) setSavedSig(roleSig);
       if (pvData) {
         setPv(pvData as PV);
@@ -798,11 +800,11 @@ export default function PVDetailPage() {
   const committeeApproval = [...approvals].reverse().find(a => a.role === "BAM_COMMITTEE" && a.action === "APPROVED") ?? null;
 
   return (
-    <div className="min-h-screen bg-stone-100 print:bg-white overflow-x-hidden">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_90%_0%,#eaf4ff_0%,transparent_32%),#f8fbff] print:bg-white overflow-x-hidden">
       <style>{`@media print { .voucher-inner { width: auto !important; transform: none !important; } .voucher-clip { height: auto !important; overflow: visible !important; } }`}</style>
 
       {/* ── Sticky top bar ─────────────────────────────────────────── */}
-      <div className="print:hidden sticky top-0 z-20 bg-white border-b border-stone-200 px-5 py-3">
+      <div className="print:hidden sticky top-0 z-20 border-b border-[#dbe9fb] bg-white/90 px-5 py-3 backdrop-blur-xl">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-3 flex-wrap">
             <button onClick={() => router.back()} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500 shrink-0">
@@ -1326,8 +1328,8 @@ export default function PVDetailPage() {
 
       {/* ── Reject Modal ───────────────────────────────────────────── */}
       {showRejectModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-3xl border border-[#fecaca] bg-[#fffafa] p-6 shadow-[0_24px_70px_rgba(88,28,28,0.2)]">
             <h2 className="text-lg font-bold text-stone-800 mb-1">Reject PV</h2>
             <p className="text-sm text-stone-500 mb-3">{pv.pv_no} — {pv.payee_name}</p>
             <textarea
@@ -1371,8 +1373,8 @@ export default function PVDetailPage() {
 
       {/* ── Mark as Paid Modal ─────────────────────────────────────── */}
       {showPayModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <h2 className="text-lg font-bold text-stone-800 mb-1">Mark as Paid</h2>
             <p className="text-sm text-stone-500 mb-4">{pv.pv_no} — {pv.payee_name} — <strong>{formatCurrency(pv.amount)}</strong></p>
             <div className="space-y-3">
@@ -1429,8 +1431,8 @@ export default function PVDetailPage() {
 
       {/* ── Cancel / Withdraw Modal ───────────────────────────────── */}
       {showCancelModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-3xl border border-[#fecaca] bg-[#fffafa] p-6 shadow-[0_24px_70px_rgba(88,28,28,0.2)]">
             <div className="flex items-center gap-2 mb-1">
               <Trash2 size={18} className="text-red-500" />
               <h2 className="text-lg font-bold text-stone-800">
@@ -1467,8 +1469,8 @@ export default function PVDetailPage() {
 
       {/* ── Edit PV Modal ─────────────────────────────────────────── */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200">
               <div>
                 <h2 className="text-base font-bold text-stone-800">Edit PV — {pv.pv_no}</h2>
@@ -1672,8 +1674,8 @@ export default function PVDetailPage() {
 
       {/* ── Finance Executive Sign Modal ───────────────────────────────── */}
       {showFinanceSignModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[95vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="flex max-h-[95vh] w-full max-w-md flex-col rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
               <div>
                 <div className="text-base font-bold text-[#4a6da7]">
@@ -1884,8 +1886,8 @@ export default function PVDetailPage() {
 
       {/* ── Signatory Approval Modal (sign + PIN) ─────────────────── */}
       {showSignModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[95vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]">
+          <div className="flex max-h-[95vh] w-full max-w-md flex-col rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
               <div>
                 <div className={`text-base font-bold ${signAction === "APPROVED" ? "text-green-700" : "text-red-600"}`}>
@@ -2044,7 +2046,7 @@ export default function PVDetailPage() {
 
       {/* ── THE VOUCHER ─────────────────────────────────────────────── */}
       <div className="max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-6 print:p-0 print:max-w-none">
-        <div ref={voucherOuterRef} className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none overflow-hidden">
+        <div ref={voucherOuterRef} className="overflow-hidden rounded-2xl border border-[#dbe9fb] bg-white shadow-[0_18px_48px_rgba(41,87,149,0.16)] print:rounded-none print:border-0 print:shadow-none">
           {/* Scaled voucher document */}
           <div
             className="voucher-clip overflow-hidden"

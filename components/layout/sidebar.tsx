@@ -152,19 +152,25 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
   })).filter(s => s.items.length > 0);
 
   return (
-    <aside className="hidden md:flex print:hidden flex-col w-60 shrink-0 bg-white border-r border-stone-200 h-full">
+    <aside className="hidden md:flex print:hidden flex-col w-[17.25rem] shrink-0 bg-white/85 border-r border-[#dbe9fb] shadow-[8px_0_28px_rgba(85,135,205,.05)] h-full backdrop-blur-xl">
       {/* Logo */}
-      <div className="px-5 py-4 border-b border-stone-100">
-        <div className="text-[#4a6da7] font-bold text-lg tracking-wide">LCM Finance</div>
-        <div className="text-xs text-stone-400 mt-0.5">Payment Voucher System</div>
+      <div className="px-5 py-5 border-b border-[#e1edfb] bg-[linear-gradient(135deg,#eff8ff_0%,#fbfdff_72%)]">
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/lcm-logo.svg" width={38} height={38} alt="Lutheran Church in Malaysia" className="drop-shadow-sm" />
+          <div>
+            <div className="text-[#173a72] font-bold text-lg tracking-tight">LCM Finance</div>
+            <div className="text-[11px] text-[#7187a6] mt-0.5">Church finance, made clear</div>
+          </div>
+        </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 py-2 px-2 overflow-y-auto space-y-4">
+      <nav className="flex-1 py-4 px-3 overflow-y-auto space-y-5">
         {visibleSections.map((section, si) => (
           <div key={si}>
             {section.label && (
-              <div className="px-3 mb-1 text-[10px] font-bold tracking-widest uppercase text-stone-400">
+              <div className="px-3 mb-1.5 text-[10px] font-bold tracking-[.14em] uppercase text-[#8ba0bb]">
                 {section.label}
               </div>
             )}
@@ -176,10 +182,10 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
                     key={n.href}
                     href={n.href}
                     className={cn(
-                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
+                      "flex items-center gap-3 px-3 py-2.5 rounded-xl text-[14px] transition-all duration-200",
                       active
-                        ? "bg-[#4a6da7]/10 text-[#4a6da7] font-semibold"
-                        : "text-stone-600 hover:bg-stone-100"
+                        ? "bg-gradient-to-r from-[#e4f2ff] to-[#f1edff] text-[#1d4ed8] font-semibold shadow-[0_5px_12px_rgba(72,130,214,.10)]"
+                        : "text-[#526985] hover:bg-[#eef6ff] hover:text-[#244b80]"
                     )}
                   >
                     {n.icon}
@@ -194,11 +200,18 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
       </nav>
 
       {/* User footer */}
-      <div className="p-4 border-t border-stone-100 space-y-2">
-        <div className="text-sm font-medium text-stone-700 truncate">{user.full_name}</div>
-        <div className="text-xs text-stone-400 truncate">{user.email}</div>
-        <div className="text-xs text-[#4a6da7] font-medium">
-          {TEST_ROLES.find(r => r.value === user.role)?.label ?? user.role}
+      <div className="p-3 border-t border-[#e1edfb] space-y-2">
+        <div className="rounded-2xl border border-[#deebfb] bg-[linear-gradient(135deg,#f6fbff,#f8f5ff)] p-3">
+          <div className="flex items-center gap-2.5">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#dbeafe] text-xs font-bold text-[#1d4ed8]">{user.full_name.slice(0, 2).toUpperCase()}</div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-[#274569] truncate">{user.full_name}</div>
+              <div className="text-[11px] text-[#758ba7] truncate">{user.email}</div>
+            </div>
+          </div>
+          <div className="mt-2 text-[11px] text-[#2563eb] font-semibold">
+            {TEST_ROLES.find(r => r.value === user.role)?.label ?? user.role}
+          </div>
         </div>
 
         {/* ── Test Role Switcher (admin only) ────────────────── */}
@@ -260,7 +273,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
 
         <button
           onClick={signOut}
-          className="flex items-center gap-2 text-xs text-stone-500 hover:text-red-600 transition-colors"
+          className="px-2 flex items-center gap-2 text-xs text-[#7187a6] hover:text-rose-600 transition-colors"
         >
           <LogOut size={13} /> Sign out
         </button>
