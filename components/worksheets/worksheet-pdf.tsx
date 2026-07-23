@@ -59,14 +59,18 @@ function SigBox({ label, signature, signedBy, signedAt }: { label: string; signa
         {signed && <Text style={[s.tiny, { color: "#15803d" }]}>✓ Signed</Text>}
       </View>
       <View style={{
-        height: 46, borderRadius: 3, alignItems: "flex-start", justifyContent: "center", padding: "0 6pt",
+        height: 46, borderRadius: 3, padding: "5pt 6pt",
         border: signed ? "0.8pt solid #d1d5db" : "0.8pt dashed #d1d5db",
         backgroundColor: signed ? "#fff" : "#fafafa",
       }}>
         {signed ? (
-          <Image src={signature!} style={{ height: 36, maxWidth: "100%", objectFit: "contain", objectPositionX: "left" }} />
+          // No wrapping flex-alignment on this box — an Image given only a
+          // height (no explicit width) can collapse to zero width when its
+          // parent applies alignItems/justifyContent, so it's given a fixed
+          // width here instead of relying on auto-sizing from aspect ratio.
+          <Image src={signature!} style={{ width: 150, height: 34, objectFit: "contain", objectPositionX: "left" }} />
         ) : (
-          <Text style={[s.tiny, s.muted]}>Pending signature</Text>
+          <Text style={[s.tiny, s.muted, { marginTop: 12 }]}>Pending signature</Text>
         )}
       </View>
       <View style={{ marginTop: 6 }}>

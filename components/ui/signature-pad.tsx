@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 
 interface SignaturePadProps {
   value: string;
@@ -10,48 +10,73 @@ interface SignaturePadProps {
 
 export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const drawing = useRef(false);
+  const logicalSize = useRef({ width: 0, height: 0 }); // CSS-pixel size the context is scaled for
   const [isEmpty, setIsEmpty] = useState(!value);
 
-  // Draw saved signature when value changes externally
-  useEffect(() => {
+  // Paints whatever should currently be showing (a saved signature, or
+  // nothing) at the canvas's current logical size.
+  const redraw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    const { width, height } = logicalSize.current;
+    ctx.clearRect(0, 0, width, height);
     if (value) {
       const img = new Image();
-      img.onload = () => ctx.drawImage(img, 0, 0);
+      img.onload = () => ctx.drawImage(img, 0, 0, width, height);
       img.src = value;
-      setIsEmpty(false);
-    } else {
-      setIsEmpty(true);
     }
   }, [value]);
 
-  function getPos(e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    if ("touches" in e) {
-      return {
-        x: (e.touches[0].clientX - rect.left) * scaleX,
-        y: (e.touches[0].clientY - rect.top) * scaleY,
-      };
-    }
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
-    };
+  // Matches the canvas's internal pixel buffer to its actual on-screen size
+  // times the device's pixel ratio, then scales the drawing context so every
+  // coordinate can still be expressed in ordinary CSS pixels. A fixed
+  // low-resolution buffer (e.g. 480x140) stretched across a wider box — and
+  // especially on a retina screen, where "140 CSS px tall" still needs 280+
+  // physical pixels to look sharp — is what made signatures look pixelated.
+  const resize = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    const rect = container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    const ctx = canvas.getContext("2d");
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    logicalSize.current = { width, height };
+    redraw();
+  }, [redraw]);
+
+  useEffect(() => {
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    setIsEmpty(!value);
+    redraw();
+  }, [value, redraw]);
+
+  // Position in ordinary CSS pixels relative to the canvas — no manual scale
+  // factor needed since the context is already scaled to match in resize().
+  function getPos(e: MouseEvent | TouchEvent): { x: number; y: number } {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const point = "touches" in e ? e.touches[0] : e;
+    return { x: point.clientX - rect.left, y: point.clientY - rect.top };
   }
 
   function startDraw(e: React.MouseEvent | React.TouchEvent) {
     if (disabled) return;
     drawing.current = true;
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    const pos = getPos(e.nativeEvent as MouseEvent | TouchEvent, canvas);
+    const ctx = canvasRef.current!.getContext("2d")!;
+    const pos = getPos(e.nativeEvent as MouseEvent | TouchEvent);
     ctx.beginPath();
     ctx.moveTo(pos.x, pos.y);
   }
@@ -59,12 +84,12 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
   function draw(e: React.MouseEvent | React.TouchEvent) {
     if (!drawing.current || disabled) return;
     e.preventDefault();
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    ctx.lineWidth = 2.5;
+    const ctx = canvasRef.current!.getContext("2d")!;
+    ctx.lineWidth = 2.25;
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     ctx.strokeStyle = "#1c1917";
-    const pos = getPos(e.nativeEvent as MouseEvent | TouchEvent, canvas);
+    const pos = getPos(e.nativeEvent as MouseEvent | TouchEvent);
     ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
     setIsEmpty(false);
@@ -73,15 +98,14 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
   function endDraw() {
     if (!drawing.current) return;
     drawing.current = false;
-    const canvas = canvasRef.current!;
-    onChange(canvas.toDataURL("image/png"));
+    onChange(canvasRef.current!.toDataURL("image/png"));
   }
 
   function clear() {
     if (disabled) return;
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const ctx = canvasRef.current!.getContext("2d")!;
+    const { width, height } = logicalSize.current;
+    ctx.clearRect(0, 0, width, height);
     setIsEmpty(true);
     onChange("");
   }
@@ -92,13 +116,12 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
 
   return (
     <div className="space-y-1.5">
-      <div className={`relative border rounded-xl overflow-hidden ${
-        signedLocked ? "bg-green-50/50 border-green-200" : disabled ? "bg-stone-50 border-stone-200" : "border-stone-300 bg-white"}`}>
+      <div ref={containerRef} style={{ height: 140 }}
+        className={`relative border rounded-xl overflow-hidden ${
+          signedLocked ? "bg-green-50/50 border-green-200" : disabled ? "bg-stone-50 border-stone-200" : "border-stone-300 bg-white"}`}>
         <canvas
           ref={canvasRef}
-          width={480}
-          height={140}
-          className="w-full touch-none"
+          className="absolute inset-0 w-full h-full touch-none"
           style={{ cursor: disabled ? "default" : "crosshair" }}
           onMouseDown={startDraw}
           onMouseMove={draw}
