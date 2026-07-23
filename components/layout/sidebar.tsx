@@ -27,7 +27,7 @@ const NAV_SECTIONS = [
     items: [
       { href: "/dashboard", label: "Dashboard",  icon: <LayoutDashboard size={16} />, show: (u: UserProfile) => !u.isSignatory },
       { href: "/submit",    label: "Submit PV",  icon: <FilePlus size={16} />,        show: (u: UserProfile) => !u.isSignatory && !u.isBuildingManager },
-      { href: "/my-pvs",   label: "My PVs",     icon: <FileText size={16} />,        show: (u: UserProfile) => !u.isSignatory && !u.isMinistryHead && !u.isBuildingManager },
+      { href: "/my-pvs",   label: "My PVs",     icon: <FileText size={16} />,        show: (u: UserProfile) => !u.isSignatory && !u.isMinistryHead && !u.isBuildingManager && !u.isFinanceAdmin },
     ],
   },
   {

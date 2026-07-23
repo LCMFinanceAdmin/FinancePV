@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, roleLabel, computedBadgeStatus } from "@/lib/utils";
 import {
   CheckCircle2, XCircle, Clock, Search, ChevronDown, ChevronRight,
-  Layers, CheckSquare, RotateCcw, BadgeCheck, Banknote, Hourglass,
+  Layers, CheckSquare, RotateCcw, BadgeCheck, Banknote, Hourglass, Plus,
 } from "lucide-react";
 import Link from "next/link";
 import type { PVApproval } from "@/lib/types";
@@ -14,6 +14,13 @@ const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
 
 function getRequiredSigs(loaRequired: number): string[] {
   return loaRequired >= 2 ? ["BISHOP", "SECRETARY", "TREASURER"] : ["TREASURER"];
+}
+
+function matchesSearch(pv: PendingPV, search: string): boolean {
+  if (!search) return true;
+  const q = search.toLowerCase();
+  return pv.pv_no.toLowerCase().includes(q) || pv.payee_name.toLowerCase().includes(q) ||
+    (pv.ministry ?? "").toLowerCase().includes(q) || (pv.purpose ?? "").toLowerCase().includes(q);
 }
 
 // ── Status → tab mapping ──────────────────────────────────────────
@@ -25,6 +32,7 @@ const TAB_STATUSES = {
   paid:              ["PAID"] as string[],
 } as const;
 type StatusTab = keyof typeof TAB_STATUSES;
+type ViewMode = "activity" | "mine";
 
 const TAB_CONFIG: {
   key: StatusTab; label: string;
@@ -62,6 +70,9 @@ export default function SignatoryActivityPage() {
   const [isFinanceAdmin, setIsFinanceAdmin] = useState(false);
   const [isSignatory, setIsSignatory] = useState(false);
   const [search, setSearch]           = useState("");
+  const [viewMode, setViewMode]       = useState<ViewMode>("activity"); // Finance Executive only
+  const [minePvs, setMinePvs]         = useState<PendingPV[] | null>(null);
+  const [mineLoading, setMineLoading] = useState(false);
   const [selected, setSelected]       = useState<Set<string>>(new Set());
   const [expandedBulk, setExpandedBulk] = useState<Set<string>>(new Set());
 
@@ -142,6 +153,26 @@ export default function SignatoryActivityPage() {
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // "Submitted by me" — loaded on demand, across every status (including
+  // rejected/cancelled) so a Finance Executive can always track their own
+  // submissions the same way My PVs used to, without needing that page.
+  useEffect(() => {
+    if (viewMode !== "mine" || !userEmail || minePvs !== null) return;
+    (async () => {
+      setMineLoading(true);
+      try {
+        const { data } = await supabase
+          .from("pvs")
+          .select("id,pv_no,payee_name,amount,ministry,dept,purpose,status,loa_required,approvals,submitted_at,paid_at,payment_method")
+          .eq("submitted_by_email", userEmail)
+          .order("submitted_at", { ascending: false });
+        setMinePvs((data ?? []) as PendingPV[]);
+      } finally {
+        setMineLoading(false);
+      }
+    })();
+  }, [viewMode, userEmail, minePvs]);
 
   // ── Tab counts ───────────────────────────────────────────────
   const tabCounts = useMemo(() => {
@@ -426,12 +457,34 @@ export default function SignatoryActivityPage() {
         </div>
       )}
 
-      <div>
-        <h1 className="text-xl font-bold text-stone-800">Finance Activity</h1>
-        <p className="text-sm text-stone-400">Track payment vouchers across all stages</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-stone-800">Finance Activity</h1>
+          <p className="text-sm text-stone-400">
+            {isFinanceAdmin && viewMode === "mine" ? "Payment vouchers you submitted" : "Track payment vouchers across all stages"}
+          </p>
+        </div>
+        {isFinanceAdmin && (
+          <Link href="/submit"
+            className="flex items-center gap-1.5 shrink-0 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c96] transition-colors whitespace-nowrap">
+            <Plus size={15} /> Submit PV
+          </Link>
+        )}
       </div>
 
+      {isFinanceAdmin && (
+        <div className="inline-flex rounded-lg border border-stone-200 overflow-hidden text-sm font-semibold bg-white">
+          {([["activity", "Company Activity"], ["mine", "Submitted by me"]] as const).map(([val, label]) => (
+            <button key={val} onClick={() => { setViewMode(val); setSearch(""); setSelected(new Set()); }}
+              className={`px-3 py-1.5 transition-colors ${viewMode === val ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Colour pillar tabs ────────────────────────────────── */}
+      {viewMode === "activity" && (
       <div className="flex gap-2 flex-wrap">
         {TAB_CONFIG.map(tab => {
           const active = statusTab === tab.key;
@@ -453,6 +506,7 @@ export default function SignatoryActivityPage() {
           );
         })}
       </div>
+      )}
 
       {/* ── Search ───────────────────────────────────────────── */}
       <div className="relative">
@@ -483,12 +537,12 @@ export default function SignatoryActivityPage() {
       )}
 
       {/* ── Count ───────────────────────────────────────────── */}
-      {!loading && (
+      {viewMode === "activity" && !loading && (
         <p className="text-xs text-stone-400">{totalVisible} PV{totalVisible !== 1 ? "s" : ""}</p>
       )}
 
       {/* ── PV List ─────────────────────────────────────────── */}
-      {loading ? (
+      {viewMode === "activity" && (loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : totalVisible === 0 ? (
         <div className="text-center py-16 space-y-2">
@@ -544,6 +598,31 @@ export default function SignatoryActivityPage() {
           {/* Standalone PVs */}
           {standalones.map(pv => <PVRow key={pv.id} pv={pv} />)}
         </div>
+      ))}
+
+      {/* ── "Submitted by me" list ────────────────────────────── */}
+      {viewMode === "mine" && (
+        <>
+          {!mineLoading && (
+            <p className="text-xs text-stone-400">
+              {(minePvs ?? []).filter(pv => matchesSearch(pv, search)).length} PV{(minePvs ?? []).filter(pv => matchesSearch(pv, search)).length !== 1 ? "s" : ""}
+            </p>
+          )}
+          {mineLoading || minePvs === null ? (
+            <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
+          ) : minePvs.filter(pv => matchesSearch(pv, search)).length === 0 ? (
+            <div className="text-center py-16 space-y-2">
+              <Layers size={28} className="text-stone-300 mx-auto" />
+              <p className="text-stone-400 text-sm font-medium">
+                {search ? "No results match your search" : "You haven't submitted any payment vouchers yet"}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {minePvs.filter(pv => matchesSearch(pv, search)).map(pv => <PVRow key={pv.id} pv={pv} />)}
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Revert PIN Modal ─────────────────────────────────── */}

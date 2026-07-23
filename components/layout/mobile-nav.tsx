@@ -97,7 +97,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
       items: [
         { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} />, show: !user.isSignatory },
         { href: "/submit",    label: "Submit PV", icon: <FilePlus size={17} />,        show: !user.isSignatory && !user.isBuildingManager },
-        { href: "/my-pvs",   label: "My PVs",    icon: <FileText size={17} />,        show: !user.isSignatory && !user.isBuildingManager },
+        { href: "/my-pvs",   label: "My PVs",    icon: <FileText size={17} />,        show: !user.isSignatory && !user.isBuildingManager && !user.isFinanceAdmin },
       ],
     },
     {
