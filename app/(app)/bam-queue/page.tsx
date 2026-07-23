@@ -104,7 +104,6 @@ export default function BamQueuePage() {
     (isFinanceAdmin && p.status === "FINANCE_REVIEW");
 
   const pendingPvs = pvs.filter(isPending);
-  const otherPvs = pvs.filter(p => !isPending(p));
 
   // BAM Committee approval requires a signature; BM/Finance Admin do not
   const needsSignature = isBamCommittee && actionType === "APPROVE" && actionPv?.status === "BAM_COMMITTEE_REVIEW";
@@ -190,16 +189,14 @@ export default function BamQueuePage() {
             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#4a6da7] text-white">BAM</span>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">(MAYBANK)</span>
           </div>
-          <p className="text-sm text-stone-400 mt-0.5">Building &amp; Event Manager — BAM payment vouchers</p>
+          <p className="text-sm text-stone-400 mt-0.5">Your pending BAM approvals — items waiting on your review only</p>
         </div>
-        {isBuildingManager && (
-          <Link
-            href="/submit?type=bam"
-            className="text-sm bg-[#4a6da7] text-white px-4 py-2 rounded-xl font-semibold hover:bg-[#3d5c96] transition-colors"
-          >
-            + Submit BAM PV
-          </Link>
-        )}
+        <Link
+          href="/my-bam-pvs"
+          className="text-sm border border-stone-200 text-stone-600 px-4 py-2 rounded-xl font-semibold hover:bg-stone-50 transition-colors whitespace-nowrap"
+        >
+          View BAM Activity
+        </Link>
       </div>
 
       {toast.msg && (
@@ -297,41 +294,15 @@ export default function BamQueuePage() {
 
       {(isBuildingManager || isFinanceAdmin || isBamCommittee) && pendingPvs.length === 0 && (
         <Card>
-          <CardBody className="py-8 text-center text-stone-400">
-            <CheckCircle size={32} className="mx-auto mb-2 text-green-400" />
+          <CardBody className="py-8 text-center text-stone-400 space-y-3">
+            <CheckCircle size={32} className="mx-auto text-green-400" />
             <div className="text-sm">No BAM PVs awaiting your review</div>
+            <Link href="/my-bam-pvs"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#4a6da7] hover:text-[#3d5c96] transition-colors">
+              <FileText size={14} /> View all BAM activity
+            </Link>
           </CardBody>
         </Card>
-      )}
-
-      {/* All BAM PVs history */}
-      {otherPvs.length > 0 && (
-        <div>
-          <h2 className="text-sm font-bold text-stone-700 mb-3 flex items-center gap-2">
-            <FileText size={14} /> All BAM PVs
-          </h2>
-          <div className="space-y-2">
-            {otherPvs.map(pv => (
-              <Link key={pv.id} href={`/my-pvs/${pv.id}`}>
-                <Card className="hover:border-[#4a6da7]/40 transition-colors cursor-pointer">
-                  <CardBody className="p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                          {statusBadge(pv.status)}
-                        </div>
-                        <div className="text-sm font-medium text-stone-700 truncate">{pv.payee_name}</div>
-                        <div className="text-xs text-stone-400">{pv.ministry} · {formatDate(pv.submitted_at)}</div>
-                      </div>
-                      <div className="text-sm font-bold text-stone-800 shrink-0">{formatCurrency(pv.amount)}</div>
-                    </div>
-                  </CardBody>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </div>
       )}
 
       {/* Action modal */}

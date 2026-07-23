@@ -129,7 +129,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
       label: "Building / Event",
       items: [
         { href: "/submit?type=bam",    label: "Submit BAM PV",  icon: <Hammer size={17} />,        show: !!user.isBuildingManager || user.isFinanceAdmin },
-        { href: "/my-bam-pvs",         label: "My BAM PVs",     icon: <FileText size={17} />,      show: !!user.isBuildingManager },
+        { href: "/my-bam-pvs",         label: "BAM Activity",   icon: <FileText size={17} />,      show: !!user.isBuildingManager },
         { href: "/bam-queue",          label: "BAM Queue",      icon: <Building2 size={17} />,     show: !!user.isBuildingManager || user.isFinanceAdmin || !!user.isBamCommittee },
         { href: "/recurring?type=bam", label: "BAM Recurring",  icon: <RefreshCw size={17} />,     show: !!user.isBuildingManager || user.isFinanceAdmin },
         { href: "/worksheets",         label: "Worksheets",     icon: <ClipboardList size={17} />, show: !!user.isBuildingManager || user.isFinanceAdmin },

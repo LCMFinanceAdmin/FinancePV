@@ -59,7 +59,7 @@ const NAV_SECTIONS = [
     label: "Building / Event",
     items: [
       { href: "/submit?type=bam",    label: "Submit BAM PV",       icon: <Hammer size={16} />,    show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
-      { href: "/my-bam-pvs",         label: "My BAM PVs",          icon: <FileText size={16} />,  show: (u: UserProfile) => u.isBuildingManager },
+      { href: "/my-bam-pvs",         label: "BAM Activity",        icon: <FileText size={16} />,  show: (u: UserProfile) => u.isBuildingManager },
       { href: "/bam-queue",          label: "BAM Queue",           icon: <Building2 size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin || !!u.isBamCommittee },
       { href: "/recurring?type=bam", label: "BAM Recurring",       icon: <RefreshCw size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
       { href: "/worksheets",         label: "Worksheets",          icon: <ClipboardList size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
