@@ -344,10 +344,11 @@ export default function IncomePage() {
   const canAdd = user && (user.isFinanceAdmin || user.isBuildingManager);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+    <div className="cloudlight-page max-w-5xl space-y-6">
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div>
+          <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Collections & income</div>
           <h1 className="text-2xl font-bold text-stone-800">Income Records</h1>
           <p className="text-sm text-stone-500 mt-0.5">Electricity, donations, and other income</p>
         </div>
@@ -369,7 +370,7 @@ export default function IncomePage() {
             const typeTotal = typeRecords.reduce((s, r) => s + Number(r.amount), 0);
             const cfg = TYPE_CONFIG[t];
             return (
-              <div key={t} className="bg-white rounded-2xl border border-stone-200 p-4">
+              <div key={t} className="cloudlight-card rounded-2xl p-4">
                 <div className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium mb-2 ${cfg.color}`}>
                   {cfg.icon} {cfg.label}
                 </div>
@@ -382,13 +383,13 @@ export default function IncomePage() {
       )}
 
       {/* Filter tabs */}
-      <div className="flex gap-1">
+      <div className="flex gap-1 rounded-2xl border border-[#dce9fb] bg-[#edf6ff] p-1.5">
         {(["ALL", "ELECTRICITY", "DONATION", "OTHER"] as Array<IncomeType | "ALL">).map(t => (
           <button
             key={t}
             onClick={() => setFilter(t)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              filter === t ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-100"
+              filter === t ? "bg-[#2563eb] text-white shadow-sm" : "text-stone-500 hover:bg-white hover:text-[#294a78]"
             }`}
           >
             {t === "ALL" ? "All" : TYPE_CONFIG[t as IncomeType].label}

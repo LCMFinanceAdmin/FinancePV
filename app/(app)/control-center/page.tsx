@@ -204,8 +204,9 @@ function ControlCenterInner() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
-    <div className="p-5 max-w-4xl mx-auto space-y-6">
+    <div className="cloudlight-page max-w-6xl space-y-6">
       <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Finance operations</p>
         <h1 className="text-xl font-bold text-stone-800">Control Center</h1>
         <p className="text-sm text-stone-400">Finance Executive — system overview and signatory management</p>
       </div>
@@ -232,12 +233,12 @@ function ControlCenterInner() {
             Manage Roles →
           </a>
         </div>
-        <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+        <div className="cloudlight-card overflow-hidden rounded-2xl">
           {MINISTRIES.map((ministry, idx) => {
             const assigned = ministryHeadMap[ministry] ?? [];
             const isAssigning = assigningMinistry === ministry;
             return (
-              <div key={ministry} className={idx < MINISTRIES.length - 1 ? "border-b border-stone-100" : ""}>
+              <div key={ministry} className={idx < MINISTRIES.length - 1 ? "border-b border-[#edf6ff]" : ""}>
                 {/* Main row */}
                 <div className="flex items-center justify-between px-4 py-2.5 gap-4">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -342,12 +343,12 @@ function ControlCenterInner() {
           </h2>
           <a href="/purchase-requests" className="text-xs text-[#4a6da7] hover:underline font-medium">View all →</a>
         </div>
-        <div className="flex gap-1 bg-stone-100 rounded-xl p-1 w-fit mb-3">
+        <div className="mb-3 flex w-fit gap-1 rounded-2xl border border-[#dbe9fb] bg-[#edf6ff] p-1.5">
           {(["submitted", "approved"] as const).map(t => {
             const count = prs.filter(p => p.status === t.toUpperCase()).length;
             return (
               <button key={t} onClick={() => setPrTab(t)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${prTab === t ? "bg-white text-stone-800 shadow-sm" : "text-stone-500"}`}>
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${prTab === t ? "bg-[#2563eb] text-white shadow-sm" : "text-stone-500 hover:bg-white"}`}>
                 {t === "submitted" ? "Awaiting Approval" : "Approved — Raise PV"}
                 {count > 0 && <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${t === "submitted" ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"}`}>{count}</span>}
               </button>
@@ -357,14 +358,14 @@ function ControlCenterInner() {
         {(() => {
           const filtered = prs.filter(p => p.status === (prTab === "submitted" ? "SUBMITTED" : "APPROVED"));
           if (filtered.length === 0) return (
-            <div className="text-sm text-stone-400 py-6 text-center bg-white border border-stone-200 rounded-xl">
+            <div className="cloudlight-card rounded-2xl py-6 text-center text-sm text-stone-400">
               {prTab === "submitted" ? "No purchase requests awaiting GM/Signatory approval" : "No approved requests ready to raise a PV"}
             </div>
           );
           return (
             <div className="space-y-2">
               {filtered.map(pr => (
-                <div key={pr.id} className="bg-white border border-stone-200 rounded-xl px-4 py-3">
+                <div key={pr.id} className="rounded-2xl border border-[#dbe9fb] bg-[#fbfdff] px-4 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -408,7 +409,7 @@ function ControlCenterInner() {
             { href: "/settings/signatories", label: "Manage Users",        desc: "Roles & approval PINs" },
             { href: "/budget",               label: "Ministry Budget",     desc: "View & manage budgets" },
           ].map((q) => (
-            <a key={q.href} href={q.href} className="block p-3 bg-white border border-stone-200 rounded-xl hover:border-[#4a6da7]/40 hover:shadow-sm transition-all">
+            <a key={q.href} href={q.href} className="block rounded-2xl border border-[#dbe9fb] bg-[#fbfdff] p-3 transition-all hover:border-[#75a8f2] hover:shadow-[0_10px_24px_rgba(41,87,149,0.1)]">
               <div className="text-sm font-semibold text-stone-700">{q.label}</div>
               <div className="text-xs text-stone-400 mt-0.5">{q.desc}</div>
             </a>

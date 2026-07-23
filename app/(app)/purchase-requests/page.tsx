@@ -157,7 +157,7 @@ export default function PurchaseRequestsPage() {
   }
 
   return (
-    <div className="p-5 max-w-3xl mx-auto space-y-4">
+    <div className="cloudlight-page max-w-5xl space-y-5">
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toastOk ? "bg-green-600" : "bg-red-500"}`}>
           {toast}
@@ -167,6 +167,7 @@ export default function PurchaseRequestsPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Requests & payments</p>
           <h1 className="text-xl font-bold text-stone-800">Purchase Requests</h1>
           <p className="text-sm text-stone-400">Submit quotation requests for GM/Signatory approval before Finance raises a PV</p>
         </div>
@@ -180,9 +181,12 @@ export default function PurchaseRequestsPage() {
 
       {/* Submit Form */}
       {showForm && (
-        <div className="bg-white border border-stone-200 rounded-2xl p-5 space-y-4 shadow-sm">
+        <div className="cloudlight-card rounded-3xl p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-bold text-stone-800">New Purchase Request</h2>
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Procurement</p>
+              <h2 className="font-bold text-stone-800">New Purchase Request</h2>
+            </div>
             <button onClick={() => setShowForm(false)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
           </div>
 
@@ -292,7 +296,7 @@ export default function PurchaseRequestsPage() {
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : prs.length === 0 ? (
-        <div className="text-center py-12 text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
+            <div className="cloudlight-card rounded-2xl py-12 text-center text-sm text-stone-400">
           No purchase requests yet. Click "New Request" to submit one.
         </div>
       ) : (
@@ -301,7 +305,7 @@ export default function PurchaseRequestsPage() {
             const isOpen = expanded.has(pr.id);
             const approval = pr.approvals?.[0];
             return (
-              <div key={pr.id} className="bg-white border border-stone-200 rounded-2xl overflow-hidden">
+              <div key={pr.id} className="cloudlight-card overflow-hidden rounded-2xl">
                 <div className="px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -364,7 +368,7 @@ export default function PurchaseRequestsPage() {
 
                 {/* Expanded details */}
                 {isOpen && (
-                  <div className="border-t border-stone-100 px-4 py-3 bg-stone-50 space-y-3">
+                  <div className="space-y-3 border-t border-[#dbe9fb] bg-[#f4f9ff] px-4 py-3">
                     {pr.purpose && (
                       <div>
                         <div className="text-xs font-medium text-stone-500 mb-1">Purpose</div>

@@ -366,7 +366,7 @@ function BudgetInner() {
   }
 
   return (
-    <div className="p-5 max-w-5xl mx-auto space-y-6">
+    <div className="cloudlight-page max-w-6xl space-y-6">
       {/* Toast */}
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
@@ -376,7 +376,8 @@ function BudgetInner() {
 
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-stone-800">Ministry Budget</h1>
+        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Stewardship overview</div>
+        <h1 className="text-2xl font-bold text-stone-800">Ministry Budget</h1>
         <p className="text-sm text-stone-400">
           {canDirectEdit
             ? "Manage budgets across all ministries"
@@ -387,7 +388,7 @@ function BudgetInner() {
       </div>
 
       {/* Ministry tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
         {visibleMinistries.map(m => (
           <button
             key={m}
@@ -395,7 +396,7 @@ function BudgetInner() {
             className={`shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
               selectedMinistry === m
                 ? "bg-[#4a6da7] text-white shadow-sm"
-                : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                : "bg-white/80 border border-[#dce9fb] text-stone-600 hover:bg-[#edf6ff]"
             }`}
           >
             {m}
@@ -459,7 +460,7 @@ function BudgetInner() {
           )}
 
           {/* Budget Items Card */}
-          <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+          <div className="cloudlight-card rounded-2xl overflow-hidden">
             {/* Card header */}
             <div className="px-5 py-4 flex items-center justify-between border-b border-stone-100">
               <div>
@@ -483,7 +484,7 @@ function BudgetInner() {
             ) : (
               <>
                 {/* Summary row */}
-                <div className="grid grid-cols-5 divide-x divide-stone-100 border-b border-stone-100 bg-stone-50/50">
+                <div className="grid grid-cols-5 divide-x divide-[#e3edf9] border-b border-[#e3edf9] bg-[#f5f9ff]">
                   <div className="px-4 py-3 text-center">
                     <div className="text-xs text-stone-400 mb-0.5">Total Budget</div>
                     <div className="text-sm font-bold text-stone-700">{formatCurrency(totalBudget)}</div>

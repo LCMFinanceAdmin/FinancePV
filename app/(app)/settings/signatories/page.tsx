@@ -79,9 +79,10 @@ export default function SignatoriesPage() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
-    <div className="p-5 max-w-2xl mx-auto space-y-5">
+    <div className="cloudlight-page max-w-5xl space-y-6">
       <div className="flex justify-between items-start">
         <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
           <h1 className="text-xl font-bold text-stone-800">Signatories & Roles</h1>
           <p className="text-sm text-stone-400">Manage who can access and approve in the system</p>
         </div>
@@ -176,7 +177,7 @@ export default function SignatoriesPage() {
         ))}
       </div>
 
-      <div className="text-xs text-stone-400 bg-stone-50 rounded-xl p-4">
+      <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
         <strong>How approval PINs work:</strong> Signatories and EXCO Members use a 6-digit PIN as a second confirmation when approving or verifying PVs. Finance Executives set PINs for signatories here. EXCO Members set their own PIN from their EXCO Queue page.
       </div>
     </div>
@@ -212,8 +213,8 @@ function PinSetupModal({ userId, email, onClose, showToast }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 px-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-sm space-y-4 rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
         <div>
           <h2 className="text-base font-bold text-stone-800">Set Approval PIN</h2>
           <p className="text-xs text-stone-400 mt-0.5">For {email}</p>

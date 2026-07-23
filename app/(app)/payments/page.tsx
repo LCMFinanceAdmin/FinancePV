@@ -163,7 +163,7 @@ export default function PaymentsPage() {
   }, 0);
 
   return (
-    <div className="p-5 max-w-4xl mx-auto space-y-4">
+    <div className="cloudlight-page max-w-6xl space-y-5">
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toastOk ? "bg-green-600" : "bg-red-500"}`}>
           {toast}
@@ -171,15 +171,16 @@ export default function PaymentsPage() {
       )}
 
       <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Treasury workspace</p>
         <h1 className="text-xl font-bold text-stone-800">Payments</h1>
         <p className="text-sm text-stone-400">Manage approved PVs awaiting payment and track payment history</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-stone-100 rounded-xl p-1 w-fit">
+      <div className="flex w-fit gap-1 rounded-2xl border border-[#dbe9fb] bg-[#edf6ff] p-1.5">
         {(["pending", "history"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"}`}>
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === t ? "bg-[#2563eb] text-white shadow-sm" : "text-stone-500 hover:bg-white hover:text-stone-700"}`}>
             {t === "pending" ? `Pending Payment${approved.length > 0 ? ` (${approved.length})` : ""}` : "Payment History"}
           </button>
         ))}
@@ -189,7 +190,7 @@ export default function PaymentsPage() {
       {tab === "pending" && (
         <div className="space-y-3">
           {checkedIds.size > 0 && (
-            <div className="flex items-center justify-between bg-[#4a6da7]/5 border border-[#4a6da7]/20 rounded-xl px-4 py-3">
+            <div className="flex items-center justify-between rounded-2xl border border-[#cfe0fb] bg-[#edf6ff] px-4 py-3">
               <div className="text-sm text-stone-700">
                 <span className="font-semibold">{checkedIds.size}</span> PVs selected · Total: <span className="font-bold text-[#4a6da7]">{formatCurrency(totalSelected)}</span>
               </div>
@@ -212,7 +213,7 @@ export default function PaymentsPage() {
           {loadingApproved ? (
             <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
           ) : approved.length === 0 ? (
-            <div className="text-center py-12 text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
+            <div className="cloudlight-card rounded-2xl py-12 text-center text-sm text-stone-400">
               No approved PVs awaiting payment
             </div>
           ) : (
@@ -223,7 +224,7 @@ export default function PaymentsPage() {
                   <div key={pv.id} className="flex items-center gap-3">
                     <input type="checkbox" className="accent-[#4a6da7] w-4 h-4 cursor-pointer shrink-0"
                       checked={isChecked} onChange={() => toggleOne(pv.id!)} />
-                    <div className={`flex-1 bg-white border rounded-2xl px-4 py-3 ${isChecked ? "border-[#4a6da7]/50 bg-[#4a6da7]/5" : "border-stone-200"}`}>
+                    <div className={`flex-1 rounded-2xl border px-4 py-3 shadow-[0_8px_24px_rgba(41,87,149,0.06)] ${isChecked ? "border-[#75a8f2] bg-[#edf6ff]" : "border-[#dbe9fb] bg-white"}`}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -254,7 +255,7 @@ export default function PaymentsPage() {
       {tab === "history" && (
         <div className="space-y-3">
           {/* Filters */}
-          <div className="bg-white border border-stone-200 rounded-2xl p-4 space-y-3">
+          <div className="cloudlight-card rounded-2xl p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-stone-700">
               <Filter size={14} /> Filters
             </div>
@@ -296,7 +297,7 @@ export default function PaymentsPage() {
                 { label: "Total Paid Out", value: formatCurrency(paid.reduce((s, p) => s + (p.amount ?? 0), 0)) },
                 { label: "Ministries", value: [...new Set(paid.map(p => p.ministry).filter(Boolean))].length.toString() },
               ].map(s => (
-                <div key={s.label} className="bg-white border border-stone-200 rounded-xl p-3 text-center">
+                <div key={s.label} className="rounded-2xl border border-[#dbe9fb] bg-[#fbfdff] p-3 text-center">
                   <div className="text-lg font-bold text-stone-800">{s.value}</div>
                   <div className="text-xs text-stone-400">{s.label}</div>
                 </div>
@@ -307,13 +308,13 @@ export default function PaymentsPage() {
           {loadingPaid ? (
             <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
           ) : paid.length === 0 ? (
-            <div className="text-center py-12 text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
+            <div className="cloudlight-card rounded-2xl py-12 text-center text-sm text-stone-400">
               No payment records found
             </div>
           ) : (
             <div className="space-y-2">
               {paid.map(pv => (
-                <div key={pv.id} className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
+                <div key={pv.id} className="cloudlight-card rounded-2xl px-4 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -349,8 +350,8 @@ export default function PaymentsPage() {
 
       {/* Mark as Paid Modal */}
       {payModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 px-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md space-y-4 rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-5 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-base font-bold text-green-700">Mark {checkedIds.size} PV{checkedIds.size > 1 ? "s" : ""} as Paid</div>

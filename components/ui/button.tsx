@@ -10,12 +10,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = "primary", size = "md", loading, disabled, children, ...props }, ref) => {
-    const base = "inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed";
+    const base = "inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed";
     const variants = {
-      primary:   "bg-[#4a6da7] hover:bg-[#3a5a8f] text-white focus:ring-[#4a6da7]",
-      secondary: "bg-white border border-stone-300 hover:bg-stone-50 text-stone-700 focus:ring-stone-300",
-      ghost:     "hover:bg-stone-100 text-stone-700 focus:ring-stone-200",
-      danger:    "bg-red-600 hover:bg-red-700 text-white focus:ring-red-500",
+      primary:   "bg-[#2563eb] hover:bg-[#1d4ed8] text-white shadow-[0_8px_18px_rgba(37,99,235,.22)] focus:ring-[#60a5fa]",
+      secondary: "bg-white/90 border border-[#d5e5fb] hover:bg-sky-50 text-[#294a78] shadow-sm focus:ring-[#bfdbfe]",
+      ghost:     "hover:bg-sky-50 text-[#496582] focus:ring-[#dbeafe]",
+      danger:    "bg-rose-500 hover:bg-rose-600 text-white shadow-[0_8px_18px_rgba(244,63,94,.18)] focus:ring-rose-300",
     };
     const sizes = {
       sm: "text-xs px-3 py-1.5",

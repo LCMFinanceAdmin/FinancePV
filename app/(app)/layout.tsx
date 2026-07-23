@@ -50,10 +50,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const ministryList = (ministriesData ?? []).map((m: { name: string }) => m.name);
 
   return (
-    <div className="flex h-full print:block print:h-auto">
+    <div className="cloudlight-app flex h-full print:block print:h-auto">
       <PushSetup />
       <Sidebar user={user} ministryList={ministryList} />
-      <main className="flex-1 overflow-y-auto pb-20 md:pb-0 print:overflow-visible print:flex-none print:h-auto">
+      <main className="cloudlight-main flex-1 overflow-y-auto pb-20 md:pb-0 print:overflow-visible print:flex-none print:h-auto">
         {children}
       </main>
       <MobileNav user={user} ministryList={ministryList} />

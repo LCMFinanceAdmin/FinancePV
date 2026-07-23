@@ -18,6 +18,7 @@ const ROLES = [
   { value: "BAM_COMMITTEE",    label: "BAM Committee PIC",      color: "bg-orange-100 text-orange-800 border-orange-200" },
   { value: "STAFF",            label: "Staff",                  color: "bg-stone-100 text-stone-600 border-stone-200" },
 ];
+type Role = (typeof ROLES)[number]["value"];
 
 const PIN_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER", "MINISTRY_HEAD"];
 
@@ -59,15 +60,20 @@ export default function SwitchRolePage() {
         }
         setEmail(user.email ?? "");
 
-        const [{ data: profile }, { data: mins }] = await Promise.all([
-          supabase.from("user_roles").select("role,ministries,has_pin").eq("email", user.email).single(),
+        const [{ data: security }, { data: mins }] = await Promise.all([
+          supabase.rpc("get_my_security_context").single(),
           supabase.from("ministries").select("name").order("name"),
         ]);
 
-        setCurrentRole(profile?.role ?? "STAFF");
-        setHasPin(profile?.has_pin ?? false);
-        setSelectedRole(profile?.role ?? "STAFF");
-        setSelectedMinistries(profile?.ministries ?? []);
+        const securityContext = security as {
+          role?: Role;
+          has_pin?: boolean;
+          ministries?: string[];
+        } | null;
+        setCurrentRole(securityContext?.role ?? "STAFF");
+        setHasPin(securityContext?.has_pin ?? false);
+        setSelectedRole(securityContext?.role ?? "STAFF");
+        setSelectedMinistries(securityContext?.ministries ?? []);
         setMinistries((mins ?? []).map((m: { name: string }) => m.name));
       } finally {
         setLoading(false);
@@ -130,7 +136,7 @@ export default function SwitchRolePage() {
   const needsPin = PIN_ROLES.includes(selectedRole) && selectedRole !== "GENERAL_MANAGER";
 
   return (
-    <div className="p-5 max-w-lg mx-auto space-y-5">
+    <div className="cloudlight-page max-w-3xl space-y-6">
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toastOk ? "bg-green-600" : "bg-red-500"}`}>
           {toast}
@@ -138,8 +144,9 @@ export default function SwitchRolePage() {
       )}
 
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-xl">🧪</div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#dbe9fb] bg-[#eaf3ff] text-xl">🧪</div>
         <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
           <h1 className="text-xl font-bold text-stone-800">Test Role Switcher</h1>
           <p className="text-sm text-stone-400">
             Currently: <strong className="text-[#4a6da7]">{currentLabel}</strong>
@@ -156,7 +163,7 @@ export default function SwitchRolePage() {
             onClick={() => { setSelectedRole(r.value); setSelectedMinistries([]); }}
             className={`py-3 px-4 rounded-xl text-sm font-medium border-2 transition-all text-left ${
               selectedRole === r.value
-                ? "border-amber-400 bg-amber-50 text-amber-900 shadow-sm"
+                ? "border-[#75a8f2] bg-[#edf6ff] text-[#16335e] shadow-sm"
                 : "border-stone-200 text-stone-600 hover:border-stone-300 bg-white"
             }`}
           >
@@ -173,8 +180,8 @@ export default function SwitchRolePage() {
 
       {/* Ministry selection for EXCO */}
       {selectedRole === "MINISTRY_HEAD" && ministries.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
-          <div className="text-xs font-semibold text-amber-800 uppercase tracking-wider">Assign Ministries</div>
+        <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 space-y-3">
+          <div className="text-xs font-semibold uppercase tracking-wider text-[#3566a8]">Assign Ministries</div>
           <div className="grid grid-cols-2 gap-y-2 gap-x-4">
             {ministries.map(m => (
               <label key={m} className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">

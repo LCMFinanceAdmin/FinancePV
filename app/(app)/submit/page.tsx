@@ -255,7 +255,10 @@ export default function SubmitPVPage() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("user_roles").select("full_name,role,ministries,saved_signature").eq("email", user.email).single().then(({ data: profile }) => {
+      Promise.all([
+        supabase.from("user_roles").select("full_name,role,ministries").eq("email", user.email).single(),
+        supabase.rpc("get_my_security_context").single(),
+      ]).then(([{ data: profile }, { data: security }]) => {
         const role = profile?.role ?? "";
         setUserRole(role);
         setUserMinistries(profile?.ministries ?? []);
@@ -274,9 +277,13 @@ export default function SubmitPVPage() {
           setPvType("LCM");
           setTypeRestricted(true);
         }
-        if (isFA && profile?.saved_signature) {
-          setSavedSig(profile.saved_signature);
-          setFinSigData(profile.saved_signature);
+        const securityContext = security as {
+          saved_signatures?: Record<string, string> | null;
+        } | null;
+        const roleSig = securityContext?.saved_signatures?.[role] ?? "";
+        if (isFA && roleSig) {
+          setSavedSig(roleSig);
+          setFinSigData(roleSig);
         }
         setForm(f => ({
           ...f,
@@ -643,7 +650,10 @@ export default function SubmitPVPage() {
       if (isFinanceAdmin && finSigData && saveSigForNext) {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (authUser?.email) {
-          await supabase.from("user_roles").update({ saved_signature: finSigData }).eq("email", authUser.email);
+          await supabase.rpc("save_my_role_signature", {
+            signature_role: userRole,
+            signature_data: finSigData,
+          });
           setSavedSig(finSigData);
         }
       }

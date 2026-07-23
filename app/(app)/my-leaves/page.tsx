@@ -179,10 +179,11 @@ export default function MyLeavesPage() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
-    <div className="p-5 max-w-2xl mx-auto space-y-5">
+    <div className="cloudlight-page max-w-5xl space-y-6">
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Staff services</p>
           <h1 className="text-xl font-bold text-stone-800">My Leave</h1>
           <p className="text-sm text-stone-400">{year} leave summary for {userName}</p>
         </div>
@@ -198,11 +199,11 @@ export default function MyLeavesPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1.5">
+      <div className="flex w-fit gap-1 rounded-2xl border border-[#dbe9fb] bg-[#edf6ff] p-1.5">
         {(["balance", "pending", "history"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors capitalize ${
-              tab === t ? "bg-[#4a6da7] text-white" : "bg-white border border-stone-200 text-stone-600 hover:bg-stone-50"
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors capitalize ${
+              tab === t ? "bg-[#2563eb] text-white shadow-sm" : "text-stone-600 hover:bg-white"
             }`}>
             {t === "pending" ? `Pending (${pending.length})` : t === "history" ? "History" : "Balance"}
           </button>
@@ -234,8 +235,8 @@ export default function MyLeavesPage() {
                   </div>
                   {bal.entitlement > 0 && (
                     <div className="mt-2">
-                      <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-[#4a6da7] rounded-full transition-all" style={{ width: `${pct}%` }} />
+                      <div className="h-1.5 bg-[#eaf3ff] rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-[#60a5fa] to-[#818cf8] rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
                       <div className="flex justify-between text-xs text-stone-400 mt-1">
                         <span>{bal.used} used</span>
@@ -281,10 +282,13 @@ export default function MyLeavesPage() {
 
       {/* ── Apply Modal ── */}
       {showApply && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md space-y-4 p-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/35 p-4 backdrop-blur-[2px] sm:items-center">
+          <div className="w-full max-w-md max-h-[90vh] space-y-4 overflow-y-auto rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <div className="flex justify-between items-center">
-              <h2 className="text-base font-bold text-stone-800">Apply for Leave</h2>
+              <div>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Staff services</p>
+                <h2 className="text-base font-bold text-stone-800">Apply for Leave</h2>
+              </div>
               <button onClick={() => setShowApply(false)} className="text-stone-400 hover:text-stone-600">
                 <X size={18} />
               </button>
@@ -368,7 +372,7 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling }: {
 }) {
   const type = leaveTypes.find(t => t.code === app.leave_type_code);
   return (
-    <div className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 space-y-2">
+    <div className="cloudlight-card rounded-2xl px-4 py-3.5 space-y-2">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 flex-wrap">

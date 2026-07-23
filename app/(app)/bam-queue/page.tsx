@@ -180,9 +180,10 @@ export default function BamQueuePage() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-6">
+    <div className="cloudlight-page max-w-5xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
+          <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Building & event</div>
           <div className="flex items-center gap-2">
             <Building2 size={20} className="text-[#4a6da7]" />
             <h1 className="text-xl font-bold text-stone-800">BAM Queue</h1>
@@ -207,7 +208,7 @@ export default function BamQueuePage() {
 
       {/* BAM Committee management panel — Finance Admin / Building Manager only */}
       {(isBuildingManager || isFinanceAdmin) && (
-        <div className="bg-white border border-stone-200 rounded-xl p-4">
+        <div className="cloudlight-card rounded-2xl p-5">
           <h2 className="text-sm font-bold text-stone-700 mb-1">BAM Committee Members</h2>
           <p className="text-xs text-stone-400 mb-3">
             Assign who verifies BAM PVs. Non-LCM emails use magic link login.
