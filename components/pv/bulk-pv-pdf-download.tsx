@@ -206,9 +206,11 @@ function BatchSummaryDocument({
                 </View>
                 <View style={{ width: COL.sig, padding: "4pt 6pt", borderRight: "1pt solid #000", overflow: "hidden" }}>
                   <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>General Manager</Text>
-                  {gm?.signature_data
-                    ? <Image src={gm.signature_data} style={{ height: 22, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
-                    : <View style={{ height: 22 }} />}
+                  <View style={{ height: 22, marginBottom: 2, position: "relative" }}>
+                    {gm?.signature_data && (
+                      <Image src={gm.signature_data} style={{ position: "absolute", top: 0, left: 0, width: COL.sig - 12, height: 22, objectFit: "contain" }} />
+                    )}
+                  </View>
                   <View style={{ borderTop: "0.5pt solid #000", paddingTop: 2 }}>
                     <Text style={st.tiny}>Name: <Text style={st.bold}>{gm?.name ?? ""}</Text></Text>
                     <View style={{ borderBottom: "0.5pt solid #aaa", height: 1, marginBottom: 1 }} />
@@ -218,9 +220,11 @@ function BatchSummaryDocument({
                 </View>
                 <View style={{ width: COL.sig, padding: "4pt 6pt", overflow: "hidden" }}>
                   <Text style={[st.tiny, { color: "#555", marginBottom: 2 }]}>Signatory</Text>
-                  {sa?.signature_data
-                    ? <Image src={sa.signature_data} style={{ height: 22, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
-                    : <View style={{ height: 22 }} />}
+                  <View style={{ height: 22, marginBottom: 2, position: "relative" }}>
+                    {sa?.signature_data && (
+                      <Image src={sa.signature_data} style={{ position: "absolute", top: 0, left: 0, width: COL.sig - 12, height: 22, objectFit: "contain" }} />
+                    )}
+                  </View>
                   <View style={{ borderTop: "0.5pt solid #000", paddingTop: 2 }}>
                     <Text style={st.tiny}>Name: <Text style={st.bold}>{sa?.name ?? ""}</Text></Text>
                     <View style={{ borderBottom: "0.5pt solid #aaa", height: 1, marginBottom: 1 }} />
@@ -256,9 +260,11 @@ function BatchSummaryDocument({
         {/* ── Finance signature ── */}
         <View style={{ marginTop: 12, overflow: "hidden" }}>
           <Text style={[st.bold, st.small, { marginBottom: 3 }]}>Prepared by (Finance Executive):</Text>
-          {finSigData
-            ? <Image src={finSigData} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
-            : <View style={{ height: 40 }} />}
+          <View style={{ height: 40, position: "relative" }}>
+            {finSigData && (
+              <Image src={finSigData} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
+            )}
+          </View>
           <View style={[st.borderT, { paddingTop: 3, flexDirection: "row", gap: 30 }]}>
             <Text style={st.tiny}>Name: <Text style={st.bold}>{runByName || run.run_by}</Text></Text>
             <Text style={st.tiny}>Date: <Text style={st.bold}>{fmtDate(run.run_date)}</Text></Text>
@@ -401,9 +407,11 @@ function MasterCoverPage({
             </View>
             {/* GM sig — shows digital sig if signed, blank lines if not */}
             <View style={{ width: MC.sig, padding: "4pt 6pt", borderRight: "1pt solid #000", overflow: "hidden" }}>
-              {gmApproval?.signature_data
-                ? <Image src={gmApproval.signature_data} style={{ height: 28, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
-                : <View style={{ flex: 1 }} />}
+              <View style={{ height: 28, marginBottom: 2, position: "relative" }}>
+                {gmApproval?.signature_data && (
+                  <Image src={gmApproval.signature_data} style={{ position: "absolute", top: 0, left: 0, width: MC.sig - 12, height: 28, objectFit: "contain" }} />
+                )}
+              </View>
               <View style={{ borderTop: "0.5pt solid #aaa", paddingTop: 3 }}>
                 <Text style={st.tiny}>Name: <Text style={st.bold}>{gmApproval?.name ?? "_______________________"}</Text></Text>
                 <View style={{ height: 3 }} />
@@ -412,9 +420,11 @@ function MasterCoverPage({
             </View>
             {/* Signatory sig — shows digital sig if signed, blank lines if not */}
             <View style={{ width: MC.sig, padding: "4pt 6pt", overflow: "hidden" }}>
-              {sigApproval?.signature_data
-                ? <Image src={sigApproval.signature_data} style={{ height: 28, objectFit: "contain", objectPositionX: "left", marginBottom: 2 }} />
-                : <View style={{ flex: 1 }} />}
+              <View style={{ height: 28, marginBottom: 2, position: "relative" }}>
+                {sigApproval?.signature_data && (
+                  <Image src={sigApproval.signature_data} style={{ position: "absolute", top: 0, left: 0, width: MC.sig - 12, height: 28, objectFit: "contain" }} />
+                )}
+              </View>
               <View style={{ borderTop: "0.5pt solid #aaa", paddingTop: 3 }}>
                 <Text style={st.tiny}>Name: <Text style={st.bold}>{sigApproval?.name ?? "_______________________"}</Text></Text>
                 <View style={{ height: 3 }} />
@@ -447,9 +457,11 @@ function MasterCoverPage({
       {/* ── Finance signature ── */}
       <View style={{ marginTop: 12, overflow: "hidden" }}>
         <Text style={[st.bold, st.small, { marginBottom: 3 }]}>Prepared by (Finance Executive):</Text>
-        {finSigData
-          ? <Image src={finSigData} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
-          : <View style={{ height: 40 }} />}
+        <View style={{ height: 40, position: "relative" }}>
+          {finSigData && (
+            <Image src={finSigData} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
+          )}
+        </View>
         <View style={[st.borderT, { paddingTop: 3, flexDirection: "row", gap: 30 }]}>
           <Text style={st.tiny}>Name: <Text style={st.bold}>{runByName || run.run_by}</Text></Text>
           <Text style={st.tiny}>Date: <Text style={st.bold}>{fmtDate(run.run_date)}</Text></Text>

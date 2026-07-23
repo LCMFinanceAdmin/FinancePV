@@ -69,11 +69,11 @@ function SigBox({ approval, label, subtitle }: { approval?: PVApproval; label: s
         <Text style={[s.bold, s.tiny]}>{label}</Text>
         {subtitle ? <Text style={s.tiny}>{subtitle}</Text> : null}
       </View>
-      {approval?.signature_data ? (
-        <Image src={approval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
-      ) : (
-        <View style={{ height: 40 }} />
-      )}
+      <View style={{ height: 40, position: "relative" }}>
+        {approval?.signature_data ? (
+          <Image src={approval.signature_data} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
+        ) : null}
+      </View>
       <View style={[s.borderT, { paddingTop: 3 }]}>
         {approval ? (
           <>
@@ -262,11 +262,11 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
             <View style={[s.border, { flex: 1, padding: "6pt 8pt", borderRight: "none", overflow: "hidden" }]}>
               <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Payment Raised by:</Text>
               <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(Building / Event Manager)</Text>
-              {bmApproval?.signature_data ? (
-                <Image src={bmApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
-              ) : (
-                <View style={{ height: 40 }} />
-              )}
+              <View style={{ height: 40, position: "relative" }}>
+                {bmApproval?.signature_data ? (
+                  <Image src={bmApproval.signature_data} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
+                ) : null}
+              </View>
               <View style={[s.borderT, { paddingTop: 3 }]}>
                 <Text style={[s.bold, s.tiny]}>{bmApproval?.name ?? pv.submitted_by ?? ""}</Text>
                 <Text style={s.tiny}>Date: {fmtDate(bmApproval?.timestamp ?? pv.submitted_at)}</Text>
@@ -275,11 +275,11 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
             <View style={[s.border, { flex: 1, padding: "6pt 8pt", overflow: "hidden" }]}>
               <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by:</Text>
               <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(BAM Committee)</Text>
-              {committeeApproval?.signature_data ? (
-                <Image src={committeeApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
-              ) : (
-                <View style={{ height: 40 }} />
-              )}
+              <View style={{ height: 40, position: "relative" }}>
+                {committeeApproval?.signature_data ? (
+                  <Image src={committeeApproval.signature_data} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
+                ) : null}
+              </View>
               <View style={[s.borderT, { paddingTop: 3 }]}>
                 {committeeApproval ? (
                   <>
@@ -298,11 +298,11 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
         {!isBamPV && showApplicantSig && (
           <View style={[s.border, { marginTop: 8, padding: "6pt 8pt", overflow: "hidden" }]}>
             <Text style={[s.bold, s.tiny, { marginBottom: 3 }]}>{"Applicant's Signature:"}</Text>
-            {pv.applicant_signature_data ? (
-              <Image src={pv.applicant_signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
-            ) : (
-              <View style={{ height: 40 }} />
-            )}
+            <View style={{ height: 40, position: "relative" }}>
+              {pv.applicant_signature_data ? (
+                <Image src={pv.applicant_signature_data} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
+              ) : null}
+            </View>
             <View style={[s.borderT, { paddingTop: 3 }]}>
               <Text style={s.tiny}>Name: <Text style={s.bold}>{pv.sig_applicant_name || pv.applicant_name}</Text>    Date: {fmtDate(pv.submitted_at)}</Text>
             </View>
@@ -314,11 +314,11 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
           <View style={[s.border, { marginTop: 6, padding: "6pt 8pt", overflow: "hidden" }]}>
             <Text style={[s.bold, s.tiny, { marginBottom: 1 }]}>Verified by:</Text>
             <Text style={[s.tiny, { color: "#555", marginBottom: 4 }]}>(By EXCO Member / Dept Head in Charge)</Text>
-            {excoApproval?.signature_data ? (
-              <Image src={excoApproval.signature_data} style={{ height: 40, objectFit: "contain", objectPositionX: "left" }} />
-            ) : (
-              <View style={{ height: 40 }} />
-            )}
+            <View style={{ height: 40, position: "relative" }}>
+              {excoApproval?.signature_data ? (
+                <Image src={excoApproval.signature_data} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
+              ) : null}
+            </View>
             <View style={[s.borderT, { paddingTop: 3 }]}>
               {ministryVerified ? (
                 <>
@@ -367,11 +367,11 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
                     const appr = sigApprovals[i];
                     return (
                       <View key={i} style={{ flex: 1, alignItems: "center", paddingHorizontal: 2, overflow: "hidden" }}>
-                        {appr?.signature_data ? (
-                          <Image src={appr.signature_data} style={{ height: 40, width: "100%", objectFit: "contain" }} />
-                        ) : (
-                          <View style={{ height: 40 }} />
-                        )}
+                        <View style={{ height: 40, width: "100%", position: "relative" }}>
+                          {appr?.signature_data ? (
+                            <Image src={appr.signature_data} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 40, objectFit: "contain" }} />
+                          ) : null}
+                        </View>
                         <View style={[s.borderT, { paddingTop: 3, width: "100%", alignItems: "center" }]}>
                           {appr ? (
                             <>

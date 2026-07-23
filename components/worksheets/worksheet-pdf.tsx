@@ -50,35 +50,36 @@ const s = StyleSheet.create({
 // every entry row, so nothing can drift out of alignment between them.
 const COL = { date: 2.1, time: 1.9, hours: 1, purpose: 2.6 };
 
+// The signature <Image> must sit in its own position:"absolute" layer
+// inside a fixed-size position:"relative" wrapper — never directly in
+// the normal flex flow alongside Text siblings. Confirmed via a real
+// browser reproduction (dumping the generated PDF's content stream)
+// that an Image sharing a flex column with Text nodes above/below it
+// makes react-pdf's Yoga layout emit a garbage translate value (in the
+// hundreds of millions) for the image's placement matrix — that's what
+// rendered as a blocked/distorted signature area. Giving the Image an
+// explicit width alone did not fix it; only removing it from flex flow
+// via absolute positioning did.
 function SigBox({ label, signature, signedBy, signedAt }: { label: string; signature?: string | null; signedBy?: string | null; signedAt?: string | null }) {
-  const signed = !!signature;
   return (
-    <View style={{ flex: 1, padding: "8pt 10pt" }}>
-      {/* Label and the "Signed" tag stack rather than sit side-by-side — a
-          longer label (e.g. "Verified by — Building/Event Manager") has no
-          room to collide with anything else regardless of its length. */}
-      <View style={{ marginBottom: 6 }}>
+    <View style={{ flex: 1, padding: "6pt 8pt" }}>
+      <View style={{ borderBottom: "0.8pt solid #1f2937", paddingBottom: 2, marginBottom: 4 }}>
         <Text style={[s.bold, s.tiny]}>{label}</Text>
-        {signed && <Text style={[s.tiny, { color: "#15803d", marginTop: 1 }]}>✓ Signed</Text>}
       </View>
-      <View style={{
-        height: 46, borderRadius: 3, padding: "5pt 6pt", overflow: "hidden",
-        border: signed ? "0.8pt solid #d1d5db" : "0.8pt dashed #d1d5db",
-        backgroundColor: signed ? "#fff" : "#fafafa",
-      }}>
-        {signed ? (
-          // No wrapping flex-alignment on this box — an Image given only a
-          // height (no explicit width) can collapse to zero width when its
-          // parent applies alignItems/justifyContent, so it's given a fixed
-          // width here instead of relying on auto-sizing from aspect ratio.
-          <Image src={signature!} style={{ width: 150, height: 34, objectFit: "contain", objectPositionX: "left" }} />
+      <View style={{ height: 40, position: "relative" }}>
+        {signature ? (
+          <Image src={signature} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
+        ) : null}
+      </View>
+      <View style={{ borderTop: "0.8pt solid #1f2937", paddingTop: 3 }}>
+        {signedBy ? (
+          <>
+            <Text style={[s.bold, s.tiny]}>{signedBy}</Text>
+            <Text style={[s.tiny, s.muted]}>{signedAt ? `Signed: ${fmtDateTime(signedAt)}` : ""}</Text>
+          </>
         ) : (
-          <Text style={[s.tiny, s.muted, { marginTop: 12 }]}>Pending signature</Text>
+          <Text style={[s.tiny, s.muted]}>Pending signature</Text>
         )}
-      </View>
-      <View style={{ marginTop: 6 }}>
-        <Text style={[s.small, s.bold]}>{signedBy || "—"}</Text>
-        <Text style={[s.tiny, s.muted, { marginTop: 1 }]}>{signedAt ? `Signed ${fmtDateTime(signedAt)}` : "Awaiting signature"}</Text>
       </View>
     </View>
   );
