@@ -39,13 +39,45 @@ const splashScript = `
 })();
 `;
 
+const updateBannerStyles = `
+  #lcm-update-banner{position:fixed;left:0;right:0;bottom:0;z-index:10000;display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 16px;background:#173a72;color:#fff;font:600 13px/1.3 Arial,Helvetica,sans-serif;transform:translateY(100%);transition:transform .3s ease;box-shadow:0 -2px 10px rgba(0,0,0,.15)}
+  #lcm-update-banner.show{transform:translateY(0)}
+  #lcm-update-banner button{font:inherit;border:none;border-radius:6px;padding:6px 14px;cursor:pointer}
+  #lcm-update-refresh{background:#60a5fa;color:#0b1f3f}
+  #lcm-update-dismiss{background:transparent;color:#cbd8ef}
+`;
+
+// The service worker uses skipWaiting()+clients.claim() (see public/sw.js), so
+// a freshly deployed version takes control of the page almost immediately —
+// but that only affects future network requests. Any component code already
+// imported into this tab's memory stays on the old version until the page
+// actually reloads, which a client-side route change never triggers. Without
+// this, a user who keeps a tab (or the installed PWA) open across a deploy
+// can end up running stale code indefinitely with no way to tell.
+const updateScript = `
+(function(){
+  if(!('serviceWorker' in navigator))return;
+  navigator.serviceWorker.register('/sw.js').then(function(reg){
+    function showBanner(){
+      var b=document.getElementById('lcm-update-banner');
+      if(b)b.classList.add('show');
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', showBanner);
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState==='visible')reg.update().catch(function(){});
+    });
+  }).catch(function(){});
+})();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full">
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <style dangerouslySetInnerHTML={{ __html: splashStyles }} />
-        <script dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js');` }} />
+        <style dangerouslySetInnerHTML={{ __html: updateBannerStyles }} />
+        <script dangerouslySetInnerHTML={{ __html: updateScript }} />
       </head>
       <body className="h-full bg-[#f5f9ff] text-[#16335e] antialiased font-[Arial,Helvetica,sans-serif]">
 
@@ -70,6 +102,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         {children}
         <NotificationSound />
+
+        <div id="lcm-update-banner">
+          <span>A new version of LCM Finance is available.</span>
+          <button id="lcm-update-refresh" type="button">Refresh</button>
+          <button id="lcm-update-dismiss" type="button" aria-label="Dismiss">Later</button>
+        </div>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function(){
+  var refresh=document.getElementById('lcm-update-refresh');
+  var dismiss=document.getElementById('lcm-update-dismiss');
+  var banner=document.getElementById('lcm-update-banner');
+  if(refresh)refresh.addEventListener('click',function(){window.location.reload();});
+  if(dismiss)dismiss.addEventListener('click',function(){if(banner)banner.classList.remove('show');});
+})();
+`,
+          }}
+        />
       </body>
     </html>
   );
