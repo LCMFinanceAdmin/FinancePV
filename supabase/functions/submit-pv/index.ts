@@ -52,7 +52,12 @@ Deno.serve(async (req) => {
         remarks: "Submitted",
         ...(fromWorksheet
           ? { signature_data: d.worksheet_bem_signature_data }
-          : (d.finance_signature_data ? { signature_data: d.finance_signature_data } : {})),
+          : (d.finance_signature_data
+              ? { signature_data: d.finance_signature_data }
+              // Building Manager submitting directly (not via a worksheet) — their
+              // own declaration signature from the submit form is the closest thing
+              // to a "raised by" signature, so use it rather than leave this blank.
+              : (d.applicant_signature_data ? { signature_data: d.applicant_signature_data } : {}))),
       };
 
       const pvRow = {

@@ -1249,30 +1249,42 @@ export default function PVDetailPage() {
             {(pv.attachments ?? []).length === 0 && !pv.payment_receipt_url && (
               <p className="text-xs text-stone-400 mb-3">No documents attached yet.</p>
             )}
+            {(pv.attachments ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-2.5 mb-3">
+                {(pv.attachments ?? []).map((url, i) => {
+                  const filename = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? `Document ${i + 1}`);
+                  const isImg = /\.(jpg|jpeg|png|webp|gif|svg|bmp)$/i.test(filename);
+                  return (
+                    <div key={url} className="group relative">
+                      <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+                        {isImg ? (
+                          <div className="w-[88px] h-[88px] rounded-xl overflow-hidden border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={url} alt={filename}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                          </div>
+                        ) : (
+                          <div className="w-[88px] h-[88px] rounded-xl border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50 flex flex-col items-center justify-center gap-1 px-2 text-center">
+                            <FileText size={22} className="text-stone-400 group-hover:text-[#4a6da7] transition-colors shrink-0" />
+                            <span className="text-[10px] text-stone-500 leading-tight line-clamp-2 break-all">{filename}</span>
+                          </div>
+                        )}
+                      </a>
+                      {user?.isFinanceAdmin && (
+                        <button
+                          onClick={() => handleRemoveAttachment(url)}
+                          disabled={attachLoading}
+                          title="Remove"
+                          className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-white border border-stone-200 shadow-sm text-stone-400 hover:text-red-500 hover:border-red-300 transition-colors disabled:opacity-40 opacity-0 group-hover:opacity-100">
+                          <XIcon size={11} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div className="space-y-2 mb-3">
-              {(pv.attachments ?? []).map((url, i) => {
-                const filename = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? `Document ${i + 1}`);
-                const isImg = /\.(jpg|jpeg|png|webp)$/i.test(filename);
-                return (
-                  <div key={url} className="flex items-center gap-2 p-2 bg-stone-50 border border-stone-200 rounded-lg">
-                    <span className="text-base shrink-0">{isImg ? "🖼️" : "📄"}</span>
-                    <a href={url} target="_blank" rel="noopener noreferrer"
-                      className="flex-1 text-xs text-[#4a6da7] hover:underline truncate min-w-0">
-                      {filename}
-                    </a>
-                    {user?.isFinanceAdmin && (
-                      <button
-                        onClick={() => handleRemoveAttachment(url)}
-                        disabled={attachLoading}
-                        title="Remove"
-                        className="shrink-0 p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors disabled:opacity-40">
-                        <XIcon size={14} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-
               {/* Payment receipt */}
               {pv.payment_receipt_url && (
                 <div className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
