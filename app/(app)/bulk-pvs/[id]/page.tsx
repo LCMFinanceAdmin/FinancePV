@@ -647,7 +647,10 @@ export default function BulkPVPage() {
       const { error } = await supabase.from("bulk_pv_runs").update({ approvals: updated }).eq("id", run.id);
       if (error) throw new Error(error.message);
       if (saveSigForNext && signatureData) {
-        await supabase.from("user_roles").update({ saved_signature: signatureData }).eq("email", user.email);
+        await supabase.rpc("save_my_role_signature", {
+          signature_role: user.role,
+          signature_data: signatureData,
+        });
         setSavedSig(signatureData);
       }
       setRun(prev => prev ? { ...prev, approvals: updated } : prev);
