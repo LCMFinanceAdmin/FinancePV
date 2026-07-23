@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
 import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
 import type { WorkerWorksheet, WorkerType, WorksheetEntry } from "@/lib/types";
-import { Plus, Trash2, FileCheck2, FileText, Star, X, Search } from "lucide-react";
+import { Plus, Trash2, FileCheck2, FileText, Star, X, Search, Eye } from "lucide-react";
 
 const WORKER_TYPE_LABEL: Record<WorkerType, string> = {
   PA_PERSONNEL: "PA Personnel",
@@ -113,6 +113,8 @@ export default function WorksheetsPage() {
   const [generating, setGenerating] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [userEmail, setUserEmail] = useState("");
+  const [userFullName, setUserFullName] = useState("");
+  const [viewingPdf, setViewingPdf] = useState(false);
   const [workerSigDraft, setWorkerSigDraft] = useState("");
   const [bemSigDraft, setBemSigDraft] = useState("");
   const [savingSig, setSavingSig] = useState<"worker" | "bem" | null>(null);
@@ -145,7 +147,13 @@ export default function WorksheetsPage() {
   }
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUserEmail(user?.email ?? ""));
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      setUserEmail(user?.email ?? "");
+      if (user?.email) {
+        const { data: profile } = await supabase.from("user_roles").select("full_name").eq("email", user.email).single();
+        setUserFullName(profile?.full_name || user.email);
+      }
+    });
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -438,7 +446,7 @@ export default function WorksheetsPage() {
     try {
       const patch = which === "worker"
         ? { worker_signature: dataUrl, worker_signed_at: new Date().toISOString() }
-        : { bem_signature: dataUrl, bem_signed_by: userEmail, bem_signed_at: new Date().toISOString() };
+        : { bem_signature: dataUrl, bem_signed_by: userFullName || userEmail, bem_signed_at: new Date().toISOString() };
       const { data: row, error } = await supabase.from("worker_worksheets").update(patch).eq("id", editing.id).select("*").single();
       if (error) throw new Error(error.message);
       let updated = row as WorkerWorksheet;
@@ -470,6 +478,24 @@ export default function WorksheetsPage() {
       showMsg(e instanceof Error ? e.message : "Failed to generate PV", false);
     } finally {
       setGenerating(false);
+    }
+  }
+
+  // Renders the same PDF record generatePV would store, but just for viewing —
+  // available as soon as both signatures are in, whether or not a PV has been
+  // raised yet, so the manager always has a clean copy to refer back to.
+  async function viewWorksheet() {
+    if (!editing) return;
+    setViewingPdf(true);
+    try {
+      const blob = await generateWorksheetPdfBlob(editing);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : "Failed to open worksheet", false);
+    } finally {
+      setViewingPdf(false);
     }
   }
 
@@ -961,6 +987,12 @@ export default function WorksheetsPage() {
                     </div>
                   </div>
                   <p className="text-xs text-stone-400">Hand the device to the worker to sign on the left, then save. Sign on the right to verify — once both are saved you can generate the PV.</p>
+
+                  {bothSigned && (
+                    <Button variant="secondary" size="sm" className="w-full" loading={viewingPdf} onClick={viewWorksheet}>
+                      <Eye size={14} /> View Worksheet
+                    </Button>
+                  )}
 
                   {editing.status === "PV_RAISED" && (
                     <div className="space-y-2">
