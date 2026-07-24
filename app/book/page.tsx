@@ -22,6 +22,14 @@ function overlaps(aS: string, aE: string, bS: string, bE: string) {
 const TIER_ORDER: PricingTier[] = ["PUBLIC", "MEMBER", "CONGREGATION", "HQ"];
 const TYPE_ORDER: FacilityType[] = ["AUDITORIUM", "CHAPEL", "HALL", "CLASSROOM", "GUEST_ROOM", "GARDEN"];
 
+// RELA security add-on — matches the internal New Booking modal's behaviour
+// exactly (see app/(app)/bookings/page.tsx). A flat fee per booking, not per
+// date/session, modelled as a synthetic line item so it flows through the
+// existing total/invoice logic for free.
+const RELA_ADDON_ID = "rela-security-addon";
+const RELA_ADDON_AMOUNT = 200;
+const RELA_ADDON_TRIGGER = "word-auditorium";
+
 export default function PublicBookingPage() {
   const supabase = createClient();
   const [bookerType, setBookerType] = useState<PricingTier>("PUBLIC");
@@ -88,7 +96,7 @@ export default function PublicBookingPage() {
   }
   const isDayUnavailable = (facilityId: string, day: string) => !freeOn(facilityId, day);
 
-  const itemsMissingDates = items.filter(it => (it.dates ?? []).length === 0);
+  const itemsMissingDates = items.filter(it => it.facility_id !== RELA_ADDON_ID && (it.dates ?? []).length === 0);
   const conflicts = items.flatMap(it =>
     (it.dates ?? [])
       .filter(d => isDayUnavailable(it.facility_id, d))
@@ -118,6 +126,20 @@ export default function PublicBookingPage() {
       facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel,
       sessions: dates.length, dates, times, rate_per_session: rate, is_concurrent: true, subtotal: rate * dates.length,
     }]);
+  }
+
+  // RELA security add-on for Word Auditorium bookings.
+  const facilityItems = items.filter(it => it.facility_id !== RELA_ADDON_ID);
+  const relaAddonItem = items.find(it => it.facility_id === RELA_ADDON_ID);
+  const showRelaPrompt = !relaAddonItem && items.some(it => it.facility_id === RELA_ADDON_TRIGGER);
+  function addRelaAddon() {
+    setItems(prev => [...prev, {
+      facility_id: RELA_ADDON_ID, facility_name: "RELA Security", rate_label: "flat fee",
+      sessions: 1, dates: [], rate_per_session: RELA_ADDON_AMOUNT, is_concurrent: false, subtotal: RELA_ADDON_AMOUNT,
+    }]);
+  }
+  function removeRelaAddon() {
+    setItems(prev => prev.filter(it => it.facility_id !== RELA_ADDON_ID));
   }
 
   async function submit() {
@@ -317,19 +339,44 @@ export default function PublicBookingPage() {
             </div>
             <p className="text-xs text-stone-400 mb-2">Each facility can run on its own dates and hour block — e.g. the Auditorium on one day and a Guest Room over several nights, all in this one enquiry.</p>
             <div className="rounded-xl border border-stone-200 px-3 py-1">
-              {items.map((item, idx) => (
-                <FacilityLineRow
-                  key={idx}
-                  item={item}
-                  tier={bookerType}
-                  facilities={facilities}
-                  isDayUnavailable={isDayUnavailable}
-                  showRemove={items.length > 1}
-                  onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
-                  onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
-                />
-              ))}
+              {facilityItems.map((item) => {
+                const idx = items.indexOf(item);
+                return (
+                  <FacilityLineRow
+                    key={idx}
+                    item={item}
+                    tier={bookerType}
+                    facilities={facilities}
+                    isDayUnavailable={isDayUnavailable}
+                    showRemove={facilityItems.length > 1}
+                    onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
+                    onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
+                  />
+                );
+              })}
+              {relaAddonItem && (
+                <div className="py-2.5 border-t border-stone-100 flex items-center justify-between">
+                  <span className="text-sm text-stone-700">RELA Security <span className="text-xs text-stone-400">(flat fee per booking)</span></span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-stone-800 text-sm">{fmt(relaAddonItem.subtotal)}</span>
+                    <button type="button" onClick={removeRelaAddon} className="text-xs text-stone-400 hover:text-red-500">Remove</button>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Prompt to add RELA security alongside a Word Auditorium booking */}
+            {showRelaPrompt && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <span className="text-xs text-amber-800">
+                  Booking the Word Auditorium — add RELA security for this event?
+                </span>
+                <button type="button" onClick={addRelaAddon}
+                  className="flex items-center gap-1 text-xs font-medium text-amber-900 border border-amber-300 bg-white hover:bg-amber-100 px-2.5 py-1 rounded-full transition-colors">
+                  <Plus size={12} /> RELA Security ({fmt(RELA_ADDON_AMOUNT)})
+                </button>
+              </div>
+            )}
 
             {/* Prompt to add the Faith Halls concurrently with the Auditorium / Chapel */}
             {concurrentSuggestions.length > 0 && (
