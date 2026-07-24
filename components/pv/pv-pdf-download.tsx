@@ -1,13 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Download, Eye, X } from "lucide-react";
+import { Download, Eye } from "lucide-react";
 import type { PV, PVApproval } from "@/lib/types";
 import { getLOATier, roleLabel } from "@/lib/utils";
 import {
   pdf, Document, Page, Text, View, StyleSheet, Image,
 } from "@react-pdf/renderer";
 import { PDFDocument } from "pdf-lib";
+import { pvPrintHtml } from "@/components/pv/pv-html";
 
 export async function svgToPngDataUri(svgPath: string, size = 200): Promise<string> {
   return new Promise((resolve) => {
@@ -465,7 +466,6 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
   const [dlLoading, setDlLoading]     = useState(false);
   const [error, setError]             = useState<string | null>(null);
   const [logoDataUri, setLogoDataUri] = useState("");
-  const [previewUrl, setPreviewUrl]   = useState<string | null>(null);
 
   useEffect(() => {
     svgToPngDataUri("/lcm-logo.svg", 200).then(setLogoDataUri);
@@ -473,24 +473,31 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
 
   const getLogoUri = () => logoDataUri || svgToPngDataUri("/lcm-logo.svg", 200);
 
+  // Opens a reliable HTML rendering of the voucher in a new tab, from which
+  // the user prints or "Save as PDF". HTML <img> renders the signatures
+  // dependably where the react-pdf layout proved fragile. The react-pdf
+  // "Download" path below stays available for a single merged PDF that also
+  // bundles PDF attachments.
   async function openPreview() {
+    // Open the tab synchronously (inside the click) so it isn't pop-up blocked.
+    const win = window.open("", "_blank");
     setViewLoading(true);
     setError(null);
     try {
       const logo = await getLogoUri();
-      const buf = await buildPdfBytes(pv, typeof logo === "string" ? logo : logoDataUri);
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      const url = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
-      // Mobile browsers can't render PDFs in iframes — open in new tab instead
-      const isMobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      if (isMobile) {
-        window.open(url, "_blank");
-        setTimeout(() => URL.revokeObjectURL(url), 8000);
+      const html = pvPrintHtml(pv, typeof logo === "string" ? logo : logoDataUri);
+      if (win) {
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
       } else {
-        setPreviewUrl(url);
+        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
       }
     } catch {
-      setError("Failed to generate PDF preview.");
+      if (win) win.close();
+      setError("Failed to open the voucher.");
     } finally {
       setViewLoading(false);
     }
@@ -513,58 +520,22 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
     }
   }
 
-  function closePreview() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-  }
-
   return (
-    <>
-      {/* Full-screen PDF preview overlay */}
-      {previewUrl && (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-stone-900">
-          <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-stone-200 shrink-0">
-            <span className="text-sm font-semibold text-stone-700">{pv.pv_no}.pdf</span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={download}
-                disabled={dlLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors"
-              >
-                <Download size={13} /> {dlLoading ? "Saving…" : "Download"}
-              </button>
-              <button
-                onClick={closePreview}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 transition-colors"
-              >
-                <X size={13} /> Close
-              </button>
-            </div>
-          </div>
-          <iframe
-            src={previewUrl}
-            className="flex-1 w-full border-0"
-            title={`${pv.pv_no} Preview`}
-          />
-        </div>
-      )}
-
-      <div className="inline-flex flex-col items-start gap-1">
-        <div className="flex items-center gap-1.5">
-          <Button variant="secondary" size="sm" onClick={openPreview} loading={viewLoading}>
-            <Eye size={14} /> View PDF
-          </Button>
-          <button
-            onClick={download}
-            disabled={dlLoading}
-            title="Download PDF"
-            className="flex items-center justify-center w-8 h-8 border border-stone-200 rounded-lg text-stone-500 hover:bg-stone-50 disabled:opacity-50 transition-colors"
-          >
-            {dlLoading ? <span className="text-[10px]">…</span> : <Download size={14} />}
-          </button>
-        </div>
-        {error && <p className="text-xs text-red-600">{error}</p>}
+    <div className="inline-flex flex-col items-start gap-1">
+      <div className="flex items-center gap-1.5">
+        <Button variant="secondary" size="sm" onClick={openPreview} loading={viewLoading}>
+          <Eye size={14} /> View / Print
+        </Button>
+        <button
+          onClick={download}
+          disabled={dlLoading}
+          title="Download PDF (single merged file, includes PDF attachments)"
+          className="flex items-center justify-center w-8 h-8 border border-stone-200 rounded-lg text-stone-500 hover:bg-stone-50 disabled:opacity-50 transition-colors"
+        >
+          {dlLoading ? <span className="text-[10px]">…</span> : <Download size={14} />}
+        </button>
       </div>
-    </>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
   );
 }
