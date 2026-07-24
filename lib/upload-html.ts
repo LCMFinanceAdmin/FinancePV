@@ -18,7 +18,7 @@ export async function uploadHtmlDoc(supabase: SupabaseClient, bucket: string, pa
   const resp = await fetch(url, {
     method: "POST",
     headers: {
-      "Content-Type": "text/html; charset=utf-8",
+      "Content-Type": "text/html",
       "Authorization": `Bearer ${session.access_token}`,
       "apikey": anonKey,
       "x-upsert": "true",
