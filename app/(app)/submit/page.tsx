@@ -8,7 +8,8 @@ import {
   X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images, Link2,
 } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
-import type { PVLineItem } from "@/lib/types";
+import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
+import type { PVLineItem, WorkerWorksheet } from "@/lib/types";
 
 // ── Ministry list ───────────────────────────────────────────────────────
 const MINISTRIES = [
@@ -378,13 +379,29 @@ export default function SubmitPVPage() {
           // the BEM hunt for a second checkbox at the bottom of the form.
           sig_applicant_confirm: true,
         }));
-        if (ws.pdf_url) {
+        // Always attach the signed worksheet as a supporting document —
+        // if it wasn't already generated (e.g. this page was reached without
+        // going through the worksheet's own "Generate PV" button), generate
+        // and store it here instead of silently leaving the PV without it.
+        async function attachWorksheetPdf(url: string) {
           setAttachments(prev => [...prev, {
             file: new File([], `${ws.worksheet_no}.pdf`),
             name: `Worksheet ${ws.worksheet_no} (signed)`,
-            previewUrl: ws.pdf_url,
-            sourceUrl: ws.pdf_url,
+            previewUrl: url,
+            sourceUrl: url,
           }]);
+        }
+        if (ws.pdf_url) {
+          attachWorksheetPdf(ws.pdf_url);
+        } else {
+          generateWorksheetPdfBlob(ws as WorkerWorksheet).then(async (blob) => {
+            const path = `${ws.worksheet_no}.pdf`;
+            const { error: upErr } = await supabase.storage.from("worksheets").upload(path, blob, { contentType: "application/pdf", upsert: true });
+            if (upErr) return;
+            const { data: { publicUrl } } = supabase.storage.from("worksheets").getPublicUrl(path);
+            await supabase.from("worker_worksheets").update({ pdf_url: publicUrl }).eq("id", ws.id);
+            attachWorksheetPdf(publicUrl);
+          }).catch(() => {});
         }
       });
     }
