@@ -278,7 +278,7 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-1"><XCircle size={20} /></button>
         </div>
 
-        <div className="px-6 py-5 space-y-6 overflow-y-auto flex-1">
+        <div className="px-6 py-5 space-y-6 overflow-y-auto flex-1 min-h-0">
           {/* Payer Category — drives pricing, so it comes first */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Payer Category</h3>
