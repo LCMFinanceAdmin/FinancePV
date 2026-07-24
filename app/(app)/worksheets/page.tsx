@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
-import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
 import { worksheetPrintHtml } from "@/components/worksheets/worksheet-html";
 import { svgToPngDataUri } from "@/components/pv/pv-pdf-download";
 import type { WorkerWorksheet, WorkerType, WorksheetEntry } from "@/lib/types";
@@ -477,13 +476,21 @@ export default function WorksheetsPage() {
     }
   }
 
+  // The worksheet attached to the PV as a supporting document is an HTML
+  // file, not a PDF — react-pdf's image layout proved fragile for the
+  // signature area, whereas an ordinary <img> in plain HTML renders it
+  // reliably everywhere it's viewed (the submit page's own preview, and the
+  // PV's HTML view both already render arbitrary iframe'd documents, so this
+  // needs no changes on the viewing side). The field is still named pdf_url
+  // to avoid a schema change; it just points at an .html file now.
   async function generatePV() {
     if (!editing) return;
     setGenerating(true);
     try {
-      const blob = await generateWorksheetPdfBlob(editing);
-      const path = `${editing.worksheet_no}.pdf`;
-      const { error: upErr } = await supabase.storage.from("worksheets").upload(path, blob, { contentType: "application/pdf", upsert: true });
+      const logo = await svgToPngDataUri("/lcm-logo.svg", 96).catch(() => "");
+      const html = worksheetPrintHtml(editing, logo);
+      const path = `${editing.worksheet_no}.html`;
+      const { error: upErr } = await supabase.storage.from("worksheets").upload(path, new Blob([html], { type: "text/html" }), { contentType: "text/html", upsert: true });
       if (upErr) throw new Error(upErr.message);
       const { data: { publicUrl } } = supabase.storage.from("worksheets").getPublicUrl(path);
       await supabase.from("worker_worksheets").update({ pdf_url: publicUrl }).eq("id", editing.id);

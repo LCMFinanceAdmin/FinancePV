@@ -43,6 +43,9 @@ function isImageUrl(url: string) {
 function isPdfUrl(url: string) {
   return url.startsWith("data:application/pdf") || /\.pdf(\?|$)/i.test(url);
 }
+function isHtmlUrl(url: string) {
+  return url.startsWith("data:text/html") || /\.html?(\?|$)/i.test(url);
+}
 function fileName(url: string) {
   if (url.startsWith("data:")) return "attachment";
   try { return decodeURIComponent(url.split("/").pop()?.split("?")[0] || url); }
@@ -180,12 +183,13 @@ export function pvPrintHtml(pv: PV, logoDataUri = ""): string {
     ? `<div class="remarks"><div class="remarks-title">Remarks:</div>${remarks.map(a => `<div class="remark">${esc(roleLabel(a.role))} (${esc(a.name)}): ${esc(a.remarks)}</div>`).join("")}</div>`
     : "";
 
-  // Attachments — every attachment stays visible on this page: images and
-  // PDFs are embedded directly (viewable without navigating away, and
-  // included when printing/saving as PDF); anything else no browser can
-  // render inline gets a clearly labelled open-in-new-tab link instead.
+  // Attachments — every attachment stays visible on this page: images,
+  // PDFs, and HTML documents (e.g. a signed worksheet, rendered the same
+  // reliable way as this voucher itself) are all embedded directly; anything
+  // else no browser can render inline gets a clearly labelled open-in-new-tab
+  // link instead.
   const attachUrls = [...(pv.attachments ?? []), ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : [])].filter(Boolean);
-  const otherAtts = attachUrls.filter(u => !isImageUrl(u) && !isPdfUrl(u));
+  const otherAtts = attachUrls.filter(u => !isImageUrl(u) && !isPdfUrl(u) && !isHtmlUrl(u));
   const attachHtml = attachUrls.length
     ? `
       <div class="attach-section">
@@ -193,7 +197,8 @@ export function pvPrintHtml(pv: PV, logoDataUri = ""): string {
         ${otherAtts.length ? `<div class="attach-list">${otherAtts.map(u => `<div class="attach-link">📎 <a href="${esc(u)}" target="_blank" rel="noopener">${esc(fileName(u))}</a> <span class="attach-note">(open in new tab to view)</span></div>`).join("")}</div>` : ""}
       </div>
       ${attachUrls.filter(isImageUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))}</div><img src="${esc(u)}" alt="attachment" /></div>`).join("")}
-      ${attachUrls.filter(isPdfUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))} <a href="${esc(u)}" target="_blank" rel="noopener">(open in new tab)</a></div><iframe class="attach-pdf" src="${esc(u)}"></iframe></div>`).join("")}`
+      ${attachUrls.filter(isPdfUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))} <a href="${esc(u)}" target="_blank" rel="noopener">(open in new tab)</a></div><iframe class="attach-pdf" src="${esc(u)}"></iframe></div>`).join("")}
+      ${attachUrls.filter(isHtmlUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))} <a href="${esc(u)}" target="_blank" rel="noopener">(open in new tab)</a></div><iframe class="attach-pdf" src="${esc(u)}"></iframe></div>`).join("")}`
     : "";
 
   return `<!doctype html>

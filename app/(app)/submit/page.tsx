@@ -8,7 +8,8 @@ import {
   X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images, Link2,
 } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
-import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
+import { worksheetPrintHtml } from "@/components/worksheets/worksheet-html";
+import { svgToPngDataUri } from "@/components/pv/pv-pdf-download";
 import type { PVLineItem, WorkerWorksheet } from "@/lib/types";
 
 // ── Ministry list ───────────────────────────────────────────────────────
@@ -383,24 +384,29 @@ export default function SubmitPVPage() {
         // if it wasn't already generated (e.g. this page was reached without
         // going through the worksheet's own "Generate PV" button), generate
         // and store it here instead of silently leaving the PV without it.
-        async function attachWorksheetPdf(url: string) {
+        // This is an HTML file, not a PDF — react-pdf's image layout proved
+        // fragile for the signature area, whereas plain HTML renders it
+        // reliably everywhere it's viewed (this page's own preview below is
+        // already a generic iframe, and the PV's HTML view embeds it too).
+        async function attachWorksheetDoc(url: string) {
           setAttachments(prev => [...prev, {
-            file: new File([], `${ws.worksheet_no}.pdf`),
+            file: new File([], `${ws.worksheet_no}.html`),
             name: `Worksheet ${ws.worksheet_no} (signed)`,
             previewUrl: url,
             sourceUrl: url,
           }]);
         }
         if (ws.pdf_url) {
-          attachWorksheetPdf(ws.pdf_url);
+          attachWorksheetDoc(ws.pdf_url);
         } else {
-          generateWorksheetPdfBlob(ws as WorkerWorksheet).then(async (blob) => {
-            const path = `${ws.worksheet_no}.pdf`;
-            const { error: upErr } = await supabase.storage.from("worksheets").upload(path, blob, { contentType: "application/pdf", upsert: true });
+          svgToPngDataUri("/lcm-logo.svg", 96).catch(() => "").then(async (logo) => {
+            const html = worksheetPrintHtml(ws as WorkerWorksheet, logo);
+            const path = `${ws.worksheet_no}.html`;
+            const { error: upErr } = await supabase.storage.from("worksheets").upload(path, new Blob([html], { type: "text/html" }), { contentType: "text/html", upsert: true });
             if (upErr) return;
             const { data: { publicUrl } } = supabase.storage.from("worksheets").getPublicUrl(path);
             await supabase.from("worker_worksheets").update({ pdf_url: publicUrl }).eq("id", ws.id);
-            attachWorksheetPdf(publicUrl);
+            attachWorksheetDoc(publicUrl);
           }).catch(() => {});
         }
       });
