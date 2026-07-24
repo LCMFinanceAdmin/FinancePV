@@ -39,6 +39,18 @@ const SESSION_RATE: Partial<Record<WorkerType, number>> = {
 function isSessionRate(t: WorkerType): boolean {
   return t in SESSION_RATE;
 }
+// Default hourly rate for worker types not paid a flat session rate.
+const HOURLY_RATE_DEFAULT: Partial<Record<WorkerType, number>> = {
+  BUILDING_CARE_TAKER: 10,
+};
+
+// The usual payee for these worker types — pre-filled on a brand-new
+// worksheet so it doesn't need retyping every time, but fully replaceable:
+// typing a different name (or picking another saved favourite) overrides it.
+const DEFAULT_PAYEE: Partial<Record<WorkerType, { name: string; bank: string; account: string }>> = {
+  BUILDING_CARE_TAKER: { name: "Kwan Kam Peng", bank: "Public Bank", account: "4665215114" },
+  RELA_PERSONNEL: { name: "Kwan Kam Peng", bank: "Public Bank", account: "4665215114" },
+};
 
 const BANKS = [
   "Maybank", "CIMB", "Public Bank", "RHB", "Hong Leong Bank",
@@ -844,7 +856,16 @@ export default function WorksheetsPage() {
                   <div className="flex flex-wrap gap-2">
                     {(Object.keys(WORKER_TYPE_LABEL) as WorkerType[]).map(t => (
                       <button key={t} type="button" disabled={editing.status !== "DRAFT" && !isNew}
-                        onClick={() => setForm(f => ({ ...f, worker_type: t, rate_per_hour: SESSION_RATE[t] ?? f.rate_per_hour }))}
+                        onClick={() => setForm(f => {
+                          const next = { ...f, worker_type: t, rate_per_hour: SESSION_RATE[t] ?? HOURLY_RATE_DEFAULT[t] ?? f.rate_per_hour };
+                          const defaultPayee = DEFAULT_PAYEE[t];
+                          if (isNew && defaultPayee && !f.worker_name.trim()) {
+                            next.worker_name = defaultPayee.name;
+                            next.bank_name = defaultPayee.bank;
+                            next.bank_account_no = defaultPayee.account;
+                          }
+                          return next;
+                        })}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors disabled:opacity-50 ${form.worker_type === t ? "bg-stone-900 text-white border-transparent" : "border-stone-200 text-stone-500 hover:border-stone-300"}`}>
                         {WORKER_TYPE_LABEL[t]}
                       </button>
