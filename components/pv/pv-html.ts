@@ -4,11 +4,14 @@ import { getLOATier, roleLabel } from "@/lib/utils";
 // HTML-based Payment Voucher rendering — the reliable counterpart to the
 // react-pdf PVDocument. An ordinary <img> renders signatures dependably in
 // every browser (react-pdf's image layout proved fragile), and the user
-// prints or "Save as PDF" from the browser's own print dialog. Image
-// attachments are embedded inline so they're included in the printout;
-// non-image (e.g. PDF) attachments are listed with links, since those can't
-// be inlined into a printable HTML page — for a single merged PDF that also
-// bundles PDF attachments, the react-pdf "Download" path remains available.
+// prints or "Save as PDF" from the browser's own print dialog. Attachments
+// stay visible on this page rather than requiring a separate download:
+// images are embedded directly, PDFs are embedded via <iframe> (viewable
+// on-screen; Chrome also includes iframe content when printing/saving as
+// PDF), and any other file type — which no browser can render inline — gets
+// a clearly labelled open-in-new-tab link. For a single merged PDF that also
+// bundles PDF attachments as extra pages, the react-pdf "Download" path
+// remains available.
 
 const BANK_ABBR: Record<string, string> = {
   "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",
@@ -35,9 +38,13 @@ function esc(v: unknown): string {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function isImageUrl(url: string) {
-  return /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(url);
+  return url.startsWith("data:image/") || /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(url);
+}
+function isPdfUrl(url: string) {
+  return url.startsWith("data:application/pdf") || /\.pdf(\?|$)/i.test(url);
 }
 function fileName(url: string) {
+  if (url.startsWith("data:")) return "attachment";
   try { return decodeURIComponent(url.split("/").pop()?.split("?")[0] || url); }
   catch { return url; }
 }
@@ -173,14 +180,20 @@ export function pvPrintHtml(pv: PV, logoDataUri = ""): string {
     ? `<div class="remarks"><div class="remarks-title">Remarks:</div>${remarks.map(a => `<div class="remark">${esc(roleLabel(a.role))} (${esc(a.name)}): ${esc(a.remarks)}</div>`).join("")}</div>`
     : "";
 
-  // Attachments — images inline (each on its own print page), others listed
+  // Attachments — every attachment stays visible on this page: images and
+  // PDFs are embedded directly (viewable without navigating away, and
+  // included when printing/saving as PDF); anything else no browser can
+  // render inline gets a clearly labelled open-in-new-tab link instead.
   const attachUrls = [...(pv.attachments ?? []), ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : [])].filter(Boolean);
-  const imageAtts = attachUrls.filter(isImageUrl);
-  const otherAtts = attachUrls.filter(u => !isImageUrl(u));
+  const otherAtts = attachUrls.filter(u => !isImageUrl(u) && !isPdfUrl(u));
   const attachHtml = attachUrls.length
     ? `
-      ${otherAtts.length ? `<div class="attach-list"><div class="attach-title">Attachments (open separately):</div>${otherAtts.map(u => `<div><a href="${esc(u)}" target="_blank" rel="noopener">${esc(fileName(u))}</a></div>`).join("")}</div>` : ""}
-      ${imageAtts.map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))}</div><img src="${esc(u)}" alt="attachment" /></div>`).join("")}`
+      <div class="attach-section">
+        <div class="attach-title">Supporting Documents (${attachUrls.length})</div>
+        ${otherAtts.length ? `<div class="attach-list">${otherAtts.map(u => `<div class="attach-link">📎 <a href="${esc(u)}" target="_blank" rel="noopener">${esc(fileName(u))}</a> <span class="attach-note">(open in new tab to view)</span></div>`).join("")}</div>` : ""}
+      </div>
+      ${attachUrls.filter(isImageUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))}</div><img src="${esc(u)}" alt="attachment" /></div>`).join("")}
+      ${attachUrls.filter(isPdfUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))} <a href="${esc(u)}" target="_blank" rel="noopener">(open in new tab)</a></div><iframe class="attach-pdf" src="${esc(u)}"></iframe></div>`).join("")}`
     : "";
 
   return `<!doctype html>
@@ -253,11 +266,18 @@ export function pvPrintHtml(pv: PV, logoDataUri = ""): string {
   .remarks { margin-top: 6px; }
   .remarks-title { font-weight: 700; font-size: 10px; margin-bottom: 2px; }
   .remark { font-size: 10px; }
-  .attach-list { margin-top: 12px; font-size: 11px; }
-  .attach-title { font-weight: 700; margin-bottom: 3px; }
-  .attach-page { page-break-before: always; margin-top: 16px; text-align: center; }
-  .attach-cap { font-size: 10px; color: #555; margin-bottom: 6px; text-align: left; }
-  .attach-page img { max-width: 100%; max-height: 1000px; object-fit: contain; border: 1px solid #ddd; }
+  .attach-section { margin-top: 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; }
+  .attach-title { font-weight: 700; font-size: 11px; margin-bottom: 4px; }
+  .attach-list { font-size: 11px; }
+  .attach-link { margin-top: 2px; }
+  .attach-link a { color: #1d4ed8; }
+  .attach-note { color: #6b7280; font-size: 10px; }
+  .attach-page { page-break-before: always; margin-top: 16px; }
+  .attach-cap { font-size: 10px; color: #555; margin-bottom: 6px; }
+  .attach-cap a { color: #1d4ed8; margin-left: 6px; }
+  .attach-page img { max-width: 100%; max-height: 1000px; object-fit: contain; border: 1px solid #ddd; display: block; margin: 0 auto; }
+  .attach-pdf { width: 100%; height: 900px; border: 1px solid #ddd; }
+  @media print { .attach-pdf { height: 1100px; } }
   @media print {
     body { background: #fff; }
     .toolbar { display: none; }
