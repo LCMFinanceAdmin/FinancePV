@@ -38,6 +38,14 @@ const STATUS_COLORS: Record<FacilityBooking["status"], string> = {
 
 const METHODS = ["Cash", "Bank Transfer", "Cheque", "Online Transfer", "Other"];
 
+// RELA security add-on — a flat fee per booking (not per date/session, unlike
+// the Faith Hall concurrent-hall add-on), offered whenever Word Auditorium is
+// booked. Modelled as a synthetic line item (rather than a new schema field)
+// so it flows through the existing total/invoice/receipt logic for free.
+const RELA_ADDON_ID = "rela-security-addon";
+const RELA_ADDON_AMOUNT = 200;
+const RELA_ADDON_TRIGGER = "word-auditorium";
+
 // ─── Booking form modal (create + edit) ────────────────────────────────────────
 
 interface BookingFormModalProps {
@@ -134,7 +142,7 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
   }
 
   // Items still missing a date, and items whose chosen dates clash.
-  const itemsMissingDates = items.filter(it => (it.dates ?? []).length === 0);
+  const itemsMissingDates = items.filter(it => it.facility_id !== RELA_ADDON_ID && (it.dates ?? []).length === 0);
   const conflicts = items.flatMap(it =>
     (it.dates ?? [])
       .filter(d => isDayUnavailable(it.facility_id, d))
@@ -170,6 +178,20 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
       facility_id: def.id, facility_name: def.name, rate_label: def.rateLabel,
       sessions: dates.length, dates, times, rate_per_session: rate, is_concurrent: true, subtotal: rate * dates.length,
     }]);
+  }
+
+  // ── RELA security add-on for Word Auditorium bookings ──
+  const facilityItems = items.filter(it => it.facility_id !== RELA_ADDON_ID);
+  const relaAddonItem = items.find(it => it.facility_id === RELA_ADDON_ID);
+  const showRelaPrompt = !relaAddonItem && items.some(it => it.facility_id === RELA_ADDON_TRIGGER);
+  function addRelaAddon() {
+    setItems(prev => [...prev, {
+      facility_id: RELA_ADDON_ID, facility_name: "RELA Security", rate_label: "flat fee",
+      sessions: 1, dates: [], rate_per_session: RELA_ADDON_AMOUNT, is_concurrent: false, subtotal: RELA_ADDON_AMOUNT,
+    }]);
+  }
+  function removeRelaAddon() {
+    setItems(prev => prev.filter(it => it.facility_id !== RELA_ADDON_ID));
   }
 
   async function save() {
@@ -245,15 +267,18 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto py-8 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      {/* Fills most of the viewport height (was: grows to fit content, which
+          left a lot of unused space visible below on short forms) — header
+          and footer stay pinned, only the middle section scrolls. */}
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100 shrink-0">
           <h2 className="font-bold text-stone-800 text-lg">{isEdit ? `Edit Booking — ${initial?.booking_no}` : "New Facility Booking"}</h2>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-1"><XCircle size={20} /></button>
         </div>
 
-        <div className="px-6 py-5 space-y-6">
+        <div className="px-6 py-5 space-y-6 overflow-y-auto flex-1">
           {/* Payer Category — drives pricing, so it comes first */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Payer Category</h3>
@@ -288,18 +313,43 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
               </button>
             </div>
             <div className="rounded-xl border border-stone-200 px-3 py-1">
-              {items.map((item, idx) => (
-                <FacilityLineRow
-                  key={idx}
-                  item={item}
-                  tier={bookerType}
-                  facilities={facilities}
-                  isDayUnavailable={isDayUnavailable}
-                  onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
-                  onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
-                />
-              ))}
+              {facilityItems.map((item) => {
+                const idx = items.indexOf(item);
+                return (
+                  <FacilityLineRow
+                    key={idx}
+                    item={item}
+                    tier={bookerType}
+                    facilities={facilities}
+                    isDayUnavailable={isDayUnavailable}
+                    onChange={updated => setItems(prev => prev.map((it, i) => i === idx ? updated : it))}
+                    onRemove={() => setItems(prev => prev.filter((_, i) => i !== idx))}
+                  />
+                );
+              })}
+              {relaAddonItem && (
+                <div className="py-2.5 border-t border-stone-100 flex items-center justify-between">
+                  <span className="text-sm text-stone-700">RELA Security <span className="text-xs text-stone-400">(flat fee per booking)</span></span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-stone-800 text-sm">{fmt(relaAddonItem.subtotal)}</span>
+                    <button type="button" onClick={removeRelaAddon} className="p-1 text-stone-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Prompt to add RELA security alongside a Word Auditorium booking */}
+            {showRelaPrompt && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <span className="text-xs text-amber-800">
+                  Booking the Word Auditorium — add RELA security for this event?
+                </span>
+                <button type="button" onClick={addRelaAddon}
+                  className="flex items-center gap-1 text-xs font-medium text-amber-900 border border-amber-300 bg-white hover:bg-amber-100 px-2.5 py-1 rounded-full transition-colors">
+                  <Plus size={12} /> RELA Security ({fmt(RELA_ADDON_AMOUNT)})
+                </button>
+              </div>
+            )}
 
             {/* Prompt to add the Faith Halls concurrently with the Auditorium / Chapel */}
             {concurrentSuggestions.length > 0 && (
@@ -457,7 +507,7 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
           )}
         </div>
 
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-stone-100 bg-stone-50 rounded-b-2xl">
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-stone-100 bg-stone-50 rounded-b-2xl shrink-0">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-stone-600 hover:bg-stone-200 transition-colors">Cancel</button>
           <button
             onClick={save}

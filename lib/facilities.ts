@@ -201,6 +201,38 @@ export function dateRangesOverlap(aS: string, aE: string, bS: string, bE: string
   return aS <= bE && bS <= aE;
 }
 
+// yyyy-mm-dd from a Date's LOCAL fields — never .toISOString(), which
+// converts to UTC first and silently shifts the date by a day in any
+// positive-offset timezone (e.g. Malaysia, UTC+8: local midnight becomes
+// 4pm the previous day in UTC).
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Every calendar night from check-in (inclusive) to check-out (exclusive) —
+// standard hotel-booking semantics. E.g. check-in 2026-08-01, check-out
+// 2026-08-03 books 2 nights: 08-01 and 08-02. Used for Guest Room bookings,
+// which are billed per night and don't need a time-of-day picked.
+export function nightsBetween(checkIn: string, checkOut: string): string[] {
+  if (!checkIn || !checkOut || checkOut <= checkIn) return [];
+  const nights: string[] = [];
+  const cur = new Date(checkIn + "T00:00:00");
+  const end = new Date(checkOut + "T00:00:00");
+  while (cur < end) {
+    nights.push(ymd(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return nights;
+}
+
+// The night after the given date, as yyyy-mm-dd — used to derive a
+// check-out date from the last booked night.
+export function dayAfter(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + 1);
+  return ymd(d);
+}
+
 // Halls offered at a discounted "concurrent" rate alongside the Auditorium/Chapel,
 // shared between the internal New Booking form and the public booking page.
 export const CONCURRENT_TRIGGERS = ["word-auditorium", "christ-chapel"];
