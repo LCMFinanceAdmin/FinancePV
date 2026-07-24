@@ -7,6 +7,7 @@ import { SignaturePad } from "@/components/ui/signature-pad";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
 import { worksheetPrintHtml } from "@/components/worksheets/worksheet-html";
+import { uploadHtmlDoc } from "@/lib/upload-html";
 import { svgToPngDataUri } from "@/components/pv/pv-pdf-download";
 import type { WorkerWorksheet, WorkerType, WorksheetEntry } from "@/lib/types";
 import { Plus, Trash2, FileCheck2, FileText, Star, X, Search, Eye } from "lucide-react";
@@ -489,10 +490,7 @@ export default function WorksheetsPage() {
     try {
       const logo = await svgToPngDataUri("/lcm-logo.svg", 96).catch(() => "");
       const html = worksheetPrintHtml(editing, logo);
-      const path = `${editing.worksheet_no}.html`;
-      const { error: upErr } = await supabase.storage.from("worksheets").upload(path, new Blob([html], { type: "text/html" }), { contentType: "text/html", upsert: true });
-      if (upErr) throw new Error(upErr.message);
-      const { data: { publicUrl } } = supabase.storage.from("worksheets").getPublicUrl(path);
+      const publicUrl = await uploadHtmlDoc(supabase, "worksheets", `${editing.worksheet_no}.html`, html);
       await supabase.from("worker_worksheets").update({ pdf_url: publicUrl }).eq("id", editing.id);
       router.push(`/submit?worksheet_id=${editing.id}`);
     } catch (e: unknown) {

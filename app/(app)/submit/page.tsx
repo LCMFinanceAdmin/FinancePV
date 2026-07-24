@@ -10,6 +10,7 @@ import {
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import { worksheetPrintHtml } from "@/components/worksheets/worksheet-html";
 import { svgToPngDataUri } from "@/components/pv/pv-pdf-download";
+import { uploadHtmlDoc } from "@/lib/upload-html";
 import type { PVLineItem, WorkerWorksheet } from "@/lib/types";
 
 // ── Ministry list ───────────────────────────────────────────────────────
@@ -401,10 +402,7 @@ export default function SubmitPVPage() {
         } else {
           svgToPngDataUri("/lcm-logo.svg", 96).catch(() => "").then(async (logo) => {
             const html = worksheetPrintHtml(ws as WorkerWorksheet, logo);
-            const path = `${ws.worksheet_no}.html`;
-            const { error: upErr } = await supabase.storage.from("worksheets").upload(path, new Blob([html], { type: "text/html" }), { contentType: "text/html", upsert: true });
-            if (upErr) return;
-            const { data: { publicUrl } } = supabase.storage.from("worksheets").getPublicUrl(path);
+            const publicUrl = await uploadHtmlDoc(supabase, "worksheets", `${ws.worksheet_no}.html`, html);
             await supabase.from("worker_worksheets").update({ pdf_url: publicUrl }).eq("id", ws.id);
             attachWorksheetDoc(publicUrl);
           }).catch(() => {});
