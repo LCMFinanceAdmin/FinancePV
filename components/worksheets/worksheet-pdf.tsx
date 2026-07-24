@@ -61,11 +61,17 @@ const COL = { date: 2.1, time: 1.9, hours: 1, purpose: 2.6 };
 // explicit width alone did not fix it; only removing it from flex flow
 // via absolute positioning did.
 function SigBox({ label, signature, signedBy, signedAt }: { label: string; signature?: string | null; signedBy?: string | null; signedAt?: string | null }) {
+  // TEMPORARY diagnostic — remove once the real-worksheet signature bug is
+  // root-caused. Prints exactly what this box received so we can see, from
+  // the PDF itself, whether the data ever reached here and what shape it's
+  // in — no DevTools or login access needed to check.
+  const debugLine = `[dbg] sig=${signature ? "present" : "null"} len=${signature ? signature.length : 0} head=${signature ? JSON.stringify(signature.slice(0, 24)) : "-"}`;
   return (
     <View style={{ flex: 1, padding: "6pt 8pt" }}>
       <View style={{ borderBottom: "0.8pt solid #1f2937", paddingBottom: 2, marginBottom: 4 }}>
         <Text style={[s.bold, s.tiny]}>{label}</Text>
       </View>
+      <Text style={{ fontSize: 6, color: "#dc2626" }}>{debugLine}</Text>
       <View style={{ height: 40, position: "relative" }}>
         {signature ? (
           <Image src={signature} style={{ position: "absolute", top: 0, left: 0, width: 160, height: 40, objectFit: "contain" }} />
