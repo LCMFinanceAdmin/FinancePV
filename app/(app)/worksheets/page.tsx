@@ -7,6 +7,8 @@ import { SignaturePad } from "@/components/ui/signature-pad";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
 import { generateWorksheetPdfBlob } from "@/components/worksheets/worksheet-pdf";
+import { worksheetPrintHtml } from "@/components/worksheets/worksheet-html";
+import { svgToPngDataUri } from "@/components/pv/pv-pdf-download";
 import type { WorkerWorksheet, WorkerType, WorksheetEntry } from "@/lib/types";
 import { Plus, Trash2, FileCheck2, FileText, Star, X, Search, Eye } from "lucide-react";
 
@@ -481,17 +483,30 @@ export default function WorksheetsPage() {
     }
   }
 
-  // Renders the same PDF record generatePV would store, but just for viewing —
-  // available as soon as both signatures are in, whether or not a PV has been
-  // raised yet, so the manager always has a clean copy to refer back to.
+  // Opens an HTML rendering of the worksheet in a new tab, from which the
+  // manager can print or "Save as PDF" via the browser's own print dialog.
+  // We render HTML rather than a react-pdf blob here because an ordinary
+  // <img> renders the signatures reliably in every browser, whereas the
+  // react-pdf image layout proved fragile for the signature area.
   async function viewWorksheet() {
     if (!editing) return;
     setViewingPdf(true);
     try {
-      const blob = await generateWorksheetPdfBlob(editing);
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      // Open the tab synchronously (inside the click handler) so it isn't
+      // blocked as a pop-up; fill it once the logo has loaded.
+      const win = window.open("", "_blank");
+      const logo = await svgToPngDataUri("/lcm-logo.svg", 96).catch(() => "");
+      const html = worksheetPrintHtml(editing, logo);
+      if (win) {
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
+      } else {
+        // Pop-up blocked — fall back to a blob URL the user can allow.
+        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
     } catch (e: unknown) {
       showMsg(e instanceof Error ? e.message : "Failed to open worksheet", false);
     } finally {
