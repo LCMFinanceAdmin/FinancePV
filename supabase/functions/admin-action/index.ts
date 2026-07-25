@@ -38,6 +38,14 @@ Deno.serve(async (req) => {
         admin_comment: body.remarks?.trim() || (isSubmitter ? "Withdrawn by submitter" : "Cancelled by Finance Executive"),
         updated_at: new Date().toISOString(),
       }).eq("id", pv_id);
+      // If this PV was raised from a worksheet, free that worksheet up again
+      // so a fresh PV can be generated — cancelling/withdrawing from the PV
+      // side must have the same effect as retracting from the worksheet side,
+      // otherwise the worksheet stays stuck at "PV raised" pointing at a dead
+      // PV. No-op for PVs not linked to a worksheet.
+      await db.from("worker_worksheets")
+        .update({ status: "SIGNED", pv_id: null, updated_at: new Date().toISOString() })
+        .eq("pv_id", pv_id);
       // Notify submitter if cancelled by admin (not self)
       if (!isSubmitter) {
         await db.from("notifications").insert({
@@ -68,6 +76,12 @@ Deno.serve(async (req) => {
         return json({ error: "Not authorised to delete this PV" }, 403);
       }
       if (pv.status === "PAID") return json({ error: "Cannot delete a paid PV" }, 400);
+      // Free any worksheet this PV was raised from before deleting the PV,
+      // so the worksheet doesn't end up pointing at a row that no longer
+      // exists. No-op for PVs not linked to a worksheet.
+      await db.from("worker_worksheets")
+        .update({ status: "SIGNED", pv_id: null, updated_at: new Date().toISOString() })
+        .eq("pv_id", pv_id);
       await db.from("pvs").delete().eq("id", pv_id);
       return json({ ok: true, action: "DELETED" });
     }

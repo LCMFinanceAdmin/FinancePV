@@ -570,13 +570,19 @@ export default function WorksheetsPage() {
     try {
       const { data: pv } = await supabase.from("pvs").select("id,pv_no,status").eq("id", editing.pv_id).maybeSingle();
 
-      // PV already gone (deleted elsewhere) — nothing to cancel, just unlink.
-      if (!pv) {
+      // PV already gone (deleted elsewhere) OR already withdrawn/cancelled —
+      // nothing left to cancel, just unlink the worksheet so it's ready for a
+      // fresh PV. (Withdrawing from the PV side now reverts the worksheet
+      // automatically, but this also recovers any worksheet that was left
+      // stuck by an earlier withdrawal before that fix.)
+      if (!pv || pv.status === "CANCELLED") {
         const { data: row, error } = await supabase.from("worker_worksheets")
           .update({ status: "SIGNED", pv_id: null }).eq("id", editing.id).select("*").single();
         if (error) throw new Error(error.message);
         setEditing(row as WorkerWorksheet);
-        showMsg("Worksheet retracted — the linked PV no longer exists. You can generate a new one.");
+        showMsg(pv
+          ? `${pv.pv_no} was already withdrawn — worksheet is ready for a new PV.`
+          : "Worksheet retracted — the linked PV no longer exists. You can generate a new one.");
         return;
       }
 
