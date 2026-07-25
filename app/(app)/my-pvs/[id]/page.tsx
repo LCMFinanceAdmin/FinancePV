@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
+import { HtmlAttachmentThumb } from "@/components/attachments/html-thumb";
 
 const PVPdfDownload = dynamic(() => import("@/components/pv/pv-pdf-download"), { ssr: false });
 
@@ -43,20 +44,36 @@ const WORKFLOW_STEPS = [
   { key: "PAID",              label: "Paid" },
 ];
 
+// BAM PVs follow their own approval route — raised by the Building/Event
+// Manager, verified by the BAM Committee, then Finance → GM → Signatory →
+// Paid — so they need their own stage bar rather than the standard one that
+// starts at Finance. Each stage lists every DB status that maps to it.
+const BAM_WORKFLOW_STEPS = [
+  { label: "BAM Committee",  statuses: ["BAM_COMMITTEE_REVIEW"] },
+  { label: "Finance",        statuses: ["FINANCE_REVIEW", "PENDING", "REVIEWED"] },
+  { label: "GM & Signatory", statuses: ["GM_REVIEW", "PENDING_SIGNATORY"] },
+  { label: "Approved",       statuses: ["APPROVED"] },
+  { label: "Paid",           statuses: ["PAID"] },
+];
+
 function WorkflowBar({ pv }: { pv: PV }) {
   const isRejected = ["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(pv.status);
-  const steps = pv.head_verified === "N/A"
-    ? WORKFLOW_STEPS.filter(s => s.key !== "PENDING_HEAD")
-    : WORKFLOW_STEPS;
-  const currentIdx = isRejected ? -1 : steps.findIndex(s => s.key === pv.status);
+  const isBam = pv.pv_type === "BAM";
+  const steps: string[] = isBam
+    ? BAM_WORKFLOW_STEPS.map(s => s.label)
+    : (pv.head_verified === "N/A" ? WORKFLOW_STEPS.filter(s => s.key !== "PENDING_HEAD") : WORKFLOW_STEPS).map(s => s.label);
+  const currentIdx = isRejected ? -1
+    : isBam
+      ? BAM_WORKFLOW_STEPS.findIndex(s => s.statuses.includes(pv.status))
+      : (pv.head_verified === "N/A" ? WORKFLOW_STEPS.filter(s => s.key !== "PENDING_HEAD") : WORKFLOW_STEPS).findIndex(s => s.key === pv.status);
 
   return (
     <div className="flex items-center gap-0 mt-3 print:hidden">
-      {steps.map((step, i) => {
+      {steps.map((label, i) => {
         const done = !isRejected && currentIdx > i;
         const active = !isRejected && currentIdx === i;
         return (
-          <div key={step.key} className="flex items-center flex-1 min-w-0">
+          <div key={label} className="flex items-center flex-1 min-w-0">
             <div className="flex flex-col items-center flex-1 min-w-0">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors ${
                 done ? "bg-green-500 border-green-500 text-white"
@@ -68,7 +85,7 @@ function WorkflowBar({ pv }: { pv: PV }) {
               </div>
               <span className={`text-[12px] mt-1 font-medium truncate text-center ${
                 done ? "text-green-600" : active ? "text-[#4a6da7]" : "text-stone-400"
-              }`}>{step.label}</span>
+              }`}>{label}</span>
             </div>
             {i < steps.length - 1 && (
               <div className={`h-0.5 flex-1 mx-1 mb-4 ${done ? "bg-green-400" : "bg-stone-200"}`} />
@@ -1256,22 +1273,29 @@ export default function PVDetailPage() {
                 {(pv.attachments ?? []).map((url, i) => {
                   const filename = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? `Document ${i + 1}`);
                   const isImg = /\.(jpg|jpeg|png|webp|gif|svg|bmp)$/i.test(filename);
+                  const isHtml = /\.html?(\?|$)/i.test(filename);
                   return (
                     <div key={url} className="group relative">
-                      <a href={url} target="_blank" rel="noopener noreferrer" className="block">
-                        {isImg ? (
-                          <div className="w-[88px] h-[88px] rounded-xl overflow-hidden border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={url} alt={filename}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                          </div>
-                        ) : (
-                          <div className="w-[88px] h-[88px] rounded-xl border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50 flex flex-col items-center justify-center gap-1 px-2 text-center">
-                            <FileText size={22} className="text-stone-400 group-hover:text-[#4a6da7] transition-colors shrink-0" />
-                            <span className="text-[10px] text-stone-500 leading-tight line-clamp-2 break-all">{filename}</span>
-                          </div>
-                        )}
-                      </a>
+                      {isHtml ? (
+                        // Signed worksheet (or any HTML doc) — live preview
+                        // thumbnail, same as shown while submitting the PV.
+                        <HtmlAttachmentThumb url={url} label={filename} />
+                      ) : (
+                        <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+                          {isImg ? (
+                            <div className="w-[88px] h-[88px] rounded-xl overflow-hidden border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt={filename}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            </div>
+                          ) : (
+                            <div className="w-[88px] h-[88px] rounded-xl border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50 flex flex-col items-center justify-center gap-1 px-2 text-center">
+                              <FileText size={22} className="text-stone-400 group-hover:text-[#4a6da7] transition-colors shrink-0" />
+                              <span className="text-[10px] text-stone-500 leading-tight line-clamp-2 break-all">{filename}</span>
+                            </div>
+                          )}
+                        </a>
+                      )}
                       {user?.isFinanceAdmin && (
                         <button
                           onClick={() => handleRemoveAttachment(url)}
