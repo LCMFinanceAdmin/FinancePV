@@ -54,6 +54,13 @@ const EMPTY_TRAVEL_ITEM: TravelItem = { date: "", travel_type: "", description: 
 
 interface AttachmentFile { file: File; previewUrl: string; sourceUrl?: string; name?: string; }
 
+function isImageAtt(att: AttachmentFile, url: string | undefined) {
+  return att.file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(url || att.file.name);
+}
+function isHtmlAtt(att: AttachmentFile, url: string | undefined) {
+  return att.file.type === "text/html" || /\.html?(\?|$)/i.test(url || att.file.name);
+}
+
 function formatFileSize(b: number) {
   if (b < 1024) return `${b} B`;
   if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
@@ -191,6 +198,14 @@ export default function SubmitPVPage() {
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null);
+  // HTML attachments (e.g. the signed worksheet) are fetched and rendered via
+  // an iframe's srcDoc rather than `src`. srcDoc renders the string as HTML no
+  // matter what Content-Type the storage server reports — so it shows the
+  // actual document (thumbnail + full preview) even for files that were
+  // uploaded before the content-type was being set correctly, instead of the
+  // browser showing raw source because the server labelled it text/plain.
+  const [htmlCache, setHtmlCache] = useState<Record<string, string>>({});
+  const fetchedHtmlRef = useRef<Set<string>>(new Set());
 
   // Mobile accordion
   const [isMobile, setIsMobile] = useState(false);
@@ -415,6 +430,20 @@ export default function SubmitPVPage() {
     if (!form.ministry) { setProjects([]); return; }
     loadBudgetProjects(supabase, form.ministry).then(setProjects);
   }, [form.ministry]);
+
+  // Fetch the raw HTML of any HTML attachment so it can be rendered via
+  // iframe srcDoc (see htmlCache above). Each URL is fetched at most once.
+  useEffect(() => {
+    attachments.forEach(att => {
+      const url = att.previewUrl || att.sourceUrl;
+      if (!url || !isHtmlAtt(att, url) || fetchedHtmlRef.current.has(url)) return;
+      fetchedHtmlRef.current.add(url);
+      fetch(url)
+        .then(r => r.text())
+        .then(text => setHtmlCache(prev => ({ ...prev, [url]: text })))
+        .catch(() => { fetchedHtmlRef.current.delete(url); });
+    });
+  }, [attachments]);
 
   const totalFromItems = isTravelClaim
     ? travelItems.reduce((s, i) => s + (Number(i.amount) || 0), 0)
@@ -803,15 +832,38 @@ export default function SubmitPVPage() {
             <div key={idx} className="relative group">
               {(() => {
                 const url = att.previewUrl || att.sourceUrl;
-                const isImg = att.file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(url || att.file.name);
+                const isImg = isImageAtt(att, url);
+                const isHtml = isHtmlAtt(att, url);
+                const html = url ? htmlCache[url] : undefined;
                 const active = previewDocUrl === url;
-                return isImg && url ? (
-                  <button type="button" onClick={() => setPreviewDocUrl(active ? null : url)}
-                    className={`h-20 rounded-xl overflow-hidden border w-full transition-colors ${active ? "border-[#4a6da7]" : "border-stone-200"}`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt={att.name || att.file.name} className="w-full h-full object-cover" />
-                  </button>
-                ) : (
+                const ring = active ? "border-[#4a6da7]" : "border-stone-200";
+                if (isImg && url) {
+                  return (
+                    <button type="button" onClick={() => setPreviewDocUrl(active ? null : url)}
+                      className={`h-20 rounded-xl overflow-hidden border w-full transition-colors ${ring}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt={att.name || att.file.name} className="w-full h-full object-cover" />
+                    </button>
+                  );
+                }
+                // HTML (e.g. the signed worksheet) — render a live, scaled-down
+                // preview of the actual document as the thumbnail via srcDoc.
+                if (isHtml && html) {
+                  return (
+                    <button type="button" onClick={() => url && setPreviewDocUrl(active ? null : url)}
+                      className={`h-20 rounded-xl overflow-hidden border w-full bg-white relative transition-colors ${ring}`}>
+                      <iframe
+                        srcDoc={html}
+                        title={att.name || att.file.name}
+                        scrolling="no"
+                        tabIndex={-1}
+                        className="absolute top-0 left-0 border-0 pointer-events-none origin-top-left"
+                        style={{ width: "300%", height: "300%", transform: "scale(0.3333)" }}
+                      />
+                    </button>
+                  );
+                }
+                return (
                   <button type="button" onClick={() => url && setPreviewDocUrl(active ? null : url)}
                     className={`h-20 rounded-xl border w-full flex flex-col items-center justify-center gap-1 px-1 transition-colors ${active ? "border-[#4a6da7] bg-blue-50" : "border-stone-200 bg-stone-50 hover:bg-blue-50 hover:border-[#4a6da7]/40"}`}>
                     <FileIcon size={20} className="text-[#4a6da7]" />
@@ -833,11 +885,20 @@ export default function SubmitPVPage() {
           {(() => {
             const previewAtt = attachments.find(a => (a.previewUrl || a.sourceUrl) === previewDocUrl);
             const isPreviewImg = previewAtt
-              ? (previewAtt.file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(previewDocUrl))
+              ? isImageAtt(previewAtt, previewDocUrl)
               : /\.(jpg|jpeg|png|webp|gif|heic)$/i.test(previewDocUrl);
-            return isPreviewImg
-              ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={previewDocUrl} alt="preview" className="max-w-full max-h-96 object-contain mx-auto block" />
-              : <iframe src={previewDocUrl} className="w-full h-96 border-0" title="Document preview" />;
+            const isPreviewHtml = previewAtt ? isHtmlAtt(previewAtt, previewDocUrl) : /\.html?(\?|$)/i.test(previewDocUrl);
+            const previewHtml = htmlCache[previewDocUrl];
+            if (isPreviewImg) {
+              // eslint-disable-next-line @next/next/no-img-element
+              return <img src={previewDocUrl} alt="preview" className="max-w-full max-h-96 object-contain mx-auto block" />;
+            }
+            // HTML — render via srcDoc so it displays as a document regardless
+            // of the Content-Type the storage server reports.
+            if (isPreviewHtml && previewHtml) {
+              return <iframe srcDoc={previewHtml} className="w-full h-96 border-0 bg-white" title="Document preview" />;
+            }
+            return <iframe src={previewDocUrl} className="w-full h-96 border-0" title="Document preview" />;
           })()}
         </div>
       )}
