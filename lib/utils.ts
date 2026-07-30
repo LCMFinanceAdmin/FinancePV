@@ -19,6 +19,26 @@ export function formatDate(iso: string): string {
   });
 }
 
+// Working days (Mon–Fri, weekends excluded) elapsed from `start` up to and
+// including `end`. Used for claim aging — how long a claim took to be paid.
+// Note: does not account for public holidays, only weekends.
+export function workingDaysBetween(start: string | Date, end: string | Date): number {
+  const s = new Date(start);
+  const e = new Date(end);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return 0;
+  s.setHours(0, 0, 0, 0);
+  e.setHours(0, 0, 0, 0);
+  if (e <= s) return 0;
+  let count = 0;
+  const cur = new Date(s);
+  while (cur < e) {
+    cur.setDate(cur.getDate() + 1);
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return count;
+}
+
 export function formatDateTime(iso: string): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-MY", {

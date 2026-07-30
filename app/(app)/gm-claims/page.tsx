@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { ClaimsPrintModal } from "@/components/gm/claims-print-modal";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, workingDaysBetween } from "@/lib/utils";
 import type { PVApproval } from "@/lib/types";
 import type { POLineItem } from "@/components/gm/po-pdf";
 import {
@@ -79,6 +79,8 @@ interface LinkedPV {
   approvals: PVApproval[];
   loa_required: number;
   submitted_at: string;
+  date: string | null;       // voucher date the Finance Executive set when creating the PV
+  paid_at: string | null;    // when the Finance Executive marked the PV paid
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +126,22 @@ const STAGE_STEPS: { key: ClaimStage; label: string }[] = [
   { key: "APPROVED",      label: "Pending Payment" },
   { key: "PAID",          label: "Paid" },
 ];
+
+// ---------------------------------------------------------------------------
+// Aging — working days from the GM's submission (date of instruction) to the
+// date the linked PV was marked paid by the Finance Executive. If not paid yet,
+// it keeps running (submission → today). The rule is 7 working days; anything
+// over that is flagged red so the GM can see which payments are taking too long.
+// ---------------------------------------------------------------------------
+
+const AGING_LIMIT_DAYS = 7;
+
+function claimAging(claim: GMClaim): { days: number; paid: boolean; overdue: boolean } {
+  const paidAt = claim.pv?.paid_at ?? null;
+  const end = paidAt ?? new Date().toISOString();
+  const days = workingDaysBetween(claim.received_at, end);
+  return { days, paid: !!paidAt, overdue: days > AGING_LIMIT_DAYS };
+}
 
 // ---------------------------------------------------------------------------
 // Progress bar
@@ -426,7 +444,7 @@ export default function GMClaimsPage() {
       let pvMap: Record<string, LinkedPV> = {};
       if (pvIds.length > 0) {
         const { data: pvRows } = await supabase
-          .from("pvs").select("id,pv_no,status,amount,approvals,loa_required,submitted_at").in("id", pvIds);
+          .from("pvs").select("id,pv_no,status,amount,approvals,loa_required,submitted_at,date,paid_at").in("id", pvIds);
         for (const pv of pvRows ?? []) pvMap[pv.id] = pv;
       }
 
@@ -647,8 +665,17 @@ export default function GMClaimsPage() {
   }
 
   async function deleteClaim(claimId: string) {
-    await supabase.from("gm_claims").delete().eq("id", claimId);
+    // Request the deleted row back so we can tell a real delete apart from an
+    // RLS-blocked one (which returns no error but deletes nothing — that was
+    // why deleted claims kept reappearing). Only drop it from the UI if the
+    // database actually removed it.
+    const { data, error } = await supabase.from("gm_claims").delete().eq("id", claimId).select("id");
     setDeleteConfirm(null);
+    if (error) { showToast(`Delete failed: ${error.message}`, false); return; }
+    if (!data || data.length === 0) {
+      showToast("Delete was blocked by the database — the gm_claims delete permission still needs to be applied.", false);
+      return;
+    }
     setClaims(prev => prev.filter(c => c.id !== claimId));
     showToast("Claim deleted");
   }
@@ -947,9 +974,11 @@ export default function GMClaimsPage() {
 
         {loading ? (
           <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
-        ) : claims.length === 0 ? (
+        ) : claims.length === 0 && !(isGM && viewMode === "table") ? (
+          // GM in table view always gets the table so the inline blank add row
+          // is available even with no claims yet; everyone else sees the notice.
           <div className="text-center py-16 text-stone-400 text-sm">
-            No claims logged yet.{isGM && ' Tap "Add" to get started.'}
+            No claims logged yet.{isGM && ' Use the blank row below or tap "Add" to get started.'}
           </div>
         ) : viewMode === "table" ? (
 
@@ -977,6 +1006,7 @@ export default function GMClaimsPage() {
                       { label: "Claimant Name",                    w: "w-36" },
                       { label: "Committee / District / Personal",  w: "w-40" },
                       { label: "Status",                           w: "w-44" },
+                      { label: "Aging",                            w: "w-24" },
                     ].map(col => (
                       <th key={col.label} className={`${col.w} px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide border-r-2 border-[#3a5d97] last:border-r-0 whitespace-nowrap`}>
                         {col.label}
@@ -1084,11 +1114,36 @@ export default function GMClaimsPage() {
                               <ExternalLink size={11} /> {claim.pv.pv_no}
                             </Link>
                           )}
+                          {/* Date the Finance Executive generated the PV */}
+                          {claim.pv && (
+                            <div className="text-[12px] text-stone-400 mt-1">
+                              PV created {formatDate(claim.pv.date ?? claim.pv.submitted_at)}
+                            </div>
+                          )}
+                          {stage === "PAID" && claim.pv?.paid_at && (
+                            <div className="text-[12px] text-green-700 mt-0.5">
+                              Paid {formatDate(claim.pv.paid_at)}
+                            </div>
+                          )}
                           {stage === "PAID" && claim.claimant_informed_at && (
                             <div className="text-[12px] text-green-700 mt-1 flex items-center gap-0.5">
                               <Share2 size={10} /> Shared {new Date(claim.claimant_informed_at).toLocaleString("en-MY", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
+                        </td>
+
+                        {/* Aging — working days from submission to payment (or running) */}
+                        <td className="px-3 py-3 border border-gray-300 align-middle text-center">
+                          {(() => {
+                            const ag = claimAging(claim);
+                            return (
+                              <div className={`inline-flex flex-col items-center leading-tight ${ag.overdue ? "text-red-600" : ag.paid ? "text-green-700" : "text-stone-500"}`}>
+                                <span className={`text-[15px] font-bold tabular-nums ${ag.overdue ? "text-red-600" : ""}`}>{ag.days}</span>
+                                <span className="text-[10px] font-medium">{ag.days === 1 ? "day" : "days"}</span>
+                                <span className="text-[9px] mt-0.5">{ag.paid ? "to paid" : "& counting"}</span>
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         {/* Actions */}
@@ -1163,7 +1218,7 @@ export default function GMClaimsPage() {
                       {/* Inline attachment panel — always shown when toggled */}
                       {openAttachments.has(claim.id) && (
                         <tr className={rowBg}>
-                          <td colSpan={8} className="px-4 py-3 border border-gray-300 bg-stone-50/60">
+                          <td colSpan={9} className="px-4 py-3 border border-gray-300 bg-stone-50/60">
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-stone-400">
                                 <Paperclip size={10} /> Attachments {(claim.attachments?.length ?? 0) > 0 ? `(${claim.attachments!.length})` : ""}
@@ -1280,6 +1335,7 @@ export default function GMClaimsPage() {
                         </datalist>
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top text-[11px] text-stone-300 italic">—</td>
+                      <td className="px-2 py-2 border border-gray-300 align-top text-[11px] text-stone-300 italic text-center">—</td>
                       <td className="px-2 py-2 border border-gray-300 align-top print:hidden">
                         <div className="flex flex-col gap-1.5">
                           <button onClick={saveNewRow} disabled={savingNewRow}
@@ -1299,7 +1355,7 @@ export default function GMClaimsPage() {
                   {Array.from({ length: Math.max(0, 5 - (claims.length % 5 === 0 ? 5 : claims.length % 5)) }).map((_, i) => (
                     <tr key={`empty-${i}`} className={(claims.length + i) % 2 === 0 ? "bg-white" : "bg-blue-50/30"}>
                       <td className="px-3 py-3 text-center text-stone-300 border border-gray-300">{claims.length + i + 1}</td>
-                      {Array.from({ length: 7 }).map((_, j) => (
+                      {Array.from({ length: 8 }).map((_, j) => (
                         <td key={j} className="px-3 py-3 border border-gray-300" />
                       ))}
                     </tr>

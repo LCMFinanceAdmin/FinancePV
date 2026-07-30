@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid,
   RefreshCw, Users, Building2, Settings, LogOut,
@@ -132,6 +133,17 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
   const [selectedMinistries, setSelectedMinistries] = useState<string[]>(user.ministries ?? []);
   const availableMinistries = ministryList?.length ? ministryList : TEST_MINISTRIES;
 
+  // Inbox-style badge on "GM Claims" — how many GM claims the Finance Executive
+  // still has to process (not yet paid). Refetched on route change so it drops
+  // as claims are handled.
+  const [gmClaimCount, setGmClaimCount] = useState(0);
+  useEffect(() => {
+    if (!user.isFinanceAdmin) { setGmClaimCount(0); return; }
+    let cancelled = false;
+    fetchUnprocessedGmClaimCount(supabase).then(n => { if (!cancelled) setGmClaimCount(n); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [user.isFinanceAdmin, pathname, supabase]);
+
   async function signOut() {
     await supabase.auth.signOut();
     router.push("/login");
@@ -190,6 +202,11 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
                   >
                     {n.icon}
                     <span className="flex-1">{n.label}</span>
+                    {n.href === "/gm-claims" && gmClaimCount > 0 && (
+                      <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center leading-none">
+                        {gmClaimCount}
+                      </span>
+                    )}
                     {active && <ChevronRight size={13} />}
                   </Link>
                 );

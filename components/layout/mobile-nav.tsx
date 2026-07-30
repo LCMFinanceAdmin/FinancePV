@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2,
   FlaskConical, X, ClipboardList, RefreshCw, Settings, Activity,
@@ -57,6 +58,15 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
   const [selectedMinistries, setSelectedMinistries] = useState<string[]>(user.ministries ?? []);
   const [switching, setSwitching] = useState(false);
   const availableMinistries = ministryList?.length ? ministryList : TEST_MINISTRIES;
+
+  // Inbox-style badge for the Finance Executive: GM claims still needing action.
+  const [gmClaimCount, setGmClaimCount] = useState(0);
+  useEffect(() => {
+    if (!user.isFinanceAdmin) { setGmClaimCount(0); return; }
+    let cancelled = false;
+    fetchUnprocessedGmClaimCount(supabase).then(n => { if (!cancelled) setGmClaimCount(n); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [user.isFinanceAdmin, pathname, supabase]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -231,6 +241,9 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
                           >
                             <span className={active ? "text-[#4a6da7]" : "text-stone-400"}>{n.icon}</span>
                             <span className="flex-1">{n.label}</span>
+                            {n.href === "/gm-claims" && gmClaimCount > 0 && (
+                              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center leading-none">{gmClaimCount}</span>
+                            )}
                           </Link>
                         );
                       })}
@@ -337,8 +350,11 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
                     style={{ background: SIDEBAR_GRADIENT }}
                   />
                 )}
-                <span className={cn("transition-colors", active ? "text-[#3a5a9f]" : "text-stone-400")}>
+                <span className={cn("relative transition-colors", active ? "text-[#3a5a9f]" : "text-stone-400")}>
                   {n.icon}
+                  {n.href === "/gm-claims" && gmClaimCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center leading-none">{gmClaimCount}</span>
+                  )}
                 </span>
                 <span className={cn(
                   "text-[9.5px] font-medium transition-colors",

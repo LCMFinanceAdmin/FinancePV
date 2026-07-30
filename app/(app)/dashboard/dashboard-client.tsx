@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
+import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import type { PV } from "@/lib/types";
 import {
   FilePlus, Clock, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
@@ -51,6 +52,7 @@ export default function DashboardPage() {
   const isBamRole      = ["BUILDING_MANAGER", "BAM_COMMITTEE"].includes(userRole);
 
   const [gmNotifs, setGmNotifs] = useState<{ id: string; message: string; pv_id: string | null; created_at: string }[]>([]);
+  const [gmClaimCount, setGmClaimCount] = useState(0);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [recurringCount, setRecurringCount] = useState(0);
 
@@ -168,6 +170,7 @@ export default function DashboardPage() {
         if (notifResult.data) setGmNotifs(notifResult.data);
         if (bankResult.data) setBankAccounts(bankResult.data);
         if (recurringResult.count !== null) setRecurringCount(recurringResult.count);
+        if (isFinAdmin) fetchUnprocessedGmClaimCount(supabase).then(setGmClaimCount).catch(() => {});
 
         if (childPvResult.data && runs.length > 0) {
           const pvsByRun: Record<string, Partial<PV>[]> = {};
@@ -365,7 +368,7 @@ export default function DashboardPage() {
   const shortcuts = isFinanceAdmin ? [
     { href: "/control-center", icon: <Layers size={18} />, label: "Control Center",    desc: "Review pending PVs",       color: "from-blue-500 to-blue-700" },
     { href: "/recurring",      icon: <RefreshCw size={18} />, label: "Recurring",       desc: "Manage scheduled expenses", color: "from-violet-500 to-violet-700" },
-    { href: "/gm-claims",      icon: <Inbox size={18} />,     label: "GM Claims",       desc: "Review GM instructions",   color: "from-amber-500 to-amber-600" },
+    { href: "/gm-claims",      icon: <Inbox size={18} />,     label: "GM Claims",       desc: "Review GM instructions",   color: "from-amber-500 to-amber-600", badge: gmClaimCount },
     { href: "/banking",        icon: <Landmark size={18} />,  label: "Banking",         desc: "Accounts & balances",      color: "from-emerald-500 to-emerald-700" },
   ] : isBamRole ? [
     { href: "/bam-queue",          icon: <Building2 size={18} />, label: "BAM Queue",    desc: "PVs awaiting action",   color: "from-blue-500 to-blue-700" },
@@ -475,14 +478,24 @@ export default function DashboardPage() {
       <div>
         <div className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Quick Actions</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {shortcuts.map(s => (
-            <Link key={s.href} href={s.href}
-              className={`bg-gradient-to-br ${s.color} rounded-xl p-4 text-white group hover:shadow-lg hover:scale-[1.02] transition-all`}>
-              <div className="mb-2 opacity-90">{s.icon}</div>
-              <div className="text-[13px] font-bold leading-tight">{s.label}</div>
-              <div className="text-[11px] text-white/65 mt-0.5">{s.desc}</div>
-            </Link>
-          ))}
+          {shortcuts.map(s => {
+            const badge = "badge" in s ? (s.badge as number) : 0;
+            return (
+              <Link key={s.href} href={s.href}
+                className={`relative bg-gradient-to-br ${s.color} rounded-xl p-4 text-white group hover:shadow-lg hover:scale-[1.02] transition-all`}>
+                {badge > 0 && (
+                  <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-white text-red-600 text-[11px] font-bold grid place-items-center leading-none shadow-sm">
+                    {badge}
+                  </span>
+                )}
+                <div className="mb-2 opacity-90">{s.icon}</div>
+                <div className="text-[13px] font-bold leading-tight">{s.label}</div>
+                <div className="text-[11px] text-white/65 mt-0.5">
+                  {badge > 0 && s.href === "/gm-claims" ? `${badge} to process` : s.desc}
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </div>
 
