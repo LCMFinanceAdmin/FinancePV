@@ -1134,7 +1134,6 @@ export default function RecurringPage() {
       })
     : entityItems;
 
-  const existingGroups = [...new Set(entityItems.map(i => i.group_name || "General"))].sort();
   const filteredProjects = projects.filter(p => !form.ministry || p.ministry === form.ministry);
 
   return (
@@ -1530,8 +1529,14 @@ export default function RecurringPage() {
                 </Field>
                 {(() => {
                   const gp = parseGroupPath(form.group_name || "");
-                  const topFolders = [...new Set(existingGroups.map(g => parseGroupPath(g).folder))].sort();
-                  const subFolders = [...new Set(existingGroups
+                  // Folders are scoped to the entity being created (LCM shows only
+                  // LCM folders, BAM only BAM, etc.) — use the form's own entity,
+                  // not the active tab, so switching entity in the form updates it.
+                  const formGroups = [...new Set(items
+                    .filter(i => ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === form.pv_type)
+                    .map(i => i.group_name || "General"))];
+                  const topFolders = [...new Set(formGroups.map(g => parseGroupPath(g).folder))].sort();
+                  const subFolders = [...new Set(formGroups
                     .map(g => parseGroupPath(g))
                     .filter(p => p.folder === gp.folder && p.subfolder)
                     .map(p => p.subfolder as string))].sort();
@@ -1687,13 +1692,6 @@ export default function RecurringPage() {
                   </select>
                 </Field>
               </div>
-              {form.pv_type === "LCM" && (
-                <div className="mt-2">
-                  <Field label="PV Label (optional)">
-                    <input className={inp} value={form.pv_label} onChange={e => setField("pv_label", e.target.value)} placeholder="e.g. LCM - PBB" />
-                  </Field>
-                </div>
-              )}
             </div>
 
             </div>
@@ -1703,23 +1701,12 @@ export default function RecurringPage() {
             {formStep === 2 && (
             <div className="divide-y divide-stone-100">
 
-            {/* ── Section 4: Purpose & Description ── */}
+            {/* ── Section 4: Purpose ── */}
             <div className="px-5 py-4">
-              <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-3">Purpose & Description</p>
-              <div className="grid grid-cols-1 gap-y-4">
-                <Field label="Purpose * — one-line summary printed on PV">
-                  <input className={`${inp} text-base py-3`} value={form.purpose} onChange={e => setField("purpose", e.target.value)} placeholder="e.g. Monthly office rental payment" />
-                </Field>
-                <Field label="Description — fuller context, background, or breakdown">
-                  <textarea
-                    className={`${inp} text-base resize-none`}
-                    rows={4}
-                    value={form.description}
-                    onChange={e => setField("description", e.target.value)}
-                    placeholder="e.g. Monthly rental for Level 3 office space at Menara LCM per tenancy agreement Jan 2024."
-                  />
-                </Field>
-              </div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-3">Purpose</p>
+              <Field label="Purpose * — one-line summary printed on PV">
+                <input className={`${inp} text-base py-3`} value={form.purpose} onChange={e => setField("purpose", e.target.value)} placeholder="e.g. Monthly office rental payment" />
+              </Field>
             </div>
 
             {/* ── Section 5: Line Items ── */}
@@ -1740,12 +1727,14 @@ export default function RecurringPage() {
                 {form.line_items.map((li, i) => (
                   <div key={i} className="grid grid-cols-[1fr_150px_36px] divide-x divide-stone-200 border-t-2 border-stone-200 items-start px-4 py-2.5 hover:bg-stone-50">
                     <textarea
-                      rows={1}
-                      className="text-base text-stone-900 bg-transparent outline-none placeholder:text-stone-300 pr-3 font-medium resize-none overflow-hidden leading-snug"
+                      rows={3}
+                      className="text-base text-stone-900 bg-transparent outline-none placeholder:text-stone-300 pr-3 font-medium resize-none leading-snug min-h-[68px]"
                       value={li.description}
-                      placeholder={`Item ${i + 1}`}
-                      onChange={e => { updateLineItem(i, "description", e.target.value); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
-                      onFocus={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                      placeholder={i === 0
+                        ? "e.g. Monthly rental for Level 3 office space at Menara LCM per tenancy agreement Jan 2024."
+                        : `Item ${i + 1}`}
+                      onChange={e => { updateLineItem(i, "description", e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.max(68, e.target.scrollHeight) + "px"; }}
+                      onFocus={e => { e.target.style.height = "auto"; e.target.style.height = Math.max(68, e.target.scrollHeight) + "px"; }}
                     />
                     <input
                       className="text-base text-right text-stone-900 bg-transparent outline-none placeholder:text-stone-300 font-mono font-medium pl-3"
