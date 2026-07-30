@@ -470,6 +470,9 @@ export default function GMClaimsPage() {
       const allMins = [
         ...(budgetRows ?? []).map((r: { ministry: string }) => r.ministry),
         ...(pvMinRows ?? []).map((r: { ministry: string }) => r.ministry),
+        // Include committees/districts the GM has already used on claims, so a
+        // newly-typed one persists in the dropdown for future claims.
+        ...(claimRows ?? []).map((c) => c.ministry as string),
       ];
       setMinistries([...new Set(allMins.filter(Boolean))].sort() as string[]);
 
@@ -1843,6 +1846,7 @@ export default function GMClaimsPage() {
               <datalist id="ministry-list">
                 {ministries.map(m => <option key={m} value={m} />)}
               </datalist>
+              <p className="text-[11px] text-stone-400 mt-1">Pick from the list, or type a new committee/district — it&apos;s added to the list automatically.</p>
             </div>
 
             <div>
