@@ -22,16 +22,20 @@ const POPdfButton = dynamic(() => import("@/components/gm/po-pdf").then(m => ({ 
 
 const CLAIMANT_TYPES = ["Pastor", "Lay Leader", "EXCO Member", "Staff", "Other"];
 
-// Standard LCM ministries always offered in the Committee/District dropdown.
-// The GM can still type additional sub-ministries, districts, or "Personal —
-// <name>" and those get remembered too (see load()).
+// Standard LCM ministries — always offered in the Committee/District dropdown
+// and NOT deletable. The GM can add extra committees/districts/personal entries
+// on top of these (stored in gm_committees) and remove those.
 const LCM_MINISTRIES = [
+  "LCM HQ",
   "Mission",
-  "Orang Asli Ministry",
-  "Young Adult and Youth (YAY)",
   "Stewardship",
-  "Property",
-  "Trustees",
+  "Young Adult and Youth (YAY)",
+  "Orang Asli",
+  "Social Concern",
+  "Education",
+  "LCM Pastor",
+  "LCM HQ Staff",
+  "Bishop",
 ];
 
 const MALAYSIA_BANKS = [

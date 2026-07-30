@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { ChevronDown, Plus, X, Check } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Check } from "lucide-react";
 
 // A styled Committee / District / Personal picker with search, a type-to-add
 // row, and per-item delete for the custom (GM-added) entries. Standard LCM
@@ -86,16 +86,16 @@ export function CommitteePicker({
               </div>
             )}
             {custShown.map(c => (
-              <div key={c.id} className="group flex items-center gap-1 px-3 py-1.5 text-[13px] hover:bg-stone-50">
+              <div key={c.id} className="flex items-center gap-1 px-3 py-1.5 text-[13px] hover:bg-stone-50">
                 <button type="button" onClick={() => { onChange(c.name); setOpen(false); }}
                   className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
                   {value === c.name ? <Check size={12} className="text-green-600 shrink-0" /> : <span className="w-3 shrink-0" />}
                   <span className="truncate">{c.name}</span>
                 </button>
-                <button type="button" title="Remove from list"
+                <button type="button" title={`Remove "${c.name}" from the list`}
                   onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-                  className="text-stone-300 hover:text-red-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <X size={13} />
+                  className="text-stone-400 hover:text-red-500 hover:bg-red-50 rounded p-0.5 shrink-0 transition-colors">
+                  <Trash2 size={13} />
                 </button>
               </div>
             ))}
