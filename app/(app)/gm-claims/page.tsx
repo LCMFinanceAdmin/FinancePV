@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { ClaimsPrintModal } from "@/components/gm/claims-print-modal";
+import { CommitteePicker } from "@/components/gm/committee-picker";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate, workingDaysBetween } from "@/lib/utils";
@@ -153,6 +154,32 @@ function claimAging(claim: GMClaim): { days: number; paid: boolean; overdue: boo
   const end = paidAt ?? new Date().toISOString();
   const days = workingDaysBetween(claim.received_at, end);
   return { days, paid: !!paidAt, overdue: days > AGING_LIMIT_DAYS };
+}
+
+// Compact "30 Jul, 14:23" timestamp for the status log.
+function fmtStamp(s?: string | null): string {
+  if (!s) return "";
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-MY", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// Full processing log for a claim's PV, in order, each with the time it
+// happened: generated → GM verified → signatory approved → paid.
+function claimTimeline(claim: GMClaim): { label: string; at: string | null; done: boolean }[] {
+  const pv = claim.pv;
+  const approvals = pv?.approvals ?? [];
+  const gm = approvals.find(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
+  const sigs = approvals
+    .filter(a => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED")
+    .sort((a, b) => (a.timestamp ?? "").localeCompare(b.timestamp ?? ""));
+  const lastSig = sigs.length ? sigs[sigs.length - 1] : null;
+  return [
+    { label: "PV generated",   at: pv?.date ?? pv?.submitted_at ?? null, done: !!pv },
+    { label: "GM verified",    at: gm?.timestamp ?? null,                done: !!gm },
+    { label: sigs.length > 1 ? `Signatories approved (${sigs.length})` : "Signatory approved", at: lastSig?.timestamp ?? null, done: sigs.length > 0 },
+    { label: "Paid",           at: pv?.paid_at ?? null,                  done: pv?.status === "PAID" },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -357,7 +384,9 @@ export default function GMClaimsPage() {
   const [toast, setToast] = useState("");
   const [toastOk, setToastOk] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [ministries, setMinistries] = useState<string[]>([...LCM_MINISTRIES]);
+  // Custom (GM-added) committee/district/personal options — the standard LCM
+  // ministries live in LCM_MINISTRIES; these are the extras the GM types in.
+  const [gmCommittees, setGmCommittees] = useState<{ id: string; name: string }[]>([]);
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [bankSummary, setBankSummary] = useState<{ name: string; bank_name: string; balance: number; tag: string }[]>([]);
 
@@ -473,22 +502,12 @@ export default function GMClaimsPage() {
         setGmNotifs(notifRows ?? []);
       }
 
-      const [{ data: budgetRows }, { data: pvMinRows }, { data: bankRows }] = await Promise.all([
-        supabase.from("budget_items").select("ministry"),
-        supabase.from("pvs").select("ministry").not("ministry", "is", null),
+      const [{ data: committeeRows }, { data: bankRows }] = await Promise.all([
+        supabase.from("gm_committees").select("id,name").order("name"),
         supabase.from("bank_accounts").select("name,bank_name,current_balance,is_lcm_cashflow_ref,is_bam_cashflow_ref,entity")
           .eq("account_type", "CURRENT").eq("is_active", true),
       ]);
-      const allMins = [
-        // Standard LCM ministries always appear first.
-        ...LCM_MINISTRIES,
-        ...(budgetRows ?? []).map((r: { ministry: string }) => r.ministry),
-        ...(pvMinRows ?? []).map((r: { ministry: string }) => r.ministry),
-        // Include committees/districts the GM has already used on claims, so a
-        // newly-typed one persists in the dropdown for future claims.
-        ...(claimRows ?? []).map((c) => c.ministry as string),
-      ];
-      setMinistries([...new Set(allMins.filter(Boolean))].sort() as string[]);
+      setGmCommittees((committeeRows ?? []) as { id: string; name: string }[]);
 
       if (bankRows) {
         const summary: { name: string; bank_name: string; balance: number; tag: string }[] = [];
@@ -676,9 +695,28 @@ export default function GMClaimsPage() {
     const parsed = field === "amount" ? parseFloat(String(value)) || 0 : value;
     await supabase.from("gm_claims").update({ [field]: parsed, updated_at: new Date().toISOString() }).eq("id", claimId);
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, [field]: parsed } : c));
-    if (field === "ministry" && value && !ministries.includes(String(value))) {
-      setMinistries(prev => [...prev, String(value)].sort());
+  }
+
+  // Add / remove a custom committee-district option (standard LCM ministries
+  // are fixed and can't be removed here).
+  async function addCommittee(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (LCM_MINISTRIES.some(m => m.toLowerCase() === trimmed.toLowerCase())) return;
+    if (gmCommittees.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) return;
+    const { data, error } = await supabase.from("gm_committees")
+      .insert({ name: trimmed, created_by: currentUser?.email ?? "" }).select("id,name").single();
+    if (error) {
+      if (!String(error.message).toLowerCase().includes("duplicate")) showToast(`Couldn't add: ${error.message}`, false);
+      return;
     }
+    if (data) setGmCommittees(prev => [...prev, data as { id: string; name: string }].sort((a, b) => a.name.localeCompare(b.name)));
+  }
+
+  async function deleteCommittee(id: string) {
+    const { error } = await supabase.from("gm_committees").delete().eq("id", id);
+    if (error) { showToast(`Couldn't remove: ${error.message}`, false); return; }
+    setGmCommittees(prev => prev.filter(c => c.id !== id));
   }
 
   async function deleteClaim(claimId: string) {
@@ -1131,15 +1169,18 @@ export default function GMClaimsPage() {
                               <ExternalLink size={11} /> {claim.pv.pv_no}
                             </Link>
                           )}
-                          {/* Date the Finance Executive generated the PV */}
+                          {/* Full processing log with timestamps */}
                           {claim.pv && (
-                            <div className="text-[12px] text-stone-400 mt-1">
-                              PV created {formatDate(claim.pv.date ?? claim.pv.submitted_at)}
-                            </div>
-                          )}
-                          {stage === "PAID" && claim.pv?.paid_at && (
-                            <div className="text-[12px] text-green-700 mt-0.5">
-                              Paid {formatDate(claim.pv.paid_at)}
+                            <div className="mt-1.5 space-y-0.5">
+                              {claimTimeline(claim).map((ev, i) => (
+                                <div key={i} className={`flex items-start gap-1 text-[11px] leading-tight ${ev.done ? "text-stone-600" : "text-stone-300"}`}>
+                                  {ev.done
+                                    ? <CheckCircle size={10} className="text-green-500 shrink-0 mt-[1px]" />
+                                    : <Clock size={10} className="text-stone-300 shrink-0 mt-[1px]" />}
+                                  <span className="font-medium">{ev.label}</span>
+                                  {ev.done && ev.at && <span className="text-stone-400 tabular-nums whitespace-nowrap">· {fmtStamp(ev.at)}</span>}
+                                </div>
+                              ))}
                             </div>
                           )}
                           {stage === "PAID" && claim.claimant_informed_at && (
@@ -1343,13 +1384,14 @@ export default function GMClaimsPage() {
                         </select>
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
-                        <input type="text" placeholder="Ministry / Committee…" value={newRow.ministry}
-                          list="ministry-list"
-                          onChange={e => setNewRow(r => ({ ...r, ministry: e.target.value }))}
-                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white" />
-                        <datalist id="ministry-list">
-                          {ministries.map(m => <option key={m} value={m} />)}
-                        </datalist>
+                        <CommitteePicker
+                          value={newRow.ministry}
+                          onChange={v => setNewRow(r => ({ ...r, ministry: v }))}
+                          standard={LCM_MINISTRIES}
+                          custom={gmCommittees}
+                          onAdd={addCommittee}
+                          onDelete={deleteCommittee}
+                        />
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top text-[11px] text-stone-300 italic">—</td>
                       <td className="px-2 py-2 border border-gray-300 align-top text-[11px] text-stone-300 italic text-center">—</td>
@@ -1850,17 +1892,20 @@ export default function GMClaimsPage() {
               </div>
             </div>
 
-            {/* Ministry — typeable combobox */}
+            {/* Ministry — committee/district picker with add + delete */}
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Ministry / Committee / District</label>
-              <input list="ministry-list" value={form.ministry}
-                onChange={e => setF("ministry", e.target.value)}
-                placeholder="Type or select…"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
-              <datalist id="ministry-list">
-                {ministries.map(m => <option key={m} value={m} />)}
-              </datalist>
-              <p className="text-[11px] text-stone-400 mt-1">Pick from the list, or type a new committee/district — it&apos;s added to the list automatically.</p>
+              <CommitteePicker
+                value={form.ministry}
+                onChange={v => setF("ministry", v)}
+                standard={LCM_MINISTRIES}
+                custom={gmCommittees}
+                onAdd={addCommittee}
+                onDelete={deleteCommittee}
+                placeholder="Pick, or type to add a new one…"
+                size="md"
+              />
+              <p className="text-[11px] text-stone-400 mt-1">Type a new committee/district and press &ldquo;Add&rdquo; — it stays in the list. Hover an added one to remove it.</p>
             </div>
 
             <div>
