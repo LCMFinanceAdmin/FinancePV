@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
       if (action === "APPROVED") {
         const sigs = { ...(profile?.saved_signatures as Record<string, string> || {}), [profile.role]: signature_data };
         await db.from("user_security_credentials").upsert({
-          email: user.email!, saved_signatures: sigs, updated_at: now,
+          email: user.email!, saved_signatures: sigs, updated_at: new Date().toISOString(),
         }, { onConflict: "email" });
       }
     } else if (roleSig) {

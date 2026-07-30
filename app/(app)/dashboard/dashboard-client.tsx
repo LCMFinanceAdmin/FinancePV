@@ -414,14 +414,27 @@ export default function DashboardPage() {
           href={isFinanceAdmin ? "/signatory-activity?tab=approved" : "/my-pvs"}
           accent="emerald"
         />
-        <AttentionCard
-          icon={<AlertCircle size={20} className="text-blue-500" />}
-          label="Needs Info"
-          value={needsInfoCount}
-          sub="requires update"
-          href="/my-pvs"
-          accent="blue"
-        />
+        {isFinanceAdmin ? (
+          // Finance Executive: surface GM claims still to be processed instead
+          // of the applicant-oriented "Needs Info" card.
+          <AttentionCard
+            icon={<Inbox size={20} className="text-blue-500" />}
+            label="GM Claims"
+            value={gmClaimCount}
+            sub="to process"
+            href="/gm-claims"
+            accent="blue"
+          />
+        ) : (
+          <AttentionCard
+            icon={<AlertCircle size={20} className="text-blue-500" />}
+            label="Needs Info"
+            value={needsInfoCount}
+            sub="requires update"
+            href="/my-pvs"
+            accent="blue"
+          />
+        )}
         {isFinanceAdmin ? (
           <AttentionCard
             icon={<RefreshCw size={20} className="text-violet-500" />}

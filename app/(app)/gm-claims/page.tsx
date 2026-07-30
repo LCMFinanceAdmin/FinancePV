@@ -21,6 +21,18 @@ const POPdfButton = dynamic(() => import("@/components/gm/po-pdf").then(m => ({ 
 
 const CLAIMANT_TYPES = ["Pastor", "Lay Leader", "EXCO Member", "Staff", "Other"];
 
+// Standard LCM ministries always offered in the Committee/District dropdown.
+// The GM can still type additional sub-ministries, districts, or "Personal —
+// <name>" and those get remembered too (see load()).
+const LCM_MINISTRIES = [
+  "Mission",
+  "Orang Asli Ministry",
+  "Young Adult and Youth (YAY)",
+  "Stewardship",
+  "Property",
+  "Trustees",
+];
+
 const MALAYSIA_BANKS = [
   "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
   "AmBank", "Bank Islam", "Affin Bank", "Alliance Bank",
@@ -345,7 +357,7 @@ export default function GMClaimsPage() {
   const [toast, setToast] = useState("");
   const [toastOk, setToastOk] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [ministries, setMinistries] = useState<string[]>([]);
+  const [ministries, setMinistries] = useState<string[]>([...LCM_MINISTRIES]);
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [bankSummary, setBankSummary] = useState<{ name: string; bank_name: string; balance: number; tag: string }[]>([]);
 
@@ -468,6 +480,8 @@ export default function GMClaimsPage() {
           .eq("account_type", "CURRENT").eq("is_active", true),
       ]);
       const allMins = [
+        // Standard LCM ministries always appear first.
+        ...LCM_MINISTRIES,
         ...(budgetRows ?? []).map((r: { ministry: string }) => r.ministry),
         ...(pvMinRows ?? []).map((r: { ministry: string }) => r.ministry),
         // Include committees/districts the GM has already used on claims, so a
