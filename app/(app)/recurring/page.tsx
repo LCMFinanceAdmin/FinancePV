@@ -280,6 +280,11 @@ export default function RecurringPage() {
   const [showPaymentBrowser, setShowPaymentBrowser] = useState(false);
   const [navFreq, setNavFreq] = useState<string | null>(null);
   const [navFolder, setNavFolder] = useState<string | null>(null);
+  // Empty (item-less) folders the user created up front, so a folder can exist
+  // before any expense is added to it. Path is "Folder" or "Folder / Sub".
+  const [emptyFolders, setEmptyFolders] = useState<{ id: string; pv_type: string; frequency: string; path: string }[]>([]);
+  const [newFolderModal, setNewFolderModal] = useState<{ freq: string; parent: string | null } | null>(null);
+  const [newFolderName, setNewFolderName] = useState("");
   const [renameTarget, setRenameTarget] = useState<{ kind: "folder" | "subfolder"; freq: string; folder: string; subfolder?: string } | null>(null);
   const [renameInput, setRenameInput] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -300,12 +305,14 @@ export default function RecurringPage() {
 
     const recQuery = supabase.from("recurring_pvs").select("*").order("name");
 
-    const [{ data: rec }, { data: min }, { data: proj }] = await Promise.all([
+    const [{ data: rec }, { data: min }, { data: proj }, { data: folders }] = await Promise.all([
       recQuery,
       supabase.from("ministries").select("name").order("name"),
       supabase.from("projects").select("name,ministry").order("name"),
+      supabase.from("recurring_folders").select("id,pv_type,frequency,path"),
     ]);
     setItems((rec ?? []).map((r: RecurringPV) => ({ ...r, line_items: r.line_items ?? [], group_name: r.group_name || "General" })));
+    setEmptyFolders((folders ?? []) as { id: string; pv_type: string; frequency: string; path: string }[]);
     setMinistries((min ?? []).map((m: { name: string }) => m.name));
     setProjects(proj ?? []);
 
@@ -962,6 +969,23 @@ export default function RecurringPage() {
             ? { ...i, group_name: newGroupName } : i
         ));
       }
+      // Carry any empty (item-less) folders under the renamed path along too.
+      const oldPrefix = renameTarget.kind === "folder"
+        ? renameTarget.folder
+        : `${renameTarget.folder} / ${renameTarget.subfolder}`;
+      const newPrefix = renameTarget.kind === "folder"
+        ? newName
+        : `${renameTarget.folder} / ${newName}`;
+      const affected = emptyFolders.filter(f => f.pv_type === entityTab && f.frequency === renameTarget.freq
+        && (f.path === oldPrefix || f.path.startsWith(oldPrefix + " / ")));
+      for (const f of affected) {
+        const newPath = newPrefix + f.path.slice(oldPrefix.length);
+        await supabase.from("recurring_folders").update({ path: newPath }).eq("id", f.id);
+      }
+      if (affected.length) {
+        setEmptyFolders(prev => prev.map(f => affected.some(a => a.id === f.id)
+          ? { ...f, path: newPrefix + f.path.slice(oldPrefix.length) } : f));
+      }
       setRenameTarget(null);
       showMsg("Renamed");
     } catch (e) {
@@ -978,17 +1002,23 @@ export default function RecurringPage() {
       .filter(i => (i.frequency || "MONTHLY") === freq)
       .filter(i => groupNames.includes(i.group_name || "General"))
       .map(i => i.id);
-    const hasSubfolders = groupNames.some(g => parseGroupPath(g).subfolder);
+    const hasSubfolders = groupNames.some(g => parseGroupPath(g).subfolder)
+      || emptyFolders.some(f => f.pv_type === entityTab && f.frequency === freq && f.path.startsWith(folder + " / "));
     setConfirmModal({
       title: `Delete "${folder}"?`,
-      msg: `This deletes the folder${hasSubfolders ? ", every subfolder inside it," : ""} and all ${targetIds.length} recurring expense${targetIds.length !== 1 ? "s" : ""} within. This cannot be undone.`,
+      msg: targetIds.length === 0
+        ? `This removes the empty folder "${folder}"${hasSubfolders ? " and its subfolders" : ""}.`
+        : `This deletes the folder${hasSubfolders ? ", every subfolder inside it," : ""} and all ${targetIds.length} recurring expense${targetIds.length !== 1 ? "s" : ""} within. This cannot be undone.`,
       danger: true,
       onOk: async () => {
-        const { error } = await supabase.from("recurring_pvs").delete().in("id", targetIds);
-        if (error) { showMsg(error.message, false); return; }
-        setItems(is => is.filter(i => !targetIds.includes(i.id)));
+        if (targetIds.length > 0) {
+          const { error } = await supabase.from("recurring_pvs").delete().in("id", targetIds);
+          if (error) { showMsg(error.message, false); return; }
+          setItems(is => is.filter(i => !targetIds.includes(i.id)));
+        }
+        await removeEmptyFoldersUnder(freq, folder);
         setNavFolder(nf => nf === folder ? null : nf);
-        showMsg(`Deleted "${folder}" (${targetIds.length} expense${targetIds.length !== 1 ? "s" : ""})`);
+        showMsg(targetIds.length === 0 ? `Deleted empty folder "${folder}"` : `Deleted "${folder}" (${targetIds.length} expense${targetIds.length !== 1 ? "s" : ""})`);
       },
     });
   }
@@ -1008,9 +1038,40 @@ export default function RecurringPage() {
         const { error } = await supabase.from("recurring_pvs").delete().in("id", targetIds);
         if (error) { showMsg(error.message, false); return; }
         setItems(is => is.filter(i => !targetIds.includes(i.id)));
+        await removeEmptyFoldersUnder(freq, groupName);
         showMsg(`Deleted "${subfolder}" (${targetIds.length} expense${targetIds.length !== 1 ? "s" : ""})`);
       },
     });
+  }
+
+  // --- Empty folder creation / cleanup ---
+  async function createEmptyFolder() {
+    if (!newFolderModal) return;
+    // A single segment name — strip any accidental " / " so it stays one level.
+    const name = newFolderName.replace(/\s*\/\s*/g, " ").trim();
+    if (!name) return;
+    const { freq, parent } = newFolderModal;
+    const path = parent ? `${parent} / ${name}` : name;
+    const existsInItems = items.some(i => ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab
+      && (i.frequency || "MONTHLY") === freq && ((i.group_name || "General") === path || (i.group_name || "").startsWith(path + " / ")));
+    const existsEmpty = emptyFolders.some(f => f.pv_type === entityTab && f.frequency === freq && f.path === path);
+    if (existsInItems || existsEmpty) { setNewFolderModal(null); setNewFolderName(""); showMsg("That folder already exists"); return; }
+    const { data, error } = await supabase.from("recurring_folders")
+      .insert({ pv_type: entityTab, frequency: freq, path }).select("id,pv_type,frequency,path").single();
+    if (error) { showMsg(`Couldn't create folder: ${error.message}`, false); return; }
+    if (data) setEmptyFolders(prev => [...prev, data as { id: string; pv_type: string; frequency: string; path: string }]);
+    setNewFolderModal(null); setNewFolderName("");
+    showMsg(parent ? "Subfolder created" : "Folder created");
+  }
+
+  // Delete empty-folder rows at or under `path` (used after a folder/subfolder
+  // with items is deleted, or when the empty folder itself is removed).
+  async function removeEmptyFoldersUnder(freq: string, path: string) {
+    const toRemove = emptyFolders.filter(f => f.pv_type === entityTab && f.frequency === freq
+      && (f.path === path || f.path.startsWith(path + " / ")));
+    if (toRemove.length === 0) return;
+    await supabase.from("recurring_folders").delete().in("id", toRemove.map(f => f.id));
+    setEmptyFolders(prev => prev.filter(f => !toRemove.some(r => r.id === f.id)));
   }
 
   function calcNextDue(freq: string) {
@@ -1400,6 +1461,36 @@ export default function RecurringPage() {
                 {renaming ? "Saving…" : "Save"}
               </button>
               <button onClick={() => setRenameTarget(null)}
+                className="w-full px-4 py-2 text-sm rounded-xl border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New folder / subfolder modal */}
+      {newFolderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <p className="text-sm font-bold text-stone-800">
+              {newFolderModal.parent ? "New subfolder" : "New folder"}
+            </p>
+            <p className="text-xs text-stone-400 -mt-2">
+              {newFolderModal.parent
+                ? `Inside ${newFolderModal.parent} · ${FREQ_DISPLAY[newFolderModal.freq]}`
+                : `In ${FREQ_DISPLAY[newFolderModal.freq]}`}
+            </p>
+            <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && newFolderName.trim()) createEmptyFolder(); if (e.key === "Escape") setNewFolderModal(null); }}
+              placeholder={newFolderModal.parent ? "e.g. Clergy allowances" : "e.g. Allowances"}
+              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+            <div className="flex flex-col gap-2 pt-1">
+              <button onClick={createEmptyFolder} disabled={!newFolderName.trim()}
+                className="w-full px-4 py-2.5 text-sm rounded-xl font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] disabled:opacity-50 transition-colors">
+                Create
+              </button>
+              <button onClick={() => setNewFolderModal(null)}
                 className="w-full px-4 py-2 text-sm rounded-xl border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors">
                 Cancel
               </button>
@@ -2044,8 +2135,8 @@ export default function RecurringPage() {
           if (!navFreq) {
             return (
               <div className="space-y-2">
-                {FREQ_ORDER.filter(freq => byFreq[freq]).map(freq => {
-                  const freqItems = Object.values(byFreq[freq]).flat();
+                {FREQ_ORDER.filter(freq => byFreq[freq] || emptyFolders.some(f => f.pv_type === entityTab && f.frequency === freq)).map(freq => {
+                  const freqItems = Object.values(byFreq[freq] ?? {}).flat();
                   const freqTotal = freqItems.length;
                   const totalAmt = freqItems.reduce((s, i) => s + i.amount, 0);
                   const nextDue = freqItems.map(i => i.next_due).filter(Boolean).sort()[0];
@@ -2097,6 +2188,13 @@ export default function RecurringPage() {
             if (!folderMap[folder]) folderMap[folder] = [];
             folderMap[folder].push(...(gItems as RecurringPV[]));
           });
+          // Empty folders created up front for this entity + frequency also
+          // count as folders (top-level = single-segment path).
+          const freqEmptyFolders = emptyFolders.filter(f => f.pv_type === entityTab && f.frequency === navFreq);
+          freqEmptyFolders.forEach(f => {
+            const top = parseGroupPath(f.path).folder;
+            if (!folderMap[top]) folderMap[top] = [];
+          });
           const folderNames = Object.keys(folderMap).sort();
 
           // ── Level 1: folder cards ────────────────────────────────────────
@@ -2111,7 +2209,13 @@ export default function RecurringPage() {
                   <span className="font-semibold text-stone-700">{FREQ_DISPLAY[navFreq]}</span>
                 </div>
 
-                <p className="text-sm font-semibold text-stone-600 mb-3">{FREQ_DISPLAY[navFreq]} folders</p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-stone-600">{FREQ_DISPLAY[navFreq]} folders</p>
+                  <button onClick={() => { setNewFolderModal({ freq: navFreq, parent: null }); setNewFolderName(""); }}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50 transition-colors">
+                    <Plus size={13} /> New Folder
+                  </button>
+                </div>
 
                 {/* Master mode inline panel */}
                 {masterMode && entityTab === "LCM" && (
@@ -2231,6 +2335,11 @@ export default function RecurringPage() {
             const key = subfolder ?? "";
             (subfolderMap[key] ??= []).push(item);
           });
+          // Empty subfolders created up front under this folder.
+          freqEmptyFolders.forEach(f => {
+            const gp = parseGroupPath(f.path);
+            if (gp.folder === navFolder && gp.subfolder && !subfolderMap[gp.subfolder]) subfolderMap[gp.subfolder] = [];
+          });
           const directItems = subfolderMap[""] ?? [];
           const subfolderNames = Object.keys(subfolderMap).filter(k => k !== "").sort();
 
@@ -2263,6 +2372,10 @@ export default function RecurringPage() {
                   </button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <button onClick={() => { setNewFolderModal({ freq: navFreq, parent: navFolder }); setNewFolderName(""); }}
+                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50 transition-colors whitespace-nowrap">
+                    <Plus size={10} /> New Subfolder
+                  </button>
                   <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
                     <GroupCheckbox groupItems={folderItems} selected={selected}
                       onToggle={() => toggleSelectGroup(folderItems)} />
@@ -2316,6 +2429,13 @@ export default function RecurringPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
+                    {directItems.length === 0 && subfolderNames.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="py-8 text-center text-xs text-stone-400">
+                          This folder is empty. Use <span className="font-semibold text-[#4a6da7]">New Recurring</span> to add an expense here, or <span className="font-semibold text-[#4a6da7]">New Subfolder</span> to nest another folder.
+                        </td>
+                      </tr>
+                    )}
                     {directItems.map((item, idx) => (
                       <RecurringRow
                         key={item.id} item={item} rowNo={idx + 1}
