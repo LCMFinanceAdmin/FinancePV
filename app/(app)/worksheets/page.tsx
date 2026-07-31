@@ -1,9 +1,10 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { SignaturePad } from "@/components/ui/signature-pad";
+import { CommitteePicker } from "@/components/gm/committee-picker";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, hoursBetween } from "@/lib/utils";
 import { worksheetPrintHtml } from "@/components/worksheets/worksheet-html";
@@ -137,6 +138,10 @@ export default function WorksheetsPage() {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [workers, setWorkers] = useState<BamWorker[]>([]);
   const [savingWorker, setSavingWorker] = useState(false);
+  // After a save, scroll the drawer straight to the signature area so the
+  // building manager doesn't have to scroll down to sign.
+  const signaturesRef = useRef<HTMLDivElement>(null);
+  const [scrollToSign, setScrollToSign] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "AWAITING" | "READY" | "PV_RAISED">("ALL");
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -176,6 +181,15 @@ export default function WorksheetsPage() {
     loadWorkers(form.worker_type);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.worker_type]);
+
+  // Scroll to the signature area once it's rendered after a save.
+  useEffect(() => {
+    if (scrollToSign && editing?.id) {
+      const t = setTimeout(() => signaturesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+      setScrollToSign(false);
+      return () => clearTimeout(t);
+    }
+  }, [scrollToSign, editing?.id]);
 
   const periodType = PERIOD_TYPE_FOR[form.worker_type];
   const totalHours = useMemo(
@@ -219,6 +233,13 @@ export default function WorksheetsPage() {
       created_by: userEmail,
       updated_at: new Date().toISOString(),
     }, { onConflict: "worker_type,name" });
+  }
+
+  async function deleteFavourite(id: string) {
+    const { error } = await supabase.from("bam_workers").delete().eq("id", id);
+    if (error) { showMsg(`Couldn't remove favourite: ${error.message}`, false); return; }
+    setWorkers(prev => prev.filter(w => w.id !== id));
+    showMsg("Removed favourite worker");
   }
 
   async function saveWorkerFavourite() {
@@ -413,6 +434,7 @@ export default function WorksheetsPage() {
         if (!row) throw new Error("Failed to save worksheet after retries");
         setEditing(row);
         setIsNew(false);
+        setScrollToSign(true);
         showMsg(`Worksheet ${row.worksheet_no} saved`);
       } else {
         // If this worksheet was already fully signed and the BEM has now
@@ -437,6 +459,7 @@ export default function WorksheetsPage() {
           .eq("id", editing.id).select("*").single();
         if (error) throw new Error(error.message);
         setEditing(row as WorkerWorksheet);
+        setScrollToSign(true);
         if (financialsChanged) {
           setWorkerSigDraft(""); setBemSigDraft("");
           showMsg("Hours/rate/total changed — both signatures were cleared. Please sign again before generating a PV.");
@@ -887,11 +910,18 @@ export default function WorksheetsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <label className={label}>Worker name</label>
-                    <input className={inp} list="bam-worker-names" value={form.worker_name}
-                      onChange={e => selectWorkerName(e.target.value)} placeholder="Full name — pick existing or type new" />
-                    <datalist id="bam-worker-names">
-                      {workers.map(w => <option key={w.id} value={w.name} />)}
-                    </datalist>
+                    <CommitteePicker
+                      value={form.worker_name}
+                      onChange={selectWorkerName}
+                      standard={[]}
+                      custom={workers.map(w => ({
+                        id: w.id, name: w.name,
+                        meta: [w.bank_name, w.bank_account_no].filter(Boolean).join(" · "),
+                      }))}
+                      onDelete={deleteFavourite}
+                      placeholder="Full name — pick a favourite or type a new one"
+                      size="md"
+                    />
                   </div>
                   <div>
                     <label className={label}>Bank</label>
@@ -1003,7 +1033,7 @@ export default function WorksheetsPage() {
 
               {/* Signatures (only after first save) */}
               {editing.id && (
-                <div className="px-5 py-4 space-y-4">
+                <div ref={signaturesRef} className="px-5 py-4 space-y-4 scroll-mt-4">
                   <p className="text-xs font-semibold text-stone-500 uppercase tracking-widest">Signatures</p>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>

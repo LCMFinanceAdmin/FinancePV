@@ -12,7 +12,7 @@ export function CommitteePicker({
   value: string;
   onChange: (v: string) => void;
   standard: string[];
-  custom?: { id: string; name: string }[];
+  custom?: { id: string; name: string; meta?: string }[];
   onAdd?: (name: string) => Promise<void> | void;
   onDelete?: (id: string) => Promise<void> | void;
   placeholder?: string;
@@ -89,8 +89,11 @@ export function CommitteePicker({
               <div key={c.id} className="flex items-center gap-1 px-3 py-1.5 text-[13px] hover:bg-stone-50">
                 <button type="button" onClick={() => { onChange(c.name); setOpen(false); }}
                   className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-                  {value === c.name ? <Check size={12} className="text-green-600 shrink-0" /> : <span className="w-3 shrink-0" />}
-                  <span className="truncate">{c.name}</span>
+                  {value === c.name ? <Check size={12} className="text-green-600 shrink-0 mt-0.5 self-start" /> : <span className="w-3 shrink-0" />}
+                  <span className="min-w-0">
+                    <span className="block truncate">{c.name}</span>
+                    {c.meta && <span className="block text-[11px] text-stone-400 truncate">{c.meta}</span>}
+                  </span>
                 </button>
                 {onDelete && (
                   <button type="button" title={`Remove "${c.name}" from the list`}
