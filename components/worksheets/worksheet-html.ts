@@ -53,18 +53,56 @@ function sigBlock(label: string, signature: string | null, signedBy: string | nu
 }
 
 export function worksheetPrintHtml(ws: WorkerWorksheet, logoDataUri = ""): string {
+  const isRelaWs = ws.worker_type === "RELA_PERSONNEL";
   const rateLabel = ws.worker_type === "PA_PERSONNEL" || ws.worker_type === "RELA_PERSONNEL"
     ? "Rate per Session (RM)" : "Rate per Hour (RM)";
   const statusBg = ws.status === "SIGNED" ? "#dcfce7" : ws.status === "PV_RAISED" ? "#dbeafe" : "#f3f4f6";
   const statusColor = ws.status === "SIGNED" ? "#15803d" : ws.status === "PV_RAISED" ? "#1d4ed8" : "#4b5563";
 
-  const rows = ws.entries.map((e) => `
-    <tr>
-      <td>${esc(fmtDate(e.date))}</td>
-      <td>${e.start_time && e.end_time ? `${esc(e.start_time)}–${esc(e.end_time)}` : "—"}</td>
-      <td class="right">${esc(e.hours)}</td>
-      <td>${esc(e.purpose || "")}</td>
-    </tr>`).join("");
+  const relaEntries = isRelaWs ? ws.entries.filter(e => (e.name ?? "").trim()) : [];
+
+  // RELA lists named personnel (no date/time/hours); every other type lists
+  // the days/sessions worked with times and remarks.
+  const entriesTable = isRelaWs
+    ? `<table class="entries">
+      <thead><tr><th style="width:52px" class="right">No.</th><th>RELA Personnel</th></tr></thead>
+      <tbody>${relaEntries.map((e, i) => `
+        <tr><td class="right">${i + 1}</td><td>${esc(e.name || "")}</td></tr>`).join("")}</tbody>
+    </table>`
+    : `<table class="entries">
+      <thead><tr><th>Date</th><th>Time</th><th class="right">Hours</th><th>Purpose / Remarks</th></tr></thead>
+      <tbody>${ws.entries.map((e) => `
+        <tr>
+          <td>${esc(fmtDate(e.date))}</td>
+          <td>${e.start_time && e.end_time ? `${esc(e.start_time)}–${esc(e.end_time)}` : "—"}</td>
+          <td class="right">${esc(e.hours)}</td>
+          <td>${esc(e.purpose || "")}</td>
+        </tr>`).join("")}</tbody>
+    </table>`;
+
+  const summaryBox = isRelaWs
+    ? `<div class="summary-box">
+        <div class="summary-row"><span>RELA Personnel</span><b>${relaEntries.length}</b></div>
+        <div class="summary-row"><span>${esc(rateLabel)}</span><b>${esc(fmtMoney(ws.rate_per_hour))}</b></div>
+        <div class="summary-row total"><span>Total Amount (RM)</span><span class="amt">${esc(fmtMoney(ws.total_amount))}</span></div>
+      </div>`
+    : `<div class="summary-box">
+        <div class="summary-row"><span>Total Hours</span><b>${esc(ws.total_hours)}</b></div>
+        <div class="summary-row"><span>${esc(rateLabel)}</span><b>${esc(fmtMoney(ws.rate_per_hour))}</b></div>
+        <div class="summary-row total"><span>Total Amount (RM)</span><span class="amt">${esc(fmtMoney(ws.total_amount))}</span></div>
+      </div>`;
+
+  // Signatures: RELA collects one signature per personnel plus the BEM;
+  // other types collect the single worker signature plus the BEM.
+  const sigsSection = isRelaWs
+    ? `<div class="sigs-grid">
+        ${relaEntries.map((e, i) => sigBlock(`RELA Personnel ${i + 1}`, e.signature ?? null, (e.name ?? "").trim() || null, null)).join("")}
+        ${sigBlock("Verified by — Building/Event Manager", ws.bem_signature, ws.bem_signed_by, ws.bem_signed_at)}
+      </div>`
+    : `<div class="sigs">
+        ${sigBlock("Worker's Signature", ws.worker_signature, ws.worker_name, ws.worker_signed_at)}
+        ${sigBlock("Verified by — Building/Event Manager", ws.bem_signature, ws.bem_signed_by, ws.bem_signed_at)}
+      </div>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -109,6 +147,10 @@ export function worksheetPrintHtml(ws: WorkerWorksheet, logoDataUri = ""): strin
   .sigs { display: flex; border: 1px solid #1f2937; border-radius: 4px; }
   .sig { flex: 1; padding: 10px 12px; }
   .sig:first-child { border-right: 1px solid #1f2937; }
+  .sigs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid #1f2937; border-radius: 4px; }
+  .sigs-grid .sig { border-right: 1px solid #1f2937; border-top: 1px solid #1f2937; }
+  .sigs-grid .sig:nth-child(2n) { border-right: none; }
+  .sigs-grid .sig:nth-child(-n+2) { border-top: none; }
   .sig-label { font-size: 10px; font-weight: 700; padding-bottom: 3px; margin-bottom: 6px; border-bottom: 1px solid #1f2937; }
   .sig-space { height: 64px; display: flex; align-items: flex-end; }
   .sig-space img { max-height: 62px; max-width: 100%; object-fit: contain; }
@@ -153,26 +195,16 @@ export function worksheetPrintHtml(ws: WorkerWorksheet, logoDataUri = ""): strin
       <div class="card"><div class="card-label">Period</div><div class="card-value">${esc(ws.period_label)}</div></div>
     </div>
 
-    <table class="entries">
-      <thead><tr><th>Date</th><th>Time</th><th class="right">Hours</th><th>Purpose / Remarks</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
+    ${entriesTable}
 
     <div class="summary">
-      <div class="summary-box">
-        <div class="summary-row"><span>Total Hours</span><b>${esc(ws.total_hours)}</b></div>
-        <div class="summary-row"><span>${esc(rateLabel)}</span><b>${esc(fmtMoney(ws.rate_per_hour))}</b></div>
-        <div class="summary-row total"><span>Total Amount (RM)</span><span class="amt">${esc(fmtMoney(ws.total_amount))}</span></div>
-      </div>
+      ${summaryBox}
     </div>
 
     ${ws.notes ? `<div class="notes"><div class="notes-label">Notes</div><div class="notes-body">${esc(ws.notes)}</div></div>` : ""}
 
-    <div class="confirm">I/We confirm the hours worked and amount stated above are true and correct.</div>
-    <div class="sigs">
-      ${sigBlock("Worker's Signature", ws.worker_signature, ws.worker_name, ws.worker_signed_at)}
-      ${sigBlock("Verified by — Building/Event Manager", ws.bem_signature, ws.bem_signed_by, ws.bem_signed_at)}
-    </div>
+    <div class="confirm">I/We confirm the ${isRelaWs ? "personnel and amount" : "hours worked and amount"} stated above are true and correct.</div>
+    ${sigsSection}
   </div>
 </body>
 </html>`;

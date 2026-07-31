@@ -240,6 +240,10 @@ export interface WorksheetEntry {
   end_time?: string;   // "HH:MM"
   hours: number;        // computed from start_time/end_time; kept for older rows entered as a raw number
   purpose?: string;    // optional remarks for that day (e.g. "Easter service security cover")
+  // RELA Personnel only: each entry is a named person (no date/time), paid the
+  // flat session rate, who signs their own line on the worksheet.
+  name?: string;
+  signature?: string;
 }
 
 export interface WorkerWorksheet {

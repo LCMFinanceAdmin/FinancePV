@@ -40,6 +40,12 @@ const SESSION_RATE: Partial<Record<WorkerType, number>> = {
 function isSessionRate(t: WorkerType): boolean {
   return t in SESSION_RATE;
 }
+// RELA Personnel worksheets list named personnel (no dates/times); each is
+// paid the flat session rate and signs their own line.
+function isRela(t: WorkerType): boolean {
+  return t === "RELA_PERSONNEL";
+}
+const RELA_DEFAULT_COUNT = 2;
 // Default hourly rate for worker types not paid a flat session rate.
 const HOURLY_RATE_DEFAULT: Partial<Record<WorkerType, number>> = {
   BUILDING_CARE_TAKER: 10,
@@ -133,6 +139,9 @@ export default function WorksheetsPage() {
   const [workerSigDraft, setWorkerSigDraft] = useState("");
   const [bemSigDraft, setBemSigDraft] = useState("");
   const [savingSig, setSavingSig] = useState<"worker" | "bem" | null>(null);
+  // RELA: a signature draft per personnel (keyed by entry index).
+  const [relaSigDrafts, setRelaSigDrafts] = useState<Record<number, string>>({});
+  const [savingRelaSig, setSavingRelaSig] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<WorkerWorksheet | null>(null);
   const [confirmRetract, setConfirmRetract] = useState<{ pvNo: string; pvId: string } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -191,20 +200,35 @@ export default function WorksheetsPage() {
     }
   }, [scrollToSign, editing?.id]);
 
+  // Seed the per-personnel RELA signature drafts from the saved worksheet.
+  useEffect(() => {
+    if (editing && isRela(editing.worker_type)) {
+      const drafts: Record<number, string> = {};
+      (editing.entries ?? []).forEach((e, i) => { if (e.signature) drafts[i] = e.signature; });
+      setRelaSigDrafts(drafts);
+    } else {
+      setRelaSigDrafts({});
+    }
+  }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const periodType = PERIOD_TYPE_FOR[form.worker_type];
   const totalHours = useMemo(
     () => Math.round(form.entries.reduce((s, e) => s + entryHours(e), 0) * 100) / 100,
     [form.entries]
   );
-  // PA/RELA Personnel are paid per session worked, not per hour worked.
+  // PA Personnel are paid per session worked; RELA Personnel per named person.
   const sessionCount = useMemo(
-    () => form.entries.filter(e => e.date && e.start_time && e.end_time).length,
-    [form.entries]
+    () => isRela(form.worker_type)
+      ? form.entries.filter(e => (e.name ?? "").trim()).length
+      : form.entries.filter(e => e.date && e.start_time && e.end_time).length,
+    [form.entries, form.worker_type]
   );
   const totalAmount = isSessionRate(form.worker_type)
     ? sessionCount * (Number(form.rate_per_hour) || 0)
     : totalHours * (Number(form.rate_per_hour) || 0);
-  const periodLabel = periodType === "MONTH" ? monthLabel(month) : daysLabel(form.entries);
+  const periodLabel = isRela(form.worker_type)
+    ? `${sessionCount} RELA personnel`
+    : periodType === "MONTH" ? monthLabel(month) : daysLabel(form.entries);
 
   // When picking an existing worker from the list, carry their saved bank
   // details over so Finance doesn't need to re-enter them on the PV.
@@ -382,7 +406,7 @@ export default function WorksheetsPage() {
   function updateEntry(idx: number, patch: Partial<WorksheetEntry>) {
     setForm(f => ({ ...f, entries: f.entries.map((e, i) => i === idx ? { ...e, ...patch } : e) }));
   }
-  function addEntry() { setForm(f => ({ ...f, entries: [...f.entries, { date: "", start_time: "", end_time: "", hours: 0, purpose: "" }] })); }
+  function addEntry() { setForm(f => ({ ...f, entries: [...f.entries, isRela(f.worker_type) ? { date: "", hours: 0, name: "" } : { date: "", start_time: "", end_time: "", hours: 0, purpose: "" }] })); }
   function removeEntry(idx: number) {
     setForm(f => ({ ...f, entries: f.entries.length > 1 ? f.entries.filter((_, i) => i !== idx) : f.entries }));
   }
@@ -393,12 +417,15 @@ export default function WorksheetsPage() {
     if (!form.rate_per_hour || form.rate_per_hour <= 0) { showMsg("Enter the rate per hour", false); return; }
     setSaving(true);
     try {
-      // Store the computed hours on each entry (derived from its time range)
-      // so older display logic / the PDF can keep reading entry.hours directly.
-      const entries: WorksheetEntry[] = form.entries
-        .filter(e => e.date && entryHours(e) > 0)
-        .map(e => ({ ...e, hours: entryHours(e) }));
-      if (entries.length === 0) { showMsg("Add at least one day with a date and time range.", false); setSaving(false); return; }
+      // RELA worksheets are lists of named personnel (no dates/times); all
+      // other types store dated sessions/days with computed hours.
+      const entries: WorksheetEntry[] = isRela(form.worker_type)
+        ? form.entries.filter(e => (e.name ?? "").trim()).map(e => ({ date: "", hours: 0, name: (e.name ?? "").trim(), signature: e.signature ?? "" }))
+        : form.entries.filter(e => e.date && entryHours(e) > 0).map(e => ({ ...e, hours: entryHours(e) }));
+      if (entries.length === 0) {
+        showMsg(isRela(form.worker_type) ? "Add at least one RELA personnel name." : "Add at least one day with a date and time range.", false);
+        setSaving(false); return;
+      }
 
       const payload = {
         worker_type: form.worker_type,
@@ -487,7 +514,12 @@ export default function WorksheetsPage() {
       const { data: row, error } = await supabase.from("worker_worksheets").update(patch).eq("id", editing.id).select("*").single();
       if (error) throw new Error(error.message);
       let updated = row as WorkerWorksheet;
-      if (updated.worker_signature && updated.bem_signature && updated.status === "DRAFT") {
+      // RELA is "worker-signed" when every personnel line has a signature;
+      // other types just need the single worker_signature.
+      const workerSideSigned = isRela(updated.worker_type)
+        ? (updated.entries ?? []).length > 0 && (updated.entries ?? []).every(e => e.signature)
+        : !!updated.worker_signature;
+      if (workerSideSigned && updated.bem_signature && updated.status === "DRAFT") {
         const { data: signedRow } = await supabase.from("worker_worksheets").update({ status: "SIGNED" }).eq("id", updated.id).select("*").single();
         if (signedRow) updated = signedRow as WorkerWorksheet;
       }
@@ -497,6 +529,34 @@ export default function WorksheetsPage() {
       showMsg(e instanceof Error ? e.message : "Failed to save signature", false);
     } finally {
       setSavingSig(null);
+    }
+  }
+
+  // RELA: save one personnel's signature into their entry (stored in the
+  // worksheet's entries JSON). Marks the worksheet SIGNED once every personnel
+  // and the BEM have signed.
+  async function saveRelaSignature(idx: number) {
+    if (!editing?.id) { showMsg("Save the worksheet first", false); return; }
+    const dataUrl = relaSigDrafts[idx];
+    if (!dataUrl) { showMsg("Draw a signature first", false); return; }
+    setSavingRelaSig(idx);
+    try {
+      const newEntries = (editing.entries ?? []).map((e, i) => i === idx ? { ...e, signature: dataUrl } : e);
+      const { data: row, error } = await supabase.from("worker_worksheets")
+        .update({ entries: newEntries, updated_at: new Date().toISOString() }).eq("id", editing.id).select("*").single();
+      if (error) throw new Error(error.message);
+      let updated = row as WorkerWorksheet;
+      const allSigned = (updated.entries ?? []).length > 0 && (updated.entries ?? []).every(e => e.signature);
+      if (allSigned && updated.bem_signature && updated.status === "DRAFT") {
+        const { data: signedRow } = await supabase.from("worker_worksheets").update({ status: "SIGNED" }).eq("id", updated.id).select("*").single();
+        if (signedRow) updated = signedRow as WorkerWorksheet;
+      }
+      setEditing(updated);
+      showMsg("Signature saved");
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : "Failed to save signature", false);
+    } finally {
+      setSavingRelaSig(null);
     }
   }
 
@@ -686,6 +746,10 @@ export default function WorksheetsPage() {
   }
   function sessionOrHoursLabel(ws: WorkerWorksheet) {
     const entries = (ws.entries as WorksheetEntry[]) ?? [];
+    if (isRela(ws.worker_type)) {
+      const n = entries.filter(e => (e.name ?? "").trim()).length;
+      return `${n} personnel`;
+    }
     if (isSessionRate(ws.worker_type)) {
       const n = entries.filter(e => e.date && e.start_time && e.end_time).length;
       return `${n} session${n !== 1 ? "s" : ""}`;
@@ -707,7 +771,13 @@ export default function WorksheetsPage() {
 
   // Editor-only derived values (safe to compute even when editing is null
   // because they're only consumed inside the drawer where editing is non-null)
-  const bothSigned  = !!editing?.worker_signature && !!editing?.bem_signature;
+  // "Fully signed" — RELA needs every personnel line signed plus the BEM;
+  // everything else needs the single worker signature plus the BEM.
+  const relaAllSigned = !!editing && isRela(editing.worker_type)
+    && (editing.entries ?? []).length > 0 && (editing.entries ?? []).every(e => e.signature);
+  const bothSigned  = editing && isRela(editing.worker_type)
+    ? relaAllSigned && !!editing.bem_signature
+    : !!editing?.worker_signature && !!editing?.bem_signature;
   const canGenerate = !!(editing?.id && bothSigned && editing?.status !== "PV_RAISED" && !editing?.pv_id);
 
   return (
@@ -898,6 +968,14 @@ export default function WorksheetsPage() {
                             next.bank_name = defaultPayee.bank;
                             next.bank_account_no = defaultPayee.account;
                           }
+                          // Switching into RELA starts with 2 blank personnel rows;
+                          // switching out resets to a single session row.
+                          const wasRela = isRela(f.worker_type);
+                          if (isRela(t) && !wasRela) {
+                            next.entries = Array.from({ length: RELA_DEFAULT_COUNT }, () => ({ date: "", start_time: "", end_time: "", hours: 0, name: "" }));
+                          } else if (!isRela(t) && wasRela) {
+                            next.entries = [{ date: "", start_time: "", end_time: "", hours: 0, purpose: "" }];
+                          }
                           return next;
                         })}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors disabled:opacity-50 ${form.worker_type === t ? "bg-stone-900 text-white border-transparent" : "border-stone-200 text-stone-500 hover:border-stone-300"}`}>
@@ -977,19 +1055,32 @@ export default function WorksheetsPage() {
                 )}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className={label.replace("mb-1", "mb-0")}>{isSessionRate(form.worker_type) ? "Sessions worked" : "Days worked"}</label>
+                    <label className={label.replace("mb-1", "mb-0")}>{isRela(form.worker_type) ? "RELA Personnel" : isSessionRate(form.worker_type) ? "Sessions worked" : "Days worked"}</label>
                     <button type="button" onClick={addEntry} className="flex items-center gap-1 text-xs text-[#4a6da7] font-medium hover:underline">
-                      <Plus size={12} /> {isSessionRate(form.worker_type) ? "Add session" : "Add day"}
+                      <Plus size={12} /> {isRela(form.worker_type) ? "Add personnel" : isSessionRate(form.worker_type) ? "Add session" : "Add day"}
                     </button>
                   </div>
                   <p className="text-xs text-stone-400 mb-2">
-                    {isSessionRate(form.worker_type)
-                      ? "Each session is paid the standard rate above regardless of hours."
-                      : "Hours are calculated automatically from the time range."}
+                    {isRela(form.worker_type)
+                      ? "Each RELA personnel is paid the standard rate above. Just enter their names."
+                      : isSessionRate(form.worker_type)
+                        ? "Each session is paid the standard rate above regardless of hours."
+                        : "Hours are calculated automatically from the time range."}
                     {periodType === "MONTH" && " Leave a day blank if the worker was off."}
                   </p>
                   <div className="space-y-2">
                     {form.entries.map((e, idx) => {
+                      if (isRela(form.worker_type)) {
+                        return (
+                          <div key={idx} className="flex items-center gap-2">
+                            <input className={`${inp} flex-1`} placeholder={`RELA personnel ${idx + 1} — full name`}
+                              value={e.name ?? ""} onChange={ev => updateEntry(idx, { name: ev.target.value })} />
+                            {form.entries.length > 1 && (
+                              <button type="button" onClick={() => removeEntry(idx)} className="p-1 text-stone-300 hover:text-red-500"><Trash2 size={13} /></button>
+                            )}
+                          </div>
+                        );
+                      }
                       const hrs = entryHours(e);
                       const hrsDisplay = isSessionRate(form.worker_type) ? Math.round(hrs) : hrs;
                       return (
@@ -1024,8 +1115,9 @@ export default function WorksheetsPage() {
                 {/* Running total */}
                 <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100">
                   <div className="text-sm text-stone-500">
-                    {periodLabel || "—"} ·{" "}
-                    {isSessionRate(form.worker_type) ? `${sessionCount} session${sessionCount === 1 ? "" : "s"} · ${Math.round(totalHours)} hrs` : `${totalHours} hrs`}
+                    {isRela(form.worker_type)
+                      ? `${sessionCount} RELA personnel`
+                      : <>{periodLabel || "—"} · {isSessionRate(form.worker_type) ? `${sessionCount} session${sessionCount === 1 ? "" : "s"} · ${Math.round(totalHours)} hrs` : `${totalHours} hrs`}</>}
                   </div>
                   <div className="text-base font-bold text-stone-800">{formatCurrency(totalAmount)}</div>
                 </div>
@@ -1035,6 +1127,43 @@ export default function WorksheetsPage() {
               {editing.id && (
                 <div ref={signaturesRef} className="px-5 py-4 space-y-4 scroll-mt-4">
                   <p className="text-xs font-semibold text-stone-500 uppercase tracking-widest">Signatures</p>
+                  {isRela(editing.worker_type) ? (
+                    <>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        {(editing.entries ?? []).map((e, idx) => (
+                          <div key={idx}>
+                            <div className="text-xs font-semibold text-stone-600 mb-1.5">
+                              {(e.name ?? "").trim() || `RELA personnel ${idx + 1}`} {e.signature && <span className="text-green-600 font-medium">✓ signed</span>}
+                            </div>
+                            <SignaturePad value={relaSigDrafts[idx] ?? ""} disabled={editing.status === "PV_RAISED"}
+                              onChange={v => setRelaSigDrafts(prev => ({ ...prev, [idx]: v }))} />
+                            {editing.status !== "PV_RAISED" && (
+                              <Button size="sm" variant="secondary" className="mt-2 w-full" loading={savingRelaSig === idx}
+                                disabled={!relaSigDrafts[idx] || relaSigDrafts[idx] === e.signature}
+                                onClick={() => saveRelaSignature(idx)}>
+                                Save signature
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                        <div>
+                          <div className="text-xs font-semibold text-stone-600 mb-1.5">
+                            Verified by BEM {editing.bem_signature && <span className="text-green-600 font-medium">✓ signed</span>}
+                          </div>
+                          <SignaturePad value={bemSigDraft} disabled={editing.status === "PV_RAISED"} onChange={setBemSigDraft} />
+                          {editing.status !== "PV_RAISED" && (
+                            <Button size="sm" variant="secondary" className="mt-2 w-full" loading={savingSig === "bem"}
+                              disabled={!bemSigDraft || bemSigDraft === editing.bem_signature}
+                              onClick={() => saveSignature("bem")}>
+                              Save BEM signature
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-stone-400">Hand the device to each RELA personnel to sign their own line, then save. Sign the BEM line to verify — once every personnel and the BEM have signed you can generate the PV.</p>
+                    </>
+                  ) : (
+                  <>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
                       <div className="text-xs font-semibold text-stone-600 mb-1.5">
@@ -1064,6 +1193,8 @@ export default function WorksheetsPage() {
                     </div>
                   </div>
                   <p className="text-xs text-stone-400">Hand the device to the worker to sign on the left, then save. Sign on the right to verify — once both are saved you can generate the PV.</p>
+                  </>
+                  )}
 
                   {editing.status === "PV_RAISED" && (
                     <div className="space-y-2">
