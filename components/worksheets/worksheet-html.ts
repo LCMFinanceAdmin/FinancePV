@@ -52,6 +52,23 @@ function sigBlock(label: string, signature: string | null, signedBy: string | nu
     </div>`;
 }
 
+// RELA personnel sign their own line: the name is printed on top and the
+// signature appears below it, so each signature is clearly tied to a person.
+function relaSigBlock(name: string, num: number, signature: string | null): string {
+  return `
+    <div class="sig">
+      <div class="sig-label">${esc(name || `RELA Personnel ${num}`)}</div>
+      <div class="sig-space">
+        ${signature ? `<img src="${esc(signature)}" alt="signature" />` : ""}
+      </div>
+      <div class="sig-meta">
+        ${signature
+          ? `<div class="sig-date">Signed</div>`
+          : `<div class="sig-pending">Pending signature</div>`}
+      </div>
+    </div>`;
+}
+
 export function worksheetPrintHtml(ws: WorkerWorksheet, logoDataUri = ""): string {
   const isRelaWs = ws.worker_type === "RELA_PERSONNEL";
   const rateLabel = ws.worker_type === "PA_PERSONNEL" || ws.worker_type === "RELA_PERSONNEL"
@@ -96,7 +113,7 @@ export function worksheetPrintHtml(ws: WorkerWorksheet, logoDataUri = ""): strin
   // other types collect the single worker signature plus the BEM.
   const sigsSection = isRelaWs
     ? `<div class="sigs-grid">
-        ${relaEntries.map((e, i) => sigBlock(`RELA Personnel ${i + 1}`, e.signature ?? null, (e.name ?? "").trim() || null, null)).join("")}
+        ${relaEntries.map((e, i) => relaSigBlock((e.name ?? "").trim(), i + 1, e.signature ?? null)).join("")}
         ${sigBlock("Verified by — Building/Event Manager", ws.bem_signature, ws.bem_signed_by, ws.bem_signed_at)}
       </div>`
     : `<div class="sigs">

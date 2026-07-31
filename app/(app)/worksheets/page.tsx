@@ -1132,11 +1132,13 @@ export default function WorksheetsPage() {
                       <div className="grid sm:grid-cols-2 gap-4">
                         {(editing.entries ?? []).map((e, idx) => (
                           <div key={idx}>
-                            <div className="text-xs font-semibold text-stone-600 mb-1.5">
-                              {(e.name ?? "").trim() || `RELA personnel ${idx + 1}`} {e.signature && <span className="text-green-600 font-medium">✓ signed</span>}
-                            </div>
+                            <div className="text-[11px] text-stone-400 mb-1.5">RELA personnel {idx + 1}</div>
                             <SignaturePad value={relaSigDrafts[idx] ?? ""} disabled={editing.status === "PV_RAISED"}
                               onChange={v => setRelaSigDrafts(prev => ({ ...prev, [idx]: v }))} />
+                            {/* Name sits below the box, like a signature line on paper. */}
+                            <div className="text-xs font-semibold text-stone-700 text-center mt-1.5 pt-1.5 border-t border-stone-200">
+                              {(e.name ?? "").trim() || `RELA personnel ${idx + 1}`} {e.signature && <span className="text-green-600 font-medium">✓ signed</span>}
+                            </div>
                             {editing.status !== "PV_RAISED" && (
                               <Button size="sm" variant="secondary" className="mt-2 w-full" loading={savingRelaSig === idx}
                                 disabled={!relaSigDrafts[idx] || relaSigDrafts[idx] === e.signature}
