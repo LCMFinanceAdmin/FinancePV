@@ -33,7 +33,14 @@ input:focus, textarea:focus, select:focus {
   background: transparent;
 }
 .cloudlight-main > * {
-  animation: cloudlight-enter .42s ease-out both;
+  /* `backwards` (not `both`): the entrance animation must NOT leave a lingering
+     transform on the page root. A retained `transform: translateY(0)` counts as
+     a non-`none` transform, which turns the page root into the containing block
+     for every `position: fixed` descendant — that made modals (e.g. "Mark as
+     Paid") anchor to the scrolled page instead of the viewport, appearing far
+     down the page. `backwards` reverts to no transform once the 0.42s intro
+     ends, so fixed modals center in the viewport wherever the user is. */
+  animation: cloudlight-enter .42s ease-out backwards;
 }
 .cloudlight-app h1, .cloudlight-app h2, .cloudlight-app h3 { color: var(--ink); letter-spacing: -.025em; }
 @media screen {

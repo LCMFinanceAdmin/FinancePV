@@ -150,6 +150,7 @@ export default function WorksheetsPage() {
   // After a save, scroll the drawer straight to the signature area so the
   // building manager doesn't have to scroll down to sign.
   const signaturesRef = useRef<HTMLDivElement>(null);
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
   const [scrollToSign, setScrollToSign] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "AWAITING" | "READY" | "PV_RAISED">("ALL");
@@ -191,10 +192,16 @@ export default function WorksheetsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.worker_type]);
 
-  // Scroll to the signature area once it's rendered after a save.
+  // After a save, scroll the drawer body all the way down so the whole
+  // signature area — the pads AND their "Save signature" / confirm buttons at
+  // the bottom — is revealed, without the building manager scrolling by hand.
   useEffect(() => {
     if (scrollToSign && editing?.id) {
-      const t = setTimeout(() => signaturesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+      const t = setTimeout(() => {
+        const body = scrollBodyRef.current;
+        if (body) body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+        else signaturesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 140);
       setScrollToSign(false);
       return () => clearTimeout(t);
     }
@@ -955,7 +962,7 @@ export default function WorksheetsPage() {
             </div>
 
             {/* Scrollable body */}
-            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-stone-100">
+            <div ref={scrollBodyRef} className="flex-1 min-h-0 overflow-y-auto divide-y divide-stone-100">
 
               {/* Worker type + details */}
               <div className="px-5 py-4 space-y-4">

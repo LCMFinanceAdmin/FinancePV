@@ -447,6 +447,16 @@ export default function SignatoryPage() {
         ? pv.status === "REVIEWED" || pv.status === "MINISTRY_VERIFIED" || pv.status === "GM_REVIEW"
         : pv.status === "PENDING_SIGNATORY" || pv.status === "MINISTRY_VERIFIED";
 
+    // A church-officer signatory (Bishop / Treasurer / Secretary) who has
+    // already signed can retract their approval even after the PV is fully
+    // APPROVED — reverting drops it back to PENDING_SIGNATORY so it can be
+    // re-signed. Not allowed once the PV is paid or cancelled.
+    const isFinalised = ["PAID", "CANCELLED"].includes(pv.status ?? "");
+    const canRetractApproved =
+      userHasActed && !isFinalised &&
+      currentUser != null && ["BISHOP", "TREASURER", "SECRETARY"].includes(currentUser.role) &&
+      (pv.status === "APPROVED" || pv.status === "REJECTED");
+
     return (
       <div className={`bg-white ${compact ? "border-t border-stone-100" : "border border-stone-200 rounded-xl shadow-sm"} hover:border-[#4a6da7]/40 hover:shadow-sm transition-all`}>
         <div className="px-4 py-3.5">
@@ -473,30 +483,29 @@ export default function SignatoryPage() {
             <div className="flex flex-col items-end gap-2 shrink-0" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
               <div className="text-sm font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
 
-              {isSignatoryUser && isRelevantForRole && (
-                userHasActed ? (
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
-                      {userApproval!.action === "APPROVED" ? "✓ Approved" : "✕ Rejected"}
+              {isSignatoryUser && userHasActed && (isRelevantForRole || canRetractApproved) && (
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
+                    {userApproval!.action === "APPROVED" ? "✓ Approved" : "✕ Rejected"}
+                  </span>
+                  {canRevert && !isFinalised ? (
+                    <ActionBtn color="gray" icon={<RotateCcw size={11} />} label="Retract"
+                      loading={reverting === pv.id}
+                      onClick={() => revertPv(pv.id!)} />
+                  ) : (
+                    <span className="text-[10px] text-stone-400 italic">
+                      {currentUser?.role === "GENERAL_MANAGER" ? "Signatories signed" : "Locked"}
                     </span>
-                    {canRevert ? (
-                      <ActionBtn color="gray" icon={<RotateCcw size={11} />} label="Revert"
-                        loading={reverting === pv.id}
-                        onClick={() => revertPv(pv.id!)} />
-                    ) : (
-                      <span className="text-[10px] text-stone-400 italic">
-                        {currentUser?.role === "GENERAL_MANAGER" ? "Signatories signed" : "Locked"}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex gap-1.5">
-                    <ActionBtn color="green" icon={<CheckCircle size={12} />} label="Approve"
-                      onClick={() => openPin([pv.id!], "APPROVED")} />
-                    <ActionBtn color="red" icon={<XCircle size={12} />} label="Reject"
-                      onClick={() => openPin([pv.id!], "REJECTED")} />
-                  </div>
-                )
+                  )}
+                </div>
+              )}
+              {isSignatoryUser && !userHasActed && isRelevantForRole && (
+                <div className="flex gap-1.5">
+                  <ActionBtn color="green" icon={<CheckCircle size={12} />} label="Approve"
+                    onClick={() => openPin([pv.id!], "APPROVED")} />
+                  <ActionBtn color="red" icon={<XCircle size={12} />} label="Reject"
+                    onClick={() => openPin([pv.id!], "REJECTED")} />
+                </div>
               )}
 
               {pv.status === "PAID" ? (
