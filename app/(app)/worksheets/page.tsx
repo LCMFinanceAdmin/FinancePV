@@ -413,7 +413,9 @@ export default function WorksheetsPage() {
 
   async function saveWorksheet() {
     if (!form.worker_name.trim()) { showMsg("Enter the worker's name", false); return; }
-    if (totalHours <= 0) { showMsg("Enter hours worked", false); return; }
+    // RELA is a headcount of named personnel, not hours worked — the
+    // "at least one personnel" check below covers it instead.
+    if (!isRela(form.worker_type) && totalHours <= 0) { showMsg("Enter hours worked", false); return; }
     if (!form.rate_per_hour || form.rate_per_hour <= 0) { showMsg("Enter the rate per hour", false); return; }
     setSaving(true);
     try {
