@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
-import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw } from "lucide-react";
 
 const ROLES = [
   "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
@@ -74,6 +74,24 @@ export default function SignatoriesPage() {
     await supabase.from("user_roles").delete().eq("id", id);
     setUsers(u => u.filter(x => x.id !== id));
     showToast("Removed");
+  }
+
+  // Clear a signatory's PIN so they set a fresh one themselves on their own
+  // page. We never see the new value — this is the "forgot their PIN" reset.
+  async function resetPin(userId: string, email: string) {
+    if (!confirm(`Reset the approval PIN for ${email}?\n\nTheir current PIN stops working immediately, and they set a new one themselves from their approval page. You will not see the new PIN.`)) return;
+    setSaving(true);
+    const session = (await supabase.auth.getSession()).data.session;
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/set-pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ target_user_id: userId, reset: true }),
+    });
+    const result = await res.json();
+    setSaving(false);
+    if (!res.ok) { showToast("Error: " + result.error); return; }
+    await load();
+    showToast(`PIN reset — ${email} can now set a new one`);
   }
 
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
@@ -163,10 +181,15 @@ export default function SignatoriesPage() {
                   <Save size={13} /> Save
                 </Button>
                 {["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER", "MINISTRY_HEAD"].includes(u.role) && !u.id.startsWith("new-") && (
-                  <Button size="sm" variant={u.has_pin ? "ghost" : "primary"} onClick={() => setPinModal({ userId: u.id, email: u.email })}>
-                    <ShieldCheck size={13} />
-                    {u.has_pin ? "Change PIN" : "Set Approval PIN"}
-                  </Button>
+                  u.has_pin ? (
+                    <Button size="sm" variant="ghost" loading={saving} onClick={() => resetPin(u.id, u.email)}>
+                      <RotateCcw size={13} /> Reset PIN
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="primary" onClick={() => setPinModal({ userId: u.id, email: u.email })}>
+                      <ShieldCheck size={13} /> Set Initial PIN
+                    </Button>
+                  )
                 )}
                 <Button size="sm" variant="ghost" className="ml-auto" onClick={() => deleteUser(u.id)}>
                   <Trash2 size={13} className="text-red-400" />
@@ -178,7 +201,7 @@ export default function SignatoriesPage() {
       </div>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-        <strong>How approval PINs work:</strong> Signatories and EXCO Members use a 6-digit PIN as a second confirmation when approving or verifying PVs. Finance Executives set PINs for signatories here. EXCO Members set their own PIN from their EXCO Queue page.
+        <strong>How approval PINs work:</strong> Signatories and EXCO Members use a 6-digit PIN as a second confirmation when approving or verifying PVs. Each person <strong>sets and changes their own PIN privately</strong> — signatories from their Signatory Queue page, EXCO Members from their EXCO Queue page — so nobody else knows it. If someone forgets their PIN, use <strong>Reset PIN</strong> here to clear it; they then set a new one themselves (you never see it). <strong>Set Initial PIN</strong> is only offered for someone who has never set one.
       </div>
     </div>
   );

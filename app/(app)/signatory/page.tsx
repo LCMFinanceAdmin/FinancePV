@@ -7,7 +7,7 @@ import { formatCurrency, formatDate, getLOATier, computedBadgeStatus } from "@/l
 import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
-  Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw, Search, PenLine, Trash2,
+  Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw, Search, PenLine, Trash2, KeyRound,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -66,6 +66,13 @@ export default function SignatoryPage() {
   const [ministries, setMinistries] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<"pending" | "pending_signatory" | "approved" | "paid">("pending_signatory");
 
+  // Self-service approval-PIN management
+  const [hasPin, setHasPin] = useState(false);
+  const [showPinChange, setShowPinChange] = useState(false);
+  const [newPin, setNewPin] = useState("");
+  const [newPinConfirm, setNewPinConfirm] = useState("");
+  const [savingPin, setSavingPin] = useState(false);
+
   // Signature state
   const [savedSig, setSavedSig] = useState("");          // user's saved_signature from DB
   const [showSigCapture, setShowSigCapture] = useState(false);
@@ -97,6 +104,7 @@ export default function SignatoryPage() {
         const role = profile?.role ?? "STAFF";
         setCurrentUser({ email: authUser.email!, role });
         setStatusFilter(role === "GENERAL_MANAGER" ? "pending" : "pending_signatory");
+        setHasPin(!!(security as { has_pin?: boolean } | null)?.has_pin);
         const sigs = (security as { saved_signatures?: Record<string, string> | null } | null)
           ?.saved_signatures;
         const roleSig = sigs?.[role] ?? "";
@@ -174,6 +182,32 @@ export default function SignatoryPage() {
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
     setTimeout(() => setToast(""), 3500);
+  }
+
+  // Self-service: set or change your own 6-digit approval PIN. Uses set-pin in
+  // self mode (no target_user_id) so nobody else — not even Finance — sees it.
+  async function saveMyPin() {
+    if (!/^\d{6}$/.test(newPin)) { showToast("PIN must be exactly 6 digits", false); return; }
+    if (newPin !== newPinConfirm) { showToast("PINs do not match", false); return; }
+    setSavingPin(true);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/set-pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pin: newPin }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || "Couldn't save PIN", false); return; }
+      setHasPin(true);
+      setShowPinChange(false);
+      setNewPin(""); setNewPinConfirm("");
+      showToast("Your approval PIN has been updated");
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Couldn't save PIN", false);
+    } finally {
+      setSavingPin(false);
+    }
   }
 
   function openPin(pvIds: string[], action: "APPROVED" | "REJECTED") {
@@ -594,15 +628,23 @@ export default function SignatoryPage() {
     <div className="cloudlight-page max-w-5xl space-y-5">
 
       {/* Header */}
-      <div>
-        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Approvals</div>
-        <h1 className="text-2xl font-bold text-stone-800">Signatory Queue</h1>
-        <p className="text-sm text-stone-400">
-          {statusFilter === "pending"           ? (isGM ? "PVs pending your verification" : "Payment vouchers awaiting your approval") :
-           statusFilter === "pending_signatory" ? "PVs pending Treasurer / Bishop / Secretary approval" :
-           statusFilter === "approved"          ? "Payment vouchers approved by signatories" :
-           "Payment vouchers that have been paid"}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Approvals</div>
+          <h1 className="text-2xl font-bold text-stone-800">Signatory Queue</h1>
+          <p className="text-sm text-stone-400">
+            {statusFilter === "pending"           ? (isGM ? "PVs pending your verification" : "Payment vouchers awaiting your approval") :
+             statusFilter === "pending_signatory" ? "PVs pending Treasurer / Bishop / Secretary approval" :
+             statusFilter === "approved"          ? "Payment vouchers approved by signatories" :
+             "Payment vouchers that have been paid"}
+          </p>
+        </div>
+        {currentUser && ["BISHOP", "TREASURER", "SECRETARY"].includes(currentUser.role) && (
+          <button onClick={() => { setNewPin(""); setNewPinConfirm(""); setShowPinChange(true); }}
+            className="shrink-0 flex items-center gap-1.5 border border-stone-200 bg-white rounded-lg px-3 py-2 text-xs font-medium text-stone-600 hover:border-[#4a6da7]/50 hover:text-[#4a6da7] transition-colors">
+            <KeyRound size={13} /> {hasPin ? "Change my PIN" : "Set my PIN"}
+          </button>
+        )}
       </div>
 
       <ApprovalPath currentIndex={isGM ? 0 : 2} />
@@ -743,6 +785,46 @@ export default function SignatoryPage() {
                 {acting ? "Processing…" : pinModal.action === "APPROVED" ? "Confirm Approval" : "Confirm Rejection"}
               </button>
               <button onClick={() => setPinModal(null)}
+                className="px-4 py-3 rounded-xl border border-stone-200 text-stone-600 text-sm hover:bg-stone-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Self-service: change my own approval PIN */}
+      {showPinChange && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-base font-bold text-stone-800 flex items-center gap-2">
+                  <KeyRound size={16} className="text-[#4a6da7]" /> {hasPin ? "Change your approval PIN" : "Set your approval PIN"}
+                </div>
+                <div className="text-xs text-stone-400 mt-0.5">Only you know this 6-digit PIN. It confirms your PV approvals.</div>
+              </div>
+              <button onClick={() => setShowPinChange(false)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+            </div>
+            <div>
+              <label className="text-xs text-stone-500 block mb-1">New PIN</label>
+              <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#4a6da7] font-mono"
+                type="password" maxLength={6} placeholder="••••••" value={newPin} autoFocus
+                onChange={e => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+            </div>
+            <div>
+              <label className="text-xs text-stone-500 block mb-1">Confirm new PIN</label>
+              <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#4a6da7] font-mono"
+                type="password" maxLength={6} placeholder="••••••" value={newPinConfirm}
+                onChange={e => setNewPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onKeyDown={e => { if (e.key === "Enter" && newPin.length === 6 && newPinConfirm.length === 6) saveMyPin(); }} />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={saveMyPin} disabled={savingPin || newPin.length < 6 || newPinConfirm.length < 6}
+                className="flex-1 py-3 rounded-xl bg-[#4a6da7] hover:bg-[#3d5a8e] text-white font-semibold text-sm transition-colors disabled:opacity-40">
+                {savingPin ? "Saving…" : "Save PIN"}
+              </button>
+              <button onClick={() => setShowPinChange(false)}
                 className="px-4 py-3 rounded-xl border border-stone-200 text-stone-600 text-sm hover:bg-stone-50 transition-colors">
                 Cancel
               </button>
