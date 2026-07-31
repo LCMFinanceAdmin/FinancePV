@@ -927,9 +927,11 @@ export default function WorksheetsPage() {
 
       {/* ── Editor drawer ── */}
       {editing && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div className="fixed inset-0 z-50 flex justify-end items-stretch">
           <div className="absolute inset-0 bg-black/40" onClick={backToList} />
-          <div className="relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col">
+          {/* Height hugs the content (capped at the viewport, scrolls when tall)
+              so the footer sits right under the form instead of leaving a gap. */}
+          <div className="relative w-full max-w-xl max-h-full self-start bg-white shadow-2xl flex flex-col">
 
             {/* Drawer header */}
             <div className="bg-stone-900 px-5 py-4 flex items-center justify-between shrink-0">
@@ -953,7 +955,7 @@ export default function WorksheetsPage() {
             </div>
 
             {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto divide-y divide-stone-100">
+            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-stone-100">
 
               {/* Worker type + details */}
               <div className="px-5 py-4 space-y-4">
