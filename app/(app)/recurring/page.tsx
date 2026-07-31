@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatDateTime, computedBadgeStatus } from "@/lib/utils";
+import { CommitteePicker } from "@/components/gm/committee-picker";
 import {
   Plus, Play, Pause, Trash2, RefreshCw, Pencil, X,
   ChevronDown, ChevronRight, CheckCircle2, History,
@@ -1620,32 +1621,45 @@ export default function RecurringPage() {
                 </Field>
                 {(() => {
                   const gp = parseGroupPath(form.group_name || "");
-                  // Folders are scoped to the entity being created (LCM shows only
-                  // LCM folders, BAM only BAM, etc.) — use the form's own entity,
-                  // not the active tab, so switching entity in the form updates it.
-                  const formGroups = [...new Set(items
-                    .filter(i => ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === form.pv_type)
-                    .map(i => i.group_name || "General"))];
-                  const topFolders = [...new Set(formGroups.map(g => parseGroupPath(g).folder))].sort();
-                  const subFolders = [...new Set(formGroups
-                    .map(g => parseGroupPath(g))
+                  // Existing folder paths for this entity + the chosen frequency —
+                  // both from real items and from empty folders created up front.
+                  // The Folder dropdown lists them all (folders and subfolders), so
+                  // an expense can be parked in — or, on edit, moved to — any of them.
+                  const scopedPaths = [...new Set([
+                    ...items
+                      .filter(i => ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === form.pv_type)
+                      .filter(i => (i.frequency || "MONTHLY") === form.frequency)
+                      .map(i => i.group_name || "General"),
+                    ...emptyFolders
+                      .filter(f => f.pv_type === form.pv_type && f.frequency === form.frequency)
+                      .map(f => f.path),
+                  ])];
+                  const topFolders = [...new Set(scopedPaths.map(p => parseGroupPath(p).folder))];
+                  const folderOptions = [...new Set([...topFolders, ...scopedPaths])].sort();
+                  const subOptions = [...new Set(scopedPaths
+                    .map(p => parseGroupPath(p))
                     .filter(p => p.folder === gp.folder && p.subfolder)
                     .map(p => p.subfolder as string))].sort();
-                  // Don't trim while typing — trimming a just-typed trailing space on every
-                  // keystroke made it impossible to type a second word (the space kept getting
-                  // erased before the next character landed). Trimming happens once, on save.
                   const setPath = (folder: string, sub: string) =>
-                    setField("group_name", sub ? `${folder || "General"} / ${sub}` : folder);
+                    setField("group_name", sub ? `${folder || "General"} / ${sub}` : (folder || "General"));
                   return (<>
                     <Field label="Folder">
-                      <input className={inp} list="folder-list" value={gp.folder}
-                        onChange={e => setPath(e.target.value, gp.subfolder ?? "")} placeholder="e.g. Allowances" />
-                      <datalist id="folder-list">{topFolders.map(g => <option key={g} value={g} />)}</datalist>
+                      <CommitteePicker
+                        value={form.group_name || ""}
+                        onChange={v => setField("group_name", (v.trim() || "General"))}
+                        standard={folderOptions}
+                        placeholder="Choose a folder / subfolder, or type a new one…"
+                        size="md"
+                      />
                     </Field>
                     <Field label="Subfolder (optional)">
-                      <input className={inp} list="subfolder-list" value={gp.subfolder ?? ""}
-                        onChange={e => setPath(gp.folder, e.target.value)} placeholder="e.g. Clergy allowances" />
-                      <datalist id="subfolder-list">{subFolders.map(g => <option key={g} value={g} />)}</datalist>
+                      <CommitteePicker
+                        value={gp.subfolder ?? ""}
+                        onChange={sub => setPath(gp.folder, sub.trim())}
+                        standard={subOptions}
+                        placeholder="None — or choose / create a subfolder"
+                        size="md"
+                      />
                     </Field>
                   </>);
                 })()}

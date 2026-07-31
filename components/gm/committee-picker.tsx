@@ -7,14 +7,14 @@ import { ChevronDown, Plus, Trash2, Check } from "lucide-react";
 // ministries are passed in as `standard` and can't be deleted; anything the GM
 // adds lives in `custom` and shows a remove (×) on hover.
 export function CommitteePicker({
-  value, onChange, standard, custom, onAdd, onDelete, placeholder = "Committee / District…", size = "sm",
+  value, onChange, standard, custom = [], onAdd, onDelete, placeholder = "Committee / District…", size = "sm",
 }: {
   value: string;
   onChange: (v: string) => void;
   standard: string[];
-  custom: { id: string; name: string }[];
-  onAdd: (name: string) => Promise<void> | void;
-  onDelete: (id: string) => Promise<void> | void;
+  custom?: { id: string; name: string }[];
+  onAdd?: (name: string) => Promise<void> | void;
+  onDelete?: (id: string) => Promise<void> | void;
   placeholder?: string;
   size?: "sm" | "md";
 }) {
@@ -42,7 +42,7 @@ export function CommitteePicker({
     const name = q.trim();
     if (!name) return;
     setBusy(true);
-    try { await onAdd(name); onChange(name); setQ(""); setOpen(false); }
+    try { if (onAdd) await onAdd(name); onChange(name); setQ(""); setOpen(false); }
     finally { setBusy(false); }
   }
 
@@ -92,11 +92,13 @@ export function CommitteePicker({
                   {value === c.name ? <Check size={12} className="text-green-600 shrink-0" /> : <span className="w-3 shrink-0" />}
                   <span className="truncate">{c.name}</span>
                 </button>
-                <button type="button" title={`Remove "${c.name}" from the list`}
-                  onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-                  className="text-stone-400 hover:text-red-500 hover:bg-red-50 rounded p-0.5 shrink-0 transition-colors">
-                  <Trash2 size={13} />
-                </button>
+                {onDelete && (
+                  <button type="button" title={`Remove "${c.name}" from the list`}
+                    onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
+                    className="text-stone-400 hover:text-red-500 hover:bg-red-50 rounded p-0.5 shrink-0 transition-colors">
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
             ))}
             {stdShown.length === 0 && custShown.length === 0 && !canAdd && (
