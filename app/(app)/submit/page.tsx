@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
@@ -8,6 +8,7 @@ import {
   X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images, Link2,
 } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
+import { SignaturePad } from "@/components/ui/signature-pad";
 import { worksheetPrintHtml } from "@/components/worksheets/worksheet-html";
 import { svgToPngDataUri } from "@/components/pv/pv-pdf-download";
 import { uploadHtmlDoc } from "@/lib/upload-html";
@@ -218,11 +219,6 @@ export default function SubmitPVPage() {
   const [savedSig, setSavedSig] = useState("");
   const [sigMode, setSigMode] = useState<"draw" | "upload">("draw");
   const [saveSigForNext, setSaveSigForNext] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const isDrawingRef = useRef(false);
-  // Applicant signature (mobile declaration)
-  const applicantCanvasRef = useRef<HTMLCanvasElement>(null);
-  const isApplicantDrawingRef = useRef(false);
   const [applicantSigData, setApplicantSigData] = useState("");
   // BEM's own signature, carried over from the worksheet (not the Finance
   // Executive's signature — kept separate so it can't land in that field).
@@ -553,79 +549,13 @@ export default function SubmitPVPage() {
     });
   }
 
-  const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    isDrawingRef.current = true;
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d"); if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
-    ctx.beginPath(); ctx.moveTo(x, y);
-  }, []);
-
-  const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawingRef.current) return;
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d"); if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
-    ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
-    ctx.lineTo(x, y); ctx.stroke();
-    setFinSigData(canvas.toDataURL("image/png"));
-  }, []);
-
-  const stopDraw = useCallback(() => { isDrawingRef.current = false; }, []);
-
-  function clearCanvas() {
-    const canvas = canvasRef.current; if (!canvas) return;
-    canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-    setFinSigData("");
-  }
-
-  function loadSavedSigOnCanvas(data: string) {
-    setFinSigData(data);
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d"); if (!ctx) return;
-    const img = new Image(); img.src = data;
-    img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
-  }
-
+  // Signature capture uses the shared DPI-aware <SignaturePad>, so drawing is
+  // handled inside that component. Uploading an image just sets the data URL.
   function handleSigUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => loadSavedSigOnCanvas(ev.target?.result as string);
+    reader.onload = ev => setFinSigData(ev.target?.result as string);
     reader.readAsDataURL(file);
-  }
-
-  const startApplicantDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    isApplicantDrawingRef.current = true;
-    const canvas = applicantCanvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d"); if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
-    ctx.beginPath(); ctx.moveTo(x, y);
-  }, []);
-
-  const drawApplicant = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    if (!isApplicantDrawingRef.current) return;
-    const canvas = applicantCanvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d"); if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top  : e.clientY - rect.top;
-    ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1a1a2e";
-    ctx.lineTo(x, y); ctx.stroke();
-    setApplicantSigData(canvas.toDataURL("image/png"));
-  }, []);
-
-  const stopApplicantDraw = useCallback(() => { isApplicantDrawingRef.current = false; }, []);
-
-  function clearApplicantCanvas() {
-    const canvas = applicantCanvasRef.current; if (!canvas) return;
-    canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-    setApplicantSigData("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -748,7 +678,7 @@ export default function SubmitPVPage() {
       // Revoke all object URLs
       attachments.forEach(a => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
       setAttachments([]);
-      clearApplicantCanvas();
+      setApplicantSigData("");
       // Redirect back to GM Claims if came from a claim; the Building/Event
       // Manager has no access to the generic /my-pvs list, so send him to his
       // own BAM-scoped page instead. Everyone else lands on /my-pvs.
@@ -925,23 +855,13 @@ export default function SubmitPVPage() {
       </div>
       {sigMode === "draw" ? (
         <div className="space-y-2">
-          <div className="border-2 border-dashed border-stone-200 rounded-xl overflow-hidden bg-stone-50" style={{ touchAction: "none" }}>
-            <canvas ref={canvasRef} width={560} height={90} className="w-full cursor-crosshair"
-              onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
-              onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={clearCanvas}
-              className="text-xs text-stone-500 border border-stone-200 px-2.5 py-1 rounded-lg hover:bg-stone-50 transition-colors flex items-center gap-1">
-              <XIcon size={10} /> Clear
+          <SignaturePad value={finSigData} onChange={setFinSigData} />
+          {savedSig && (
+            <button type="button" onClick={() => setFinSigData(savedSig)}
+              className="text-xs text-[#4a6da7] border border-[#4a6da7]/30 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1">
+              <CheckCircle size={11} /> Use saved signature
             </button>
-            {savedSig && (
-              <button type="button" onClick={() => loadSavedSigOnCanvas(savedSig)}
-                className="text-xs text-[#4a6da7] border border-[#4a6da7]/30 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1">
-                <CheckCircle size={11} /> Use saved signature
-              </button>
-            )}
-          </div>
+          )}
         </div>
       ) : (
         <label className="flex flex-col items-center justify-center border-2 border-dashed border-stone-200 rounded-xl p-5 bg-stone-50 cursor-pointer hover:border-[#4a6da7]/40 hover:bg-blue-50/30 transition-colors">
@@ -1277,25 +1197,8 @@ export default function SubmitPVPage() {
       </p>
       <div>
         <label className={mLabel}>Signature <span className="text-red-400">*</span></label>
-        <div className="border-2 border-dashed border-stone-300 rounded-2xl overflow-hidden bg-white" style={{ touchAction: "none" }}>
-          <canvas
-            ref={applicantCanvasRef}
-            width={400} height={130}
-            className="w-full cursor-crosshair"
-            onMouseDown={startApplicantDraw} onMouseMove={drawApplicant}
-            onMouseUp={stopApplicantDraw} onMouseLeave={stopApplicantDraw}
-            onTouchStart={startApplicantDraw} onTouchMove={drawApplicant} onTouchEnd={stopApplicantDraw}
-          />
-        </div>
-        <div className="flex items-center justify-between mt-1.5 px-0.5">
-          <p className="text-[11px] text-stone-400">Sign above with your finger</p>
-          {applicantSigData && (
-            <button type="button" onClick={clearApplicantCanvas}
-              className="text-[11px] text-stone-400 hover:text-red-400 flex items-center gap-1 transition-colors">
-              <XIcon size={10} /> Clear
-            </button>
-          )}
-        </div>
+        <SignaturePad value={applicantSigData} onChange={setApplicantSigData} />
+        <p className="text-[11px] text-stone-400 mt-1.5 px-0.5">Sign above with your finger</p>
       </div>
       <label className="flex items-start gap-3 cursor-pointer p-3 bg-stone-50 rounded-xl border border-stone-100">
         <input type="checkbox" className="mt-0.5 accent-[#4a6da7] w-4 h-4 shrink-0"
@@ -1920,25 +1823,8 @@ export default function SubmitPVPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Applicant Signature <span className="text-red-400">*</span></label>
-              <div className="border-2 border-dashed border-stone-300 rounded-xl overflow-hidden bg-white" style={{ touchAction: "none" }}>
-                <canvas
-                  ref={applicantCanvasRef}
-                  width={600} height={120}
-                  className="w-full cursor-crosshair"
-                  onMouseDown={startApplicantDraw} onMouseMove={drawApplicant}
-                  onMouseUp={stopApplicantDraw} onMouseLeave={stopApplicantDraw}
-                  onTouchStart={startApplicantDraw} onTouchMove={drawApplicant} onTouchEnd={stopApplicantDraw}
-                />
-              </div>
-              <div className="flex items-center justify-between mt-1 px-0.5">
-                <p className="text-[11px] text-stone-400">Sign above with your mouse or trackpad</p>
-                {applicantSigData && (
-                  <button type="button" onClick={clearApplicantCanvas}
-                    className="text-[11px] text-stone-400 hover:text-red-400 flex items-center gap-1 transition-colors">
-                    <XIcon size={10} /> Clear
-                  </button>
-                )}
-              </div>
+              <SignaturePad value={applicantSigData} onChange={setApplicantSigData} />
+              <p className="text-[11px] text-stone-400 mt-1 px-0.5">Sign above with your mouse or trackpad</p>
             </div>
             <label className="flex items-start gap-2 cursor-pointer">
               <input type="checkbox" className="mt-0.5 accent-[#4a6da7] w-3.5 h-3.5"

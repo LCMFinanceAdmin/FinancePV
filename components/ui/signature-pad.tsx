@@ -12,6 +12,7 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const drawing = useRef(false);
+  const lastPos = useRef({ x: 0, y: 0 }); // previous point, for curve smoothing
   const logicalSize = useRef({ width: 0, height: 0 }); // CSS-pixel size the context is scaled for
   const [isEmpty, setIsEmpty] = useState(!value);
 
@@ -75,12 +76,18 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
   function startDraw(e: React.MouseEvent | React.TouchEvent) {
     if (disabled) return;
     drawing.current = true;
-    const ctx = canvasRef.current!.getContext("2d")!;
     const pos = getPos(e.nativeEvent as MouseEvent | TouchEvent);
+    lastPos.current = pos;
+    // A single dot for a tap that never moves.
+    const ctx = canvasRef.current!.getContext("2d")!;
     ctx.beginPath();
     ctx.moveTo(pos.x, pos.y);
   }
 
+  // Draws a quadratic curve through the midpoint of the last two samples so
+  // fast strokes come out smooth instead of showing straight-line facets.
+  // Each segment is stroked on its own sub-path (begin/move at the midpoint)
+  // so repeated strokes don't re-darken the whole accumulated path.
   function draw(e: React.MouseEvent | React.TouchEvent) {
     if (!drawing.current || disabled) return;
     e.preventDefault();
@@ -90,8 +97,13 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#1c1917";
     const pos = getPos(e.nativeEvent as MouseEvent | TouchEvent);
-    ctx.lineTo(pos.x, pos.y);
+    const last = lastPos.current;
+    const mid = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
+    ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
     ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(mid.x, mid.y);
+    lastPos.current = pos;
     setIsEmpty(false);
   }
 

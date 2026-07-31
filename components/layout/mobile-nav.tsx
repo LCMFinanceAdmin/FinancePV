@@ -121,18 +121,18 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
       ],
     },
     {
-      label: "Budget",
-      items: [
-        { href: "/budget", label: "Ministry Budget", icon: <PiggyBank size={17} />, show: user.isFinanceAdmin || !!user.isMinistryHead || user.isSignatory },
-      ],
-    },
-    {
       label: "Approvals",
       items: [
         { href: "/signatory",  label: "Signatory Queue", icon: <Users size={17} />,         show: user.isSignatory },
         { href: "/ministry",   label: "EXCO Queue",      icon: <Building2 size={17} />,     show: !!user.isMinistryHead },
         { href: "/pr-queue",   label: "PR Queue",        icon: <ClipboardList size={17} />, show: user.isSignatory || user.isGeneralManager },
         { href: "/gm-claims",  label: "GM Claims",       icon: <Inbox size={17} />,         show: user.isGeneralManager || user.isFinanceAdmin || user.isSignatory },
+      ],
+    },
+    {
+      label: "Budget",
+      items: [
+        { href: "/budget", label: "Ministry Budget", icon: <PiggyBank size={17} />, show: user.isFinanceAdmin || !!user.isMinistryHead || user.isSignatory },
       ],
     },
     {
