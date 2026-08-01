@@ -38,9 +38,11 @@ function ActionBtn({ label, icon, color, loading, onClick }: {
     gray:  "bg-stone-100 hover:bg-stone-200  text-stone-600 border border-stone-200",
   }[color];
   return (
-    <button onClick={onClick} disabled={loading}
-      className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg ${cls} disabled:opacity-50 transition-colors whitespace-nowrap`}>
-      {icon}{label}
+    // Portrait phones are tight, so the label collapses to just the icon on
+    // mobile (with an aria-label/title so it's still clear); full text at sm+.
+    <button onClick={onClick} disabled={loading} aria-label={label} title={label}
+      className={`flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 sm:py-1.5 rounded-lg ${cls} disabled:opacity-50 transition-colors whitespace-nowrap`}>
+      {icon}<span className="hidden sm:inline">{label}</span>
     </button>
   );
 }
@@ -494,36 +496,41 @@ export default function SignatoryPage() {
     return (
       <div className={`bg-white ${compact ? "border-t border-stone-100" : "border border-stone-200 rounded-xl shadow-sm"} hover:border-[#4a6da7]/40 hover:shadow-sm transition-all`}>
         <div className="px-4 py-3.5">
-          <div className="flex items-start justify-between gap-4">
-            {/* Left: PV info */}
-            <Link href={`/my-pvs/${pv.id}`} className="flex-1 min-w-0 hover:opacity-90 transition-opacity">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-                <StatusBadge status={computedBadgeStatus(pv)} />
-                {pv.ministry && (
-                  <button
-                    onClick={e => { e.preventDefault(); e.stopPropagation(); openMinistryPopup(pv.ministry!, pv.amount ?? 0); }}
-                    className="flex items-center gap-1 text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium hover:bg-[#4a6da7]/20 transition-colors">
-                    <Wallet size={10} /> {pv.ministry}
-                  </button>
-                )}
-              </div>
-              <div className="text-sm font-semibold text-stone-800 truncate">{pv.payee_name}</div>
-              <div className="text-xs text-stone-400 mt-0.5 line-clamp-1">{pv.purpose}</div>
-              <div className="text-xs text-stone-400 mt-0.5">{formatDate(pv.submitted_at!)}</div>
+          {/* Top row: PV no + status (left), amount (right) */}
+          <div className="flex items-start justify-between gap-3">
+            <Link href={`/my-pvs/${pv.id}`} className="flex items-center gap-2 flex-wrap min-w-0 hover:opacity-90 transition-opacity">
+              <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
+              <StatusBadge status={computedBadgeStatus(pv)} />
             </Link>
+            <div className="text-sm font-bold text-stone-800 shrink-0">{formatCurrency(pv.amount!)}</div>
+          </div>
 
-            {/* Right: amount + actions */}
-            <div className="flex flex-col items-end gap-2 shrink-0" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
-              <div className="text-sm font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
+          {/* Payee + ministry + purpose */}
+          <Link href={`/my-pvs/${pv.id}`} className="block min-w-0 mt-1.5 hover:opacity-90 transition-opacity">
+            <div className="text-sm font-semibold text-stone-800 truncate">{pv.payee_name}</div>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+              {pv.ministry && (
+                <button
+                  onClick={e => { e.preventDefault(); e.stopPropagation(); openMinistryPopup(pv.ministry!, pv.amount ?? 0); }}
+                  className="flex items-center gap-1 text-[11px] bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium hover:bg-[#4a6da7]/20 transition-colors max-w-full">
+                  <Wallet size={10} className="shrink-0" /> <span className="truncate">{pv.ministry}</span>
+                </button>
+              )}
+              {pv.purpose && <span className="text-xs text-stone-400 truncate min-w-0">{pv.purpose}</span>}
+            </div>
+            <div className="text-[11px] text-stone-400 mt-1">{formatDate(pv.submitted_at!)}</div>
+          </Link>
 
+          {/* Action row: buttons (left) · status/view (right) */}
+          <div className="flex items-center justify-between gap-2 mt-2.5" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+            <div className="flex items-center gap-1.5 min-w-0">
               {isSignatoryUser && userHasActed && (isRelevantForRole || canRetractApproved) && (
-                <div className="flex items-center gap-1.5">
+                <>
                   <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
                     {userApproval!.action === "APPROVED" ? "✓ Approved" : "✕ Rejected"}
                   </span>
                   {canRevert && !isFinalised ? (
-                    <ActionBtn color="gray" icon={<RotateCcw size={11} />} label="Retract"
+                    <ActionBtn color="gray" icon={<RotateCcw size={13} />} label="Retract"
                       loading={reverting === pv.id}
                       onClick={() => revertPv(pv.id!)} />
                   ) : (
@@ -531,31 +538,32 @@ export default function SignatoryPage() {
                       {currentUser?.role === "GENERAL_MANAGER" ? "Signatories signed" : "Locked"}
                     </span>
                   )}
-                </div>
+                </>
               )}
               {isSignatoryUser && !userHasActed && isRelevantForRole && (
                 <div className="flex gap-1.5">
-                  <ActionBtn color="green" icon={<CheckCircle size={12} />} label="Approve"
+                  <ActionBtn color="green" icon={<CheckCircle size={16} />} label="Approve"
                     onClick={() => openPin([pv.id!], "APPROVED")} />
-                  <ActionBtn color="red" icon={<XCircle size={12} />} label="Reject"
+                  <ActionBtn color="red" icon={<XCircle size={16} />} label="Reject"
                     onClick={() => openPin([pv.id!], "REJECTED")} />
                 </div>
               )}
+            </div>
 
+            <div className="flex items-center gap-3 shrink-0">
               {pv.status === "PAID" ? (
-                <div className="flex flex-col items-end gap-0.5">
+                <div className="flex items-center gap-1.5">
                   <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Paid</span>
                   {(pv as PVWithBulk & { paid_at?: string }).paid_at && (
-                    <span className="text-[10px] text-stone-400">{formatDate((pv as PVWithBulk & { paid_at?: string }).paid_at!)}</span>
+                    <span className="text-[10px] text-stone-400 hidden sm:inline">{formatDate((pv as PVWithBulk & { paid_at?: string }).paid_at!)}</span>
                   )}
                 </div>
               ) : (
-                <div className="text-xs text-[#4a6da7] font-medium">{signatoryApprovals.length}/{loa.required} signed</div>
+                <div className="text-xs text-[#4a6da7] font-medium whitespace-nowrap">{signatoryApprovals.length}/{loa.required} signed</div>
               )}
-
               <Link href={`/my-pvs/${pv.id}`}
-                className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-[#4a6da7] transition-colors">
-                <ExternalLink size={10} /> View full PV
+                className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-[#4a6da7] transition-colors whitespace-nowrap">
+                <ExternalLink size={10} /> <span className="hidden sm:inline">View full PV</span><span className="sm:hidden">View</span>
               </Link>
             </div>
           </div>
