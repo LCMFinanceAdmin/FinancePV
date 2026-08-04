@@ -119,9 +119,23 @@ Deno.serve(async (req) => {
         ...(excoSignature ? { signature_data: excoSignature } : {}),
       }];
 
+      // Land it in the GM's inbox straight away, carrying the EXCO's signature
+      // and all the payment details, flagged AWAITING_GM so it stands out as
+      // new and unactioned.
+      const { data: claimNo } = await db.rpc("next_claim_no");
+      const { data: claim, error: claimErr } = await db.from("gm_claims").insert({
+        ...claimFromRequest(pr, user.email!, claimNo, actorName, now, excoSignature),
+        gm_status: "AWAITING_GM",
+        notes: `Auto-created from Payment Request ${pr.request_no}, verified by ${actorName} (${pr.ministry} EXCO).`,
+      }).select().single();
+      if (claimErr) {
+        return json({ error: `Could not add this to GM Claims: ${claimErr.message}` }, 500);
+      }
+
       await db.from("purchase_requests").update({
         status: "EXCO_VERIFIED", approvals,
         exco_verified_by: actorName, exco_verified_at: now, exco_signature: excoSignature,
+        gm_claim_id: claim.id,
         updated_at: now,
       }).eq("id", pr_id);
 
@@ -130,19 +144,19 @@ Deno.serve(async (req) => {
         await db.from("notifications").insert(gms.map((g: { email: string }) => ({
           recipient_email: g.email,
           type: "PR_REVIEW", pv_no: pr.request_no, pv_id: pr.id,
-          message: `Payment Request ${pr.request_no} verified by ${actorName} (${pr.ministry} EXCO) — ${formatRM(Number(pr.estimated_amount || 0))}. Awaiting your approval.`,
+          message: `New claim ${claimNo} — Payment Request ${pr.request_no} verified by ${actorName} (${pr.ministry} EXCO), ${formatRM(Number(pr.estimated_amount || 0))}. Accept it to instruct Finance.`,
           read: false, created_at: now,
         })));
       }
       await sendPushToRoles(db, ["GENERAL_MANAGER"], {
-        title: "Payment Request Awaiting Your Approval",
-        body: `${pr.request_no} — verified by ${pr.ministry} EXCO`,
-        url: "/pr-queue",
+        title: "New Claim Awaiting Your Acceptance",
+        body: `${claimNo} — ${pr.title} (${formatRM(Number(pr.estimated_amount || 0))})`,
+        url: "/gm-claims",
       });
       await notify(db, pr.submitted_by_email, "PR_REVIEW", pr,
         `Your Payment Request ${pr.request_no} was verified by ${pr.ministry} EXCO and is now with the General Manager.`, now);
 
-      return json({ ok: true, status: "EXCO_VERIFIED" });
+      return json({ ok: true, status: "EXCO_VERIFIED", claim_no: claimNo, claim_id: claim.id });
     }
 
     // ── GM_APPROVE — the GM instructs Finance to raise the PV ──────────────
@@ -156,36 +170,34 @@ Deno.serve(async (req) => {
       action: "APPROVED", timestamp: now, remarks: remarks || "",
     }];
 
-    // Hand the request to Finance as a GM Claim, pre-filled and already
-    // carrying the EXCO's verification signature, so raising the PV is a
-    // review-and-submit rather than a re-keying exercise.
-    const { data: claimNo } = await db.rpc("next_claim_no");
-    const { data: claim, error: claimErr } = await db.from("gm_claims").insert({
-      claim_no: claimNo,
-      claimant_name: pr.submitted_by_name || pr.submitted_by_email,
-      claimant_email: pr.submitted_by_email,
-      ministry: pr.ministry,
-      project: pr.project,
-      amount: pr.estimated_amount || 0,
-      purpose: pr.title,
-      description: pr.purpose || "",
-      line_items: pr.line_items || [],
-      attachments: pr.attachments || [],
-      payee_bank: pr.payee_bank_name || null,
-      payee_bank_acct: pr.payee_bank_acct || null,
-      supplier_name: pr.vendor_name || null,
-      is_fixed_asset: !!pr.is_fixed_asset,
-      asset_description: pr.asset_description || null,
-      request_id: pr.id,
-      exco_signature: pr.exco_signature || null,
-      exco_verified_by: pr.exco_verified_by || null,
-      exco_verified_at: pr.exco_verified_at || null,
-      gm_approved_by: actorName,
-      created_by_email: user.email,
-      received_at: now,
-      notes: `Auto-created from Payment Request ${pr.request_no} on GM approval.`,
-    }).select().single();
-    if (claimErr) return json({ error: `Approved, but the GM Claim could not be created: ${claimErr.message}` }, 500);
+    // The claim already exists — EXCO verification created it. Accepting it is
+    // the GM's instruction to Finance, so it stops being highlighted and
+    // becomes raisable. Recreated defensively if a claim somehow went missing.
+    let claimNo: string | null = null;
+    let claimId: string | null = pr.gm_claim_id ?? null;
+
+    if (claimId) {
+      const { data: accepted, error: acceptErr } = await db.from("gm_claims").update({
+        gm_status: "ACCEPTED",
+        gm_approved_by: actorName,
+        gm_verified_at: now.slice(0, 10),
+        updated_at: now,
+      }).eq("id", claimId).select("claim_no").single();
+      if (acceptErr) return json({ error: `Could not accept the claim: ${acceptErr.message}` }, 500);
+      claimNo = accepted?.claim_no ?? null;
+    } else {
+      const { data: generated } = await db.rpc("next_claim_no");
+      const { data: claim, error: claimErr } = await db.from("gm_claims").insert({
+        ...claimFromRequest(pr, user.email!, generated, pr.exco_verified_by ?? "", now),
+        gm_status: "ACCEPTED",
+        gm_approved_by: actorName,
+        gm_verified_at: now.slice(0, 10),
+        notes: `Auto-created from Payment Request ${pr.request_no} on GM acceptance.`,
+      }).select().single();
+      if (claimErr) return json({ error: `Approved, but the GM Claim could not be created: ${claimErr.message}` }, 500);
+      claimNo = generated;
+      claimId = claim.id;
+    }
 
     // A recurring request is approved once and then runs for the stated term.
     let recurringId: string | null = null;
@@ -214,7 +226,7 @@ Deno.serve(async (req) => {
     await db.from("purchase_requests").update({
       status: "GM_APPROVED", approvals,
       gm_approved_by: actorName, gm_approved_at: now,
-      gm_claim_id: claim.id,
+      gm_claim_id: claimId,
       ...(recurringId ? { recurring_pv_id: recurringId } : {}),
       updated_at: now,
     }).eq("id", pr_id);
@@ -237,11 +249,47 @@ Deno.serve(async (req) => {
     await notify(db, pr.submitted_by_email, "PR_APPROVED", pr,
       `Your Payment Request ${pr.request_no} was approved by the General Manager. Finance will raise the payment voucher.`, now);
 
-    return json({ ok: true, status: "GM_APPROVED", claim_no: claimNo, claim_id: claim.id });
+    return json({ ok: true, status: "GM_APPROVED", claim_no: claimNo, claim_id: claimId });
   } catch (err) {
     return json({ error: err.message }, 500);
   }
 });
+
+// Maps a verified Payment Request onto a GM Claim, carrying the payment
+// details and the EXCO's verification signature through, so raising the PV is
+// a review-and-submit rather than a re-keying exercise.
+// `excoName` / `excoSignature` are passed explicitly because at verification
+// time the claim is written before the request row is updated, so those values
+// aren't on `pr` yet.
+// deno-lint-ignore no-explicit-any
+function claimFromRequest(
+  pr: any, createdByEmail: string, claimNo: string,
+  excoName: string, now: string, excoSignature: string | null = null,
+) {
+  return {
+    claim_no: claimNo,
+    claimant_name: pr.submitted_by_name || pr.submitted_by_email,
+    claimant_email: pr.submitted_by_email,
+    ministry: pr.ministry,
+    project: pr.project,
+    amount: pr.estimated_amount || 0,
+    purpose: pr.title,
+    description: pr.purpose || "",
+    line_items: pr.line_items || [],
+    attachments: pr.attachments || [],
+    payee_bank: pr.payee_bank_name || null,
+    payee_bank_acct: pr.payee_bank_acct || null,
+    supplier_name: pr.vendor_name || null,
+    is_fixed_asset: !!pr.is_fixed_asset,
+    asset_description: pr.asset_description || null,
+    request_id: pr.id,
+    exco_signature: pr.exco_signature || excoSignature || null,
+    exco_verified_by: pr.exco_verified_by || excoName || null,
+    exco_verified_at: pr.exco_verified_at || now,
+    created_by_email: createdByEmail,
+    received_at: now,
+  };
+}
 
 async function notify(
   db: ReturnType<typeof getServiceClient>,

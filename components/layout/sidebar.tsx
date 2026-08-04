@@ -47,7 +47,6 @@ const NAV_SECTIONS = [
     items: [
       { href: "/signatory",   label: "Signatory Queue", icon: <Users size={16} />,         show: (u: UserProfile) => u.isSignatory },
       { href: "/ministry",    label: "EXCO Queue",      icon: <Building2 size={16} />,     show: (u: UserProfile) => u.isMinistryHead },
-      { href: "/pr-queue",    label: "Request Queue",   icon: <ClipboardList size={16} />, show: (u: UserProfile) => u.isGeneralManager },
       { href: "/gm-claims",  label: "GM Claims",        icon: <Inbox size={16} />,         show: (u: UserProfile) => u.isGeneralManager || u.isFinanceAdmin || u.isSignatory },
     ],
   },

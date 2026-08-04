@@ -38,7 +38,11 @@ export default function ExcoPage() {
   const [savedExcoSig, setSavedExcoSig] = useState("");
   const [reqSigDraft, setReqSigDraft] = useState("");
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<TabKey>("pending");
+  // Payment Requests lead: they're the first constitutional gate and the most
+  // common thing an EXCO Member is here to action. Landing on "Pending
+  // Verification" (which lists PVs) made a waiting request look like nothing
+  // had arrived, even with a count showing on the other tab.
+  const [tab, setTab] = useState<TabKey>("requests");
   const [selected, setSelected] = useState<Partial<PV> | null>(null);
   const [remarks, setRemarks] = useState("");
   const [acting, setActing] = useState(false);

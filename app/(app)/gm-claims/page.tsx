@@ -10,7 +10,7 @@ import type { POLineItem } from "@/components/gm/po-pdf";
 import {
   Plus, X, ChevronDown, ChevronUp, Paperclip, Link2, ExternalLink,
   CheckCircle, Clock, FileText, CreditCard, AlertCircle, Banknote,
-  Package, Trash2, LayoutList, Table2, Printer, Share2, Upload, Eye, Camera,
+  Package, Trash2, LayoutList, Table2, Printer, Share2, Upload, Eye, Camera, ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -74,6 +74,13 @@ interface GMClaim {
   line_items: POLineItem[];
   is_fixed_asset: boolean;
   asset_description: string | null;
+
+  // AWAITING_GM = arrived from an EXCO-verified Payment Request and the GM has
+  // not yet accepted it. Claims the GM logs directly are ACCEPTED on creation.
+  gm_status?: "AWAITING_GM" | "ACCEPTED";
+  request_id?: string | null;
+  exco_verified_by?: string | null;
+  exco_verified_at?: string | null;
 
   finance_to_gm_at: string | null;
   finance_to_gm_na: boolean;
@@ -383,6 +390,7 @@ function shareClaim(claim: GMClaim, stage: ClaimStage) {
 export default function GMClaimsPage() {
   const supabase = createClient();
   const [claims, setClaims] = useState<GMClaim[]>([]);
+  const [acceptingClaimId, setAcceptingClaimId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<{ email: string; role: string; full_name?: string } | null>(null);
   const [toast, setToast] = useState("");
@@ -682,6 +690,34 @@ export default function GMClaimsPage() {
   async function updateClaimDate(claimId: string, field: string, value: string | null) {
     await supabase.from("gm_claims").update({ [field]: value, updated_at: new Date().toISOString() }).eq("id", claimId);
     setClaims(prev => prev.map(c => c.id === claimId ? { ...c, [field]: value } : c));
+  }
+
+  // The GM accepting a claim that arrived from an EXCO-verified Payment
+  // Request. This is the instruction to Finance, so it also advances the
+  // request to GM_APPROVED and creates any recurring schedule — all handled by
+  // pr-action, which is the single place that owns those transitions.
+  async function acceptClaim(claim: GMClaim) {
+    if (!claim.request_id) {
+      showToast("This claim has no linked payment request", false);
+      return;
+    }
+    setAcceptingClaimId(claim.id);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/pr-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pr_id: claim.request_id, action: "GM_APPROVE", remarks: "" }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "Could not accept the claim");
+      showToast("Accepted — Finance has been instructed to raise the PV");
+      await load();
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Could not accept the claim", false);
+    } finally {
+      setAcceptingClaimId(null);
+    }
   }
 
   async function handleShare(claim: GMClaim, stage: ClaimStage) {
@@ -1083,14 +1119,19 @@ export default function GMClaimsPage() {
                     const isRejectedRow = ["REJECTED", "REJECTED_HEAD"].includes(pvStatus);
                     const isCancelledRow = pvStatus === "CANCELLED";
                     const isPaid = stage === "PAID";
-                    const rowBg = isPaid ? "bg-green-50"
+                    // Arrived from an EXCO-verified Payment Request and not yet
+                    // accepted — highlighted so the GM can't miss that a new
+                    // item needs their instruction to Finance.
+                    const awaitingGm = claim.gm_status === "AWAITING_GM";
+                    const rowBg = awaitingGm ? "bg-yellow-100"
+                      : isPaid ? "bg-green-50"
                       : isRejectedRow ? "bg-red-50"
                       : isCancelledRow ? "bg-amber-50"
                       : idx % 2 === 0 ? "bg-white" : "bg-blue-50/30";
 
                     return (
                       <Fragment key={claim.id}>
-                      <tr id={`claim-row-${claim.id}`} className={`${rowBg} transition-colors ${highlightedClaimId === claim.id ? "ring-2 ring-inset ring-amber-400" : ""} ${isPaid ? "hover:bg-green-100" : isRejectedRow ? "hover:bg-red-100" : isCancelledRow ? "hover:bg-amber-100" : "hover:bg-blue-50/50"}`}>
+                      <tr id={`claim-row-${claim.id}`} className={`${rowBg} transition-colors ${highlightedClaimId === claim.id ? "ring-2 ring-inset ring-amber-400" : ""} ${awaitingGm ? "ring-2 ring-inset ring-yellow-400 hover:bg-yellow-200/70" : isPaid ? "hover:bg-green-100" : isRejectedRow ? "hover:bg-red-100" : isCancelledRow ? "hover:bg-amber-100" : "hover:bg-blue-50/50"}`}>
                         {/* No. */}
                         <td className="px-3 py-3 text-center text-stone-500 font-medium border border-gray-300 align-middle text-[13px]">
                           {idx + 1}
@@ -1122,6 +1163,30 @@ export default function GMClaimsPage() {
                               <span className="text-[13px] font-semibold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
                             )}
                           </div>
+
+                          {/* New arrival from the ministry EXCO — the GM accepts
+                              here, which is the instruction to Finance. */}
+                          {awaitingGm && (
+                            <div className="mt-2 rounded-lg border border-yellow-300 bg-yellow-50 px-2 py-1.5">
+                              <div className="flex items-center gap-1 text-[13px] font-bold text-yellow-800">
+                                <ShieldCheck size={12} className="shrink-0" /> New — awaiting your acceptance
+                              </div>
+                              {claim.exco_verified_by && (
+                                <div className="mt-0.5 text-[12px] text-yellow-700">
+                                  Verified by {claim.exco_verified_by}
+                                  {claim.ministry ? ` (${claim.ministry} EXCO)` : ""}
+                                </div>
+                              )}
+                              {isGM && (
+                                <button
+                                  onClick={() => acceptClaim(claim)}
+                                  disabled={acceptingClaimId === claim.id}
+                                  className="mt-1.5 w-full rounded-lg bg-green-600 px-2 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
+                                  {acceptingClaimId === claim.id ? "Accepting…" : "✓ Accept & instruct Finance"}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
 
                         {/* Value */}
