@@ -7,7 +7,8 @@ import { Card, CardBody } from "@/components/ui/card";
 import { ApprovalPath } from "@/components/ui/approval-path";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
-import type { PV } from "@/lib/types";
+import { BudgetImpact } from "@/components/budget/budget-impact";
+import type { PV, PurchaseRequest } from "@/lib/types";
 import {
   CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
   Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText,
@@ -17,13 +18,18 @@ function isImage(url: string) {
   return /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i.test(url);
 }
 
-type TabKey = "pending" | "my_pvs" | "ministry";
+type TabKey = "requests" | "pending" | "my_pvs" | "ministry";
 
 export default function ExcoPage() {
   const supabase = createClient();
   const [pendingPvs, setPendingPvs] = useState<Partial<PV>[]>([]);
   const [myPvs, setMyPvs] = useState<Partial<PV>[]>([]);
   const [ministryPvs, setMinistryPvs] = useState<Partial<PV>[]>([]);
+  // Payment Requests awaiting this committee's verification — the first
+  // constitutional gate, before anything reaches the finance desk.
+  const [pendingRequests, setPendingRequests] = useState<PurchaseRequest[]>([]);
+  const [reqActing, setReqActing] = useState<string | null>(null);
+  const [reqSelected, setReqSelected] = useState<PurchaseRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>("pending");
   const [selected, setSelected] = useState<Partial<PV> | null>(null);
@@ -66,7 +72,7 @@ export default function ExcoPage() {
 
       const PV_COLS = "id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals,attachments";
 
-      const [pendingRes, myRes, ministryRes] = await Promise.all([
+      const [pendingRes, myRes, ministryRes, requestsRes] = await Promise.all([
         ministries.length
           ? supabase.from("pvs").select(PV_COLS)
               .eq("status", "PENDING_HEAD")
@@ -81,11 +87,20 @@ export default function ExcoPage() {
               .in("ministry", ministries)
               .order("submitted_at", { ascending: false })
           : Promise.resolve({ data: [] }),
+        // Scoped to this member's own ministries — a committee verifies only
+        // its own expenses.
+        ministries.length
+          ? supabase.from("purchase_requests").select("*")
+              .eq("status", "SUBMITTED")
+              .in("ministry", ministries)
+              .order("submitted_at", { ascending: true })
+          : Promise.resolve({ data: [] }),
       ]);
 
       setPendingPvs(pendingRes.data ?? []);
       setMyPvs(myRes.data ?? []);
       setMinistryPvs(ministryRes.data ?? []);
+      setPendingRequests((requestsRes.data ?? []) as PurchaseRequest[]);
     } finally {
       setLoading(false);
     }
@@ -115,14 +130,42 @@ export default function ExcoPage() {
     }
   }
 
+  // Verify a Payment Request on behalf of the ministry. This is the gate that
+  // keeps ministerial expenses from reaching the finance desk unexamined.
+  async function actOnRequest(prId: string, action: "EXCO_VERIFY" | "REJECT") {
+    if (!pin) { showMsg("Enter your PIN to confirm", false); return; }
+    if (action === "REJECT" && !remarks.trim()) { showMsg("Remarks are required when rejecting", false); return; }
+    setReqActing(prId);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/pr-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pr_id: prId, action, remarks, pin }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "Action failed");
+      showMsg(action === "EXCO_VERIFY"
+        ? "Request verified — sent to the General Manager"
+        : "Request rejected");
+      setReqSelected(null); setRemarks(""); setPin("");
+      await load();
+    } catch (err: unknown) {
+      showMsg(err instanceof Error ? err.message : "Action failed", false);
+    } finally {
+      setReqActing(null);
+    }
+  }
+
   const TABS: { key: TabKey; label: string; count: number }[] = [
+    { key: "requests", label: "Payment Requests",     count: pendingRequests.length },
     { key: "pending",  label: "Pending Verification", count: pendingPvs.length },
     { key: "my_pvs",  label: "My PVs",               count: myPvs.length },
     { key: "ministry", label: "Ministry PVs",         count: ministryPvs.length },
   ];
 
   const pvList = tab === "pending" ? pendingPvs : tab === "my_pvs" ? myPvs : ministryPvs;
-  const isActionTab = tab === "pending";
+  const isActionTab = tab === "pending" || tab === "requests";
 
   return (
     <div className="cloudlight-page max-w-5xl space-y-5">
@@ -173,7 +216,118 @@ export default function ExcoPage() {
         <SelfPinModal onClose={() => { setShowPinSetup(false); load(); }} onToast={showMsg} />
       )}
 
-      {loading ? (
+      {/* ── Payment Requests awaiting this committee's verification ────── */}
+      {tab === "requests" && (
+        loading ? (
+          <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
+        ) : pendingRequests.length === 0 ? (
+          <Card><CardBody>
+            <div className="py-8 text-center text-stone-400 text-sm">
+              No payment requests awaiting your verification
+            </div>
+          </CardBody></Card>
+        ) : (
+          <div className="space-y-3">
+            {pendingRequests.map(pr => {
+              const isOpen = reqSelected?.id === pr.id;
+              return (
+                <Card key={pr.id} className={isOpen ? "border-[#4a6da7]" : ""}>
+                  <div className="px-4 py-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-xs font-semibold text-stone-500">{pr.request_no}</span>
+                          <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium">{pr.ministry}</span>
+                          {pr.is_recurring && (
+                            <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                              {(pr.recurrence_frequency ?? "MONTHLY").toLowerCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm font-semibold text-stone-800">{pr.title}</div>
+                        <div className="text-xs text-stone-500">{pr.purpose}</div>
+                        <div className="text-xs text-stone-400">
+                          By {pr.submitted_by_name || pr.submitted_by_email} · {formatDate(pr.submitted_at)}
+                        </div>
+                      </div>
+                      <div className="text-base font-bold text-stone-800 shrink-0">{formatCurrency(pr.estimated_amount)}</div>
+                    </div>
+
+                    {/* Is this inside the ministry's approved budget? */}
+                    <BudgetImpact
+                      ministry={pr.ministry}
+                      projectName={pr.project}
+                      amount={pr.estimated_amount ?? 0}
+                    />
+
+                    {pr.line_items?.length > 0 && (
+                      <div className="border-t border-stone-100 pt-2 space-y-1">
+                        {pr.line_items.map((li, i) => (
+                          <div key={i} className="flex justify-between text-xs text-stone-700">
+                            <span>{li.description}{li.vendor ? <span className="text-stone-400"> · {li.vendor}</span> : null}</span>
+                            <span className="font-semibold">{formatCurrency(li.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {pr.attachments?.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {pr.attachments.map((url, i) => (
+                          isImage(url)
+                            ? <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={url} alt="" className="h-20 w-20 rounded-lg border border-stone-200 object-cover hover:opacity-80 transition-opacity" />
+                              </a>
+                            : <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-[#4a6da7] hover:underline">
+                                <FileText size={12} /> Doc {i + 1} <ExternalLink size={9} />
+                              </a>
+                        ))}
+                      </div>
+                    )}
+
+                    {!isOpen ? (
+                      <Button size="sm" onClick={() => { setReqSelected(pr); setRemarks(""); setPin(""); }} disabled={!hasPin}>
+                        <ShieldCheck size={13} /> Verify or reject
+                      </Button>
+                    ) : (
+                      <div className="space-y-2 border-t border-stone-100 pt-3">
+                        <textarea
+                          className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
+                          placeholder="Remarks (required when rejecting)…"
+                          value={remarks} onChange={e => setRemarks(e.target.value)} />
+                        <input
+                          className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-lg tracking-[0.4em] text-center outline-none focus:border-[#4a6da7] font-mono"
+                          type="password" maxLength={6} placeholder="••••••" value={pin}
+                          onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+                        <div className="flex gap-2">
+                          <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700"
+                            loading={reqActing === pr.id}
+                            onClick={() => actOnRequest(pr.id, "EXCO_VERIFY")}>
+                            <CheckCircle size={13} /> Verify &amp; send to GM
+                          </Button>
+                          <Button size="sm" variant="secondary" className="flex-1"
+                            loading={reqActing === pr.id}
+                            onClick={() => actOnRequest(pr.id, "REJECT")}>
+                            <XCircle size={13} /> Reject
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setReqSelected(null); setRemarks(""); setPin(""); }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {tab !== "requests" && (
+      loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : pvList.length === 0 ? (
         <Card><CardBody>
@@ -285,7 +439,7 @@ export default function ExcoPage() {
             );
           })}
         </div>
-      )}
+      ))}
     </div>
   );
 }

@@ -92,7 +92,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     { href: "/signatory-activity", label: "Activity",   icon: <Activity size={21} />,        show: user.isFinanceAdmin },
     { href: "/ministry",           label: "EXCO",       icon: <Building2 size={21} />,       show: !!user.isMinistryHead && !user.isSignatory },
     { href: "/signatory",          label: "Queue",      icon: <Users size={21} />,           show: user.isSignatory },
-    { href: "/pr-queue",           label: "PR Q",       icon: <ClipboardList size={21} />,   show: user.isSignatory || user.isGeneralManager },
+    { href: "/pr-queue",           label: "Requests",   icon: <ClipboardList size={21} />,   show: user.isGeneralManager },
     { href: "/gm-claims",          label: "Claims",     icon: <Inbox size={21} />,           show: user.isGeneralManager || user.isFinanceAdmin || user.isSignatory },
     { href: "/budget",             label: "Budget",     icon: <PiggyBank size={21} />,       show: user.isSignatory },
     { href: "/submit?type=bam",    label: "Submit PV",  icon: <Hammer size={21} />,          show: !!user.isBuildingManager },
@@ -125,7 +125,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
       items: [
         { href: "/signatory",  label: "Signatory Queue", icon: <Users size={17} />,         show: user.isSignatory },
         { href: "/ministry",   label: "EXCO Queue",      icon: <Building2 size={17} />,     show: !!user.isMinistryHead },
-        { href: "/pr-queue",   label: "PR Queue",        icon: <ClipboardList size={17} />, show: user.isSignatory || user.isGeneralManager },
+        { href: "/pr-queue",   label: "Request Queue",   icon: <ClipboardList size={17} />, show: user.isGeneralManager },
         { href: "/gm-claims",  label: "GM Claims",       icon: <Inbox size={17} />,         show: user.isGeneralManager || user.isFinanceAdmin || user.isSignatory },
       ],
     },
@@ -150,7 +150,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     {
       label: "Requests & Payments",
       items: [
-        { href: "/purchase-requests", label: "Purchase Requests", icon: <ShoppingCart size={17} />, show: true },
+        { href: "/payment-requests", label: "Payment Requests", icon: <ShoppingCart size={17} />, show: true },
         { href: "/payments",          label: "Payments",          icon: <CreditCard size={17} />,   show: user.isFinanceAdmin },
         { href: "/banking",           label: "Banking",           icon: <Landmark size={17} />,     show: user.isFinanceAdmin || user.isGeneralManager },
       ],

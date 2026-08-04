@@ -243,7 +243,13 @@ Deno.serve(async (req) => {
     const hasDeptHead = deptData?.head_email?.trim();
     const applicantEmail = (d.applicant_email || user.email || "").toLowerCase().trim();
     const isApplicantHead = hasDeptHead && deptData.head_email.toLowerCase().trim() === applicantEmail;
-    const initialStatus = hasDeptHead && !isApplicantHead ? "PENDING_HEAD" : "PENDING";
+    // A PV raised from an approved Payment Request has already been verified
+    // by the ministry's own EXCO and approved by the GM, so it starts at the
+    // Finance stage rather than asking the same committee to verify twice.
+    const excoAlreadyVerified = !!d.exco_verified_by;
+    const initialStatus = excoAlreadyVerified
+      ? "PENDING"
+      : (hasDeptHead && !isApplicantHead ? "PENDING_HEAD" : "PENDING");
 
     const ministry = d.ministry || d.dept || "";
     const amount = Number(d.amount) || 0;
@@ -260,6 +266,21 @@ Deno.serve(async (req) => {
           timestamp: now,
           remarks: "",
           signature_data: d.finance_signature_data,
+        }]
+      : [];
+
+    // Carry the ministry EXCO's verification (and their signature) onto the
+    // voucher, so the printed PV shows the expense was verified by the
+    // ministry before it ever reached the finance desk.
+    const excoApprovalEntry = excoAlreadyVerified
+      ? [{
+          role: "MINISTRY_HEAD",
+          email: "",
+          name: d.exco_verified_by,
+          action: "VERIFIED",
+          timestamp: d.exco_verified_at || now,
+          remarks: "Verified by ministry EXCO on the payment request",
+          ...(d.exco_signature_data ? { signature_data: d.exco_signature_data } : {}),
         }]
       : [];
 
@@ -280,7 +301,7 @@ Deno.serve(async (req) => {
       project:               d.project || "",
       dept_head_name:        deptData?.head_name || "",
       dept_head_email:       deptData?.head_email || "",
-      head_verified:         hasDeptHead && !isApplicantHead ? "NO" : "N/A",
+      head_verified:         excoAlreadyVerified ? "YES" : (hasDeptHead && !isApplicantHead ? "NO" : "N/A"),
       payee_name:            d.payee_name || "",
       payment_method:        d.payment_method || "",
       payee_bank_name:       d.payee_bank_name || "",
@@ -297,7 +318,7 @@ Deno.serve(async (req) => {
       sig_applicant_confirm:    "YES",
       applicant_signature_data: d.applicant_signature_data || null,
       admin_comment:            "",
-      approvals:                financeApprovalEntry,
+      approvals:                [...excoApprovalEntry, ...financeApprovalEntry],
       signed_pdf_url:           "",
       ministry_verified:        "NO",
       finance_verified_by:      d.finance_signature_data ? (profile?.full_name || user.email) : "",

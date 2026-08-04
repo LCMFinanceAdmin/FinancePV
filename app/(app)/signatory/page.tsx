@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
+import { BudgetImpact } from "@/components/budget/budget-impact";
 import { ApprovalPath } from "@/components/ui/approval-path";
 import { formatCurrency, formatDate, getLOATier, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
@@ -92,7 +93,7 @@ export default function SignatoryPage() {
         supabase.auth.getUser(),
         supabase
           .from("pvs")
-          .select("id,pv_no,pv_type,status,amount,payee_name,ministry,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
+          .select("id,pv_no,pv_type,status,amount,payee_name,ministry,project,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
           .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED", "APPROVED", "PAID", "GM_REVIEW"])
           .order("submitted_at", { ascending: false }),
         supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount,is_master,child_group_names"),
@@ -520,6 +521,21 @@ export default function SignatoryPage() {
             </div>
             <div className="text-[11px] text-stone-400 mt-1">{formatDate(pv.submitted_at!)}</div>
           </Link>
+
+          {/* Budget check, shown only on PVs this user is about to decide on —
+              both because that's where it matters and to keep the queue from
+              firing a budget lookup for every row. */}
+          {isSignatoryUser && !userHasActed && isRelevantForRole && (
+            <div className="mt-2">
+              <BudgetImpact
+                variant="chip"
+                ministry={pv.ministry}
+                projectName={(pv as PVWithBulk & { project?: string }).project ?? null}
+                amount={pv.amount ?? 0}
+                excludePvId={pv.id}
+              />
+            </div>
+          )}
 
           {/* Action row: buttons (left) · status/view (right) */}
           <div className="flex items-center justify-between gap-2 mt-2.5" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>

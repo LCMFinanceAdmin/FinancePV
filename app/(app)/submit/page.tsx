@@ -1,11 +1,12 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, getLOATier } from "@/lib/utils";
 import {
   Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle,
-  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images, Link2,
+  X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images, Link2, RefreshCw,
 } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import { SignaturePad } from "@/components/ui/signature-pad";
@@ -223,6 +224,22 @@ export default function SubmitPVPage() {
   // BEM's own signature, carried over from the worksheet (not the Finance
   // Executive's signature — kept separate so it can't land in that field).
   const [worksheetBemSig, setWorksheetBemSig] = useState({ data: "", signedBy: "" });
+  // Ministry EXCO verification inherited from an approved Payment Request, so
+  // the voucher can show it was verified before it reached Finance.
+  const [excoVerification, setExcoVerification] = useState({ signature: "", verifiedBy: "", verifiedAt: "" });
+  // A recurring commitment is approved once and then runs for the stated term,
+  // landing in the recurring payments library on GM approval.
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrence, setRecurrence] = useState({ frequency: "MONTHLY", start: "", end: "" });
+
+  // Who may create a payment voucher directly. Everyone else raises a Payment
+  // Request instead, so their ministry's EXCO verifies it and the GM approves
+  // before it reaches the finance desk — the chain the church constitution
+  // requires. The BAM route is deliberately untouched: it has its own
+  // committee chain through the Building/Event Manager.
+  const isGeneralManager = userRole === "GENERAL_MANAGER";
+  const canRaisePvDirectly = isFinanceAdmin || isGeneralManager;
+  const requestMode = pvType === "LCM" && !canRaisePvDirectly;
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -320,9 +337,36 @@ export default function SubmitPVPage() {
       const amount = parseFloat(params.get("claim_amount") ?? "0") || 0;
       const purpose = params.get("claim_purpose") ?? "";
       setClaimBanner({ id: claimId, claim_no: "", claimant });
-      supabase.from("gm_claims").select("claim_no,attachments").eq("id", claimId).single().then(({ data }) => {
+      supabase.from("gm_claims").select("*").eq("id", claimId).single().then(({ data }) => {
         if (data) {
           setClaimBanner(b => b ? { ...b, claim_no: data.claim_no } : b);
+
+          // A claim created from an approved Payment Request already carries
+          // the bank details, items and the ministry EXCO's verification, so
+          // Finance reviews and submits rather than re-keying it all.
+          setForm(f => ({
+            ...f,
+            project: data.project || f.project,
+            payee_bank_name: data.payee_bank || f.payee_bank_name,
+            payee_bank_acct: data.payee_bank_acct || f.payee_bank_acct,
+            purpose: data.purpose || f.purpose,
+            line_items: Array.isArray(data.line_items) && data.line_items.length
+              ? data.line_items.map((li: { description?: string; amount?: number; date?: string }) => ({
+                  description: li.description ?? "", amount: Number(li.amount ?? 0), date: li.date ?? "",
+                }))
+              : f.line_items,
+          }));
+
+          // Carried onto the PV so the printed voucher shows who verified the
+          // expense for the ministry.
+          if (data.exco_signature || data.exco_verified_by) {
+            setExcoVerification({
+              signature: data.exco_signature ?? "",
+              verifiedBy: data.exco_verified_by ?? "",
+              verifiedAt: data.exco_verified_at ?? "",
+            });
+          }
+
           // Pre-populate attachments from GM claim as URL-backed entries
           if (data.attachments?.length) {
             const preloaded: AttachmentFile[] = data.attachments.map((url: string, i: number) => {
@@ -582,6 +626,54 @@ export default function SubmitPVPage() {
       }
 
       const { data: { session } } = await supabase.auth.getSession();
+
+      // ── Payment Request path ────────────────────────────────────────────
+      // Ordinary members don't create vouchers. The same form is submitted as
+      // a request, routed to the ministry's own EXCO first.
+      if (requestMode) {
+        const reqRes = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pr`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            title: form.purpose,
+            ministry: form.ministry,
+            project: form.project,
+            dept: form.dept,
+            purpose: form.purpose,
+            estimated_amount: displayAmount,
+            vendor_name: form.payee_name,
+            line_items: form.line_items.filter(i => i.description || i.amount),
+            attachments: attachmentUrls,
+            payee_name: form.payee_name,
+            payee_bank_name: form.payee_bank_name,
+            payee_bank_acct: form.payee_bank_acct,
+            payment_method: form.payment_method,
+            jompay_biller_code: form.biller_code,
+            jompay_ref: form.ref_no,
+            payment_type: isTravelClaim ? "TRAVEL_CLAIM" : "GENERAL",
+            applicant_signature: applicantSigData || null,
+            is_recurring: isRecurring,
+            recurrence_frequency: isRecurring ? recurrence.frequency : null,
+            recurrence_start: isRecurring ? (recurrence.start || null) : null,
+            recurrence_end: isRecurring ? (recurrence.end || null) : null,
+          }),
+        });
+        const reqResult = await reqRes.json();
+        if (!reqRes.ok) throw new Error(reqResult.error ?? "Submission failed");
+
+        setSuccess(reqResult.status === "EXCO_VERIFIED"
+          ? `Request ${reqResult.request_no} submitted. As EXCO for this ministry your verification is recorded, so it has gone straight to the General Manager.`
+          : `Request ${reqResult.request_no} submitted for verification by your ministry's EXCO.`);
+        setForm(EMPTY_FORM);
+        setIsRecurring(false);
+        setRecurrence({ frequency: "MONTHLY", start: "", end: "" });
+        attachments.forEach(a => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
+        setAttachments([]);
+        setApplicantSigData("");
+        setTimeout(() => router.push("/payment-requests"), 1800);
+        return;
+      }
+
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
@@ -621,6 +713,15 @@ export default function SubmitPVPage() {
           ...(worksheetBemSig.data ? {
             worksheet_bem_signature_data: worksheetBemSig.data,
             worksheet_bem_signed_by: worksheetBemSig.signedBy,
+          } : {}),
+          // Ministry EXCO verification from the originating Payment Request.
+          // submit-pv seeds this as a MINISTRY_HEAD approval entry so the
+          // voucher shows the signature, and skips the Dept Head stage —
+          // the ministry has already verified this expense once.
+          ...(excoVerification.verifiedBy ? {
+            exco_verified_by: excoVerification.verifiedBy,
+            exco_verified_at: excoVerification.verifiedAt,
+            exco_signature_data: excoVerification.signature,
           } : {}),
         }),
       });
@@ -834,6 +935,52 @@ export default function SubmitPVPage() {
       )}
     </div>
   );
+
+  // ── Shared: recurring commitment (Payment Requests only) ────────────────
+  // Approved once by the EXCO and GM, then added to the recurring payments
+  // library for the stated term rather than re-requested every period.
+  const RecurringUI = requestMode ? (
+    <div className="print:hidden">
+      <label className="flex items-start gap-2.5 cursor-pointer">
+        <input type="checkbox" className="mt-0.5 accent-[#4a6da7] w-4 h-4"
+          checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} />
+        <span>
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-stone-700">
+            <RefreshCw size={13} className="text-[#4a6da7]" /> This is a recurring payment
+          </span>
+          <span className="block text-xs text-stone-400 mt-0.5">
+            Once approved it is added to the recurring payments list for the term below, so it
+            doesn&apos;t need requesting again each period.
+          </span>
+        </span>
+      </label>
+
+      {isRecurring && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-3 rounded-xl border border-[#dbe9fb] bg-[#f4f9ff] p-3">
+          <div>
+            <label className={mLabel}>How often</label>
+            <select className={mInput} value={recurrence.frequency}
+              onChange={e => setRecurrence(r => ({ ...r, frequency: e.target.value }))}>
+              <option value="WEEKLY">Weekly</option>
+              <option value="MONTHLY">Monthly</option>
+              <option value="QUARTERLY">Quarterly</option>
+              <option value="ANNUAL">Annually</option>
+            </select>
+          </div>
+          <div>
+            <label className={mLabel}>Starting</label>
+            <input type="date" className={mInput} value={recurrence.start}
+              onChange={e => setRecurrence(r => ({ ...r, start: e.target.value }))} />
+          </div>
+          <div>
+            <label className={mLabel}>Until (end of term)</label>
+            <input type="date" className={mInput} value={recurrence.end}
+              onChange={e => setRecurrence(r => ({ ...r, end: e.target.value }))} />
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null;
 
   // ── Shared: e-signature UI ──────────────────────────────────────────────
   const SignatureUI = isFinanceAdmin ? (
@@ -1187,7 +1334,10 @@ export default function SubmitPVPage() {
     </div>,
 
     // 4: Supporting Documents
-    AttachmentsUI,
+    <div key="s4" className="space-y-4">
+      {RecurringUI}
+      {AttachmentsUI}
+    </div>,
 
     // 5: Declaration
     <div key="s5" className="space-y-4">
@@ -1217,7 +1367,9 @@ export default function SubmitPVPage() {
         {/* Sticky progress header */}
         <div className="sticky top-0 z-10 bg-white border-b border-stone-100 px-4 py-3 shadow-sm">
           <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold text-stone-800">Submit Payment Voucher</h1>
+            <h1 className="text-base font-bold text-stone-800">
+              {requestMode ? "New Payment Request" : "Submit Payment Voucher"}
+            </h1>
             {pvType === "BAM" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">BAM (MAYBANK)</span>}
             {pvType === "LSC" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">LSC (RHB)</span>}
             {pvType === "HLE" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">Highlands (MAYBANK)</span>}
@@ -1318,7 +1470,7 @@ export default function SubmitPVPage() {
               {success && <div className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">{success}</div>}
               <button type="submit" disabled={submitting}
                 className="w-full py-4 bg-[#4a6da7] hover:bg-[#3d5a8e] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
-                {submitting ? "Submitting…" : "Submit Payment Voucher"}
+                {submitting ? "Submitting…" : requestMode ? "Submit Payment Request" : "Submit Payment Voucher"}
               </button>
             </div>
           </div>
@@ -1334,9 +1486,25 @@ export default function SubmitPVPage() {
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
       <div className="mb-5">
-        <h1 className="text-xl font-bold text-stone-800">Submit Payment Voucher</h1>
-        <p className="text-xs text-stone-400 mt-0.5">Fill in all required fields and submit for Finance review</p>
+        <h1 className="text-xl font-bold text-stone-800">
+          {requestMode ? "New Payment Request" : "Submit Payment Voucher"}
+        </h1>
+        <p className="text-xs text-stone-400 mt-0.5">
+          {requestMode
+            ? "Your ministry's EXCO verifies this first, then the General Manager approves and instructs Finance to pay"
+            : "Fill in all required fields and submit for Finance review"}
+        </p>
       </div>
+
+      {requestMode && (
+        <div className="mb-5 rounded-xl border border-[#dbe9fb] bg-[#f4f9ff] px-4 py-3 text-xs text-stone-600">
+          <strong className="text-stone-700">This is a payment request, not a voucher.</strong> Ministry
+          expenses are verified by the ministry&apos;s own standing committee before they reach the
+          finance desk. Once the EXCO verifies and the General Manager approves, Finance raises the
+          payment voucher and makes the transfer — you can follow it under{" "}
+          <Link href="/payment-requests" className="font-medium text-[#4a6da7] underline">My Payment Requests</Link>.
+        </div>
+      )}
 
       {/* PV Type toggle — Finance Exec can choose; Building Manager is locked to BAM */}
       {canSubmitBAM && (
@@ -1800,6 +1968,10 @@ export default function SubmitPVPage() {
             </div>
           )}
 
+          {RecurringUI && (
+            <div className="px-3 sm:px-6 py-4 border-t border-stone-200 print:hidden">{RecurringUI}</div>
+          )}
+
           {/* Supporting Documents */}
           <div className="px-3 sm:px-6 py-4 border-t border-stone-200 print:hidden">
             <div className="flex items-center gap-2 mb-3">
@@ -1845,7 +2017,7 @@ export default function SubmitPVPage() {
 
         <button type="submit" disabled={submitting}
           className="mt-4 w-full py-3 bg-[#4a6da7] hover:bg-[#3d5a8e] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
-          {submitting ? "Submitting…" : "Submit Payment Voucher"}
+          {submitting ? "Submitting…" : requestMode ? "Submit Payment Request" : "Submit Payment Voucher"}
         </button>
       </form>
     </div>

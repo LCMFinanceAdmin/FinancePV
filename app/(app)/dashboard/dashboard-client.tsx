@@ -381,9 +381,9 @@ export default function DashboardPage() {
     { href: "/budget",         icon: <TrendingUp size={18} />,   label: "Budget",          desc: "Ministry overview",      color: "from-emerald-500 to-emerald-700" },
     { href: "/hod-activity",   icon: <FileText size={18} />,     label: "Finance Activity",desc: "Recent transactions",    color: "from-violet-500 to-violet-700" },
   ] : [
-    { href: "/submit",         icon: <FilePlus size={18} />,    label: "Submit PV",       desc: "New payment voucher",    color: "from-blue-500 to-blue-700" },
+    { href: "/submit",         icon: <FilePlus size={18} />,    label: "New Request",     desc: "Request a payment",      color: "from-blue-500 to-blue-700" },
     { href: "/my-pvs",         icon: <FileText size={18} />,    label: "My PVs",          desc: "Track your submissions", color: "from-violet-500 to-violet-700" },
-    { href: "/purchase-requests",icon: <AlertCircle size={18} />,label: "Purchase Req.",   desc: "Request purchases",      color: "from-amber-500 to-amber-600" },
+    { href: "/payment-requests",icon: <AlertCircle size={18} />,label: "Payment Req.",    desc: "Track your requests",    color: "from-amber-500 to-amber-600" },
     { href: "/my-leaves",      icon: <Clock size={18} />,       label: "My Leaves",       desc: "Leave applications",     color: "from-emerald-500 to-emerald-700" },
   ];
 

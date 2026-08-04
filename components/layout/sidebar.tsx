@@ -46,7 +46,7 @@ const NAV_SECTIONS = [
     items: [
       { href: "/signatory",   label: "Signatory Queue", icon: <Users size={16} />,         show: (u: UserProfile) => u.isSignatory },
       { href: "/ministry",    label: "EXCO Queue",      icon: <Building2 size={16} />,     show: (u: UserProfile) => u.isMinistryHead },
-      { href: "/pr-queue",    label: "PR Queue",        icon: <ClipboardList size={16} />, show: (u: UserProfile) => u.isSignatory || u.isGeneralManager },
+      { href: "/pr-queue",    label: "Request Queue",   icon: <ClipboardList size={16} />, show: (u: UserProfile) => u.isGeneralManager },
       { href: "/gm-claims",  label: "GM Claims",        icon: <Inbox size={16} />,         show: (u: UserProfile) => u.isGeneralManager || u.isFinanceAdmin || u.isSignatory },
     ],
   },
@@ -76,7 +76,7 @@ const NAV_SECTIONS = [
   {
     label: "Requests & Payments",
     items: [
-      { href: "/purchase-requests", label: "Purchase Requests", icon: <ShoppingCart size={16} />, show: () => true },
+      { href: "/payment-requests", label: "Payment Requests", icon: <ShoppingCart size={16} />, show: () => true },
       { href: "/payments",          label: "Payments",          icon: <CreditCard size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin },
       { href: "/banking",           label: "Banking",           icon: <Landmark size={16} />,     show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager },
     ],

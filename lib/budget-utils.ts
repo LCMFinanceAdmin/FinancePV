@@ -89,6 +89,86 @@ export async function loadBudgetProjects(
   }
 }
 
+// Canonical budget arithmetic, matching app/(app)/budget/page.tsx so the
+// figures a GM or Treasurer sees at the point of approval always agree with
+// the Ministry Budget page. A budget item is either income- or expense-typed
+// and only the matching column is populated, so summing both yields that
+// line's budget either way.
+export const BUDGET_SPENT_STATUSES = ["APPROVED", "PAID"];
+export const BUDGET_IN_FLIGHT_STATUSES = [
+  "PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY",
+];
+
+export type BudgetVerdict = "WITHIN" | "EXCEEDS" | "UNBUDGETED";
+
+export interface BudgetImpactResult {
+  verdict: BudgetVerdict;
+  projectName: string | null;
+  budget: number;
+  spent: number;
+  committed: number;   // approved-in-principle but not yet paid
+  remaining: number;   // budget - spent - committed
+  amount: number;      // the transaction being decided
+  balanceAfter: number;
+  overBy: number;      // > 0 only when the verdict is EXCEEDS
+}
+
+/**
+ * Budget impact of a single request/PV against its budget line.
+ *
+ * `excludePvId` matters when the transaction under review is *already* sitting
+ * in the approval chain: its amount is part of `committed`, so without
+ * excluding it the "balance after approval" would subtract it twice.
+ */
+export async function getBudgetImpact(
+  supabase: SupabaseClient,
+  opts: { ministry: string; projectName?: string | null; amount: number; excludePvId?: string | null },
+): Promise<BudgetImpactResult> {
+  const { ministry, projectName, amount, excludePvId } = opts;
+  const empty: BudgetImpactResult = {
+    verdict: "UNBUDGETED", projectName: projectName ?? null,
+    budget: 0, spent: 0, committed: 0, remaining: 0,
+    amount, balanceAfter: -amount, overBy: 0,
+  };
+
+  if (!ministry || !projectName) return empty;
+
+  const { data: item } = await supabase
+    .from("budget_items")
+    .select("project_name, estimated_income, estimated_expenses")
+    .eq("ministry", ministry)
+    .eq("project_name", projectName)
+    .maybeSingle();
+
+  // No budget line on record — the spend sits outside the approved budget,
+  // which is exactly what the GM and Treasurer need flagged.
+  if (!item) return empty;
+
+  const { data: pvs } = await supabase
+    .from("pvs")
+    .select("id, amount, status")
+    .eq("ministry", ministry)
+    .eq("project", projectName);
+
+  let spent = 0, committed = 0;
+  for (const pv of (pvs ?? []) as { id: string; amount: number; status: string }[]) {
+    if (excludePvId && pv.id === excludePvId) continue;
+    if (BUDGET_SPENT_STATUSES.includes(pv.status)) spent += pv.amount || 0;
+    else if (BUDGET_IN_FLIGHT_STATUSES.includes(pv.status)) committed += pv.amount || 0;
+  }
+
+  const budget = (item.estimated_income || 0) + (item.estimated_expenses || 0);
+  const remaining = budget - spent - committed;
+  const balanceAfter = remaining - amount;
+
+  return {
+    verdict: balanceAfter < 0 ? "EXCEEDS" : "WITHIN",
+    projectName: item.project_name,
+    budget, spent, committed, remaining, amount, balanceAfter,
+    overBy: balanceAfter < 0 ? Math.abs(balanceAfter) : 0,
+  };
+}
+
 export async function getBudgetBalance(
   supabase: SupabaseClient,
   ministry: string,

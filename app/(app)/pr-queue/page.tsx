@@ -3,20 +3,24 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { PurchaseRequest } from "@/lib/types";
-import { CheckCircle, XCircle, X, FileText, ExternalLink, ChevronDown, ChevronUp, Building2 } from "lucide-react";
+import { BudgetImpact } from "@/components/budget/budget-impact";
+import { CheckCircle, XCircle, X, FileText, ExternalLink, ChevronDown, ChevronUp, Building2, ShieldCheck, RefreshCw } from "lucide-react";
 
 const inp = "border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full";
 
-interface PinModal { prIds: string[]; action: "APPROVE" | "REJECT"; }
+interface ActionModal { prIds: string[]; action: "GM_APPROVE" | "REJECT"; }
 
+// The General Manager's stage. Requests only reach here once the ministry's own
+// EXCO has verified them, so this queue lists EXCO_VERIFIED only. Approving
+// hands the request to Finance as a pre-filled GM Claim.
 export default function PRQueuePage() {
   const supabase = createClient();
   const [prs, setPrs] = useState<PurchaseRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [pinModal, setPinModal] = useState<PinModal | null>(null);
-  const [pin, setPin] = useState("");
+  const [actionModal, setActionModal] = useState<ActionModal | null>(null);
   const [remarks, setRemarks] = useState("");
   const [acting, setActing] = useState(false);
   const [toast, setToast] = useState("");
@@ -25,10 +29,16 @@ export default function PRQueuePage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from("user_roles").select("role").eq("email", user.email!).single();
+        setRole(profile?.role ?? null);
+      }
       const { data } = await supabase
         .from("purchase_requests")
         .select("*")
-        .eq("status", "SUBMITTED")
+        .eq("status", "EXCO_VERIFIED")
         .order("submitted_at", { ascending: true });
       setPrs((data ?? []) as PurchaseRequest[]);
       setCheckedIds(new Set());
@@ -41,37 +51,39 @@ export default function PRQueuePage() {
 
   function showToast(msg: string, ok = true) {
     setToast(msg); setToastOk(ok);
-    setTimeout(() => setToast(""), 3500);
+    setTimeout(() => setToast(""), 4000);
   }
 
-  function openPin(prIds: string[], action: "APPROVE" | "REJECT") {
-    setPinModal({ prIds, action });
-    setPin(""); setRemarks("");
+  function openAction(prIds: string[], action: "GM_APPROVE" | "REJECT") {
+    setActionModal({ prIds, action });
+    setRemarks("");
   }
 
-  async function submitPin() {
-    if (!pinModal) return;
-    if (pinModal.action === "REJECT" && !remarks.trim()) {
-      showToast("Remarks required for rejection", false); return;
+  async function submitAction() {
+    if (!actionModal) return;
+    if (actionModal.action === "REJECT" && !remarks.trim()) {
+      showToast("Remarks are required when rejecting", false); return;
     }
     setActing(true);
     try {
       const session = (await supabase.auth.getSession()).data.session;
       let successCount = 0;
       let lastError = "";
-      for (const prId of pinModal.prIds) {
+      for (const prId of actionModal.prIds) {
         const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/pr-action`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-          body: JSON.stringify({ pr_id: prId, action: pinModal.action, remarks, pin }),
+          body: JSON.stringify({ pr_id: prId, action: actionModal.action, remarks }),
         });
         const result = await res.json();
         if (res.ok) successCount++;
         else lastError = result.error ?? "Action failed";
       }
-      setPinModal(null);
+      setActionModal(null);
       if (successCount > 0) {
-        showToast(`${successCount} request${successCount > 1 ? "s" : ""} ${pinModal.action === "APPROVE" ? "approved" : "rejected"}`);
+        showToast(actionModal.action === "GM_APPROVE"
+          ? `${successCount} request${successCount > 1 ? "s" : ""} approved — Finance has been instructed to raise the PV`
+          : `${successCount} request${successCount > 1 ? "s" : ""} rejected`);
       }
       if (lastError) showToast(lastError, false);
       await load();
@@ -97,6 +109,21 @@ export default function PRQueuePage() {
     return /\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i.test(url);
   }
 
+  if (!loading && role !== "GENERAL_MANAGER") {
+    return (
+      <div className="cloudlight-page max-w-3xl">
+        <div className="cloudlight-card rounded-2xl p-6 text-center">
+          <ShieldCheck size={22} className="mx-auto text-stone-300 mb-2" />
+          <h1 className="text-base font-bold text-stone-800">General Manager only</h1>
+          <p className="mt-1 text-sm text-stone-500">
+            Payment Requests are verified by the ministry&apos;s own EXCO and then approved by the
+            General Manager. Signatories authorise later, at the payment voucher stage.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="cloudlight-page max-w-5xl space-y-5">
       {toast && (
@@ -109,60 +136,58 @@ export default function PRQueuePage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Approvals workspace</p>
-          <h1 className="text-xl font-bold text-stone-800">Purchase Request Queue</h1>
-          <p className="text-sm text-stone-400">Review and approve purchase requests from EXCO Members</p>
+          <h1 className="text-xl font-bold text-stone-800">Payment Request Queue</h1>
+          <p className="text-sm text-stone-400">
+            Verified by the ministry EXCO — approve to instruct Finance to raise the payment voucher
+          </p>
         </div>
         {anyChecked && (
           <div className="flex gap-2">
-            <button onClick={() => openPin([...checkedIds], "APPROVE")}
+            <button onClick={() => openAction([...checkedIds], "GM_APPROVE")}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
-              <CheckCircle size={14} /> Bulk Approve ({checkedIds.size})
+              <CheckCircle size={14} /> Approve ({checkedIds.size})
             </button>
-            <button onClick={() => openPin([...checkedIds], "REJECT")}
+            <button onClick={() => openAction([...checkedIds], "REJECT")}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors">
-              <XCircle size={14} /> Bulk Reject ({checkedIds.size})
+              <XCircle size={14} /> Reject ({checkedIds.size})
             </button>
           </div>
         )}
       </div>
 
-      {/* PIN Modal */}
-      {pinModal && (
+      {/* Confirm modal — the GM authorises by role, no PIN needed */}
+      {actionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 px-4 backdrop-blur-[2px]">
           <div className="w-full max-w-sm space-y-4 rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-5 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
             <div className="flex items-center justify-between">
               <div>
-                <div className={`text-base font-bold ${pinModal.action === "APPROVE" ? "text-green-700" : "text-red-600"}`}>
-                  {pinModal.action === "APPROVE" ? "✓ Approve" : "✕ Reject"} {pinModal.prIds.length > 1 ? `${pinModal.prIds.length} Requests` : "Request"}
+                <div className={`text-base font-bold ${actionModal.action === "GM_APPROVE" ? "text-green-700" : "text-red-600"}`}>
+                  {actionModal.action === "GM_APPROVE" ? "✓ Approve" : "✕ Reject"} {actionModal.prIds.length > 1 ? `${actionModal.prIds.length} Requests` : "Request"}
                 </div>
-                <div className="text-xs text-stone-400 mt-0.5">Enter your 6-digit approval PIN to confirm</div>
+                <div className="text-xs text-stone-400 mt-0.5">
+                  {actionModal.action === "GM_APPROVE"
+                    ? "Finance will be instructed to raise the payment voucher"
+                    : "The applicant will be notified"}
+                </div>
               </div>
-              <button onClick={() => setPinModal(null)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+              <button onClick={() => setActionModal(null)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
             </div>
 
             <div>
               <label className="text-xs text-stone-500 block mb-1">
-                Remarks {pinModal.action === "REJECT" ? <span className="text-red-400">* required</span> : "(optional)"}
+                Remarks {actionModal.action === "REJECT" ? <span className="text-red-400">* required</span> : "(optional)"}
               </label>
               <textarea className={`${inp} resize-none h-16`}
-                placeholder={pinModal.action === "REJECT" ? "Reason for rejection…" : "Optional comments…"}
-                value={remarks} onChange={e => setRemarks(e.target.value)} />
-            </div>
-
-            <div>
-              <label className="text-xs text-stone-500 block mb-1">Approval PIN <span className="text-red-400">*</span></label>
-              <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#4a6da7] font-mono"
-                type="password" maxLength={6} placeholder="••••••" value={pin}
-                onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} autoFocus />
-              <p className="text-xs text-stone-400 mt-1">GM does not require a PIN — leave blank if you are the General Manager</p>
+                placeholder={actionModal.action === "REJECT" ? "Reason for rejection…" : "Optional instruction to Finance…"}
+                value={remarks} onChange={e => setRemarks(e.target.value)} autoFocus />
             </div>
 
             <div className="flex gap-2 pt-1">
-              <button onClick={submitPin} disabled={acting}
-                className={`flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-colors disabled:opacity-40 ${pinModal.action === "APPROVE" ? "bg-green-600 hover:bg-green-700" : "bg-red-500 hover:bg-red-600"}`}>
-                {acting ? "Processing…" : pinModal.action === "APPROVE" ? "Confirm Approval" : "Confirm Rejection"}
+              <button onClick={submitAction} disabled={acting}
+                className={`flex-1 py-3 rounded-xl text-white font-semibold text-sm transition-colors disabled:opacity-40 ${actionModal.action === "GM_APPROVE" ? "bg-green-600 hover:bg-green-700" : "bg-red-500 hover:bg-red-600"}`}>
+                {acting ? "Processing…" : actionModal.action === "GM_APPROVE" ? "Approve & instruct Finance" : "Confirm Rejection"}
               </button>
-              <button onClick={() => setPinModal(null)}
+              <button onClick={() => setActionModal(null)}
                 className="px-4 py-3 rounded-xl border border-stone-200 text-stone-600 text-sm hover:bg-stone-50 transition-colors">
                 Cancel
               </button>
@@ -175,11 +200,10 @@ export default function PRQueuePage() {
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : prs.length === 0 ? (
         <div className="cloudlight-card rounded-2xl py-12 text-center text-sm text-stone-400">
-          No purchase requests awaiting review
+          No payment requests awaiting your approval
         </div>
       ) : (
         <>
-          {/* Select all */}
           <div className="flex items-center gap-2 px-1">
             <input type="checkbox" className="accent-[#4a6da7] w-4 h-4 cursor-pointer"
               checked={allChecked} onChange={() => setCheckedIds(allChecked ? new Set() : new Set(allIds))} />
@@ -206,6 +230,11 @@ export default function PRQueuePage() {
                             <span className="flex items-center gap-1 text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium">
                               <Building2 size={10} /> {pr.ministry}
                             </span>
+                            {pr.is_recurring && (
+                              <span className="flex items-center gap-1 text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                                <RefreshCw size={10} /> {(pr.recurrence_frequency ?? "MONTHLY").toLowerCase()}
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm font-semibold text-stone-800">{pr.title}</div>
                           {pr.vendor_name && <div className="text-xs text-stone-500 mt-0.5">Vendor: {pr.vendor_name}</div>}
@@ -220,34 +249,72 @@ export default function PRQueuePage() {
                         </div>
                       </div>
 
-                      {/* Details toggle */}
+                      {/* Chain-of-authority proof: who verified this, on behalf of the ministry */}
+                      {pr.exco_verified_by && (
+                        <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-2.5 py-1.5">
+                          <ShieldCheck size={13} className="shrink-0" />
+                          <span className="min-w-0 truncate">
+                            Verified by <strong>{pr.exco_verified_by}</strong> ({pr.ministry} EXCO)
+                            {pr.exco_verified_at ? ` · ${formatDate(pr.exco_verified_at)}` : ""}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Budgeted or outside the approved budget? */}
+                      <BudgetImpact
+                        ministry={pr.ministry}
+                        projectName={pr.project}
+                        amount={pr.estimated_amount ?? 0}
+                      />
+
                       {(pr.line_items?.length > 0 || pr.attachments?.length > 0) && (
                         <button onClick={() => toggleExpand(pr.id)}
                           className="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-700 transition-colors">
                           {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                          {isOpen ? "Hide" : "View"} quotation details ({pr.attachments?.length || 0} attachments)
+                          {isOpen ? "Hide" : "View"} details ({pr.attachments?.length || 0} attachments)
                         </button>
                       )}
 
-                      {/* Action buttons */}
                       <div className="flex gap-2 pt-1 border-t border-stone-100">
-                        <button onClick={() => openPin([pr.id], "APPROVE")}
+                        <button onClick={() => openAction([pr.id], "GM_APPROVE")}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
-                          <CheckCircle size={14} /> Approve
+                          <CheckCircle size={14} /> Approve &amp; instruct Finance
                         </button>
-                        <button onClick={() => openPin([pr.id], "REJECT")}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors">
+                        <button onClick={() => openAction([pr.id], "REJECT")}
+                          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors">
                           <XCircle size={14} /> Reject
                         </button>
                       </div>
                     </div>
 
-                    {/* Expanded quotation details */}
                     {isOpen && (
                       <div className="space-y-3 border-t border-[#dbe9fb] bg-[#f4f9ff] px-4 py-3">
+                        {(pr.payee_name || pr.payee_bank_acct) && (
+                          <div>
+                            <div className="text-xs font-medium text-stone-500 mb-1.5">Payment Details</div>
+                            <div className="text-xs text-stone-700 space-y-0.5">
+                              {pr.payee_name && <div>Payee: <strong>{pr.payee_name}</strong></div>}
+                              {pr.payee_bank_name && <div>Bank: {pr.payee_bank_name}</div>}
+                              {pr.payee_bank_acct && <div>Account: {pr.payee_bank_acct}</div>}
+                              {pr.payment_method && <div>Method: {pr.payment_method}</div>}
+                              {pr.jompay_biller_code && <div>JomPay biller: {pr.jompay_biller_code}{pr.jompay_ref ? ` · Ref ${pr.jompay_ref}` : ""}</div>}
+                            </div>
+                          </div>
+                        )}
+                        {pr.is_recurring && (
+                          <div>
+                            <div className="text-xs font-medium text-stone-500 mb-1.5">Recurring Commitment</div>
+                            <p className="text-xs text-stone-700">
+                              {(pr.recurrence_frequency ?? "MONTHLY").toLowerCase()} from{" "}
+                              {pr.recurrence_start ? formatDate(pr.recurrence_start) : "—"}
+                              {pr.recurrence_end ? ` until ${formatDate(pr.recurrence_end)}` : ""}.
+                              Approving adds this to the recurring payments list for the term.
+                            </p>
+                          </div>
+                        )}
                         {pr.line_items?.length > 0 && (
                           <div>
-                            <div className="text-xs font-medium text-stone-500 mb-1.5">Quotation Items</div>
+                            <div className="text-xs font-medium text-stone-500 mb-1.5">Items</div>
                             <div className="space-y-1">
                               {pr.line_items.map((item, i) => (
                                 <div key={i} className="flex justify-between text-xs text-stone-700 py-1 border-b border-stone-100 last:border-0">
@@ -264,11 +331,12 @@ export default function PRQueuePage() {
                         )}
                         {pr.attachments?.length > 0 && (
                           <div>
-                            <div className="text-xs font-medium text-stone-500 mb-2">Quotation Documents</div>
+                            <div className="text-xs font-medium text-stone-500 mb-2">Supporting Documents</div>
                             <div className="flex flex-wrap gap-2">
                               {pr.attachments.map((url, i) => (
                                 isImage(url)
                                   ? <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
                                       <img src={url} className="w-24 h-24 object-cover rounded-xl border border-stone-200 hover:opacity-80 transition-opacity" alt="" />
                                     </a>
                                   : <a key={i} href={url} target="_blank" rel="noopener noreferrer"

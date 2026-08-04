@@ -1,5 +1,20 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
+import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
+
+// Payment Request state machine.
+//
+//   SUBMITTED -> EXCO_VERIFIED -> GM_APPROVED -> PV_RAISED
+//
+// Each stage can be actioned only by the authority the church constitution
+// places there:
+//   * EXCO_VERIFY  — the MINISTRY_HEAD of THAT ministry (its standing committee)
+//   * GM_APPROVE   — the General Manager, who then instructs Finance
+//
+// Bishop / Treasurer / Secretary deliberately have NO role here — they
+// authorise later, at the PV signatory stage. Previously any one of them could
+// approve a request outright, letting a ministry expense bypass its own
+// committee entirely.
 
 async function hashPin(pin: string): Promise<string> {
   const salt = Deno.env.get("PIN_SALT") ?? "lcm-finance-pin-salt";
@@ -18,108 +33,241 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const profile = await getProfileByEmail(db, user.email!, "role,full_name,pin_hash,has_pin");
-
-    const signatoryRoles = ["GENERAL_MANAGER", "BISHOP", "TREASURER", "SECRETARY"];
-    if (!signatoryRoles.includes(profile?.role)) {
-      return json({ error: "Only GM and Signatories can approve purchase requests" }, 403);
-    }
+    const profile = await getProfileByEmail(db, user.email!, "role,full_name,ministries");
+    if (!profile) return json({ error: "User not found in system" }, 403);
 
     const { pr_id, action, remarks, pin } = await req.json();
-    if (!["APPROVE", "REJECT"].includes(action)) return json({ error: "Invalid action" }, 400);
-    if (action === "REJECT" && !remarks?.trim()) return json({ error: "Remarks required for rejection" }, 400);
-
-    // PIN required for BISHOP, TREASURER, SECRETARY
-    const requiresPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(profile.role);
-    if (requiresPin) {
-      if (!pin) return json({ error: "Approval PIN required" }, 400);
-      if (!profile.has_pin) return json({ error: "No approval PIN set. Ask Finance Executive to set your PIN." }, 403);
-      const inputHash = await hashPin(pin);
-      if (inputHash !== profile.pin_hash) return json({ error: "Incorrect PIN" }, 403);
+    if (!["EXCO_VERIFY", "GM_APPROVE", "REJECT"].includes(action)) {
+      return json({ error: "Invalid action" }, 400);
+    }
+    if (action === "REJECT" && !remarks?.trim()) {
+      return json({ error: "Remarks are required when rejecting" }, 400);
     }
 
-    const { data: pr } = await db
-      .from("purchase_requests")
-      .select("*")
-      .eq("id", pr_id)
-      .single();
-    if (!pr) return json({ error: "Purchase request not found" }, 404);
-    if (!["SUBMITTED"].includes(pr.status)) {
-      return json({ error: `Cannot act on a request with status ${pr.status}` }, 400);
+    const { data: pr } = await db.from("purchase_requests").select("*").eq("id", pr_id).single();
+    if (!pr) return json({ error: "Payment request not found" }, 404);
+    if (["PV_RAISED", "CANCELLED"].includes(pr.status)) {
+      return json({ error: `Cannot act on a request that is already ${pr.status}` }, 400);
     }
 
-    const approvals = [...(pr.approvals || [])];
-    approvals.push({
-      role: profile.role,
-      email: user.email,
-      name: profile.full_name || user.email,
-      action,
-      timestamp: new Date().toISOString(),
-      remarks: remarks || "",
-    });
+    const now = new Date().toISOString();
+    const actorName = profile.full_name || user.email!;
+    const ministries: string[] = profile.ministries ?? [];
+    const isMinistryExco =
+      profile.role === "MINISTRY_HEAD" && ministries.includes(pr.ministry);
+    const isGM = profile.role === "GENERAL_MANAGER";
 
-    let newStatus = pr.status;
+    // Who owns the stage the request is currently sitting at?
+    const stageOwnerIsExco = pr.status === "SUBMITTED";
+    const stageOwnerIsGM   = pr.status === "EXCO_VERIFIED";
 
+    // ── REJECT — only the authority that currently holds the request ───────
     if (action === "REJECT") {
-      newStatus = "REJECTED";
-      // Notify submitter
-      await db.from("notifications").insert({
-        recipient_email: pr.submitted_by_email,
-        type: "PR_REJECTED",
-        pv_no: pr.request_no,
-        pv_id: pr.id,
-        message: `Your Purchase Request ${pr.request_no} was rejected by ${profile.full_name || user.email}${remarks ? `: ${remarks}` : ""}`,
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-    } else {
-      // APPROVE — 1 approval is enough
-      newStatus = "APPROVED";
-      // Notify Finance Executives
-      const { data: admins } = await db
-        .from("user_roles")
-        .select("email")
-        .in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
-      if (admins?.length) {
-        await db.from("notifications").insert(
-          admins.map((a: { email: string }) => ({
-            recipient_email: a.email,
-            type: "PR_APPROVED",
-            pv_no: pr.request_no,
-            pv_id: pr.id,
-            message: `Purchase Request ${pr.request_no} approved by ${profile.full_name || user.email}. Ready to raise a PV.`,
-            read: false,
-            created_at: new Date().toISOString(),
-          }))
-        );
+      const mayReject = (stageOwnerIsExco && isMinistryExco) || (stageOwnerIsGM && isGM);
+      if (!mayReject) {
+        return json({ error: "You are not the approving authority for this request at its current stage" }, 403);
       }
-      // Also notify submitter
-      await db.from("notifications").insert({
-        recipient_email: pr.submitted_by_email,
-        type: "PR_APPROVED",
-        pv_no: pr.request_no,
-        pv_id: pr.id,
-        message: `Your Purchase Request ${pr.request_no} has been approved. Finance will raise a PV shortly.`,
-        read: false,
-        created_at: new Date().toISOString(),
+      if (stageOwnerIsExco) {
+        const pinError = await verifyPin(db, profile, pin);
+        if (pinError) return json({ error: pinError }, 403);
+      }
+      const approvals = [...(pr.approvals || []), {
+        role: profile.role, email: user.email, name: actorName,
+        action: "REJECTED", timestamp: now, remarks: remarks.trim(),
+      }];
+      await db.from("purchase_requests")
+        .update({ status: "REJECTED", approvals, admin_comment: remarks.trim(), updated_at: now })
+        .eq("id", pr_id);
+      await notify(db, pr.submitted_by_email, "PR_REJECTED", pr,
+        `Your Payment Request ${pr.request_no} was rejected by ${actorName}: ${remarks.trim()}`, now);
+      await sendPushToEmails(db, [pr.submitted_by_email], {
+        title: "Payment Request Rejected",
+        body: `${pr.request_no} — ${remarks.trim()}`,
+        url: "/payment-requests",
       });
+      return json({ ok: true, status: "REJECTED" });
+    }
+
+    // ── EXCO_VERIFY — the ministry's own standing committee ────────────────
+    if (action === "EXCO_VERIFY") {
+      if (!isMinistryExco) {
+        return json({ error: `Only an EXCO member of ${pr.ministry} can verify this request` }, 403);
+      }
+      if (pr.status !== "SUBMITTED") {
+        return json({ error: `This request is already ${pr.status}` }, 400);
+      }
+      const pinError = await verifyPin(db, profile, pin);
+      if (pinError) return json({ error: pinError }, 403);
+
+      // The signature is carried through to the PV so the printed voucher
+      // shows who verified the expense on the ministry's behalf.
+      const excoSignature =
+        (profile.saved_signatures as Record<string, string> | null)?.["MINISTRY_HEAD"] ?? null;
+
+      const approvals = [...(pr.approvals || []), {
+        role: "MINISTRY_HEAD", email: user.email, name: actorName,
+        action: "VERIFIED", timestamp: now, remarks: remarks || "",
+        ...(excoSignature ? { signature_data: excoSignature } : {}),
+      }];
+
+      await db.from("purchase_requests").update({
+        status: "EXCO_VERIFIED", approvals,
+        exco_verified_by: actorName, exco_verified_at: now, exco_signature: excoSignature,
+        updated_at: now,
+      }).eq("id", pr_id);
+
+      const { data: gms } = await db.from("user_roles").select("email").eq("role", "GENERAL_MANAGER");
+      if (gms?.length) {
+        await db.from("notifications").insert(gms.map((g: { email: string }) => ({
+          recipient_email: g.email,
+          type: "PR_REVIEW", pv_no: pr.request_no, pv_id: pr.id,
+          message: `Payment Request ${pr.request_no} verified by ${actorName} (${pr.ministry} EXCO) — ${formatRM(Number(pr.estimated_amount || 0))}. Awaiting your approval.`,
+          read: false, created_at: now,
+        })));
+      }
+      await sendPushToRoles(db, ["GENERAL_MANAGER"], {
+        title: "Payment Request Awaiting Your Approval",
+        body: `${pr.request_no} — verified by ${pr.ministry} EXCO`,
+        url: "/pr-queue",
+      });
+      await notify(db, pr.submitted_by_email, "PR_REVIEW", pr,
+        `Your Payment Request ${pr.request_no} was verified by ${pr.ministry} EXCO and is now with the General Manager.`, now);
+
+      return json({ ok: true, status: "EXCO_VERIFIED" });
+    }
+
+    // ── GM_APPROVE — the GM instructs Finance to raise the PV ──────────────
+    if (!isGM) return json({ error: "Only the General Manager can approve at this stage" }, 403);
+    if (pr.status !== "EXCO_VERIFIED") {
+      return json({ error: `This request must be verified by ${pr.ministry} EXCO first (currently ${pr.status})` }, 400);
+    }
+
+    const approvals = [...(pr.approvals || []), {
+      role: "GENERAL_MANAGER", email: user.email, name: actorName,
+      action: "APPROVED", timestamp: now, remarks: remarks || "",
+    }];
+
+    // Hand the request to Finance as a GM Claim, pre-filled and already
+    // carrying the EXCO's verification signature, so raising the PV is a
+    // review-and-submit rather than a re-keying exercise.
+    const { data: claimNo } = await db.rpc("next_claim_no");
+    const { data: claim, error: claimErr } = await db.from("gm_claims").insert({
+      claim_no: claimNo,
+      claimant_name: pr.submitted_by_name || pr.submitted_by_email,
+      claimant_email: pr.submitted_by_email,
+      ministry: pr.ministry,
+      project: pr.project,
+      amount: pr.estimated_amount || 0,
+      purpose: pr.title,
+      description: pr.purpose || "",
+      line_items: pr.line_items || [],
+      attachments: pr.attachments || [],
+      payee_bank: pr.payee_bank_name || null,
+      payee_bank_acct: pr.payee_bank_acct || null,
+      supplier_name: pr.vendor_name || null,
+      is_fixed_asset: !!pr.is_fixed_asset,
+      asset_description: pr.asset_description || null,
+      request_id: pr.id,
+      exco_signature: pr.exco_signature || null,
+      exco_verified_by: pr.exco_verified_by || null,
+      exco_verified_at: pr.exco_verified_at || null,
+      gm_approved_by: actorName,
+      created_by_email: user.email,
+      received_at: now,
+      notes: `Auto-created from Payment Request ${pr.request_no} on GM approval.`,
+    }).select().single();
+    if (claimErr) return json({ error: `Approved, but the GM Claim could not be created: ${claimErr.message}` }, 500);
+
+    // A recurring request is approved once and then runs for the stated term.
+    let recurringId: string | null = null;
+    if (pr.is_recurring) {
+      const { data: rec } = await db.from("recurring_pvs").insert({
+        name: pr.title,
+        frequency: pr.recurrence_frequency || "MONTHLY",
+        next_due: pr.recurrence_start || null,
+        active: true,
+        payee_name: pr.payee_name || pr.submitted_by_name || "",
+        payee_bank_name: pr.payee_bank_name || "",
+        payee_bank_acct: pr.payee_bank_acct || "",
+        payment_method: pr.payment_method || "Online Transfer",
+        amount: pr.estimated_amount || 0,
+        ministry: pr.ministry || "",
+        dept: pr.dept || "",
+        project: pr.project || "",
+        purpose: pr.purpose || pr.title,
+        line_items: pr.line_items || [],
+        payment_type: pr.payment_type || "GENERAL",
+        created_by: user.email,
+      }).select("id").single();
+      recurringId = rec?.id ?? null;
     }
 
     await db.from("purchase_requests").update({
-      approvals,
-      status: newStatus,
-      updated_at: new Date().toISOString(),
+      status: "GM_APPROVED", approvals,
+      gm_approved_by: actorName, gm_approved_at: now,
+      gm_claim_id: claim.id,
+      ...(recurringId ? { recurring_pv_id: recurringId } : {}),
+      updated_at: now,
     }).eq("id", pr_id);
 
-    return json({ ok: true, status: newStatus });
+    const { data: financeUsers } = await db.from("user_roles").select("email")
+      .in("role", ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
+    if (financeUsers?.length) {
+      await db.from("notifications").insert(financeUsers.map((f: { email: string }) => ({
+        recipient_email: f.email,
+        type: "PR_APPROVED", pv_no: pr.request_no, pv_id: pr.id,
+        message: `The General Manager has instructed you to raise a PV for ${pr.request_no} — ${pr.title} (${formatRM(Number(pr.estimated_amount || 0))}). Ready as claim ${claimNo}.`,
+        read: false, created_at: now,
+      })));
+    }
+    await sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+      title: "GM Instruction — Raise a PV",
+      body: `${pr.request_no} — ${pr.title} (${formatRM(Number(pr.estimated_amount || 0))})`,
+      url: "/gm-claims",
+    });
+    await notify(db, pr.submitted_by_email, "PR_APPROVED", pr,
+      `Your Payment Request ${pr.request_no} was approved by the General Manager. Finance will raise the payment voucher.`, now);
+
+    return json({ ok: true, status: "GM_APPROVED", claim_no: claimNo, claim_id: claim.id });
   } catch (err) {
     return json({ error: err.message }, 500);
   }
 });
+
+// EXCO verification is a second factor over the login session, matching how
+// the same members already confirm PV verification on the EXCO queue.
+async function verifyPin(
+  db: ReturnType<typeof getServiceClient>,
+  profile: { has_pin?: boolean; pin_hash?: string | null },
+  pin?: string,
+): Promise<string | null> {
+  if (!pin) return "Approval PIN required";
+  if (!profile.has_pin) return "No approval PIN set. Set your PIN from the EXCO Queue page first.";
+  const inputHash = await hashPin(pin);
+  if (inputHash !== profile.pin_hash) return "Incorrect PIN";
+  return null;
+}
+
+async function notify(
+  db: ReturnType<typeof getServiceClient>,
+  email: string, type: string,
+  pr: { request_no: string; id: string },
+  message: string, now: string,
+) {
+  if (!email) return;
+  await db.from("notifications").insert({
+    recipient_email: email, type, pv_no: pr.request_no, pv_id: pr.id,
+    message, read: false, created_at: now,
+  });
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function formatRM(n: number) {
+  return `RM ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }

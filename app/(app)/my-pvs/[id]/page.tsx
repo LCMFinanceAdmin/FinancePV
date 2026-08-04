@@ -14,6 +14,7 @@ import {
 import { useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { HtmlAttachmentThumb } from "@/components/attachments/html-thumb";
+import { BudgetImpact } from "@/components/budget/budget-impact";
 
 const PVPdfDownload = dynamic(() => import("@/components/pv/pv-pdf-download"), { ssr: false });
 
@@ -1080,6 +1081,15 @@ export default function PVDetailPage() {
               <span className="text-sm font-semibold text-green-800">GM Verification</span>
               <span className="ml-1 text-xs text-stone-500">Finance has reviewed — your sign-off is required before signatories</span>
             </div>
+            {/* Is this spend budgeted? Shown before the buttons so the decision
+                is made with the budget position in view. */}
+            <BudgetImpact
+              className="mb-3"
+              ministry={pv.ministry}
+              projectName={pv.project}
+              amount={pv.amount ?? 0}
+              excludePvId={pv.id}
+            />
             <div className="flex gap-2 flex-wrap items-center">
               <button
                 onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(!!savedSig); setIsErasing(false); setShowSignModal(true); }}
@@ -1119,6 +1129,15 @@ export default function PVDetailPage() {
                 </span>
               )}
             </div>
+            {/* The Treasurer/Bishop/Secretary previously signed with no budget
+                context on this page at all. */}
+            <BudgetImpact
+              className="mb-3"
+              ministry={pv.ministry}
+              projectName={pv.project}
+              amount={pv.amount ?? 0}
+              excludePvId={pv.id}
+            />
             <div className="flex gap-2 flex-wrap items-center">
               <button
                 onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}

@@ -106,7 +106,7 @@ function ControlCenterInner() {
     const { data: prData } = await supabase
       .from("purchase_requests")
       .select("*")
-      .in("status", ["SUBMITTED", "APPROVED"])
+      .in("status", ["SUBMITTED", "EXCO_VERIFIED", "GM_APPROVED"])
       .order("submitted_at", { ascending: false });
     setPrs((prData ?? []) as PurchaseRequest[]);
 
@@ -339,27 +339,35 @@ function ControlCenterInner() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-bold text-stone-700 flex items-center gap-2">
-            <ShoppingCart size={16} className="text-[#4a6da7]" /> Purchase Requests
+            <ShoppingCart size={16} className="text-[#4a6da7]" /> Payment Requests
           </h2>
-          <a href="/purchase-requests" className="text-xs text-[#4a6da7] hover:underline font-medium">View all →</a>
+          <a href="/payment-requests" className="text-xs text-[#4a6da7] hover:underline font-medium">View all →</a>
         </div>
         <div className="mb-3 flex w-fit gap-1 rounded-2xl border border-[#dbe9fb] bg-[#edf6ff] p-1.5">
+          {/* "In approval" spans the EXCO and GM stages; "approved" is the GM's
+              instruction to Finance to raise the PV. */}
           {(["submitted", "approved"] as const).map(t => {
-            const count = prs.filter(p => p.status === t.toUpperCase()).length;
+            const count = prs.filter(p =>
+              t === "submitted"
+                ? p.status === "SUBMITTED" || p.status === "EXCO_VERIFIED"
+                : p.status === "GM_APPROVED").length;
             return (
               <button key={t} onClick={() => setPrTab(t)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${prTab === t ? "bg-[#2563eb] text-white shadow-sm" : "text-stone-500 hover:bg-white"}`}>
-                {t === "submitted" ? "Awaiting Approval" : "Approved — Raise PV"}
+                {t === "submitted" ? "In approval (EXCO / GM)" : "Approved — Raise PV"}
                 {count > 0 && <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${t === "submitted" ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"}`}>{count}</span>}
               </button>
             );
           })}
         </div>
         {(() => {
-          const filtered = prs.filter(p => p.status === (prTab === "submitted" ? "SUBMITTED" : "APPROVED"));
+          const filtered = prs.filter(p =>
+            prTab === "submitted"
+              ? p.status === "SUBMITTED" || p.status === "EXCO_VERIFIED"
+              : p.status === "GM_APPROVED");
           if (filtered.length === 0) return (
             <div className="cloudlight-card rounded-2xl py-6 text-center text-sm text-stone-400">
-              {prTab === "submitted" ? "No purchase requests awaiting GM/Signatory approval" : "No approved requests ready to raise a PV"}
+              {prTab === "submitted" ? "No payment requests with the EXCO or General Manager" : "No approved requests ready to raise a PV"}
             </div>
           );
           return (

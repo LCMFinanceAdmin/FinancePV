@@ -26,7 +26,7 @@ const PATH_LABELS: Record<string, string> = {
   "/worksheets":         "Worksheets",
   "/bookings":           "Facility Bookings",
   "/income":             "Income Records",
-  "/purchase-requests":  "Purchase Requests",
+  "/payment-requests":   "Payment Requests",
   "/payments":           "Payments",
   "/banking":            "Banking",
   "/payroll":            "Payroll",

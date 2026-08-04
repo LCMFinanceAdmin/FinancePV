@@ -148,7 +148,18 @@ export interface Payee {
   phone: string;
 }
 
-export type PRStatus = "SUBMITTED" | "APPROVED" | "REJECTED" | "PV_RAISED";
+// Payment Request lifecycle. A ministry's own standing committee (EXCO) must
+// verify an expense before it reaches the finance desk, then the General
+// Manager approves and instructs Finance to raise the PV.
+export type PRStatus =
+  | "SUBMITTED"      // awaiting that ministry's EXCO
+  | "EXCO_VERIFIED"  // awaiting the General Manager
+  | "GM_APPROVED"    // GM has instructed Finance to raise the PV
+  | "PV_RAISED"
+  | "REJECTED"
+  | "CANCELLED";
+
+export type RecurrenceFrequency = "WEEKLY" | "MONTHLY" | "QUARTERLY" | "ANNUAL";
 
 export interface PurchaseRequest {
   id: string;
@@ -169,6 +180,32 @@ export interface PurchaseRequest {
   pv_id: string | null;
   submitted_at: string;
   updated_at: string | null;
+  // Payment details, carried onto the PV so Finance never re-keys them.
+  payee_name?: string | null;
+  payee_bank_name?: string | null;
+  payee_bank_acct?: string | null;
+  payment_method?: string | null;
+  jompay_biller_code?: string | null;
+  jompay_ref?: string | null;
+  budget_item_id?: string | null;
+  dept?: string | null;
+  payment_type?: PaymentType | null;
+  is_fixed_asset?: boolean;
+  asset_description?: string | null;
+  applicant_signature?: string | null;
+  // Recurring commitments: approved once, then run for the stated term.
+  is_recurring?: boolean;
+  recurrence_frequency?: RecurrenceFrequency | null;
+  recurrence_start?: string | null;
+  recurrence_end?: string | null;
+  recurring_pv_id?: string | null;
+  // Stage audit. exco_signature is affixed to the PV as proof of verification.
+  exco_verified_by?: string | null;
+  exco_verified_at?: string | null;
+  exco_signature?: string | null;
+  gm_approved_by?: string | null;
+  gm_approved_at?: string | null;
+  gm_claim_id?: string | null;
 }
 
 export type LOATier = {
