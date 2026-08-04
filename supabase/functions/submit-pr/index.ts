@@ -42,13 +42,18 @@ Deno.serve(async (req) => {
 
     // An EXCO member raising a request for a ministry they head has already
     // applied the committee's judgement, so don't ask them to verify it again.
+    //
+    // The skip requires a stored signature: verification is only meaningful on
+    // the voucher if it can be signed. Without one the request follows the
+    // normal route, where they verify explicitly and are made to sign then —
+    // better than a voucher claiming verification with an empty signature box.
     const ministries: string[] = profile?.ministries ?? [];
+    const savedExcoSignature =
+      (profile?.saved_signatures as Record<string, string> | null)?.["MINISTRY_HEAD"] ?? null;
     const selfRaisedByExco =
-      profile?.role === "MINISTRY_HEAD" && ministries.includes(ministry);
+      profile?.role === "MINISTRY_HEAD" && ministries.includes(ministry) && !!savedExcoSignature;
 
-    const excoSignature = selfRaisedByExco
-      ? ((profile?.saved_signatures as Record<string, string> | null)?.["MINISTRY_HEAD"] ?? null)
-      : null;
+    const excoSignature = selfRaisedByExco ? savedExcoSignature : null;
 
     const approvals = selfRaisedByExco
       ? [{

@@ -8,6 +8,7 @@ import { ApprovalPath } from "@/components/ui/approval-path";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import { BudgetImpact } from "@/components/budget/budget-impact";
+import { SignaturePad } from "@/components/ui/signature-pad";
 import type { PV, PurchaseRequest } from "@/lib/types";
 import {
   CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
@@ -30,6 +31,11 @@ export default function ExcoPage() {
   const [pendingRequests, setPendingRequests] = useState<PurchaseRequest[]>([]);
   const [reqActing, setReqActing] = useState<string | null>(null);
   const [reqSelected, setReqSelected] = useState<PurchaseRequest | null>(null);
+  // Verification must be signed — the signature is affixed to the payment
+  // voucher as proof the ministry examined the expense, so a blank one would
+  // make the voucher claim a verification it can't evidence.
+  const [savedExcoSig, setSavedExcoSig] = useState("");
+  const [reqSigDraft, setReqSigDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>("pending");
   const [selected, setSelected] = useState<Partial<PV> | null>(null);
@@ -61,13 +67,14 @@ export default function ExcoPage() {
       const user = session?.user;
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from("user_roles")
-        .select("ministries,has_pin")
-        .eq("email", user.email)
-        .single();
+      const [{ data: profile }, { data: security }] = await Promise.all([
+        supabase.from("user_roles").select("ministries,has_pin").eq("email", user.email).single(),
+        supabase.rpc("get_my_security_context").single(),
+      ]);
 
       setHasPin(profile?.has_pin ?? false);
+      const sigs = (security as { saved_signatures?: Record<string, string> | null } | null)?.saved_signatures;
+      setSavedExcoSig(sigs?.["MINISTRY_HEAD"] ?? "");
       const ministries: string[] = profile?.ministries ?? [];
 
       const PV_COLS = "id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals,attachments";
@@ -135,20 +142,31 @@ export default function ExcoPage() {
   async function actOnRequest(prId: string, action: "EXCO_VERIFY" | "REJECT") {
     if (!pin) { showMsg("Enter your PIN to confirm", false); return; }
     if (action === "REJECT" && !remarks.trim()) { showMsg("Remarks are required when rejecting", false); return; }
+    // Only verification carries a signature onto the voucher; a rejection
+    // never reaches one.
+    const signature = reqSigDraft || savedExcoSig;
+    if (action === "EXCO_VERIFY" && !signature) {
+      showMsg("Draw your signature to verify — it is affixed to the payment voucher", false);
+      return;
+    }
     setReqActing(prId);
     try {
       const session = (await supabase.auth.getSession()).data.session;
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/pr-action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ pr_id: prId, action, remarks, pin }),
+        body: JSON.stringify({
+          pr_id: prId, action, remarks, pin,
+          ...(action === "EXCO_VERIFY" && reqSigDraft ? { signature_data: reqSigDraft } : {}),
+        }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Action failed");
       showMsg(action === "EXCO_VERIFY"
-        ? "Request verified — sent to the General Manager"
+        ? "Request verified and signed — sent to the General Manager"
         : "Request rejected");
-      setReqSelected(null); setRemarks(""); setPin("");
+      if (reqSigDraft) setSavedExcoSig(reqSigDraft);
+      setReqSelected(null); setRemarks(""); setPin(""); setReqSigDraft("");
       await load();
     } catch (err: unknown) {
       showMsg(err instanceof Error ? err.message : "Action failed", false);
@@ -288,7 +306,7 @@ export default function ExcoPage() {
                     )}
 
                     {!isOpen ? (
-                      <Button size="sm" onClick={() => { setReqSelected(pr); setRemarks(""); setPin(""); }} disabled={!hasPin}>
+                      <Button size="sm" onClick={() => { setReqSelected(pr); setRemarks(""); setPin(""); setReqSigDraft(savedExcoSig); }} disabled={!hasPin}>
                         <ShieldCheck size={13} /> Verify or reject
                       </Button>
                     ) : (
@@ -297,6 +315,25 @@ export default function ExcoPage() {
                           className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
                           placeholder="Remarks (required when rejecting)…"
                           value={remarks} onChange={e => setRemarks(e.target.value)} />
+
+                        {/* Signed verification — this signature is printed on
+                            the resulting payment voucher. */}
+                        <div>
+                          <div className="mb-1 flex items-center justify-between">
+                            <span className="text-xs font-semibold text-stone-600">
+                              Your signature <span className="text-red-400">*</span>
+                            </span>
+                            {savedExcoSig && reqSigDraft === savedExcoSig && (
+                              <span className="text-[11px] font-medium text-green-600">Using your saved signature</span>
+                            )}
+                          </div>
+                          <SignaturePad value={reqSigDraft} onChange={setReqSigDraft} />
+                          <p className="mt-1 text-[11px] text-stone-400">
+                            Affixed to the payment voucher as proof {pr.ministry} verified this expense.
+                            {savedExcoSig ? " Re-draw to update it." : " It is saved for future verifications."}
+                          </p>
+                        </div>
+
                         <input
                           className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-lg tracking-[0.4em] text-center outline-none focus:border-[#4a6da7] font-mono"
                           type="password" maxLength={6} placeholder="••••••" value={pin}
@@ -304,6 +341,8 @@ export default function ExcoPage() {
                         <div className="flex gap-2">
                           <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700"
                             loading={reqActing === pr.id}
+                            disabled={!reqSigDraft}
+                            title={!reqSigDraft ? "Draw your signature to verify" : undefined}
                             onClick={() => actOnRequest(pr.id, "EXCO_VERIFY")}>
                             <CheckCircle size={13} /> Verify &amp; send to GM
                           </Button>
@@ -312,7 +351,7 @@ export default function ExcoPage() {
                             onClick={() => actOnRequest(pr.id, "REJECT")}>
                             <XCircle size={13} /> Reject
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => { setReqSelected(null); setRemarks(""); setPin(""); }}>
+                          <Button size="sm" variant="ghost" onClick={() => { setReqSelected(null); setRemarks(""); setPin(""); setReqSigDraft(""); }}>
                             Cancel
                           </Button>
                         </div>

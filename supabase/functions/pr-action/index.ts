@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     const profile = await getProfileByEmail(db, user.email!, "role,full_name,ministries");
     if (!profile) return json({ error: "User not found in system" }, 403);
 
-    const { pr_id, action, remarks, pin } = await req.json();
+    const { pr_id, action, remarks, pin, signature_data } = await req.json();
     if (!["EXCO_VERIFY", "GM_APPROVE", "REJECT"].includes(action)) {
       return json({ error: "Invalid action" }, 400);
     }
@@ -99,10 +99,27 @@ Deno.serve(async (req) => {
       const pinError = await verifyPin(db, profile, pin);
       if (pinError) return json({ error: pinError }, 403);
 
-      // The signature is carried through to the PV so the printed voucher
-      // shows who verified the expense on the ministry's behalf.
-      const excoSignature =
+      // The signature is carried through to the PV, so the printed voucher
+      // shows who verified the expense on the ministry's behalf. It is
+      // mandatory: without it the voucher would claim verification while
+      // showing an empty signature box.
+      const savedExcoSignature =
         (profile.saved_signatures as Record<string, string> | null)?.["MINISTRY_HEAD"] ?? null;
+      const excoSignature = signature_data || savedExcoSignature;
+      if (!excoSignature) {
+        return json({ error: "A signature is required to verify. Draw your signature to continue." }, 400);
+      }
+      // Freshly drawn signatures are stored so the member signs once, not on
+      // every request — the same pattern the signatory approval flow uses.
+      if (signature_data) {
+        const sigs = {
+          ...(profile.saved_signatures as Record<string, string> || {}),
+          MINISTRY_HEAD: signature_data,
+        };
+        await db.from("user_security_credentials").upsert({
+          email: user.email!, saved_signatures: sigs, updated_at: now,
+        }, { onConflict: "email" });
+      }
 
       const approvals = [...(pr.approvals || []), {
         role: "MINISTRY_HEAD", email: user.email, name: actorName,
