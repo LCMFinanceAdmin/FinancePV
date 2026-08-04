@@ -101,16 +101,26 @@ export const BUDGET_IN_FLIGHT_STATUSES = [
 
 export type BudgetVerdict = "WITHIN" | "EXCEEDS" | "UNBUDGETED";
 
-export interface BudgetImpactResult {
-  verdict: BudgetVerdict;
-  projectName: string | null;
+export interface BudgetTotals {
   budget: number;
   spent: number;
   committed: number;   // approved-in-principle but not yet paid
   remaining: number;   // budget - spent - committed
+}
+
+export interface BudgetImpactResult extends BudgetTotals {
+  verdict: BudgetVerdict;
+  projectName: string | null;
   amount: number;      // the transaction being decided
   balanceAfter: number;
   overBy: number;      // > 0 only when the verdict is EXCEEDS
+  /**
+   * The whole ministry for context — the decision is made against the project
+   * line, but knowing the ministry's overall position matters when a line is
+   * tight or the spend could be moved.
+   */
+  ministryTotals: BudgetTotals;
+  ministryProjectCount: number;
 }
 
 /**
@@ -125,38 +135,62 @@ export async function getBudgetImpact(
   opts: { ministry: string; projectName?: string | null; amount: number; excludePvId?: string | null },
 ): Promise<BudgetImpactResult> {
   const { ministry, projectName, amount, excludePvId } = opts;
+  const zero: BudgetTotals = { budget: 0, spent: 0, committed: 0, remaining: 0 };
   const empty: BudgetImpactResult = {
     verdict: "UNBUDGETED", projectName: projectName ?? null,
-    budget: 0, spent: 0, committed: 0, remaining: 0,
-    amount, balanceAfter: -amount, overBy: 0,
+    ...zero, amount, balanceAfter: -amount, overBy: 0,
+    ministryTotals: { ...zero }, ministryProjectCount: 0,
   };
 
-  if (!ministry || !projectName) return empty;
+  if (!ministry) return empty;
 
-  const { data: item } = await supabase
-    .from("budget_items")
-    .select("project_name, estimated_income, estimated_expenses")
-    .eq("ministry", ministry)
-    .eq("project_name", projectName)
-    .maybeSingle();
+  // Pulled per ministry rather than per project, so the same two queries give
+  // both the specific budget line and the ministry-wide position.
+  const [{ data: items }, { data: pvs }] = await Promise.all([
+    supabase
+      .from("budget_items")
+      .select("project_name, estimated_income, estimated_expenses")
+      .eq("ministry", ministry),
+    supabase
+      .from("pvs")
+      .select("id, amount, status, project")
+      .eq("ministry", ministry),
+  ]);
+
+  const rows = (items ?? []) as { project_name: string; estimated_income: number; estimated_expenses: number }[];
+  const pvRows = (pvs ?? []) as { id: string; amount: number; status: string; project: string | null }[];
+
+  const tally = (predicate: (project: string | null) => boolean): { spent: number; committed: number } => {
+    let spent = 0, committed = 0;
+    for (const pv of pvRows) {
+      if (excludePvId && pv.id === excludePvId) continue;
+      if (!predicate(pv.project)) continue;
+      if (BUDGET_SPENT_STATUSES.includes(pv.status)) spent += pv.amount || 0;
+      else if (BUDGET_IN_FLIGHT_STATUSES.includes(pv.status)) committed += pv.amount || 0;
+    }
+    return { spent, committed };
+  };
+
+  const ministryBudget = rows.reduce((s, r) => s + (r.estimated_income || 0) + (r.estimated_expenses || 0), 0);
+  const ministryTally = tally(() => true);
+  const ministryTotals: BudgetTotals = {
+    budget: ministryBudget,
+    spent: ministryTally.spent,
+    committed: ministryTally.committed,
+    remaining: ministryBudget - ministryTally.spent - ministryTally.committed,
+  };
+  const ministryProjectCount = rows.length;
+
+  const item = projectName
+    ? rows.find(r => r.project_name?.trim().toLowerCase() === projectName.trim().toLowerCase())
+    : undefined;
 
   // No budget line on record — the spend sits outside the approved budget,
-  // which is exactly what the GM and Treasurer need flagged.
-  if (!item) return empty;
+  // which is exactly what the GM and Treasurer need flagged. Ministry context
+  // is still returned so they can see whether there is room elsewhere.
+  if (!item) return { ...empty, ministryTotals, ministryProjectCount };
 
-  const { data: pvs } = await supabase
-    .from("pvs")
-    .select("id, amount, status")
-    .eq("ministry", ministry)
-    .eq("project", projectName);
-
-  let spent = 0, committed = 0;
-  for (const pv of (pvs ?? []) as { id: string; amount: number; status: string }[]) {
-    if (excludePvId && pv.id === excludePvId) continue;
-    if (BUDGET_SPENT_STATUSES.includes(pv.status)) spent += pv.amount || 0;
-    else if (BUDGET_IN_FLIGHT_STATUSES.includes(pv.status)) committed += pv.amount || 0;
-  }
-
+  const { spent, committed } = tally(p => (p ?? "").trim().toLowerCase() === item.project_name.trim().toLowerCase());
   const budget = (item.estimated_income || 0) + (item.estimated_expenses || 0);
   const remaining = budget - spent - committed;
   const balanceAfter = remaining - amount;
@@ -166,6 +200,7 @@ export async function getBudgetImpact(
     projectName: item.project_name,
     budget, spent, committed, remaining, amount, balanceAfter,
     overBy: balanceAfter < 0 ? Math.abs(balanceAfter) : 0,
+    ministryTotals, ministryProjectCount,
   };
 }
 

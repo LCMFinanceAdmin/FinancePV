@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate, workingDaysBetween } from "@/lib/utils";
 import type { PVApproval } from "@/lib/types";
 import type { POLineItem } from "@/components/gm/po-pdf";
+import { BudgetImpact } from "@/components/budget/budget-impact";
 import {
   Plus, X, ChevronDown, ChevronUp, Paperclip, Link2, ExternalLink,
   CheckCircle, Clock, FileText, CreditCard, AlertCircle, Banknote,
@@ -1177,6 +1178,14 @@ export default function GMClaimsPage() {
                                   {claim.ministry ? ` (${claim.ministry} EXCO)` : ""}
                                 </div>
                               )}
+                              {/* Budgeted or not — shown before the GM accepts
+                                  and commits Finance to paying it. */}
+                              <BudgetImpact
+                                className="mt-2"
+                                ministry={claim.ministry}
+                                projectName={claim.project}
+                                amount={Number(claim.amount) || 0}
+                              />
                               {isGM && (
                                 <button
                                   onClick={() => acceptClaim(claim)}

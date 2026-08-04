@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { getBudgetImpact, type BudgetImpactResult } from "@/lib/budget-utils";
+export type { BudgetImpactResult };
 import { PiggyBank, AlertTriangle, CheckCircle2, HelpCircle } from "lucide-react";
 
 // Shows whether a payment is inside its approved budget, at the moment the GM
@@ -107,13 +108,19 @@ export function BudgetImpact({
       </div>
 
       {data.verdict === "UNBUDGETED" ? (
-        <p className="text-xs text-amber-800 leading-relaxed">
-          This payment isn&apos;t tied to an approved budget line, so it can&apos;t be checked against
-          the ministry&apos;s budget. Treat it as spending outside the approved budget unless the
-          applicant can point to the line it belongs under.
-        </p>
+        <>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            This payment isn&apos;t tied to an approved budget line, so it can&apos;t be checked against
+            a project budget. Treat it as spending outside the approved budget unless the
+            applicant can point to the line it belongs under.
+          </p>
+          <MinistrySummary ministry={ministry} data={data} />
+        </>
       ) : (
         <>
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-stone-500">
+            Budget line · {data.projectName}
+          </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
             <Row label="Approved budget" value={formatCurrency(data.budget)} />
             <Row label="Already spent" value={`− ${formatCurrency(data.spent)}`} />
@@ -144,9 +151,37 @@ export function BudgetImpact({
               requests against the same line can&apos;t both look affordable.
             </p>
           )}
+          <MinistrySummary ministry={ministry} data={data} />
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * The ministry's overall position, shown under the budget line it belongs to.
+ * The decision is made against the line, but knowing whether the ministry has
+ * room elsewhere matters when a line is tight or the spend could be reallocated.
+ */
+function MinistrySummary({ ministry, data }: { ministry?: string | null; data: BudgetImpactResult }) {
+  const m = data.ministryTotals;
+  if (m.budget <= 0) return null;
+  return (
+    <div className="mt-3 rounded-xl border border-stone-300/50 bg-white/60 px-3 py-2">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
+          {ministry} — whole ministry
+        </span>
+        <span className="text-[10px] text-stone-400">
+          {data.ministryProjectCount} budget line{data.ministryProjectCount === 1 ? "" : "s"}
+        </span>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+        <Row label="Approved budget" value={formatCurrency(m.budget)} />
+        <Row label="Spent + committed" value={`− ${formatCurrency(m.spent + m.committed)}`} />
+        <Row label="Remaining across ministry" value={formatCurrency(m.remaining)} strong />
+      </dl>
+    </div>
   );
 }
 
