@@ -40,11 +40,8 @@ export default function ExcoPage() {
   const [tab, setTab] = useState<TabKey>("pending");
   const [selected, setSelected] = useState<Partial<PV> | null>(null);
   const [remarks, setRemarks] = useState("");
-  const [pin, setPin] = useState("");
   const [acting, setActing] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
-  const [hasPin, setHasPin] = useState(false);
-  const [showPinSetup, setShowPinSetup] = useState(false);
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
 
   const toggleDocs = useCallback((pvId: string) => {
@@ -68,11 +65,10 @@ export default function ExcoPage() {
       if (!user) return;
 
       const [{ data: profile }, { data: security }] = await Promise.all([
-        supabase.from("user_roles").select("ministries,has_pin").eq("email", user.email).single(),
+        supabase.from("user_roles").select("ministries").eq("email", user.email).single(),
         supabase.rpc("get_my_security_context").single(),
       ]);
 
-      setHasPin(profile?.has_pin ?? false);
       const sigs = (security as { saved_signatures?: Record<string, string> | null } | null)?.saved_signatures;
       setSavedExcoSig(sigs?.["MINISTRY_HEAD"] ?? "");
       const ministries: string[] = profile?.ministries ?? [];
@@ -116,19 +112,18 @@ export default function ExcoPage() {
   useEffect(() => { load(); }, [load]);
 
   async function act(pvId: string, action: "APPROVED" | "REJECTED") {
-    if (!pin) { showMsg("Enter your PIN to confirm", false); return; }
     setActing(true);
     try {
       const session = (await supabase.auth.getSession()).data.session;
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/ministry-action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ pv_id: pvId, action, remarks, pin }),
+        body: JSON.stringify({ pv_id: pvId, action, remarks }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Action failed");
       showMsg(`PV ${action === "APPROVED" ? "verified" : "rejected"}`);
-      setSelected(null); setRemarks(""); setPin("");
+      setSelected(null); setRemarks("");
       await load();
     } catch (err: unknown) {
       showMsg(err instanceof Error ? err.message : "Action failed", false);
@@ -140,7 +135,6 @@ export default function ExcoPage() {
   // Verify a Payment Request on behalf of the ministry. This is the gate that
   // keeps ministerial expenses from reaching the finance desk unexamined.
   async function actOnRequest(prId: string, action: "EXCO_VERIFY" | "REJECT") {
-    if (!pin) { showMsg("Enter your PIN to confirm", false); return; }
     if (action === "REJECT" && !remarks.trim()) { showMsg("Remarks are required when rejecting", false); return; }
     // Only verification carries a signature onto the voucher; a rejection
     // never reaches one.
@@ -156,7 +150,7 @@ export default function ExcoPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          pr_id: prId, action, remarks, pin,
+          pr_id: prId, action, remarks,
           ...(action === "EXCO_VERIFY" && reqSigDraft ? { signature_data: reqSigDraft } : {}),
         }),
       });
@@ -166,7 +160,7 @@ export default function ExcoPage() {
         ? "Request verified and signed — sent to the General Manager"
         : "Request rejected");
       if (reqSigDraft) setSavedExcoSig(reqSigDraft);
-      setReqSelected(null); setRemarks(""); setPin(""); setReqSigDraft("");
+      setReqSelected(null); setRemarks(""); setReqSigDraft("");
       await load();
     } catch (err: unknown) {
       showMsg(err instanceof Error ? err.message : "Action failed", false);
@@ -193,9 +187,6 @@ export default function ExcoPage() {
           <h1 className="text-xl font-bold text-stone-800">EXCO Queue</h1>
           <p className="text-sm text-stone-400">Ministry PV overview and verification</p>
         </div>
-        <Button size="sm" variant={hasPin ? "ghost" : "primary"} onClick={() => setShowPinSetup(true)}>
-          <ShieldCheck size={13} /> {hasPin ? "Change My PIN" : "Set My PIN"}
-        </Button>
       </div>
 
       <ApprovalPath currentIndex={1} />
@@ -211,7 +202,7 @@ export default function ExcoPage() {
         {TABS.map(t => (
           <button
             key={t.key}
-            onClick={() => { setTab(t.key); setSelected(null); setRemarks(""); setPin(""); }}
+            onClick={() => { setTab(t.key); setSelected(null); setRemarks(""); }}
             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
               tab === t.key ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"
             }`}
@@ -223,16 +214,6 @@ export default function ExcoPage() {
           </button>
         ))}
       </div>
-
-      {!hasPin && isActionTab && (
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-          <strong>Set your PIN first</strong> — you need a 6-digit PIN to verify or reject PVs. Click "Set My PIN" above.
-        </div>
-      )}
-
-      {showPinSetup && (
-        <SelfPinModal onClose={() => { setShowPinSetup(false); load(); }} onToast={showMsg} />
-      )}
 
       {/* ── Payment Requests awaiting this committee's verification ────── */}
       {tab === "requests" && (
@@ -306,7 +287,7 @@ export default function ExcoPage() {
                     )}
 
                     {!isOpen ? (
-                      <Button size="sm" onClick={() => { setReqSelected(pr); setRemarks(""); setPin(""); setReqSigDraft(savedExcoSig); }} disabled={!hasPin}>
+                      <Button size="sm" onClick={() => { setReqSelected(pr); setRemarks(""); setReqSigDraft(savedExcoSig); }}>
                         <ShieldCheck size={13} /> Verify or reject
                       </Button>
                     ) : (
@@ -334,10 +315,6 @@ export default function ExcoPage() {
                           </p>
                         </div>
 
-                        <input
-                          className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-lg tracking-[0.4em] text-center outline-none focus:border-[#4a6da7] font-mono"
-                          type="password" maxLength={6} placeholder="••••••" value={pin}
-                          onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} />
                         <div className="flex gap-2">
                           <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700"
                             loading={reqActing === pr.id}
@@ -351,7 +328,7 @@ export default function ExcoPage() {
                             onClick={() => actOnRequest(pr.id, "REJECT")}>
                             <XCircle size={13} /> Reject
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => { setReqSelected(null); setRemarks(""); setPin(""); setReqSigDraft(""); }}>
+                          <Button size="sm" variant="ghost" onClick={() => { setReqSelected(null); setRemarks(""); setReqSigDraft(""); }}>
                             Cancel
                           </Button>
                         </div>
@@ -451,14 +428,6 @@ export default function ExcoPage() {
                         value={remarks}
                         onChange={(e) => setRemarks(e.target.value)}
                       />
-                      <input
-                        className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] tracking-widest"
-                        type="password"
-                        maxLength={6}
-                        placeholder="Enter your 6-digit PIN to confirm"
-                        value={pin}
-                        onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      />
                       <div className="flex gap-2">
                         <Button variant="primary" size="sm" loading={acting} onClick={() => act(pv.id!, "APPROVED")} className="flex-1">
                           <CheckCircle size={14} /> Verify
@@ -466,7 +435,7 @@ export default function ExcoPage() {
                         <Button variant="danger" size="sm" loading={acting} onClick={() => act(pv.id!, "REJECTED")} className="flex-1">
                           <XCircle size={14} /> Reject
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setRemarks(""); setPin(""); }}>Cancel</Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setRemarks(""); }}>Cancel</Button>
                       </div>
                     </div>
                   ) : (
@@ -479,76 +448,6 @@ export default function ExcoPage() {
           })}
         </div>
       ))}
-    </div>
-  );
-}
-
-function SelfPinModal({ onClose, onToast }: { onClose: () => void; onToast: (m: string, ok?: boolean) => void }) {
-  const supabase = createClient();
-  const [pin, setPin] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [show, setShow] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    if (pin.length !== 6 || !/^\d{6}$/.test(pin)) { onToast("PIN must be exactly 6 digits", false); return; }
-    if (pin !== confirm) { onToast("PINs do not match", false); return; }
-    setSaving(true);
-    const session = (await supabase.auth.getSession()).data.session;
-    const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/set-pin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ pin }),
-    });
-    const result = await res.json();
-    setSaving(false);
-    if (!res.ok) { onToast("Error: " + result.error, false); return; }
-    onToast("PIN saved successfully");
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
-        <div>
-          <h2 className="text-base font-bold text-stone-800">Set Your Approval PIN</h2>
-          <p className="text-xs text-stone-400 mt-0.5">Used to confirm PV verifications. Keep it private.</p>
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 mb-1 block">6-digit PIN</label>
-          <div className="relative">
-            <input
-              className="border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full pr-10 tracking-widest text-lg"
-              type={show ? "text" : "password"}
-              maxLength={6}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="••••••"
-            />
-            <button type="button" onClick={() => setShow(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400">
-              {show ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
-          </div>
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 mb-1 block">Confirm PIN</label>
-          <input
-            className="border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full tracking-widest text-lg"
-            type="password"
-            maxLength={6}
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            placeholder="••••••"
-          />
-        </div>
-        <p className="text-xs text-stone-400 bg-stone-50 rounded-lg p-2">
-          <strong>Forgot your PIN?</strong> Since you already log in with Google, your identity is verified — just set a new PIN here anytime.
-        </p>
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" loading={saving} onClick={save}>Save PIN</Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
-      </div>
     </div>
   );
 }

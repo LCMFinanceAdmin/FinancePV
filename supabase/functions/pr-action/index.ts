@@ -15,13 +15,9 @@ import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
 // authorise later, at the PV signatory stage. Previously any one of them could
 // approve a request outright, letting a ministry expense bypass its own
 // committee entirely.
-
-async function hashPin(pin: string): Promise<string> {
-  const salt = Deno.env.get("PIN_SALT") ?? "lcm-finance-pin-salt";
-  const data = new TextEncoder().encode(pin + salt);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
+//
+// EXCO members do not use an approval PIN: verification is evidenced by their
+// drawn signature, which is affixed to the resulting payment voucher.
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -36,7 +32,7 @@ Deno.serve(async (req) => {
     const profile = await getProfileByEmail(db, user.email!, "role,full_name,ministries");
     if (!profile) return json({ error: "User not found in system" }, 403);
 
-    const { pr_id, action, remarks, pin, signature_data } = await req.json();
+    const { pr_id, action, remarks, signature_data } = await req.json();
     if (!["EXCO_VERIFY", "GM_APPROVE", "REJECT"].includes(action)) {
       return json({ error: "Invalid action" }, 400);
     }
@@ -67,10 +63,6 @@ Deno.serve(async (req) => {
       if (!mayReject) {
         return json({ error: "You are not the approving authority for this request at its current stage" }, 403);
       }
-      if (stageOwnerIsExco) {
-        const pinError = await verifyPin(db, profile, pin);
-        if (pinError) return json({ error: pinError }, 403);
-      }
       const approvals = [...(pr.approvals || []), {
         role: profile.role, email: user.email, name: actorName,
         action: "REJECTED", timestamp: now, remarks: remarks.trim(),
@@ -96,9 +88,6 @@ Deno.serve(async (req) => {
       if (pr.status !== "SUBMITTED") {
         return json({ error: `This request is already ${pr.status}` }, 400);
       }
-      const pinError = await verifyPin(db, profile, pin);
-      if (pinError) return json({ error: pinError }, 403);
-
       // The signature is carried through to the PV, so the printed voucher
       // shows who verified the expense on the ministry's behalf. It is
       // mandatory: without it the voucher would claim verification while
@@ -250,20 +239,6 @@ Deno.serve(async (req) => {
     return json({ error: err.message }, 500);
   }
 });
-
-// EXCO verification is a second factor over the login session, matching how
-// the same members already confirm PV verification on the EXCO queue.
-async function verifyPin(
-  db: ReturnType<typeof getServiceClient>,
-  profile: { has_pin?: boolean; pin_hash?: string | null },
-  pin?: string,
-): Promise<string | null> {
-  if (!pin) return "Approval PIN required";
-  if (!profile.has_pin) return "No approval PIN set. Set your PIN from the EXCO Queue page first.";
-  const inputHash = await hashPin(pin);
-  if (inputHash !== profile.pin_hash) return "Incorrect PIN";
-  return null;
-}
 
 async function notify(
   db: ReturnType<typeof getServiceClient>,

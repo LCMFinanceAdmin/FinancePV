@@ -180,7 +180,9 @@ export default function SignatoriesPage() {
                 <Button size="sm" variant="secondary" loading={saving} onClick={() => saveUser(u)}>
                   <Save size={13} /> Save
                 </Button>
-                {["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER", "MINISTRY_HEAD"].includes(u.role) && !u.id.startsWith("new-") && (
+                {/* EXCO Members (MINISTRY_HEAD) no longer use an approval PIN —
+                    their verification is evidenced by a drawn signature. */}
+                {["BISHOP", "TREASURER", "SECRETARY"].includes(u.role) && !u.id.startsWith("new-") && (
                   u.has_pin ? (
                     <Button size="sm" variant="ghost" loading={saving} onClick={() => resetPin(u.id, u.email)}>
                       <RotateCcw size={13} /> Reset PIN
@@ -201,7 +203,9 @@ export default function SignatoriesPage() {
       </div>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-        <strong>How approval PINs work:</strong> Signatories and EXCO Members use a 6-digit PIN as a second confirmation when approving or verifying PVs. Each person <strong>sets and changes their own PIN privately</strong> — signatories from their Signatory Queue page, EXCO Members from their EXCO Queue page — so nobody else knows it. If someone forgets their PIN, use <strong>Reset PIN</strong> here to clear it; they then set a new one themselves (you never see it). <strong>Set Initial PIN</strong> is only offered for someone who has never set one.
+        <strong>How approval PINs work:</strong> Signatories (Bishop, Treasurer, Secretary) use a 6-digit PIN as a second confirmation when approving PVs. Each person <strong>sets and changes their own PIN privately</strong> from their Signatory Queue page, so nobody else knows it. If someone forgets their PIN, use <strong>Reset PIN</strong> here to clear it; they then set a new one themselves (you never see it). <strong>Set Initial PIN</strong> is only offered for someone who has never set one.
+        <br /><br />
+        <strong>EXCO Members don&apos;t use a PIN.</strong> They verify payment requests by drawing their signature, which is printed on the resulting payment voucher as proof the ministry examined the expense.
       </div>
     </div>
   );
