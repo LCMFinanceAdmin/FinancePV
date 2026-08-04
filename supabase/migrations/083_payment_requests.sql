@@ -13,6 +13,34 @@
 -- The table keeps its name (purchase_requests) so existing rows, indexes and
 -- foreign keys survive; the UI is renamed to "Payment Requests".
 
+-- ── Base table ─────────────────────────────────────────────────────────────
+-- Created here defensively: migration 011 was never applied to production, so
+-- the table can be missing entirely. Existing installations keep their rows.
+CREATE TABLE IF NOT EXISTS purchase_requests (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_no          TEXT UNIQUE NOT NULL,
+  title               TEXT NOT NULL,
+  ministry            TEXT NOT NULL,
+  project             TEXT,
+  submitted_by_email  TEXT NOT NULL,
+  submitted_by_name   TEXT,
+  purpose             TEXT,
+  estimated_amount    DECIMAL(12,2) DEFAULT 0,
+  vendor_name         TEXT,
+  line_items          JSONB DEFAULT '[]'::jsonb,
+  attachments         TEXT[] DEFAULT '{}',
+  status              TEXT NOT NULL DEFAULT 'SUBMITTED',
+  approvals           JSONB DEFAULT '[]'::jsonb,
+  admin_comment       TEXT,
+  pv_id               UUID,
+  submitted_at        TIMESTAMPTZ DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pr_ministry  ON purchase_requests(ministry);
+CREATE INDEX IF NOT EXISTS idx_pr_status    ON purchase_requests(status);
+CREATE INDEX IF NOT EXISTS idx_pr_submitted ON purchase_requests(submitted_by_email);
+
 -- ── Request columns: mirror the PV form so Finance never re-keys ────────────
 ALTER TABLE purchase_requests
   -- Payment details
@@ -79,6 +107,7 @@ CREATE POLICY "pr_insert" ON purchase_requests
   WITH CHECK (submitted_by_email = (auth.jwt() ->> 'email'));
 
 DROP POLICY IF EXISTS "pr_update" ON purchase_requests;
+DROP POLICY IF EXISTS "pr_update_own_while_submitted" ON purchase_requests;
 CREATE POLICY "pr_update_own_while_submitted" ON purchase_requests
   FOR UPDATE TO authenticated
   USING (submitted_by_email = (auth.jwt() ->> 'email') AND status = 'SUBMITTED')
