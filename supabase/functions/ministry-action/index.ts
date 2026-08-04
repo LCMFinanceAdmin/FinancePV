@@ -1,6 +1,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
+import { expandMinistries } from "../_shared/ministries.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -21,7 +22,12 @@ Deno.serve(async (req) => {
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
     if (pv.status !== "PENDING_HEAD") return json({ error: "PV is not pending ministry head review" }, 400);
-    if (!profile.ministries.includes(pv.ministry)) return json({ error: "Not your ministry" }, 403);
+    // Expanded so linked sub-ministries and their parent count as one
+    // committee — otherwise a PV visible in the EXCO queue could be rejected
+    // at the point of verification.
+    if (!expandMinistries(profile.ministries).includes(pv.ministry)) {
+      return json({ error: "Not your ministry" }, 403);
+    }
 
     const newStatus = action === "APPROVED" ? "PENDING" : "REJECTED_HEAD";
 

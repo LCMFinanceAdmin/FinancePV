@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { excoAssignableMinistries } from "@/lib/ministries";
 import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw } from "lucide-react";
 
 const ROLES = [
@@ -43,7 +44,9 @@ export default function SignatoriesPage() {
       supabase.from("ministries").select("name").order("name"),
     ]);
     setUsers(ur ?? []);
-    setMinistries((min ?? []).map((m: { name: string }) => m.name));
+    // Only standing committees can be assigned to an EXCO Member — offices,
+    // payee groupings and finance functions are filtered out.
+    setMinistries(excoAssignableMinistries((min ?? []).map((m: { name: string }) => m.name)));
     setLoading(false);
   }
 

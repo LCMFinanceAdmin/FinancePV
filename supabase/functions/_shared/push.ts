@@ -1,5 +1,6 @@
 import webpush from "npm:web-push";
 import { getServiceClient } from "./supabase.ts";
+import { coveringMinistries } from "./ministries.ts";
 
 type DB = ReturnType<typeof getServiceClient>;
 
@@ -50,11 +51,13 @@ export async function sendPushToRoles(db: DB, roles: string[], payload: PushPayl
 }
 
 export async function sendPushToMinistryHeads(db: DB, ministry: string, payload: PushPayload) {
+  // Linked sub-ministries count as the same committee, so a notification for
+  // Education also reaches whoever holds Education Desk, and vice versa.
   const { data: users } = await db
     .from("user_roles")
     .select("email")
     .eq("role", "MINISTRY_HEAD")
-    .contains("ministries", [ministry]);
+    .overlaps("ministries", coveringMinistries(ministry));
   const emails = (users ?? []).map((u: { email: string }) => u.email);
   await sendPushToEmails(db, emails, payload);
 }

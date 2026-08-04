@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
+import { expandMinistries } from "@/lib/ministries";
 import type { PV } from "@/lib/types";
 import {
   Search, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
@@ -83,7 +84,10 @@ export default function ExcoActivityPage() {
         const { data: profile } = await supabase
           .from("user_roles").select("role,ministries").eq("email", user.email).single();
         const role = profile?.role ?? "";
-        const ministries: string[] = profile?.ministries ?? [];
+        // Linked sub-ministries count as one committee, matching what the EXCO
+        // Queue shows — otherwise activity here would be narrower than the
+        // PVs the same person can actually verify.
+        const ministries: string[] = expandMinistries(profile?.ministries ?? []);
         setUserRole(role);
         setUserMinistries(ministries);
       } finally {
