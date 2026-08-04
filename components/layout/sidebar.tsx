@@ -132,7 +132,11 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>(user.role);
-  const [selectedMinistries, setSelectedMinistries] = useState<string[]>(user.ministries ?? []);
+  // Seeded to a single assignable portfolio: an account carrying several from
+  // before (or one since retired, like HQ) shouldn't silently re-apply them.
+  const [selectedMinistries, setSelectedMinistries] = useState<string[]>(
+    () => excoAssignableMinistries(user.ministries ?? []).slice(0, 1)
+  );
   const [switchError, setSwitchError] = useState("");
   const availableMinistries = excoAssignableMinistries(
     ministryList?.length ? ministryList : TEST_MINISTRIES
@@ -245,6 +249,13 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
           <div className="mt-2 text-[11px] text-[#2563eb] font-semibold">
             {TEST_ROLES.find(r => r.value === user.role)?.label ?? user.role}
           </div>
+          {/* An EXCO Member holds one portfolio — name it, so it's obvious
+              whose transactions this account is verifying. */}
+          {user.role === "MINISTRY_HEAD" && user.ministries?.length > 0 && (
+            <div className="mt-0.5 text-[11px] text-[#758ba7] truncate">
+              {user.ministries.join(" · ")}
+            </div>
+          )}
         </div>
 
         {/* ── Test Role Switcher (admin only) ────────────────── */}
@@ -272,28 +283,25 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
 
                 {selectedRole === "MINISTRY_HEAD" && (
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">
-                        Ministries
-                      </span>
-                      <span className="text-[10px] text-stone-400">{selectedMinistries.length} selected</span>
-                    </div>
-                    {/* One per row: committee names are long and wrapped badly
-                        in two columns, detaching labels from their boxes. */}
+                    <span className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">
+                      EXCO portfolio
+                    </span>
+                    {/* One portfolio at a time: an EXCO Member heads a single
+                        committee, so this mirrors the real world rather than
+                        letting a test account hold several at once. */}
                     <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-lg border border-stone-200 bg-white p-1">
                       {availableMinistries.map(m => {
-                        const checked = selectedMinistries.includes(m);
+                        const checked = selectedMinistries[0] === m;
                         return (
                           <label key={m}
                             className={`flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-xs transition-colors ${
                               checked ? "bg-[#edf6ff] text-[#16335e] font-medium" : "text-stone-600 hover:bg-stone-50"}`}>
                             <input
-                              type="checkbox"
+                              type="radio"
+                              name="exco-portfolio"
                               className="accent-[#4a6da7] shrink-0"
                               checked={checked}
-                              onChange={e => setSelectedMinistries(prev =>
-                                e.target.checked ? [...prev, m] : prev.filter(x => x !== m)
-                              )}
+                              onChange={() => setSelectedMinistries([m])}
                             />
                             <span className="min-w-0 leading-tight">{m}</span>
                           </label>
@@ -302,7 +310,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
                     </div>
                     {selectedMinistries.length === 0 && (
                       <p className="text-[10px] text-amber-600">
-                        Pick at least one — an EXCO Member only sees their own ministries&apos; requests.
+                        Pick a portfolio — an EXCO Member only sees their own committee&apos;s requests.
                       </p>
                     )}
                   </div>

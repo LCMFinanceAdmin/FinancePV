@@ -76,7 +76,11 @@ export default function SwitchRolePage() {
         setCurrentRole(securityContext?.role ?? "STAFF");
         setHasPin(securityContext?.has_pin ?? false);
         setSelectedRole(securityContext?.role ?? "STAFF");
-        setSelectedMinistries(securityContext?.ministries ?? []);
+        // A single assignable portfolio: an account carrying several from
+        // before (or one since retired) shouldn't silently re-apply them.
+        setSelectedMinistries(
+          excoAssignableMinistries(securityContext?.ministries ?? []).slice(0, 1)
+        );
         setMinistries(excoAssignableMinistries((mins ?? []).map((m: { name: string }) => m.name)));
       } finally {
         setLoading(false);
@@ -187,15 +191,14 @@ export default function SwitchRolePage() {
       {/* Ministry selection for EXCO */}
       {selectedRole === "MINISTRY_HEAD" && ministries.length > 0 && (
         <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 space-y-3">
-          <div className="text-xs font-semibold uppercase tracking-wider text-[#3566a8]">Assign Ministries</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-[#3566a8]">EXCO Portfolio</div>
+          {/* One portfolio at a time — an EXCO Member heads a single committee. */}
           <div className="grid grid-cols-2 gap-y-2 gap-x-4">
             {ministries.map(m => (
               <label key={m} className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
-                <input type="checkbox" className="accent-[#4a6da7] w-4 h-4"
-                  checked={selectedMinistries.includes(m)}
-                  onChange={e => setSelectedMinistries(prev =>
-                    e.target.checked ? [...prev, m] : prev.filter(x => x !== m)
-                  )} />
+                <input type="radio" name="exco-portfolio-page" className="accent-[#4a6da7] w-4 h-4"
+                  checked={selectedMinistries[0] === m}
+                  onChange={() => setSelectedMinistries([m])} />
                 {m}
               </label>
             ))}
