@@ -123,6 +123,16 @@ const TEST_MINISTRIES = [
   "Community", "Admin", "Outreach",
 ];
 
+// Entries that live in the ministries lookup but are not standing committees,
+// so an EXCO Member can't be assigned to them. BAM has its own committee chain
+// through the Building/Event Manager, and "LCM Congregation" is a payee
+// grouping rather than a committee with a head who verifies expenses.
+const NON_EXCO_MINISTRIES = ["building asset management (bam)", "lcm congregation"];
+
+export function excoAssignableMinistries(all: string[]): string[] {
+  return all.filter(m => !NON_EXCO_MINISTRIES.includes(m.trim().toLowerCase()));
+}
+
 export function Sidebar({ user, ministryList }: { user: UserProfile; ministryList?: string[] }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -131,7 +141,10 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
   const [switching, setSwitching] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>(user.role);
   const [selectedMinistries, setSelectedMinistries] = useState<string[]>(user.ministries ?? []);
-  const availableMinistries = ministryList?.length ? ministryList : TEST_MINISTRIES;
+  const [switchError, setSwitchError] = useState("");
+  const availableMinistries = excoAssignableMinistries(
+    ministryList?.length ? ministryList : TEST_MINISTRIES
+  );
 
   // Inbox-style badge on "GM Claims" — how many GM claims the Finance Executive
   // still has to process (not yet paid). Refetched on route change so it drops
@@ -151,11 +164,22 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
 
   async function switchRole() {
     setSwitching(true);
+    setSwitchError("");
     const ministries = selectedRole === "MINISTRY_HEAD" ? selectedMinistries : [];
-    await supabase.rpc("switch_own_role", { new_role: selectedRole, new_ministries: ministries });
-    router.refresh();
-    setSwitching(false);
-    setShowRoleSwitcher(false);
+    const { error } = await supabase.rpc("switch_own_role", {
+      new_role: selectedRole, new_ministries: ministries,
+    });
+    if (error) {
+      // Previously swallowed, so a failed switch looked like nothing happened.
+      setSwitchError(error.message || "Switch failed");
+      setSwitching(false);
+      return;
+    }
+    // A role change rewrites the whole shell — nav items, permissions, the
+    // profile card — all of which come from the server layout. router.refresh()
+    // left stale segments in the client router cache, which is why the sidebar
+    // kept showing the old role. A full reload is the reliable reset.
+    window.location.reload();
   }
 
   const visibleSections = NAV_SECTIONS.map(s => ({
@@ -256,28 +280,49 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
 
                 {selectedRole === "MINISTRY_HEAD" && (
                   <div className="space-y-1">
-                    <div className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">Ministries</div>
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                      {availableMinistries.map(m => (
-                        <label key={m} className="flex items-center gap-1 text-xs cursor-pointer text-stone-600">
-                          <input
-                            type="checkbox"
-                            className="accent-[#4a6da7]"
-                            checked={selectedMinistries.includes(m)}
-                            onChange={e => setSelectedMinistries(prev =>
-                              e.target.checked ? [...prev, m] : prev.filter(x => x !== m)
-                            )}
-                          />
-                          {m}
-                        </label>
-                      ))}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">
+                        Ministries
+                      </span>
+                      <span className="text-[10px] text-stone-400">{selectedMinistries.length} selected</span>
                     </div>
+                    {/* One per row: committee names are long and wrapped badly
+                        in two columns, detaching labels from their boxes. */}
+                    <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-lg border border-stone-200 bg-white p-1">
+                      {availableMinistries.map(m => {
+                        const checked = selectedMinistries.includes(m);
+                        return (
+                          <label key={m}
+                            className={`flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-xs transition-colors ${
+                              checked ? "bg-[#edf6ff] text-[#16335e] font-medium" : "text-stone-600 hover:bg-stone-50"}`}>
+                            <input
+                              type="checkbox"
+                              className="accent-[#4a6da7] shrink-0"
+                              checked={checked}
+                              onChange={e => setSelectedMinistries(prev =>
+                                e.target.checked ? [...prev, m] : prev.filter(x => x !== m)
+                              )}
+                            />
+                            <span className="min-w-0 leading-tight">{m}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {selectedMinistries.length === 0 && (
+                      <p className="text-[10px] text-amber-600">
+                        Pick at least one — an EXCO Member only sees their own ministries&apos; requests.
+                      </p>
+                    )}
                   </div>
+                )}
+
+                {switchError && (
+                  <p className="rounded-lg bg-red-50 px-2 py-1.5 text-[11px] text-red-600">{switchError}</p>
                 )}
 
                 <button
                   onClick={switchRole}
-                  disabled={switching}
+                  disabled={switching || (selectedRole === "MINISTRY_HEAD" && selectedMinistries.length === 0)}
                   className="w-full py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition-colors disabled:opacity-50"
                 >
                   {switching ? "Switching…" : "Apply Role"}

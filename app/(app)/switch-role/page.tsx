@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { excoAssignableMinistries } from "@/components/layout/sidebar";
 import { Eye, EyeOff } from "lucide-react";
 
 const TEST_ADMIN_EMAILS = ["finance@lcm.org.my", "jermaineaaron1991@gmail.com"];
@@ -20,7 +21,9 @@ const ROLES = [
 ];
 type Role = (typeof ROLES)[number]["value"];
 
-const PIN_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER", "MINISTRY_HEAD"];
+// EXCO Members (MINISTRY_HEAD) and the GM don't use an approval PIN — EXCO
+// verification is evidenced by their drawn signature instead.
+const PIN_ROLES = ["BISHOP", "TREASURER", "SECRETARY"];
 
 const inp = "border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full";
 
@@ -74,7 +77,7 @@ export default function SwitchRolePage() {
         setHasPin(securityContext?.has_pin ?? false);
         setSelectedRole(securityContext?.role ?? "STAFF");
         setSelectedMinistries(securityContext?.ministries ?? []);
-        setMinistries((mins ?? []).map((m: { name: string }) => m.name));
+        setMinistries(excoAssignableMinistries((mins ?? []).map((m: { name: string }) => m.name)));
       } finally {
         setLoading(false);
       }
@@ -92,12 +95,15 @@ export default function SwitchRolePage() {
       });
       if (error) {
         showToast(error.message ?? "Switch failed", false);
+        setSwitching(false);
         return;
       }
       setCurrentRole(selectedRole);
       showToast(`Switched to ${ROLES.find(r => r.value === selectedRole)?.label}`);
-      router.refresh();
-    } finally {
+      // A role change rewrites the whole shell from the server layout;
+      // router.refresh() left stale cached segments showing the old role.
+      setTimeout(() => window.location.reload(), 600);
+    } catch {
       setSwitching(false);
     }
   }
@@ -133,7 +139,7 @@ export default function SwitchRolePage() {
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   const currentLabel = ROLES.find(r => r.value === currentRole)?.label ?? currentRole;
-  const needsPin = PIN_ROLES.includes(selectedRole) && selectedRole !== "GENERAL_MANAGER";
+  const needsPin = PIN_ROLES.includes(selectedRole);
 
   return (
     <div className="cloudlight-page max-w-3xl space-y-6">
