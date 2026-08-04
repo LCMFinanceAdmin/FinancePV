@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
-import { excoAssignableMinistries } from "@/components/layout/sidebar";
+import { excoAssignableMinistries } from "@/lib/ministries";
 import { LutherRose } from "@/components/ui/luther-rose";
 
 const SIDEBAR_GRADIENT = "linear-gradient(160deg, #1e3a6f 0%, #2a4d8f 40%, #4a2080 100%)";

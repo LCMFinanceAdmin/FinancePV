@@ -1,6 +1,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
+import { expandMinistries } from "../_shared/ministries.ts";
 
 // Payment Request state machine.
 //
@@ -48,7 +49,9 @@ Deno.serve(async (req) => {
 
     const now = new Date().toISOString();
     const actorName = profile.full_name || user.email!;
-    const ministries: string[] = profile.ministries ?? [];
+    // Expanded so a sub-ministry representative may verify on the parent
+    // committee's behalf, e.g. Education Desk covers Education.
+    const ministries: string[] = expandMinistries(profile.ministries ?? []);
     const isMinistryExco =
       profile.role === "MINISTRY_HEAD" && ministries.includes(pr.ministry);
     const isGM = profile.role === "GENERAL_MANAGER";

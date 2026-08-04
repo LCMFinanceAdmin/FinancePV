@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
+import { excoAssignableMinistries } from "@/lib/ministries";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid,
   RefreshCw, Users, Building2, Settings, LogOut,
@@ -123,15 +124,6 @@ const TEST_MINISTRIES = [
   "Community", "Admin", "Outreach",
 ];
 
-// Entries that live in the ministries lookup but are not standing committees,
-// so an EXCO Member can't be assigned to them. BAM has its own committee chain
-// through the Building/Event Manager, and "LCM Congregation" is a payee
-// grouping rather than a committee with a head who verifies expenses.
-const NON_EXCO_MINISTRIES = ["building asset management (bam)", "lcm congregation"];
-
-export function excoAssignableMinistries(all: string[]): string[] {
-  return all.filter(m => !NON_EXCO_MINISTRIES.includes(m.trim().toLowerCase()));
-}
 
 export function Sidebar({ user, ministryList }: { user: UserProfile; ministryList?: string[] }) {
   const pathname = usePathname();

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import { BudgetImpact } from "@/components/budget/budget-impact";
 import { SignaturePad } from "@/components/ui/signature-pad";
+import { expandMinistries } from "@/lib/ministries";
 import type { PV, PurchaseRequest } from "@/lib/types";
 import {
   CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
@@ -71,7 +72,10 @@ export default function ExcoPage() {
 
       const sigs = (security as { saved_signatures?: Record<string, string> | null } | null)?.saved_signatures;
       setSavedExcoSig(sigs?.["MINISTRY_HEAD"] ?? "");
-      const ministries: string[] = profile?.ministries ?? [];
+      // A sub-ministry representative also acts for its parent committee — the
+      // Education Desk member verifies Education's transactions, since that is
+      // where the spending is booked.
+      const ministries: string[] = expandMinistries(profile?.ministries ?? []);
 
       const PV_COLS = "id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals,attachments";
 

@@ -1,6 +1,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail, nextPrNo } from "../_shared/supabase.ts";
 import { sendPushToMinistryHeads, sendPushToRoles } from "../_shared/push.ts";
+import { expandMinistries, coveringMinistries } from "../_shared/ministries.ts";
 
 // Raises a Payment Request. Ministerial expenses must be verified by the
 // ministry's own standing committee (EXCO) before they reach the finance desk,
@@ -47,7 +48,9 @@ Deno.serve(async (req) => {
     // the voucher if it can be signed. Without one the request follows the
     // normal route, where they verify explicitly and are made to sign then —
     // better than a voucher claiming verification with an empty signature box.
-    const ministries: string[] = profile?.ministries ?? [];
+    // Expanded so a sub-ministry representative counts for its parent, e.g.
+    // Education Desk covers Education.
+    const ministries: string[] = expandMinistries(profile?.ministries ?? []);
     const savedExcoSignature =
       (profile?.saved_signatures as Record<string, string> | null)?.["MINISTRY_HEAD"] ?? null;
     const selfRaisedByExco =
@@ -132,11 +135,13 @@ Deno.serve(async (req) => {
       });
     } else {
       // Route to the ministry's own EXCO only — not the GM, not the signatories.
+      // Sub-ministry representatives are included: a request booked to
+      // Education also reaches whoever holds Education Desk.
       const { data: excoMembers } = await db
         .from("user_roles")
         .select("email")
         .eq("role", "MINISTRY_HEAD")
-        .contains("ministries", [ministry]);
+        .overlaps("ministries", coveringMinistries(ministry));
 
       if (excoMembers?.length) {
         await db.from("notifications").insert(

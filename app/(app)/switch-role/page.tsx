@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { excoAssignableMinistries } from "@/components/layout/sidebar";
+import { excoAssignableMinistries } from "@/lib/ministries";
 import { Eye, EyeOff } from "lucide-react";
 
 const TEST_ADMIN_EMAILS = ["finance@lcm.org.my", "jermaineaaron1991@gmail.com"];
