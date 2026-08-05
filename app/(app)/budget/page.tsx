@@ -94,6 +94,8 @@ function BudgetInner() {
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<BudgetItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Item modal
   const [itemModal, setItemModal] = useState<{ mode: "add" | "edit"; item?: BudgetItem } | null>(null);
@@ -277,25 +279,33 @@ function BudgetInner() {
     }
   }
 
-  async function deleteItem(item: BudgetItem) {
-    if (!canDirectEdit) {
-      if (!confirm(`Request deletion of "${item.project_name}"? A Finance Executive will need to approve this.`)) return;
-      const { error } = await supabase.from("budget_change_requests").insert({
-        ministry: selectedMinistry,
-        budget_item_id: item.id,
-        change_type: "delete",
-        proposed_data: { project_name: item.project_name },
-        requested_by: userEmail,
-        status: "pending",
-      });
-      if (error) showToast("Error: " + error.message, false);
-      else { showToast("Deletion request submitted for approval"); await loadBudgetData(selectedMinistry); }
-      return;
+  // Deleting a budget line is destructive and the browser's own confirm()
+  // gives no sense of what is being removed, so the confirmation shows the
+  // line's figures and whether any spending is already booked against it.
+  async function confirmDeleteItem(item: BudgetItem) {
+    setDeleting(true);
+    try {
+      if (!canDirectEdit) {
+        const { error } = await supabase.from("budget_change_requests").insert({
+          ministry: selectedMinistry,
+          budget_item_id: item.id,
+          change_type: "delete",
+          proposed_data: { project_name: item.project_name },
+          requested_by: userEmail,
+          status: "pending",
+        });
+        if (error) { showToast("Error: " + error.message, false); return; }
+        showToast("Deletion request submitted for approval");
+      } else {
+        const { error } = await supabase.from("budget_items").delete().eq("id", item.id);
+        if (error) { showToast("Error: " + error.message, false); return; }
+        showToast(`"${item.project_name}" deleted`);
+      }
+      setDeleteTarget(null);
+      await loadBudgetData(selectedMinistry);
+    } finally {
+      setDeleting(false);
     }
-    if (!confirm(`Delete "${item.project_name}"? This cannot be undone.`)) return;
-    const { error } = await supabase.from("budget_items").delete().eq("id", item.id);
-    if (error) showToast("Error: " + error.message, false);
-    else { showToast("Deleted"); await loadBudgetData(selectedMinistry); }
   }
 
   async function approveChangeRequest(req: ChangeRequest) {
@@ -584,7 +594,7 @@ function BudgetInner() {
                                 <Pencil size={13} />
                               </button>
                               <button
-                                onClick={() => deleteItem(item)}
+                                onClick={() => setDeleteTarget(item)}
                                 className="p-1.5 rounded hover:bg-red-100 text-stone-400 hover:text-red-600 transition-colors"
                                 title={canDirectEdit ? "Delete" : "Request deletion"}
                               >
@@ -629,6 +639,76 @@ function BudgetInner() {
       )}
 
       {/* ── Add / Edit Item Modal ── */}
+      {/* ── Delete confirmation ─────────────────────────────────────────── */}
+      {deleteTarget && (() => {
+        const booked = (deleteTarget.spent ?? 0) + (deleteTarget.pending ?? 0);
+        const lineBudget = (deleteTarget.estimated_income || 0) + (deleteTarget.estimated_expenses || 0);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
+            onClick={() => !deleting && setDeleteTarget(null)}>
+            <div onClick={e => e.stopPropagation()}
+              className="w-full max-w-md overflow-hidden rounded-3xl border border-red-200 bg-white shadow-[0_24px_70px_rgba(22,51,94,0.28)]">
+              <div className="flex items-start gap-3 border-b border-red-100 bg-red-50 px-5 py-4">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-red-100 text-red-600">
+                  <Trash2 size={18} />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold text-stone-800">
+                    {canDirectEdit ? "Delete this budget line?" : "Request deletion?"}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-stone-500">
+                    {canDirectEdit
+                      ? "This removes the line permanently and cannot be undone."
+                      : "A Finance Executive has to approve this before it is removed."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3 px-5 py-4">
+                <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                  <div className="text-sm font-bold text-stone-800">{deleteTarget.project_name}</div>
+                  <div className="mt-0.5 text-xs text-stone-500">{selectedMinistry}</div>
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span className="text-stone-500">Budget on this line</span>
+                    <span className="font-semibold tabular-nums text-stone-800">{formatCurrency(lineBudget)}</span>
+                  </div>
+                </div>
+
+                {/* Spending already booked here is the reason not to delete
+                    blindly — those PVs would lose their budget line. */}
+                {booked > 0 && (
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                    <div className="font-semibold">
+                      ⚠ {formatCurrency(booked)} is already booked against this line
+                    </div>
+                    <div className="mt-1 leading-relaxed">
+                      {formatCurrency(deleteTarget.spent ?? 0)} paid or approved
+                      {(deleteTarget.pending ?? 0) > 0 ? `, ${formatCurrency(deleteTarget.pending ?? 0)} still in the approval chain` : ""}.
+                      Those payment vouchers stay, but they will no longer sit under an approved budget line.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 border-t border-stone-100 bg-stone-50 px-5 py-4">
+                <button
+                  onClick={() => confirmDeleteItem(deleteTarget)}
+                  disabled={deleting}
+                  className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50">
+                  {deleting ? "Working…" : canDirectEdit ? "Delete permanently" : "Submit request"}
+                </button>
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleting}
+                  className="rounded-xl border border-stone-300 px-5 py-2.5 text-sm font-medium text-stone-600 transition-colors hover:bg-white disabled:opacity-50">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {itemModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
