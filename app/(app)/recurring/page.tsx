@@ -2509,16 +2509,16 @@ export default function RecurringPage() {
           <div className="overflow-x-auto rounded-xl border border-stone-200">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                  <th className="py-2.5 pl-3 w-8 text-left"></th>
-                  <th className="py-2.5 w-8 text-left">No</th>
-                  <th className="py-2.5 text-left">Description</th>
-                  <th className="py-2.5 text-left">Payable To</th>
-                  <th className="py-2.5 text-left">Duration</th>
-                  <th className="py-2.5 text-left">Last Created PV</th>
-                  <th className="py-2.5 text-left">Last Paid PV</th>
-                  <th className="py-2.5 text-right pr-4">Amount</th>
-                  <th className="py-2.5 w-40"></th>
+                <tr className="text-[13px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                  <th className="py-[15px] pl-3 w-8 text-left"></th>
+                  <th className="py-[15px] w-8 text-left">No</th>
+                  <th className="py-[15px] text-left">Description</th>
+                  <th className="py-[15px] text-left">Payable To</th>
+                  <th className="py-[15px] text-left">Duration</th>
+                  <th className="py-[15px] text-left">Last Created PV</th>
+                  <th className="py-[15px] text-left">Last Paid PV</th>
+                  <th className="py-[15px] text-right pr-4">Amount</th>
+                  <th className="py-[15px] w-40"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
@@ -2889,16 +2889,16 @@ export default function RecurringPage() {
               <div className="overflow-x-auto rounded-xl border border-stone-200">
                 <table className="w-full text-sm border-collapse">
                   <thead>
-                    <tr className="text-[11px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                      <th className="py-2.5 pl-3 w-8 text-left"></th>
-                      <th className="py-2.5 w-8 text-left">No</th>
-                      <th className="py-2.5 text-left">Description</th>
-                      <th className="py-2.5 text-left">Payable To</th>
-                      <th className="py-2.5 text-left">Duration</th>
-                      <th className="py-2.5 text-left">Last Created PV</th>
-                      <th className="py-2.5 text-left">Last Paid PV</th>
-                      <th className="py-2.5 text-right pr-4">Amount</th>
-                      <th className="py-2.5 w-40"></th>
+                    <tr className="text-[13px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
+                      <th className="py-[15px] pl-3 w-8 text-left"></th>
+                      <th className="py-[15px] w-8 text-left">No</th>
+                      <th className="py-[15px] text-left">Description</th>
+                      <th className="py-[15px] text-left">Payable To</th>
+                      <th className="py-[15px] text-left">Duration</th>
+                      <th className="py-[15px] text-left">Last Created PV</th>
+                      <th className="py-[15px] text-left">Last Paid PV</th>
+                      <th className="py-[15px] text-right pr-4">Amount</th>
+                      <th className="py-[15px] w-40"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
@@ -3244,14 +3244,14 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
         : isAtRisk ? "bg-red-50/40 hover:bg-red-50/60"
         : "hover:bg-stone-50/70"
       }`}>
-        <td className="py-2.5 pl-3 pr-2">
+        <td className="py-[15px] pl-3 pr-2">
           <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
             disabled={isExpired || batchRunning}
             className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer" />
         </td>
-        <td className="py-2.5 pr-3 text-xs text-stone-400 font-medium">{rowNo}</td>
-        <td className="py-2.5 pr-4 min-w-[140px]">
-          <div className="font-medium text-stone-800 text-sm leading-tight">{item.name}</div>
+        <td className="py-[15px] pr-3 text-sm text-stone-400 font-medium">{rowNo}</td>
+        <td className="py-[15px] pr-4 min-w-[140px]">
+          <div className="font-medium text-stone-800 text-base leading-tight">{item.name}</div>
           <div className="flex gap-1 flex-wrap mt-0.5">
             {alreadyRan && (
               editingPeriod ? (
@@ -3259,7 +3259,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
                   <div className="flex gap-1">
                     {[thisMonth, nextMonth].map(m => (
                       <button key={m} type="button" onClick={() => setPeriodInput(m)}
-                        className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${periodInput === m ? "bg-green-100 border-green-400 text-green-700 font-semibold" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
+                        className={`text-[13px] px-1.5 py-0.5 rounded border transition-colors ${periodInput === m ? "bg-green-100 border-green-400 text-green-700 font-semibold" : "border-stone-200 text-stone-500 hover:bg-stone-50"}`}>
                         {m}
                       </button>
                     ))}
@@ -3268,56 +3268,56 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
                     <input autoFocus value={periodInput} onChange={e => setPeriodInput(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter") savePeriod(); if (e.key === "Escape") setEditingPeriod(false); }}
                       placeholder="e.g. Jun-Jul 2026"
-                      className="text-[10px] px-1.5 py-0.5 rounded border border-green-300 bg-white w-24 outline-none" />
-                    <button type="button" onClick={savePeriod} className="text-[10px] font-bold text-green-700 hover:text-green-900">✓</button>
-                    <button type="button" onClick={() => setEditingPeriod(false)} className="text-[10px] text-stone-400 hover:text-stone-600">✕</button>
+                      className="text-[12px] px-1.5 py-0.5 rounded border border-green-300 bg-white w-24 outline-none" />
+                    <button type="button" onClick={savePeriod} className="text-[12px] font-bold text-green-700 hover:text-green-900">✓</button>
+                    <button type="button" onClick={() => setEditingPeriod(false)} className="text-[12px] text-stone-400 hover:text-stone-600">✕</button>
                   </div>
                 </div>
               ) : (
                 <button type="button"
                   onClick={() => { setPeriodInput(displayPeriod); setEditingPeriod(true); }}
                   title="Click to change period"
-                  className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium hover:bg-green-200 transition-colors">
+                  className="text-[12px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium hover:bg-green-200 transition-colors">
                   ✓ {displayPeriod}
                 </button>
               )
             )}
-            {isOverdue && !alreadyRan && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Overdue</span>}
-            {!item.active && !isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Paused</span>}
-            {isExpired && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Expired</span>}
-            {item.pv_label && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">{item.pv_label}</span>}
-            {groupLabel && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{groupLabel}</span>}
+            {isOverdue && !alreadyRan && <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Overdue</span>}
+            {!item.active && !isExpired && <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Paused</span>}
+            {isExpired && <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400 font-medium">Expired</span>}
+            {item.pv_label && <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">{item.pv_label}</span>}
+            {groupLabel && <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{groupLabel}</span>}
           </div>
         </td>
-        <td className="py-2.5 pr-4 text-sm text-stone-600 whitespace-nowrap min-w-[120px]">{item.payee_name}</td>
-        <td className="py-2.5 pr-4 whitespace-nowrap">
-          <div className="text-xs text-stone-500">{durationLabel()}</div>
-          {commencedLabel() && <div className="text-[10px] text-stone-400 mt-0.5">{commencedLabel()}</div>}
+        <td className="py-[15px] pr-4 text-base text-stone-600 whitespace-nowrap min-w-[120px]">{item.payee_name}</td>
+        <td className="py-[15px] pr-4 whitespace-nowrap">
+          <div className="text-sm text-stone-500">{durationLabel()}</div>
+          {commencedLabel() && <div className="text-[12px] text-stone-400 mt-0.5">{commencedLabel()}</div>}
         </td>
-        <td className="py-2.5 pr-4 min-w-[110px]">
+        <td className="py-[15px] pr-4 min-w-[110px]">
           {item.current_pv_no && item.last_run ? (
             <div>
               <a href={item.current_pv_id ? `/my-pvs/${item.current_pv_id}` : "#"}
-                className="text-xs text-[#4a6da7] hover:underline font-medium">{item.current_pv_no}</a>
-              <div className="text-[10px] text-stone-400 mt-0.5">{formatDate(item.last_run)}</div>
+                className="text-sm text-[#4a6da7] hover:underline font-medium">{item.current_pv_no}</a>
+              <div className="text-[12px] text-stone-400 mt-0.5">{formatDate(item.last_run)}</div>
             </div>
-          ) : <span className="text-xs text-stone-300">—</span>}
+          ) : <span className="text-sm text-stone-300">—</span>}
         </td>
-        <td className="py-2.5 pr-4 min-w-[110px]">
+        <td className="py-[15px] pr-4 min-w-[110px]">
           {lastPaid ? (
             <div>
               <a href={`/my-pvs/${lastPaid.id}`}
-                className="text-xs text-green-700 hover:underline font-medium">{lastPaid.pv_no}</a>
-              <div className="text-[10px] text-stone-400 mt-0.5">{formatDate(lastPaid.paid_at)}</div>
+                className="text-sm text-green-700 hover:underline font-medium">{lastPaid.pv_no}</a>
+              <div className="text-[12px] text-stone-400 mt-0.5">{formatDate(lastPaid.paid_at)}</div>
             </div>
-          ) : <span className="text-xs text-stone-300">—</span>}
+          ) : <span className="text-sm text-stone-300">—</span>}
         </td>
-        <td className="py-2.5 pr-4 text-sm font-bold text-[#4a6da7] text-right whitespace-nowrap">{formatCurrency(item.amount)}</td>
-        <td className="py-2.5">
+        <td className="py-[15px] pr-4 text-base font-bold text-[#4a6da7] text-right whitespace-nowrap">{formatCurrency(item.amount)}</td>
+        <td className="py-[15px]">
           <div className="flex items-center gap-0.5 justify-end">
             {!isExpired && alreadyRan && item.current_pv_id && (
               <a href={`/my-pvs/${item.current_pv_id}`}
-                className="text-[10px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg px-2 py-1 transition-colors border border-green-200 mr-1 whitespace-nowrap">
+                className="text-[12px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg px-2 py-1 transition-colors border border-green-200 mr-1 whitespace-nowrap">
                 View PV
               </a>
             )}
