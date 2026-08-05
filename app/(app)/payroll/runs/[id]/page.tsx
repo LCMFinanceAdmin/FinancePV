@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, FileText, Banknote, Send, X, FileSpreadsheet, Download } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Banknote, Send, X, FileSpreadsheet, Download, RotateCcw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
@@ -37,6 +37,8 @@ export default function PayrollRunDetailPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [showRevert, setShowRevert] = useState(false);
+  const [revertReason, setRevertReason] = useState("");
   const [showSendPayslip, setShowSendPayslip] = useState(false);
   const [showBankExport, setShowBankExport] = useState(false);
   const [storedExports, setStoredExports] = useState<{ name: string; path: string; created_at: string }[]>([]);
@@ -127,6 +129,8 @@ export default function PayrollRunDetailPage() {
   const ageMonth = is13th ? 12 : run.month;
   const isDraft = run.status === "DRAFT";
   const canFinalize = user?.isFinanceAdmin && isDraft;
+  // Every voucher already carries a PV, so there is nothing left to raise.
+  const allPvsGenerated = vouchers.length > 0 && vouchers.every(v => v.pv_id);
 
   // Live computation for DRAFT runs.
   const computed: ComputedRow[] = isDraft ? employees
@@ -266,6 +270,133 @@ export default function PayrollRunDetailPage() {
     window.open(data.signedUrl, "_blank");
   }
 
+  /**
+   * Raises a real payment voucher for each payroll voucher, so payroll goes
+   * through the same approval chain as every other payment rather than being
+   * marked paid inside payroll alone.
+   */
+  async function generatePVs() {
+    if (!run) return;
+    const pending = vouchers.filter(v => !v.pv_id);
+    if (!pending.length) { setToast("Payment vouchers already raised for this run"); setTimeout(() => setToast(""), 3000); return; }
+    setBusy(true);
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const session = (await supabase.auth.getSession()).data.session;
+      // Dated to the payroll month, not today, so a run raised late still
+      // reports in the month it belongs to.
+      const pvDate = new Date(run.year, (run.month === 13 ? 12 : run.month) - 1, 1).toISOString().slice(0, 10);
+      const label = `${MONTH_LABELS[run.month]} ${run.year}`;
+      const errors: string[] = [];
+
+      for (const v of pending) {
+        try {
+          const purpose = `Payroll ${label} — ${v.payee}`;
+          const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+            body: JSON.stringify({
+              applicant_email: authUser?.email, applicant_name: authUser?.email,
+              payee_name: v.payee, purpose, amount: Number(v.total_amount),
+              ministry: "Head Quarters (HQ)", dept: "Payroll",
+              payment_type: "GENERAL", pvDate,
+              line_items: [{ date: pvDate, description: purpose, amount: Number(v.total_amount) }],
+              sig_applicant_name: authUser?.email, sig_applicant_confirm: true,
+              pv_type: "LCM",
+            }),
+          });
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error ?? "Failed");
+          const { data: pvRow } = await supabase.from("pvs").select("id,status").eq("pv_no", result.pv_no).single();
+          await supabase.from("payroll_vouchers").update({
+            pv_id: pvRow?.id ?? null, pv_no: result.pv_no, pv_status: pvRow?.status ?? "PENDING",
+            generated_at: new Date().toISOString(), generated_by: authUser?.email ?? "",
+          }).eq("id", v.id);
+        } catch (err: unknown) {
+          errors.push(`${v.payee}: ${err instanceof Error ? err.message : "failed"}`);
+        }
+      }
+
+      await supabase.from("payroll_runs").update({
+        pvs_generated_at: new Date().toISOString(),
+        pvs_generated_by: authUser?.email ?? "",
+      }).eq("id", run.id);
+
+      await logPayrollAudit(supabase, {
+        action: "PVS_GENERATED", entity: label,
+        detail: `${pending.length - errors.length} payment voucher(s) raised for approval`,
+      });
+      setToast(errors.length
+        ? `${pending.length - errors.length} raised, ${errors.length} failed — ${errors[0]}`
+        : `${pending.length} payment voucher${pending.length === 1 ? "" : "s"} raised for approval`);
+      setTimeout(() => setToast(""), 4000);
+      load();
+    } finally { setBusy(false); }
+  }
+
+  /**
+   * Puts a finalized run back to draft and cancels any PVs it raised —
+   * including ones already with the GM or the signatories, since they would
+   * otherwise sit mid-approval against figures that no longer stand.
+   */
+  async function revertRun(reason: string) {
+    if (!run) return;
+    setBusy(true);
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const session = (await supabase.auth.getSession()).data.session;
+      const linked = vouchers.filter(v => v.pv_id);
+      const cancelled: string[] = [];
+      const failed: string[] = [];
+
+      for (const v of linked) {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            pv_id: v.pv_id, action: "CANCEL",
+            remarks: `Payroll run ${MONTH_LABELS[run.month]} ${run.year} reverted${reason ? `: ${reason}` : ""}`,
+          }),
+        });
+        const result = await res.json();
+        if (res.ok) cancelled.push(v.pv_no ?? "");
+        // A paid PV cannot be cancelled — that is money already out, and the
+        // run must not pretend otherwise.
+        else failed.push(`${v.payee}: ${result.error ?? "could not cancel"}`);
+      }
+
+      if (failed.length) {
+        setToast(`Cannot revert — ${failed[0]}`);
+        setTimeout(() => setToast(""), 5000);
+        return;
+      }
+
+      await supabase.from("payroll_vouchers").update({
+        pv_id: null, pv_no: null, pv_status: null, status: "PENDING", paid_at: null,
+      }).eq("run_id", run.id);
+
+      await supabase.from("payroll_runs").update({
+        status: "DRAFT", finalized_at: null,
+        pvs_generated_at: null, pvs_generated_by: null,
+        reverted_at: new Date().toISOString(), reverted_by: authUser?.email ?? "",
+        revert_reason: reason || null,
+      }).eq("id", run.id);
+
+      await logPayrollAudit(supabase, {
+        action: "RUN_REVERTED", entity: `${MONTH_LABELS[run.month]} ${run.year}`,
+        detail: `Run returned to draft${cancelled.length ? `; cancelled ${cancelled.length} PV(s): ${cancelled.join(", ")}` : ""}${reason ? ` — ${reason}` : ""}`,
+      });
+
+      setShowRevert(false);
+      setRevertReason("");
+      setToast(cancelled.length
+        ? `Run reverted to draft — ${cancelled.length} PV${cancelled.length === 1 ? "" : "s"} cancelled`
+        : "Run reverted to draft");
+      setTimeout(() => setToast(""), 4000);
+      load();
+    } finally { setBusy(false); }
+  }
+
   async function markVoucherPaid(v: PayrollVoucher) {
     await supabase.from("payroll_vouchers").update({ status: "PAID", paid_at: new Date().toISOString() }).eq("id", v.id);
     const remaining = vouchers.filter(x => x.id !== v.id && x.status !== "PAID").length;
@@ -293,7 +424,21 @@ export default function PayrollRunDetailPage() {
             {is13th && " · 13th month (EPF + PCB only; Orang Asli excluded)"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Once finalized, raise the real payment vouchers so payroll goes
+              through the GM and the signatories like any other payment. */}
+          {!isDraft && user?.isFinanceAdmin && vouchers.length > 0 && !allPvsGenerated && (
+            <button onClick={generatePVs} disabled={busy}
+              className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">
+              <FileText size={15} /> {busy ? "Generating…" : "Generate PV"}
+            </button>
+          )}
+          {!isDraft && user?.isFinanceAdmin && (
+            <button onClick={() => { setRevertReason(""); setShowRevert(true); }} disabled={busy}
+              className="flex items-center gap-1.5 border border-amber-400 text-amber-700 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-amber-50 disabled:opacity-50">
+              <RotateCcw size={15} /> Revert to Draft
+            </button>
+          )}
           {rowCount > 0 && (
             <button onClick={() => setShowSendPayslip(true)}
               className="flex items-center gap-1.5 border border-green-600 text-green-700 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-green-50">
@@ -458,6 +603,69 @@ export default function PayrollRunDetailPage() {
         <SendPayslipModal run={run} rows={payslipRows} onClose={() => setShowSendPayslip(false)} />
       )}
 
+      {/* ── Revert a finalized run ─────────────────────────────────────── */}
+      {showRevert && (() => {
+        const linked = vouchers.filter(v => v.pv_id);
+        const paid = vouchers.filter(v => v.status === "PAID");
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
+            onClick={() => !busy && setShowRevert(false)}>
+            <div onClick={e => e.stopPropagation()}
+              className="w-full max-w-md overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-[0_24px_70px_rgba(22,51,94,0.28)]">
+              <div className="border-b border-amber-100 bg-amber-50 px-5 py-4">
+                <h2 className="text-base font-bold text-stone-800">Revert {MONTH_LABELS[run.month]} {run.year} to draft?</h2>
+                <p className="mt-0.5 text-xs text-stone-600">
+                  The figures become editable again and the run has to be finalized afresh.
+                </p>
+              </div>
+
+              <div className="space-y-3 px-5 py-4">
+                {linked.length > 0 && (
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800 leading-relaxed">
+                    <div className="font-semibold">
+                      {linked.length} payment voucher{linked.length === 1 ? "" : "s"} will be cancelled
+                    </div>
+                    <div className="mt-1">
+                      {linked.map(v => v.pv_no).filter(Boolean).join(", ")} — including any already with the
+                      General Manager or the signatories. They would otherwise sit mid-approval against
+                      figures that no longer stand.
+                    </div>
+                  </div>
+                )}
+                {paid.length > 0 && (
+                  <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-xs text-red-700 leading-relaxed">
+                    <strong>{paid.length} voucher{paid.length === 1 ? " is" : "s are"} already marked paid.</strong> A paid
+                    voucher cannot be cancelled, so the revert will stop rather than pretend the money
+                    was not sent. Cancel or reverse the payment first.
+                  </div>
+                )}
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-stone-600">Reason (optional)</label>
+                  <textarea
+                    value={revertReason}
+                    onChange={e => setRevertReason(e.target.value)}
+                    autoFocus
+                    placeholder="e.g. Adeline's allowance was wrong"
+                    className="h-20 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+                  <p className="mt-1 text-[11px] text-stone-400">Recorded in the audit trail and on each cancelled PV.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 border-t border-stone-100 bg-stone-50 px-5 py-4">
+                <button onClick={() => revertRun(revertReason.trim())} disabled={busy}
+                  className="flex-1 rounded-xl bg-amber-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-50">
+                  {busy ? "Reverting…" : "Revert to draft"}
+                </button>
+                <button onClick={() => setShowRevert(false)} disabled={busy}
+                  className="rounded-xl border border-stone-300 px-5 py-2.5 text-sm font-medium text-stone-600 transition-colors hover:bg-white disabled:opacity-50">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Vouchers (after finalize) */}
       {!isDraft && vouchers.length > 0 && (
         <div className="bg-white border border-stone-200 rounded-2xl p-5">
@@ -466,10 +674,19 @@ export default function PayrollRunDetailPage() {
             {vouchers.map(v => (
               <div key={v.id} className="flex items-center gap-3 px-3 py-2 border border-stone-100 rounded-xl">
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{v.kind}</span>
-                <span className="text-sm text-stone-700 flex-1">{v.payee}</span>
+                <span className="text-sm text-stone-700 flex-1 min-w-0">
+                  {v.payee}
+                  {/* Where the raised PV has got to in the approval chain. */}
+                  {v.pv_no && (
+                    <a href={v.pv_id ? `/my-pvs/${v.pv_id}` : "#"}
+                      className="ml-2 text-[11px] font-mono text-[#4a6da7] hover:underline">{v.pv_no}</a>
+                  )}
+                </span>
                 <span className="text-sm font-bold text-stone-800 font-mono">{formatCurrency(v.total_amount)}</span>
                 {v.status === "PAID" ? (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Paid</span>
+                ) : !v.pv_id ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">No PV yet</span>
                 ) : user?.isFinanceAdmin ? (
                   <button onClick={() => markVoucherPaid(v)} className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700">
                     <Banknote size={11} /> Mark Paid
@@ -478,7 +695,12 @@ export default function PayrollRunDetailPage() {
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-stone-400 mt-3">Salary voucher = total net to staff. Statutory vouchers = employee + employer contributions per body. Printable PDFs come in Phase 6.</p>
+          <p className="text-[11px] text-stone-400 mt-3">
+            Salary voucher = total net to staff. Statutory vouchers = employee + employer contributions per body.
+            {allPvsGenerated
+              ? " Payment vouchers have been raised and are going through the normal approval chain."
+              : " Use Generate PV to send these for GM and signatory approval."}
+          </p>
         </div>
       )}
 

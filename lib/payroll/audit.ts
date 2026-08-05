@@ -7,7 +7,10 @@ export type PayrollAuditAction =
   | "EMPLOYEE_CREATED" | "EMPLOYEE_UPDATED" | "EMPLOYEE_DELETED" | "SALARY_CHANGE"
   | "DOC_UPLOAD" | "DOC_UPDATE" | "DOC_DELETE"
   | "LOAN_APPLIED" | "LOAN_SIGNED" | "LOAN_REJECTED" | "LOAN_APPROVED_LEGACY"
-  | "RUN_FINALIZED" | "VOUCHER_PAID" | "BANK_EXPORT" | "PAYSLIPS_SENT";
+  | "RUN_FINALIZED" | "VOUCHER_PAID" | "BANK_EXPORT" | "PAYSLIPS_SENT"
+  // Raising the run's payment vouchers for approval, and unwinding a run —
+  // both change what has been committed, so both belong in the trail.
+  | "PVS_GENERATED" | "RUN_REVERTED";
 
 export async function logPayrollAudit(
   supabase: SupabaseClient,

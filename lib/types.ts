@@ -425,6 +425,12 @@ export interface PayrollRun {
   created_by: string;
   finalized_at: string | null;
   created_at: string;
+  // Set once the run's payment vouchers have been raised for approval.
+  pvs_generated_at?: string | null;
+  pvs_generated_by?: string | null;
+  reverted_at?: string | null;
+  reverted_by?: string | null;
+  revert_reason?: string | null;
 }
 
 export interface CustomPayrollItem {
@@ -475,6 +481,13 @@ export interface PayrollVoucher {
   paid_at: string | null;
   payment_ref: string;
   created_at: string;
+  // The payment voucher raised from this payroll voucher, so the run can be
+  // reverted and its PVs cancelled rather than left orphaned mid-approval.
+  pv_id?: string | null;
+  pv_no?: string | null;
+  pv_status?: string | null;
+  generated_at?: string | null;
+  generated_by?: string | null;
 }
 
 export type LoanStatus = "PENDING" | "ACTIVE" | "SETTLED" | "REJECTED" | "CANCELLED";
