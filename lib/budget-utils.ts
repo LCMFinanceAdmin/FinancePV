@@ -147,10 +147,15 @@ export async function getBudgetImpact(
   // Pulled per ministry rather than per project, so the same two queries give
   // both the specific budget line and the ministry-wide position.
   const [{ data: items }, { data: pvs }] = await Promise.all([
+    // Budgets are year-scoped, and a decision is always made against the year
+    // currently in force. Proposal lines awaiting the Treasurer are excluded —
+    // they aren't budget yet.
     supabase
       .from("budget_items")
       .select("project_name, estimated_income, estimated_expenses")
-      .eq("ministry", ministry),
+      .eq("ministry", ministry)
+      .eq("year", new Date().getFullYear())
+      .is("proposal_id", null),
     supabase
       .from("pvs")
       .select("id, amount, status, project")

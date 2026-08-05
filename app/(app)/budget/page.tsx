@@ -4,9 +4,13 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import {
-  Plus, Pencil, Trash2, X as XIcon,
+  Plus, Pencil, Trash2, X as XIcon, Printer,
   Clock, CheckCircle, XCircle, AlertCircle,
 } from "lucide-react";
+import {
+  budgetReportHtml, bucketForMonth, PERIOD_LABELS,
+  type BudgetPeriod, type ReportLine,
+} from "@/components/budget/budget-report-html";
 
 const MINISTRIES = [
   "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
@@ -31,6 +35,9 @@ interface BudgetItem {
   special_notes: string;
   document_url: string | null;
   document_name: string | null;
+  year?: number;
+  parent_id?: string | null;   // set on a sub-project / sub-item
+  proposal_id?: string | null; // set while awaiting the Treasurer
   spent?: number;         // APPROVED + PAID PVs
   pending?: number;       // in-flight PVs (PENDING_HEAD → PENDING_SIGNATORY)
   pendingCount?: number;  // number of in-flight PVs
@@ -96,6 +103,12 @@ function BudgetInner() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BudgetItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Budgets are year-scoped: the current year is live, next year is where a
+  // proposal is drafted, and earlier years stay readable for comparison.
+  const CURRENT_YEAR = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
+  const [reportPeriod, setReportPeriod] = useState<BudgetPeriod>("QUARTERLY");
+  const [buildingReport, setBuildingReport] = useState(false);
 
   // Item modal
   const [itemModal, setItemModal] = useState<{ mode: "add" | "edit"; item?: BudgetItem } | null>(null);
@@ -148,11 +161,15 @@ function BudgetInner() {
     }
   }
 
-  async function loadBudgetData(ministry: string) {
+  async function loadBudgetData(ministry: string, year: number = selectedYear) {
     const IN_FLIGHT = ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"];
     const [{ data: items }, { data: allPvs }, { data: requests }] = await Promise.all([
-      supabase.from("budget_items").select("*").eq("ministry", ministry).order("project_name"),
-      supabase.from("pvs").select("project, amount, status")
+      // Live lines only for the selected year: rows still attached to a
+      // proposal are awaiting the Treasurer and must not count as budget.
+      supabase.from("budget_items").select("*")
+        .eq("ministry", ministry).eq("year", year).is("proposal_id", null)
+        .order("project_name"),
+      supabase.from("pvs").select("project, amount, status, date, submitted_at")
         .eq("ministry", ministry)
         .not("status", "in", `(${["CANCELLED", "REJECTED", "REJECTED_HEAD"].map(s => `"${s}"`).join(",")})`),
       supabase.from("budget_change_requests").select("*").eq("ministry", ministry).order("requested_at", { ascending: false }),
@@ -193,7 +210,7 @@ function BudgetInner() {
   }
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (selectedMinistry) loadBudgetData(selectedMinistry); }, [selectedMinistry]);
+  useEffect(() => { if (selectedMinistry) loadBudgetData(selectedMinistry, selectedYear); }, [selectedMinistry, selectedYear]);
 
   function openAddModal() {
     setItemForm({ ...emptyForm });
@@ -254,7 +271,7 @@ function BudgetInner() {
           if (error) { showToast("Error: " + error.message, false); return; }
           showToast("Project updated");
         } else {
-          const { error } = await supabase.from("budget_items").insert({ ...payload, ministry: selectedMinistry, created_by: userEmail });
+          const { error } = await supabase.from("budget_items").insert({ ...payload, ministry: selectedMinistry, year: selectedYear, created_by: userEmail });
           if (error) { showToast("Error: " + error.message, false); return; }
           showToast("Project added");
         }
@@ -276,6 +293,67 @@ function BudgetInner() {
       await loadBudgetData(selectedMinistry);
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Opens the printable Budget vs Actual report. Actuals are re-fetched with
+  // dates so each voucher lands in the right period, which the page's own
+  // aggregate figures don't carry.
+  async function openBudgetReport() {
+    setBuildingReport(true);
+    try {
+      const [{ data: items }, { data: pvs }] = await Promise.all([
+        supabase.from("budget_items").select("*")
+          .eq("ministry", selectedMinistry).eq("year", selectedYear).is("proposal_id", null)
+          .order("project_name"),
+        supabase.from("pvs").select("project, amount, status, date, submitted_at")
+          .eq("ministry", selectedMinistry)
+          .in("status", ["APPROVED", "PAID"]),
+      ]);
+
+      const buckets = PERIOD_LABELS[reportPeriod].length;
+      const rows = (items ?? []) as BudgetItem[];
+
+      // Nest sub-items under their parent so the report reads as a hierarchy.
+      const byId = new Map(rows.map(r => [r.id, r]));
+      const ordered: { row: BudgetItem; isChild: boolean }[] = [];
+      for (const r of rows.filter(r => !r.parent_id)) {
+        ordered.push({ row: r, isChild: false });
+        for (const c of rows.filter(c => c.parent_id === r.id)) ordered.push({ row: c, isChild: true });
+      }
+      // Any orphan whose parent isn't in this year still has to appear.
+      for (const r of rows) {
+        if (r.parent_id && !byId.has(r.parent_id)) ordered.push({ row: r, isChild: true });
+      }
+
+      const lines: ReportLine[] = ordered.map(({ row, isChild }) => {
+        const actuals = new Array(buckets).fill(0);
+        for (const pv of (pvs ?? []) as { project: string | null; amount: number; date: string | null; submitted_at: string | null }[]) {
+          if ((pv.project ?? "").trim().toLowerCase() !== row.project_name.trim().toLowerCase()) continue;
+          const when = new Date(pv.date || pv.submitted_at || "");
+          if (isNaN(when.getTime()) || when.getFullYear() !== selectedYear) continue;
+          actuals[bucketForMonth(when.getMonth(), reportPeriod)] += pv.amount || 0;
+        }
+        return {
+          project_name: row.project_name,
+          description: row.description ?? null,
+          type: (row.project_type ?? "expense") as "income" | "expense",
+          annualBudget: (row.estimated_income || 0) + (row.estimated_expenses || 0),
+          actuals,
+          isChild,
+        };
+      });
+
+      const html = budgetReportHtml({
+        ministry: selectedMinistry, year: selectedYear, period: reportPeriod,
+        lines, preparedBy: userEmail,
+      });
+      const win = window.open("", "_blank");
+      if (!win) { showToast("Allow pop-ups to open the report", false); return; }
+      win.document.write(html);
+      win.document.close();
+    } finally {
+      setBuildingReport(false);
     }
   }
 
@@ -315,6 +393,7 @@ function BudgetInner() {
         const { error } = await supabase.from("budget_items").insert({
           ...req.proposed_data,
           ministry: req.ministry,
+          year: selectedYear,
           created_by: req.requested_by,
         });
         if (error) { showToast("Error applying: " + error.message, false); return; }
@@ -385,17 +464,63 @@ function BudgetInner() {
       )}
 
       {/* Header */}
-      <div>
-        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Stewardship overview</div>
-        <h1 className="text-2xl font-bold text-stone-800">Ministry Budget</h1>
-        <p className="text-sm text-stone-400">
-          {canDirectEdit
-            ? "Manage budgets across all ministries"
-            : canApproveRequests
-            ? "View budgets and approve change requests"
-            : "View and request changes to your ministry budget"}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Stewardship overview</div>
+          <h1 className="text-2xl font-bold text-stone-800">Ministry Budget</h1>
+          <p className="text-sm text-stone-400">
+            {canDirectEdit
+              ? "Manage budgets across all ministries"
+              : canApproveRequests
+              ? "View budgets and approve change requests"
+              : "View and request changes to your ministry budget"}
+          </p>
+        </div>
+
+        {/* Year, period and the printable report */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedYear}
+            onChange={e => setSelectedYear(Number(e.target.value))}
+            title="Budget year"
+            className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-[#4a6da7]">
+            {[CURRENT_YEAR + 1, CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2].map(y => (
+              <option key={y} value={y}>
+                {y}{y === CURRENT_YEAR ? " (current)" : y === CURRENT_YEAR + 1 ? " (next)" : ""}
+              </option>
+            ))}
+          </select>
+          <select
+            value={reportPeriod}
+            onChange={e => setReportPeriod(e.target.value as BudgetPeriod)}
+            title="Report breakdown"
+            className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-[#4a6da7]">
+            <option value="MONTHLY">Monthly</option>
+            <option value="QUARTERLY">Quarterly</option>
+            <option value="BIANNUAL">Half-yearly</option>
+            <option value="YEARLY">Yearly</option>
+          </select>
+          <button
+            onClick={openBudgetReport}
+            disabled={buildingReport || !selectedMinistry}
+            className="flex items-center gap-1.5 rounded-xl bg-[#4a6da7] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3d5a8e] disabled:opacity-50">
+            <Printer size={14} /> {buildingReport ? "Preparing…" : "Print / PDF"}
+          </button>
+        </div>
       </div>
+
+      {/* Looking at a year other than the live one — say so, since the figures
+          below are not the budget currently in force. */}
+      {selectedYear !== CURRENT_YEAR && (
+        <div className={`rounded-2xl border px-4 py-3 text-sm ${
+          selectedYear > CURRENT_YEAR
+            ? "border-violet-200 bg-violet-50 text-violet-800"
+            : "border-stone-200 bg-stone-50 text-stone-600"}`}>
+          {selectedYear > CURRENT_YEAR
+            ? <>You are viewing <strong>{selectedYear}</strong> — next year&apos;s budget. Lines added here form the proposal the Treasurer approves at the EXCO meeting.</>
+            : <>You are viewing <strong>{selectedYear}</strong>, a past year. These figures are for reference only.</>}
+        </div>
+      )}
 
       {/* Ministry tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
