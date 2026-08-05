@@ -11,7 +11,11 @@ import {
   ChevronDown, ChevronRight, CheckCircle2, History,
   Search, Folder, FolderOpen, ChevronUp, FileText, RotateCcw,
   AlertTriangle, CalendarDays, Layers, LayoutList, BookOpen, ArrowRight, Check,
+  PlayCircle, Clock,
 } from "lucide-react";
+import {
+  periodsForYear, currentPeriod, periodVoucherDate, type PeriodOption,
+} from "@/lib/recurring-periods";
 
 const MALAYSIA_BANKS = [
   "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
@@ -206,6 +210,18 @@ function isExpiredItem(item: RecurringPV) {
     && new Date(item.next_due) > new Date(item.term_end_date);
 }
 
+interface RecurringRun {
+  id: string;
+  recurring_id: string;
+  period_key: string;
+  period_label: string;
+  pv_id: string | null;
+  pv_no: string | null;
+  amount: number;
+  run_by: string | null;
+  created_at: string;
+}
+
 function isAlreadyRunThisPeriod(item: RecurringPV): boolean {
   if (!item.last_run) return false;
   const lastRun = new Date(item.last_run);
@@ -240,6 +256,15 @@ export default function RecurringPage() {
     initialTab && ["LCM","BAM","LSC","HLE"].includes(initialTab) ? initialTab : "LCM"
   );
   const [items, setItems] = useState<RecurringPV[]>([]);
+  // Period processing: keyed `${recurringId}|${periodKey}`.
+  const [runsByPeriod, setRunsByPeriod] = useState<Record<string, RecurringRun>>({});
+  // Which period each frequency folder is looking at; defaults to the one
+  // containing today, and remembered per frequency while on the page.
+  const [periodByFreq, setPeriodByFreq] = useState<Record<string, PeriodOption>>({});
+  const [periodRunFreq, setPeriodRunFreq] = useState<string | null>(null);
+  const [periodRunSelected, setPeriodRunSelected] = useState<Set<string>>(new Set());
+  const [periodRunning, setPeriodRunning] = useState(false);
+  const [periodProgress, setPeriodProgress] = useState<{ done: number; total: number; errors: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [isBuildingManager, setIsBuildingManager] = useState(false);
   const [form, setForm] = useState<FormState>({ ...BLANK_FORM });
@@ -306,12 +331,19 @@ export default function RecurringPage() {
 
     const recQuery = supabase.from("recurring_pvs").select("*").order("name");
 
-    const [{ data: rec }, { data: min }, { data: proj }, { data: folders }] = await Promise.all([
+    const [{ data: rec }, { data: min }, { data: proj }, { data: folders }, { data: runs }] = await Promise.all([
       recQuery,
       supabase.from("ministries").select("name").order("name"),
       supabase.from("projects").select("name,ministry").order("name"),
       supabase.from("recurring_folders").select("id,pv_type,frequency,path"),
+      // Which item has been processed for which period — the answer to
+      // "has August's electricity PV been raised yet?"
+      supabase.from("recurring_runs").select("*"),
     ]);
+
+    const runMap: Record<string, RecurringRun> = {};
+    for (const r of (runs ?? []) as RecurringRun[]) runMap[`${r.recurring_id}|${r.period_key}`] = r;
+    setRunsByPeriod(runMap);
     setItems((rec ?? []).map((r: RecurringPV) => ({ ...r, line_items: r.line_items ?? [], group_name: r.group_name || "General" })));
     setEmptyFolders((folders ?? []) as { id: string; pv_type: string; frequency: string; path: string }[]);
     setMinistries((min ?? []).map((m: { name: string }) => m.name));
@@ -1097,6 +1129,121 @@ export default function RecurringPage() {
     return d.toLocaleDateString("en-MY", { month: "short", year: "numeric" });
   }
 
+  // ── Period processing ────────────────────────────────────────────────────
+  /** The period a frequency folder is currently looking at. */
+  function periodFor(freq: string): PeriodOption {
+    return periodByFreq[freq] ?? currentPeriod(freq);
+  }
+  function setPeriod(freq: string, period: PeriodOption) {
+    setPeriodByFreq(p => ({ ...p, [freq]: period }));
+  }
+
+  function openPeriodRun(freq: string) {
+    const period = periodFor(freq);
+    const freqItems = items.filter(i =>
+      i.frequency === freq && i.active &&
+      ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab);
+    // Pre-select only what still needs doing, so the common case is one click.
+    setPeriodRunSelected(new Set(
+      freqItems.filter(i => !runsByPeriod[`${i.id}|${period.key}`] && !isExpiredItem(i)).map(i => i.id)
+    ));
+    setPeriodProgress(null);
+    setPeriodRunFreq(freq);
+  }
+
+  /**
+   * Raises a PV per selected item *for the chosen period*, stamping the period
+   * on the voucher and dating it to the start of that period — so an August
+   * bill raised in October still reads and reports as August.
+   */
+  async function runPeriod() {
+    if (!periodRunFreq) return;
+    const period = periodFor(periodRunFreq);
+    const chosen = items.filter(i => periodRunSelected.has(i.id));
+    const todo = chosen.filter(i => !runsByPeriod[`${i.id}|${period.key}`]);
+    if (!todo.length) { showMsg(`Everything selected is already processed for ${period.label}`, false); return; }
+
+    setPeriodRunning(true);
+    setPeriodProgress({ done: 0, total: todo.length, errors: [] });
+    const { data: { user } } = await supabase.auth.getUser();
+    const session = (await supabase.auth.getSession()).data.session;
+    const pvDate = periodVoucherDate(period);
+    const errors: string[] = [];
+
+    for (const item of todo) {
+      try {
+        const lineItems = item.line_items?.length
+          ? item.line_items.map(li => ({ date: pvDate, description: `${li.description} — ${period.label}`, amount: li.amount }))
+          : [{ date: pvDate, description: `${item.name} — ${period.label}`, amount: item.amount }];
+        // Stated on the voucher itself, so whoever approves or files it can
+        // see which period it settles without cross-referencing.
+        const purpose = `${item.purpose || item.name} (for ${period.label})`;
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            applicant_email: user?.email, applicant_name: user?.email,
+            payee_name: item.payee_name, payee_bank_name: item.payee_bank_name,
+            payee_bank_acct: item.payee_bank_acct, payment_method: item.payment_method,
+            biller_code: item.biller_code, ref_no: item.ref_no, ref_no_2: item.ref_no_2, cheque_no: item.cheque_no,
+            ministry: item.ministry, dept: item.dept, project: item.project,
+            purpose, pv_label: item.pv_label, amount: item.amount,
+            payment_type: item.payment_type, line_items: lineItems, pvDate,
+            sig_applicant_name: user?.email, sig_applicant_confirm: true, recurring_id: item.id,
+            pv_type: (item as RecurringPV & { pv_type?: string }).pv_type || "LCM",
+          }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error ?? "Failed");
+
+        const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
+        const newPvId = pvRow?.id ?? null;
+
+        // The unique key on (recurring_id, period_key) is what stops a period
+        // being processed twice, even if two people run it at once.
+        const { data: runRow, error: runErr } = await supabase.from("recurring_runs").insert({
+          recurring_id: item.id, period_key: period.key, period_label: period.label,
+          pv_id: newPvId, pv_no: result.pv_no, amount: item.amount, run_by: user?.email ?? null,
+        }).select().single();
+        if (runErr) throw new Error(`PV ${result.pv_no} raised but not recorded: ${runErr.message}`);
+
+        setRunsByPeriod(prev => ({ ...prev, [`${item.id}|${period.key}`]: runRow as RecurringRun }));
+        await supabase.from("recurring_pvs").update({
+          last_run: pvDate, next_due: calcNextDue(item.frequency),
+          current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD",
+          current_pv_id: newPvId, current_period: period.label,
+        }).eq("id", item.id);
+        setItems(is => is.map(i => i.id === item.id ? {
+          ...i, last_run: pvDate, current_pv_no: result.pv_no,
+          current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period.label,
+        } : i));
+      } catch (err: unknown) {
+        errors.push(`${item.name}: ${err instanceof Error ? err.message : "failed"}`);
+      }
+      setPeriodProgress(p => p ? { ...p, done: p.done + 1, errors } : p);
+    }
+
+    setPeriodRunning(false);
+    const ok = todo.length - errors.length;
+    if (ok > 0) showMsg(`${ok} voucher${ok === 1 ? "" : "s"} raised for ${period.label}`);
+    if (errors.length) showMsg(`${errors.length} failed — see the list`, false);
+  }
+
+  /** Undo a period entry so it can be processed again after a bad PV. */
+  async function clearPeriodRun(itemId: string, periodKey: string) {
+    const run = runsByPeriod[`${itemId}|${periodKey}`];
+    if (!run) return;
+    const { error } = await supabase.from("recurring_runs").delete().eq("id", run.id);
+    if (error) { showMsg(error.message, false); return; }
+    setRunsByPeriod(prev => {
+      const next = { ...prev };
+      delete next[`${itemId}|${periodKey}`];
+      return next;
+    });
+    showMsg(`Cleared — ${run.period_label} can be processed again. Cancel PV ${run.pv_no} if it isn't needed.`);
+  }
+
   // --- Batch run ---
   async function runBatch() {
     const allSelected = items.filter(i => selected.has(i.id));
@@ -1500,6 +1647,183 @@ export default function RecurringPage() {
         </div>
       )}
 
+
+      {/* ── Run a period ─────────────────────────────────────────────────
+          Pick the period, tick what to raise, and every voucher comes out
+          stamped for that period. */}
+      {periodRunFreq && (() => {
+        const freq = periodRunFreq;
+        const period = periodFor(freq);
+        const list = items
+          .filter(i => i.frequency === freq && i.active &&
+            ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab)
+          .sort((a, b) => (a.group_name || "").localeCompare(b.group_name || "") || a.name.localeCompare(b.name));
+        const done = list.filter(i => runsByPeriod[`${i.id}|${period.key}`]);
+        const outstanding = list.filter(i => !runsByPeriod[`${i.id}|${period.key}`]);
+        const selectedTotal = list.filter(i => periodRunSelected.has(i.id)).reduce((s, i) => s + i.amount, 0);
+        const years = [period.year - 1, period.year, period.year + 1];
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
+            onClick={() => !periodRunning && setPeriodRunFreq(null)}>
+            <div onClick={e => e.stopPropagation()}
+              className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-[#dbe9fb] bg-white shadow-[0_24px_70px_rgba(22,51,94,0.28)]">
+
+              <div className="flex items-start justify-between gap-3 border-b border-stone-200 bg-[#f4f9ff] px-5 py-4">
+                <div>
+                  <h2 className="text-base font-bold text-stone-800">Run {FREQ_DISPLAY[freq]} expenses</h2>
+                  <p className="mt-0.5 text-xs text-stone-500">
+                    Vouchers are raised for the period you choose and dated to it — so catching up later still files correctly.
+                  </p>
+                </div>
+                <button onClick={() => setPeriodRunFreq(null)} disabled={periodRunning}
+                  className="text-stone-400 transition-colors hover:text-stone-600 disabled:opacity-40">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Period picker */}
+              <div className="flex flex-wrap items-center gap-2 border-b border-stone-100 px-5 py-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-stone-500">Period</span>
+                <select
+                  value={period.year}
+                  disabled={periodRunning}
+                  onChange={e => {
+                    const y = Number(e.target.value);
+                    const opts = periodsForYear(freq, y);
+                    const match = opts.find(o => o.startMonth === period.startMonth) ?? opts[0];
+                    setPeriod(freq, match);
+                    setPeriodRunSelected(new Set(
+                      list.filter(i => !runsByPeriod[`${i.id}|${match.key}`] && !isExpiredItem(i)).map(i => i.id)));
+                  }}
+                  className="rounded-lg border border-stone-200 px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]">
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <select
+                  value={period.key}
+                  disabled={periodRunning}
+                  onChange={e => {
+                    const opt = periodsForYear(freq, period.year).find(o => o.key === e.target.value);
+                    if (!opt) return;
+                    setPeriod(freq, opt);
+                    setPeriodRunSelected(new Set(
+                      list.filter(i => !runsByPeriod[`${i.id}|${opt.key}`] && !isExpiredItem(i)).map(i => i.id)));
+                  }}
+                  className="rounded-lg border border-stone-200 px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]">
+                  {periodsForYear(freq, period.year).map(o => (
+                    <option key={o.key} value={o.key}>{o.label}</option>
+                  ))}
+                </select>
+                <span className={`ml-auto inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${
+                  outstanding.length === 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : "bg-amber-50 text-amber-800 border-amber-200"}`}>
+                  {outstanding.length === 0 ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                  {done.length}/{list.length} processed
+                </span>
+              </div>
+
+              {/* Items */}
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+                {outstanding.length > 0 && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <button
+                      onClick={() => setPeriodRunSelected(new Set(outstanding.filter(i => !isExpiredItem(i)).map(i => i.id)))}
+                      className="rounded-lg border border-stone-200 px-2.5 py-1 text-xs text-stone-600 hover:bg-stone-50">
+                      Select all outstanding
+                    </button>
+                    <button onClick={() => setPeriodRunSelected(new Set())}
+                      className="rounded-lg border border-stone-200 px-2.5 py-1 text-xs text-stone-600 hover:bg-stone-50">
+                      Clear
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  {list.map(item => {
+                    const run = runsByPeriod[`${item.id}|${period.key}`];
+                    const expired = isExpiredItem(item);
+                    const checked = periodRunSelected.has(item.id);
+                    return (
+                      <div key={item.id}
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                          run ? "border-emerald-200 bg-emerald-50/60"
+                          : expired ? "border-stone-200 bg-stone-50 opacity-60"
+                          : checked ? "border-[#75a8f2] bg-[#edf6ff]" : "border-stone-200 bg-white"}`}>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 shrink-0 accent-[#4a6da7]"
+                          checked={checked}
+                          disabled={!!run || expired || periodRunning}
+                          onChange={e => setPeriodRunSelected(prev => {
+                            const n = new Set(prev);
+                            e.target.checked ? n.add(item.id) : n.delete(item.id);
+                            return n;
+                          })}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-stone-800">{item.name}</div>
+                          <div className="truncate text-xs text-stone-400">
+                            {item.payee_name}{item.group_name ? ` · ${item.group_name}` : ""}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-sm font-bold text-stone-800">{formatCurrency(item.amount)}</div>
+                          {run ? (
+                            <div className="mt-0.5 flex items-center justify-end gap-1.5">
+                              <span className="text-[11px] font-semibold text-emerald-700">✓ {run.pv_no}</span>
+                              <button
+                                onClick={() => clearPeriodRun(item.id, period.key)}
+                                title="Clear this period so it can be raised again"
+                                className="text-stone-300 transition-colors hover:text-red-500">
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ) : expired ? (
+                            <div className="mt-0.5 text-[11px] text-stone-400">Term ended</div>
+                          ) : (
+                            <div className="mt-0.5 text-[11px] text-stone-400">Not raised</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {list.length === 0 && (
+                    <div className="py-8 text-center text-sm text-stone-400">Nothing set up for this frequency yet</div>
+                  )}
+                </div>
+
+                {periodProgress && periodProgress.errors.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+                    <div className="text-xs font-semibold text-red-700">{periodProgress.errors.length} failed</div>
+                    <ul className="mt-1 space-y-0.5 text-[11px] text-red-600">
+                      {periodProgress.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 border-t border-stone-200 bg-stone-50 px-5 py-4">
+                <div className="min-w-0 flex-1 text-xs text-stone-500">
+                  {periodRunning && periodProgress
+                    ? <>Raising vouchers… {periodProgress.done} / {periodProgress.total}</>
+                    : <><strong className="text-stone-700">{periodRunSelected.size}</strong> selected · {formatCurrency(selectedTotal)}</>}
+                </div>
+                <button onClick={() => setPeriodRunFreq(null)} disabled={periodRunning}
+                  className="rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-medium text-stone-600 hover:bg-white disabled:opacity-50">
+                  Close
+                </button>
+                <button
+                  onClick={runPeriod}
+                  disabled={periodRunning || periodRunSelected.size === 0}
+                  className="flex items-center gap-1.5 rounded-xl bg-[#4a6da7] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#3d5a8e] disabled:opacity-40">
+                  <PlayCircle size={15} />
+                  {periodRunning ? "Running…" : `Raise ${periodRunSelected.size} for ${period.label}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Batch progress */}
       {batchProgress && (batchRunning || batchProgress.errors.length > 0) && (
@@ -2154,40 +2478,56 @@ export default function RecurringPage() {
                   const freqTotal = freqItems.length;
                   const totalAmt = freqItems.reduce((s, i) => s + i.amount, 0);
                   const nextDue = freqItems.map(i => i.next_due).filter(Boolean).sort()[0];
-                  const atRiskCount = freqItems.filter(i => statAtRiskIds.has(i.id)).length;
-                  const dueCount = freqItems.filter(i => statDueIn7Ids.has(i.id)).length;
-                  const readyCount = freqItems.filter(i => statReadyIds.has(i.id)).length;
+                  // How much of the period in view has actually been raised.
+                  // "At risk" and "due soon" were noise on this row — what a
+                  // Finance Executive needs to know is whether this month's
+                  // bills are done.
+                  const period = periodFor(freq);
+                  const doneIds = freqItems.filter(i => runsByPeriod[`${i.id}|${period.key}`]).length;
+                  const allDone = freqTotal > 0 && doneIds === freqTotal;
                   return (
-                    <button key={freq} onClick={() => { setNavFreq(freq); setNavFolder(null); }}
-                      className="w-full flex items-center gap-4 px-5 py-4 bg-white border border-stone-200 rounded-2xl hover:border-stone-300 hover:shadow-sm text-left transition-all group">
-                      <div className={`w-1.5 h-10 rounded-full shrink-0 ${tab.color}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-stone-800">{FREQ_DISPLAY[freq]}</div>
-                        <div className="text-xs text-stone-400 mt-0.5">{freqTotal} recurring payment{freqTotal !== 1 ? "s" : ""}</div>
+                    <div key={freq}
+                      className="w-full flex flex-wrap items-center gap-3 px-5 py-4 bg-white border border-stone-200 rounded-2xl hover:border-stone-300 hover:shadow-sm transition-all group">
+                      <button onClick={() => { setNavFreq(freq); setNavFolder(null); }}
+                        className="flex items-center gap-4 flex-1 min-w-0 text-left">
+                        <div className={`w-1.5 h-10 rounded-full shrink-0 ${tab.color}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold text-stone-800">{FREQ_DISPLAY[freq]}</div>
+                          <div className="text-xs text-stone-400 mt-0.5">
+                            {freqTotal} recurring payment{freqTotal !== 1 ? "s" : ""}
+                            {nextDue && <> · next due {formatDate(nextDue)}</>}
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* Progress for the period in view */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                          allDone ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : doneIds > 0 ? "bg-amber-50 text-amber-800 border-amber-200"
+                          : "bg-stone-50 text-stone-500 border-stone-200"}`}>
+                          {allDone ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                          {doneIds}/{freqTotal} done · {period.label}
+                        </span>
                       </div>
-                      <div className="hidden sm:flex items-center gap-1 shrink-0">
-                        {atRiskCount > 0 && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{atRiskCount} at risk
-                          </span>
-                        )}
-                        {dueCount > 0 && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{dueCount} due soon
-                          </span>
-                        )}
-                        {readyCount > 0 && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{readyCount} ready for PV
-                          </span>
-                        )}
-                      </div>
+
                       <div className="text-right shrink-0">
                         <div className="text-sm font-bold text-stone-800">{formatCurrency(totalAmt)}</div>
-                        {nextDue && <div className="text-xs text-stone-400 mt-0.5">Next run {formatDate(nextDue)}</div>}
+                        <div className="text-xs text-stone-400 mt-0.5">per {FREQ_DISPLAY[freq].toLowerCase()} cycle</div>
                       </div>
-                      <ChevronRight size={16} className="text-stone-300 group-hover:text-stone-500 shrink-0 transition-colors" />
-                    </button>
+
+                      <button
+                        onClick={() => openPeriodRun(freq)}
+                        disabled={freqTotal === 0}
+                        className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#4a6da7] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#3d5a8e] disabled:opacity-40">
+                        <PlayCircle size={14} /> Run period
+                      </button>
+
+                      <button onClick={() => { setNavFreq(freq); setNavFolder(null); }}
+                        className="shrink-0 text-stone-300 hover:text-stone-500 transition-colors">
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
