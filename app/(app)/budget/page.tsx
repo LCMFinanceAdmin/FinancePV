@@ -47,6 +47,20 @@ interface BudgetItem {
   availableColor?: "red" | "yellow" | "green";
 }
 
+interface BudgetProposal {
+  id: string;
+  ministry: string;
+  year: number;
+  status: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED";
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  submitted_at: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+}
+
 interface ChangeRequest {
   id: string;
   ministry: string;
@@ -118,12 +132,25 @@ function BudgetInner() {
   const [reviewModal, setReviewModal] = useState<ChangeRequest | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
 
+  // Budget proposals: the EXCO drafts a year, submits it as one package, and
+  // the Treasurer approves it at the EXCO meeting.
+  const [proposal, setProposal] = useState<BudgetProposal | null>(null);
+  const [pendingProposals, setPendingProposals] = useState<BudgetProposal[]>([]);
+  const [proposalBusy, setProposalBusy] = useState(false);
+  const [decisionModal, setDecisionModal] = useState<"APPROVE" | "REJECT" | null>(null);
+  const [decisionNote, setDecisionNote] = useState("");
+
   // Derived permissions
   const isFinanceAdmin = FINANCE_ADMIN_ROLES.includes(userRole);
   const isSeniorRole = SENIOR_ROLES.includes(userRole);
   const canDirectEdit = isFinanceAdmin;
   const canApproveRequests = CAN_APPROVE_ROLES.includes(userRole);
   const visibleMinistries = (isFinanceAdmin || isSeniorRole) ? MINISTRIES : userMinistries;
+  // The Treasurer approves the budget at the EXCO meeting; Finance can act too
+  // so a budget is never stuck if the Treasurer is unavailable.
+  const canDecideProposal = userRole === "TREASURER" || isFinanceAdmin;
+  // A submitted budget is locked while it sits with the Treasurer.
+  const proposalLocked = proposal?.status === "SUBMITTED";
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -163,17 +190,31 @@ function BudgetInner() {
 
   async function loadBudgetData(ministry: string, year: number = selectedYear) {
     const IN_FLIGHT = ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"];
-    const [{ data: items }, { data: allPvs }, { data: requests }] = await Promise.all([
-      // Live lines only for the selected year: rows still attached to a
-      // proposal are awaiting the Treasurer and must not count as budget.
-      supabase.from("budget_items").select("*")
-        .eq("ministry", ministry).eq("year", year).is("proposal_id", null)
-        .order("project_name"),
+
+    // Is this ministry/year still a proposal? If so its lines live under the
+    // proposal rather than as approved budget, and that's what to show.
+    const { data: prop } = await supabase.from("budget_proposals")
+      .select("*").eq("ministry", ministry).eq("year", year).maybeSingle();
+    const activeProposal = prop && prop.status !== "APPROVED" ? (prop as BudgetProposal) : null;
+    setProposal((prop as BudgetProposal) ?? null);
+
+    const itemsQuery = supabase.from("budget_items").select("*")
+      .eq("ministry", ministry).eq("year", year).order("project_name");
+
+    const [{ data: items }, { data: allPvs }, { data: requests }, { data: awaiting }] = await Promise.all([
+      activeProposal
+        ? itemsQuery.eq("proposal_id", activeProposal.id)
+        : itemsQuery.is("proposal_id", null),
       supabase.from("pvs").select("project, amount, status, date, submitted_at")
         .eq("ministry", ministry)
         .not("status", "in", `(${["CANCELLED", "REJECTED", "REJECTED_HEAD"].map(s => `"${s}"`).join(",")})`),
       supabase.from("budget_change_requests").select("*").eq("ministry", ministry).order("requested_at", { ascending: false }),
+      // Every ministry's submitted budgets, so the Treasurer can find them
+      // without hunting ministry by ministry.
+      supabase.from("budget_proposals").select("*").eq("status", "SUBMITTED").order("submitted_at"),
     ]);
+
+    setPendingProposals((awaiting ?? []) as BudgetProposal[]);
 
     const spentMap: Record<string, number> = {};
     const pendingMap: Record<string, number> = {};
@@ -271,7 +312,13 @@ function BudgetInner() {
           if (error) { showToast("Error: " + error.message, false); return; }
           showToast("Project updated");
         } else {
-          const { error } = await supabase.from("budget_items").insert({ ...payload, ministry: selectedMinistry, year: selectedYear, created_by: userEmail });
+          // A line for a future year belongs to that year's proposal until the
+          // Treasurer approves it; current-year lines are live immediately.
+          const draftId = await ensureDraftProposal();
+          const { error } = await supabase.from("budget_items").insert({
+            ...payload, ministry: selectedMinistry, year: selectedYear,
+            proposal_id: draftId, created_by: userEmail,
+          });
           if (error) { showToast("Error: " + error.message, false); return; }
           showToast("Project added");
         }
@@ -293,6 +340,99 @@ function BudgetInner() {
       await loadBudgetData(selectedMinistry);
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * The draft a new line should attach to. Lines for a future year belong to a
+   * proposal rather than being live budget, so the draft is created lazily the
+   * first time someone adds one — no empty proposals from just browsing.
+   */
+  async function ensureDraftProposal(): Promise<string | null> {
+    if (selectedYear <= CURRENT_YEAR) return null;          // current/past years are live budget
+    if (proposal && proposal.status !== "APPROVED") return proposal.id;
+    if (proposal?.status === "APPROVED") return null;       // already approved — edits are live
+    const { data, error } = await supabase.from("budget_proposals").insert({
+      ministry: selectedMinistry, year: selectedYear,
+      status: "DRAFT", created_by: userEmail,
+    }).select().single();
+    if (error) { showToast("Couldn't start the budget proposal: " + error.message, false); return null; }
+    setProposal(data as BudgetProposal);
+    return data.id as string;
+  }
+
+  async function submitProposal() {
+    if (!proposal) return;
+    if (budgetItems.length === 0) {
+      showToast("Add at least one budget line before submitting", false);
+      return;
+    }
+    setProposalBusy(true);
+    try {
+      const { error } = await supabase.from("budget_proposals").update({
+        status: "SUBMITTED", submitted_at: new Date().toISOString(),
+      }).eq("id", proposal.id);
+      if (error) { showToast("Error: " + error.message, false); return; }
+
+      // Tell the people who decide it, not everyone.
+      const { data: approvers } = await supabase.from("user_roles").select("email")
+        .in("role", ["TREASURER", "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]);
+      if (approvers?.length) {
+        const now = new Date().toISOString();
+        await supabase.from("notifications").insert(approvers.map((a: { email: string }) => ({
+          recipient_email: a.email,
+          type: "BUDGET_PROPOSAL",
+          pv_no: `${selectedMinistry} ${selectedYear}`,
+          message: `${selectedMinistry} submitted its ${selectedYear} budget proposal (${formatCurrency(totalBudget)}) for approval at the EXCO meeting.`,
+          read: false, created_at: now,
+        })));
+      }
+      showToast(`${selectedYear} budget submitted for Treasurer approval`);
+      await loadBudgetData(selectedMinistry, selectedYear);
+    } finally {
+      setProposalBusy(false);
+    }
+  }
+
+  async function decideProposal(decision: "APPROVE" | "REJECT") {
+    if (!proposal) return;
+    setProposalBusy(true);
+    try {
+      if (decision === "APPROVE") {
+        // A DB function so the lines go live in the same transaction as the
+        // status change — otherwise a failure between the two would leave the
+        // year either double-budgeted or empty.
+        const { error } = await supabase.rpc("approve_budget_proposal", {
+          proposal: proposal.id,
+          decided_by_email: userEmail,
+          note: decisionNote || null,
+        });
+        if (error) { showToast("Error: " + error.message, false); return; }
+        showToast(`${selectedMinistry} ${selectedYear} budget approved — now live`);
+      } else {
+        if (!decisionNote.trim()) { showToast("Give a reason so the EXCO can revise it", false); return; }
+        const { error } = await supabase.from("budget_proposals").update({
+          status: "REJECTED", decided_by: userEmail,
+          decided_at: new Date().toISOString(), decision_note: decisionNote.trim(),
+        }).eq("id", proposal.id);
+        if (error) { showToast("Error: " + error.message, false); return; }
+        showToast("Sent back to the EXCO for revision");
+      }
+
+      await supabase.from("notifications").insert({
+        recipient_email: proposal.created_by,
+        type: "BUDGET_PROPOSAL",
+        pv_no: `${selectedMinistry} ${selectedYear}`,
+        message: decision === "APPROVE"
+          ? `Your ${selectedYear} budget for ${selectedMinistry} was approved${decisionNote ? `: ${decisionNote}` : ""}.`
+          : `Your ${selectedYear} budget for ${selectedMinistry} was sent back for revision: ${decisionNote.trim()}`,
+        read: false, created_at: new Date().toISOString(),
+      });
+
+      setDecisionModal(null); setDecisionNote("");
+      await loadBudgetData(selectedMinistry, selectedYear);
+    } finally {
+      setProposalBusy(false);
     }
   }
 
@@ -522,6 +662,79 @@ function BudgetInner() {
         </div>
       )}
 
+      {/* Treasurer's cross-ministry view: which budgets are waiting on them. */}
+      {canDecideProposal && pendingProposals.length > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-amber-900">
+            <Clock size={15} /> {pendingProposals.length} budget proposal{pendingProposals.length === 1 ? "" : "s"} awaiting approval
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {pendingProposals.map(p => (
+              <button key={p.id}
+                onClick={() => { setSelectedMinistry(p.ministry); setSelectedYear(p.year); }}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  p.ministry === selectedMinistry && p.year === selectedYear
+                    ? "border-amber-500 bg-amber-200 text-amber-900"
+                    : "border-amber-300 bg-white text-amber-800 hover:bg-amber-100"}`}>
+                {p.ministry} · {p.year}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* This ministry/year's proposal state and the action that moves it on. */}
+      {proposal && proposal.status !== "APPROVED" && (
+        <div className={`rounded-2xl border px-4 py-4 ${
+          proposal.status === "SUBMITTED" ? "border-amber-300 bg-amber-50"
+          : proposal.status === "REJECTED" ? "border-red-300 bg-red-50"
+          : "border-violet-200 bg-violet-50"}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-stone-800">
+                {proposal.status === "DRAFT" && <>Drafting the {proposal.year} budget for {proposal.ministry}</>}
+                {proposal.status === "SUBMITTED" && <>{proposal.year} budget submitted — awaiting Treasurer approval</>}
+                {proposal.status === "REJECTED" && <>{proposal.year} budget sent back for revision</>}
+              </div>
+              <p className="mt-0.5 max-w-xl text-xs text-stone-600">
+                {proposal.status === "DRAFT" && <>These lines aren&apos;t budget yet. Add every project for {proposal.year}, then submit the ministry&apos;s budget as one package for the EXCO meeting.</>}
+                {proposal.status === "SUBMITTED" && <>Locked while the Treasurer reviews it. Submitted {proposal.submitted_at ? new Date(proposal.submitted_at).toLocaleDateString("en-MY") : ""} by {proposal.created_by}.</>}
+                {proposal.status === "REJECTED" && <>Reason: <strong>{proposal.decision_note}</strong> — revise the lines below and submit again.</>}
+              </p>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {/* EXCO submits; only once there is something to submit. */}
+              {(proposal.status === "DRAFT" || proposal.status === "REJECTED") && (
+                <button
+                  onClick={submitProposal}
+                  disabled={proposalBusy || budgetItems.length === 0}
+                  title={budgetItems.length === 0 ? "Add at least one budget line first" : undefined}
+                  className="rounded-xl bg-violet-600 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-700 disabled:opacity-50">
+                  {proposalBusy ? "Submitting…" : `Submit ${proposal.year} budget for approval`}
+                </button>
+              )}
+              {proposal.status === "SUBMITTED" && canDecideProposal && (
+                <>
+                  <button
+                    onClick={() => { setDecisionNote(""); setDecisionModal("APPROVE"); }}
+                    disabled={proposalBusy}
+                    className="rounded-xl bg-green-600 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
+                    ✓ Approve budget
+                  </button>
+                  <button
+                    onClick={() => { setDecisionNote(""); setDecisionModal("REJECT"); }}
+                    disabled={proposalBusy}
+                    className="rounded-xl border border-red-300 bg-white px-3.5 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50">
+                    Send back
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Ministry tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
         {visibleMinistries.map(m => (
@@ -604,7 +817,9 @@ function BudgetInner() {
               </div>
               <button
                 onClick={openAddModal}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors"
+                disabled={proposalLocked}
+                title={proposalLocked ? "Locked while the Treasurer reviews this budget" : undefined}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors disabled:opacity-40 disabled:hover:bg-[#4a6da7]"
               >
                 <Plus size={14} />
                 {canDirectEdit ? "Add Project" : "Request New Project"}
@@ -713,15 +928,17 @@ function BudgetInner() {
                             <div className="flex gap-1 justify-end">
                               <button
                                 onClick={() => openEditModal(item)}
-                                className="p-1.5 rounded hover:bg-stone-200 text-stone-400 hover:text-stone-700 transition-colors"
-                                title={canDirectEdit ? "Edit" : "Request edit"}
+                                disabled={proposalLocked}
+                                className="p-1.5 rounded hover:bg-stone-200 text-stone-400 hover:text-stone-700 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                                title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canDirectEdit ? "Edit" : "Request edit"}
                               >
                                 <Pencil size={13} />
                               </button>
                               <button
                                 onClick={() => setDeleteTarget(item)}
-                                className="p-1.5 rounded hover:bg-red-100 text-stone-400 hover:text-red-600 transition-colors"
-                                title={canDirectEdit ? "Delete" : "Request deletion"}
+                                disabled={proposalLocked}
+                                className="p-1.5 rounded hover:bg-red-100 text-stone-400 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                                title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canDirectEdit ? "Delete" : "Request deletion"}
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -764,6 +981,64 @@ function BudgetInner() {
       )}
 
       {/* ── Add / Edit Item Modal ── */}
+      {/* ── Treasurer's decision on a submitted budget ──────────────────── */}
+      {decisionModal && proposal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
+          onClick={() => !proposalBusy && setDecisionModal(null)}>
+          <div onClick={e => e.stopPropagation()}
+            className="w-full max-w-md overflow-hidden rounded-3xl border border-[#dbe9fb] bg-white shadow-[0_24px_70px_rgba(22,51,94,0.28)]">
+            <div className={`px-5 py-4 ${decisionModal === "APPROVE" ? "bg-green-50 border-b border-green-100" : "bg-red-50 border-b border-red-100"}`}>
+              <h2 className="text-base font-bold text-stone-800">
+                {decisionModal === "APPROVE" ? "Approve this budget?" : "Send back for revision?"}
+              </h2>
+              <p className="mt-0.5 text-xs text-stone-600">
+                {proposal.ministry} · {proposal.year} · {budgetItems.length} line{budgetItems.length === 1 ? "" : "s"} · {formatCurrency(totalBudget)}
+              </p>
+            </div>
+
+            <div className="space-y-3 px-5 py-4">
+              {decisionModal === "APPROVE" && (
+                <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800 leading-relaxed">
+                  Approving makes these the live budget for {proposal.year}. Any existing lines already
+                  approved for {proposal.ministry} that year are replaced by this proposal.
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-stone-600">
+                  {decisionModal === "APPROVE"
+                    ? "Note for the record (optional)"
+                    : <>Reason <span className="text-red-400">* required</span></>}
+                </label>
+                <textarea
+                  value={decisionNote}
+                  onChange={e => setDecisionNote(e.target.value)}
+                  autoFocus
+                  placeholder={decisionModal === "APPROVE"
+                    ? "e.g. Approved at EXCO meeting 12 Nov"
+                    : "What needs changing before this can be approved?"}
+                  className="h-20 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+              </div>
+            </div>
+
+            <div className="flex gap-2 border-t border-stone-100 bg-stone-50 px-5 py-4">
+              <button
+                onClick={() => decideProposal(decisionModal)}
+                disabled={proposalBusy}
+                className={`flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50 ${
+                  decisionModal === "APPROVE" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}>
+                {proposalBusy ? "Working…" : decisionModal === "APPROVE" ? "Approve & make live" : "Send back"}
+              </button>
+              <button
+                onClick={() => setDecisionModal(null)}
+                disabled={proposalBusy}
+                className="rounded-xl border border-stone-300 px-5 py-2.5 text-sm font-medium text-stone-600 transition-colors hover:bg-white disabled:opacity-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Delete confirmation ─────────────────────────────────────────── */}
       {deleteTarget && (() => {
         const booked = (deleteTarget.spent ?? 0) + (deleteTarget.pending ?? 0);
