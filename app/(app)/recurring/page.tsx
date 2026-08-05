@@ -262,6 +262,11 @@ export default function RecurringPage() {
   // containing today, and remembered per frequency while on the page.
   const [periodByFreq, setPeriodByFreq] = useState<Record<string, PeriodOption>>({});
   const [periodRunFreq, setPeriodRunFreq] = useState<string | null>(null);
+  // When set, the period run is limited to this folder and everything under it.
+  const [periodRunFolder, setPeriodRunFolder] = useState<string | null>(null);
+  // Drag-to-move: the folder being dragged and the one hovered over.
+  const [dragFolder, setDragFolder] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [periodRunSelected, setPeriodRunSelected] = useState<Set<string>>(new Set());
   const [periodRunning, setPeriodRunning] = useState(false);
   const [periodProgress, setPeriodProgress] = useState<{ done: number; total: number; errors: string[] } | null>(null);
@@ -1129,6 +1134,65 @@ export default function RecurringPage() {
     return d.toLocaleDateString("en-MY", { month: "short", year: "numeric" });
   }
 
+  /**
+   * Moves a folder inside another (or back to the top level).
+   *
+   * A folder has no row of its own once it holds items — it exists as the
+   * prefix of each item's group_name ("Utilities / TNB"). Moving one is
+   * therefore a path rewrite across every item beneath it, plus any empty
+   * folder rows recorded separately.
+   */
+  async function moveFolder(freq: string, sourcePath: string, destPath: string | null) {
+    const target = destPath ? `${destPath} / ${sourcePath.split(" / ").pop()}` : sourcePath.split(" / ").pop()!;
+    if (target === sourcePath) return;
+    // Dropping a folder into its own descendant would detach it from the tree.
+    if (destPath && (destPath === sourcePath || destPath.startsWith(`${sourcePath} / `))) {
+      showMsg("A folder can't be moved inside itself", false);
+      return;
+    }
+    if (items.some(i => i.frequency === freq && (i.group_name || "") === target)
+      || emptyFolders.some(f => f.frequency === freq && f.pv_type === entityTab && f.path === target)) {
+      showMsg(`"${target}" already exists here`, false);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Every item whose path is the folder or sits beneath it.
+      const affected = items.filter(i =>
+        i.frequency === freq &&
+        ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab &&
+        ((i.group_name || "") === sourcePath || (i.group_name || "").startsWith(`${sourcePath} / `)));
+
+      for (const item of affected) {
+        const rest = (item.group_name || "").slice(sourcePath.length);
+        const newName = `${target}${rest}`;
+        const { error } = await supabase.from("recurring_pvs").update({ group_name: newName }).eq("id", item.id);
+        if (error) throw new Error(error.message);
+      }
+
+      const affectedFolders = emptyFolders.filter(f =>
+        f.frequency === freq && f.pv_type === entityTab &&
+        (f.path === sourcePath || f.path.startsWith(`${sourcePath} / `)));
+      for (const f of affectedFolders) {
+        const rest = f.path.slice(sourcePath.length);
+        const { error } = await supabase.from("recurring_folders").update({ path: `${target}${rest}` }).eq("id", f.id);
+        if (error) throw new Error(error.message);
+      }
+
+      setItems(is => is.map(i => affected.some(a => a.id === i.id)
+        ? { ...i, group_name: `${target}${(i.group_name || "").slice(sourcePath.length)}` } : i));
+      setEmptyFolders(fs => fs.map(f => affectedFolders.some(a => a.id === f.id)
+        ? { ...f, path: `${target}${f.path.slice(sourcePath.length)}` } : f));
+
+      showMsg(destPath ? `Moved into "${destPath}"` : `Moved "${target}" to the top level`);
+    } catch (err: unknown) {
+      showMsg(err instanceof Error ? err.message : "Move failed", false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // ── Period processing ────────────────────────────────────────────────────
   /** The period a frequency folder is currently looking at. */
   function periodFor(freq: string): PeriodOption {
@@ -1138,16 +1202,28 @@ export default function RecurringPage() {
     setPeriodByFreq(p => ({ ...p, [freq]: period }));
   }
 
-  function openPeriodRun(freq: string) {
-    const period = periodFor(freq);
-    const freqItems = items.filter(i =>
+  /**
+   * Items a period run covers. With a folder given it is that folder and
+   * everything nested beneath it, so running "Utilities" also raises
+   * "Utilities / TNB".
+   */
+  function periodRunScope(freq: string, folder: string | null): RecurringPV[] {
+    return items.filter(i =>
       i.frequency === freq && i.active &&
-      ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab);
+      ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab &&
+      (!folder || (i.group_name || "") === folder || (i.group_name || "").startsWith(`${folder} / `)));
+  }
+
+  function openPeriodRun(freq: string, folder: string | null = null) {
+    const period = periodFor(freq);
     // Pre-select only what still needs doing, so the common case is one click.
     setPeriodRunSelected(new Set(
-      freqItems.filter(i => !runsByPeriod[`${i.id}|${period.key}`] && !isExpiredItem(i)).map(i => i.id)
+      periodRunScope(freq, folder)
+        .filter(i => !runsByPeriod[`${i.id}|${period.key}`] && !isExpiredItem(i))
+        .map(i => i.id)
     ));
     setPeriodProgress(null);
+    setPeriodRunFolder(folder);
     setPeriodRunFreq(freq);
   }
 
@@ -1654,9 +1730,7 @@ export default function RecurringPage() {
       {periodRunFreq && (() => {
         const freq = periodRunFreq;
         const period = periodFor(freq);
-        const list = items
-          .filter(i => i.frequency === freq && i.active &&
-            ((i as RecurringPV & { pv_type?: string }).pv_type || "LCM") === entityTab)
+        const list = periodRunScope(freq, periodRunFolder)
           .sort((a, b) => (a.group_name || "").localeCompare(b.group_name || "") || a.name.localeCompare(b.name));
         const done = list.filter(i => runsByPeriod[`${i.id}|${period.key}`]);
         const outstanding = list.filter(i => !runsByPeriod[`${i.id}|${period.key}`]);
@@ -1671,8 +1745,13 @@ export default function RecurringPage() {
 
               <div className="flex items-start justify-between gap-3 border-b border-stone-200 bg-[#f4f9ff] px-5 py-4">
                 <div>
-                  <h2 className="text-base font-bold text-stone-800">Run {FREQ_DISPLAY[freq]} expenses</h2>
+                  <h2 className="text-base font-bold text-stone-800">
+                    Run {periodRunFolder ? `“${periodRunFolder}”` : `${FREQ_DISPLAY[freq]} expenses`}
+                  </h2>
                   <p className="mt-0.5 text-xs text-stone-500">
+                    {periodRunFolder
+                      ? <>Everything in this folder and its sub-folders. </>
+                      : null}
                     Vouchers are raised for the period you choose and dated to it — so catching up later still files correctly.
                   </p>
                 </div>
@@ -2607,13 +2686,30 @@ export default function RecurringPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {folderNames.map(folder => {
                     const fItems = folderMap[folder];
-                    const dueCount   = fItems.filter(i => statDueIn7Ids.has(i.id)).length;
-                    const atRiskCount = fItems.filter(i => statAtRiskIds.has(i.id)).length;
-                    const readyCount = fItems.filter(i => statReadyIds.has(i.id)).length;
                     const isMasterChecked = masterSelected.has(folder);
+                    // Progress for the period in view, counting sub-folders.
+                    const period = periodFor(navFreq);
+                    const scope = periodRunScope(navFreq, folder);
+                    const doneCount = scope.filter(i => runsByPeriod[`${i.id}|${period.key}`]).length;
+                    const allDone = scope.length > 0 && doneCount === scope.length;
+                    const isDropTarget = dropTarget === folder && dragFolder !== folder;
                     return (
-                      <button key={folder} onClick={() => setNavFolder(folder)}
-                        className="relative bg-white border border-stone-200 rounded-2xl p-4 text-left hover:border-stone-300 hover:shadow-sm transition-all group">
+                      <div key={folder}
+                        draggable={!masterMode}
+                        onDragStart={e => { setDragFolder(folder); e.dataTransfer.effectAllowed = "move"; }}
+                        onDragEnd={() => { setDragFolder(null); setDropTarget(null); }}
+                        onDragOver={e => { if (dragFolder && dragFolder !== folder) { e.preventDefault(); setDropTarget(folder); } }}
+                        onDragLeave={() => setDropTarget(t => t === folder ? null : t)}
+                        onDrop={e => {
+                          e.preventDefault();
+                          if (dragFolder && dragFolder !== folder) moveFolder(navFreq, dragFolder, folder);
+                          setDragFolder(null); setDropTarget(null);
+                        }}
+                        onClick={() => setNavFolder(folder)}
+                        className={`relative bg-white border rounded-2xl p-4 text-left transition-all group cursor-pointer ${
+                          isDropTarget ? "border-[#4a6da7] ring-2 ring-[#4a6da7]/30 bg-blue-50"
+                          : dragFolder === folder ? "border-stone-300 opacity-50"
+                          : "border-stone-200 hover:border-stone-300 hover:shadow-sm"}`}>
                         {/* Master checkbox */}
                         {masterMode && entityTab === "LCM" && (
                           <div className="absolute top-3 right-3" onClick={e => e.stopPropagation()}>
@@ -2641,33 +2737,56 @@ export default function RecurringPage() {
                           <FolderOpen size={16} className={tab.textColor} />
                         </div>
                         <div className="text-sm font-bold text-stone-800 leading-tight mb-1">{folder}</div>
-                        <div className="text-xs text-stone-400 mb-2.5">{fItems.length} item{fItems.length !== 1 ? "s" : ""}</div>
-                        <div className="flex flex-wrap gap-1">
-                          {atRiskCount > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{atRiskCount} at risk
-                            </span>
-                          )}
-                          {dueCount > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{dueCount} due soon
-                            </span>
-                          )}
-                          {readyCount > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{readyCount} ready for PV
-                            </span>
-                          )}
-                          {atRiskCount === 0 && dueCount === 0 && readyCount === 0 && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-50 text-stone-500 border border-stone-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-stone-300" />All scheduled
-                            </span>
-                          )}
+                        <div className="text-xs text-stone-400 mb-2.5">
+                          {fItems.length} item{fItems.length !== 1 ? "s" : ""}
+                          {scope.length > fItems.length && <> · {scope.length} with sub-folders</>}
+                          {" · "}{formatCurrency(scope.reduce((s, i) => s + i.amount, 0))}
                         </div>
-                      </button>
+
+                        {/* Has this folder been processed for the period in view? */}
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          allDone ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : doneCount > 0 ? "bg-amber-50 text-amber-800 border-amber-200"
+                          : "bg-stone-50 text-stone-500 border-stone-200"}`}>
+                          {allDone ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                          {doneCount}/{scope.length} · {period.label}
+                        </span>
+
+                        {!masterMode && scope.length > 0 && (
+                          <button
+                            onClick={e => { e.stopPropagation(); openPeriodRun(navFreq, folder); }}
+                            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#4a6da7] px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#3d5a8e]">
+                            <PlayCircle size={12} /> Run this folder
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
+
+                {/* Drop here to pull a nested folder back out to the top level. */}
+                {dragFolder && dragFolder.includes(" / ") && (
+                  <div
+                    onDragOver={e => { e.preventDefault(); setDropTarget("__root__"); }}
+                    onDragLeave={() => setDropTarget(t => t === "__root__" ? null : t)}
+                    onDrop={e => {
+                      e.preventDefault();
+                      if (dragFolder) moveFolder(navFreq, dragFolder, null);
+                      setDragFolder(null); setDropTarget(null);
+                    }}
+                    className={`mt-3 rounded-2xl border-2 border-dashed px-4 py-5 text-center text-xs font-medium transition-colors ${
+                      dropTarget === "__root__"
+                        ? "border-[#4a6da7] bg-blue-50 text-[#4a6da7]"
+                        : "border-stone-300 text-stone-400"}`}>
+                    Drop here to move &ldquo;{dragFolder.split(" / ").pop()}&rdquo; out to the top level
+                  </div>
+                )}
+
+                {folderNames.length > 1 && !dragFolder && !masterMode && (
+                  <p className="mt-3 text-[11px] text-stone-400">
+                    Tip: drag a folder onto another to nest it inside.
+                  </p>
+                )}
               </div>
             );
           }
