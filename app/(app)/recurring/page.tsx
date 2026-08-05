@@ -2885,20 +2885,34 @@ export default function RecurringPage() {
                 </div>
               </div>
 
-              {/* Items table */}
+              {/* Items table.
+                  Fixed layout with explicit widths so Amount, Last Created and
+                  Last Paid stay on screen instead of being pushed off the right
+                  edge — with auto layout the long expense names kept winning. */}
               <div className="overflow-x-auto rounded-xl border border-stone-200">
-                <table className="w-full text-sm border-collapse">
+                <table className="w-full text-sm border-collapse table-fixed min-w-[1120px]">
+                  <colgroup>
+                    <col className="w-9" />{/* checkbox */}
+                    <col className="w-8" />{/* row no */}
+                    <col className="w-[27%]" />{/* description — widest, it carries the name */}
+                    <col className="w-[15%]" />{/* payable to */}
+                    <col className="w-[12%]" />{/* duration */}
+                    <col className="w-[13%]" />{/* last created */}
+                    <col className="w-[13%]" />{/* last paid */}
+                    <col className="w-[11%]" />{/* amount */}
+                    <col className="w-[128px]" />{/* actions — five icon buttons */}
+                  </colgroup>
                   <thead>
                     <tr className="text-[13px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                      <th className="py-[15px] pl-3 w-8 text-left"></th>
-                      <th className="py-[15px] w-8 text-left">No</th>
+                      <th className="py-[15px] pl-3 text-left"></th>
+                      <th className="py-[15px] text-left">No</th>
                       <th className="py-[15px] text-left">Description</th>
                       <th className="py-[15px] text-left">Payable To</th>
                       <th className="py-[15px] text-left">Duration</th>
                       <th className="py-[15px] text-left">Last Created PV</th>
                       <th className="py-[15px] text-left">Last Paid PV</th>
                       <th className="py-[15px] text-right pr-4">Amount</th>
-                      <th className="py-[15px] w-40"></th>
+                      <th className="py-[15px]"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
@@ -2915,7 +2929,7 @@ export default function RecurringPage() {
                         isSelected={selected.has(item.id)}
                         isAtRisk={statAtRiskIds.has(item.id)}
                         lastPaid={lastPaidMap[item.id] ?? null}
-                        groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
+                        groupLabel=""
                         onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
                         onEdit={() => openEdit(item)}
                         onToggleActive={() => toggleActive(item)}
@@ -2928,19 +2942,21 @@ export default function RecurringPage() {
                     ))}
                     {subfolderNames.map(sf => (
                       <Fragment key={sf}>
-                        <tr className="bg-stone-50">
-                          <td colSpan={9} className="px-3 py-2">
-                            <div className="flex items-center gap-1.5">
-                              <Folder size={12} className="text-stone-400 shrink-0" />
-                              <span className="text-xs font-bold text-stone-600">{sf}</span>
-                              <span className="text-[11px] text-stone-400">({subfolderMap[sf].length})</span>
+                        {/* Category divider — the eye needs to find "Allowances"
+                            or "Utilities" at a glance when scanning a long list. */}
+                        <tr className="bg-[#eef4fc] border-y-2 border-[#d5e4f7]">
+                          <td colSpan={9} className="px-3 py-3.5">
+                            <div className="flex items-center gap-2">
+                              <Folder size={17} className="text-[#4a6da7] shrink-0" />
+                              <span className="text-lg font-bold text-[#23456f]">{sf}</span>
+                              <span className="text-sm font-semibold text-stone-400">({subfolderMap[sf].length})</span>
                               <button onClick={() => openRenameSubfolder(navFreq, navFolder, sf)} title="Rename subfolder"
-                                className="p-1 rounded-lg text-stone-300 hover:text-[#4a6da7] hover:bg-stone-100 transition-colors">
-                                <Pencil size={11} />
+                                className="p-1 rounded-lg text-stone-400 hover:text-[#4a6da7] hover:bg-white transition-colors">
+                                <Pencil size={13} />
                               </button>
                               <button onClick={() => deleteSubfolder(navFreq, navFolder, sf)} title="Delete subfolder"
-                                className="p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-colors">
-                                <Trash2 size={11} />
+                                className="p-1 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                                <Trash2 size={13} />
                               </button>
                             </div>
                           </td>
@@ -2951,7 +2967,7 @@ export default function RecurringPage() {
                             isSelected={selected.has(item.id)}
                             isAtRisk={statAtRiskIds.has(item.id)}
                             lastPaid={lastPaidMap[item.id] ?? null}
-                            groupLabel={`${item.group_name} · ${FREQ_LABELS[item.frequency] ?? item.frequency}`}
+                            groupLabel=""
                             onToggleSelect={() => { setSelected(s => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; }); }}
                             onEdit={() => openEdit(item)}
                             onToggleActive={() => toggleActive(item)}
@@ -3250,7 +3266,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer" />
         </td>
         <td className="py-[15px] pr-3 text-sm text-stone-400 font-medium">{rowNo}</td>
-        <td className="py-[15px] pr-4 min-w-[140px]">
+        <td className="py-[15px] pr-4 align-top">
           <div className="font-medium text-stone-800 text-base leading-tight">{item.name}</div>
           <div className="flex gap-1 flex-wrap mt-0.5">
             {alreadyRan && (
@@ -3289,12 +3305,12 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             {groupLabel && <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{groupLabel}</span>}
           </div>
         </td>
-        <td className="py-[15px] pr-4 text-base text-stone-600 whitespace-nowrap min-w-[120px]">{item.payee_name}</td>
+        <td className="py-[15px] pr-3 text-base text-stone-600 align-top"><div className="break-words leading-snug">{item.payee_name}</div></td>
         <td className="py-[15px] pr-4 whitespace-nowrap">
           <div className="text-sm text-stone-500">{durationLabel()}</div>
           {commencedLabel() && <div className="text-[12px] text-stone-400 mt-0.5">{commencedLabel()}</div>}
         </td>
-        <td className="py-[15px] pr-4 min-w-[110px]">
+        <td className="py-[15px] pr-3 align-top">
           {item.current_pv_no && item.last_run ? (
             <div>
               <a href={item.current_pv_id ? `/my-pvs/${item.current_pv_id}` : "#"}
@@ -3303,7 +3319,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             </div>
           ) : <span className="text-sm text-stone-300">—</span>}
         </td>
-        <td className="py-[15px] pr-4 min-w-[110px]">
+        <td className="py-[15px] pr-3 align-top">
           {lastPaid ? (
             <div>
               <a href={`/my-pvs/${lastPaid.id}`}
@@ -3312,7 +3328,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             </div>
           ) : <span className="text-sm text-stone-300">—</span>}
         </td>
-        <td className="py-[15px] pr-4 text-base font-bold text-[#4a6da7] text-right whitespace-nowrap">{formatCurrency(item.amount)}</td>
+        <td className="py-[15px] pr-4 text-base font-bold text-[#4a6da7] text-right whitespace-nowrap align-top">{formatCurrency(item.amount)}</td>
         <td className="py-[15px]">
           <div className="flex items-center gap-0.5 justify-end">
             {!isExpired && alreadyRan && item.current_pv_id && (
