@@ -2895,10 +2895,12 @@ export default function RecurringPage() {
                     <col className="w-9" />{/* checkbox */}
                     <col className="w-8" />{/* row no */}
                     <col className="w-[27%]" />{/* description — widest, it carries the name */}
-                    <col className="w-[15%]" />{/* payable to */}
-                    <col className="w-[12%]" />{/* duration */}
-                    <col className="w-[13%]" />{/* last created */}
-                    <col className="w-[13%]" />{/* last paid */}
+                    <col className="w-[20%]" />{/* payable to — full names shouldn't wrap */}
+                    <col className="w-[11%]" />{/* duration */}
+                    {/* PV columns only hold a reference and a date, so they give
+                        their space to the payee name. */}
+                    <col className="w-[10%]" />{/* last created */}
+                    <col className="w-[10%]" />{/* last paid */}
                     <col className="w-[11%]" />{/* amount */}
                     <col className="w-[128px]" />{/* actions — five icon buttons */}
                   </colgroup>
