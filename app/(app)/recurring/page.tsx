@@ -2506,19 +2506,31 @@ export default function RecurringPage() {
               </p>
             </div>
           )}
+          {/* Same column treatment as the folder view, so switching between
+              Library and All doesn't rearrange the table. */}
           <div className="overflow-x-auto rounded-xl border border-stone-200">
-            <table className="w-full text-sm border-collapse">
+            <table className="w-full text-sm border-collapse table-fixed min-w-[1200px]">
+              <colgroup>
+                <col className="w-9" /><col className="w-8" />
+                <col className="w-[25%]" />{/* description */}
+                <col className="w-[18%]" />{/* payable to */}
+                <col className="w-[11%]" />{/* duration */}
+                <col className="w-[10%]" />{/* last created */}
+                <col className="w-[10%]" />{/* last paid */}
+                <col className="w-[11%]" />{/* amount */}
+                <col className="w-[128px]" />{/* actions */}
+              </colgroup>
               <thead>
-                <tr className="text-[13px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                  <th className="py-[15px] pl-3 w-8 text-left"></th>
-                  <th className="py-[15px] w-8 text-left">No</th>
-                  <th className="py-[15px] text-left">Description</th>
-                  <th className="py-[15px] text-left">Payable To</th>
-                  <th className="py-[15px] text-left">Duration</th>
-                  <th className="py-[15px] text-left">Last Created PV</th>
-                  <th className="py-[15px] text-left">Last Paid PV</th>
-                  <th className="py-[15px] text-right pr-4">Amount</th>
-                  <th className="py-[15px] w-40"></th>
+                <tr className="text-[11px] text-stone-500 font-bold uppercase tracking-normal bg-stone-50 border-b-2 border-stone-200 [&>th]:border-r [&>th]:border-stone-200 [&>th:last-child]:border-r-0">
+                  <th className="py-3 pl-3 text-left"></th>
+                  <th className="py-3 text-left">No</th>
+                  <th className="py-3 pl-1 text-left">Description</th>
+                  <th className="py-3 pl-3 text-left">Payable To</th>
+                  <th className="py-3 pl-3 text-left">Duration</th>
+                  <th className="py-3 pl-3 text-left">Last Created</th>
+                  <th className="py-3 pl-3 text-left">Last Paid</th>
+                  <th className="py-3 text-right pr-4">Amount</th>
+                  <th className="py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
@@ -2905,16 +2917,19 @@ export default function RecurringPage() {
                     <col className="w-[128px]" />{/* actions — five icon buttons */}
                   </colgroup>
                   <thead>
-                    <tr className="text-[13px] text-stone-600 font-semibold uppercase tracking-wide bg-stone-50 border-b-2 border-stone-200">
-                      <th className="py-[15px] pl-3 text-left"></th>
-                      <th className="py-[15px] text-left">No</th>
-                      <th className="py-[15px] text-left">Description</th>
-                      <th className="py-[15px] text-left">Payable To</th>
-                      <th className="py-[15px] text-left">Duration</th>
-                      <th className="py-[15px] text-left">Last Created PV</th>
-                      <th className="py-[15px] text-left">Last Paid PV</th>
-                      <th className="py-[15px] text-right pr-4">Amount</th>
-                      <th className="py-[15px]"></th>
+                    {/* Headers are smaller than the rows on purpose — they're a
+                        legend, not content, and the wide tracking was what made
+                        "Last Created PV" wrap onto two lines. */}
+                    <tr className="text-[11px] text-stone-500 font-bold uppercase tracking-normal bg-stone-50 border-b-2 border-stone-200 [&>th]:border-r [&>th]:border-stone-200 [&>th:last-child]:border-r-0">
+                      <th className="py-3 pl-3 text-left"></th>
+                      <th className="py-3 text-left">No</th>
+                      <th className="py-3 pl-1 text-left">Description</th>
+                      <th className="py-3 pl-3 text-left">Payable To</th>
+                      <th className="py-3 pl-3 text-left">Duration</th>
+                      <th className="py-3 pl-3 text-left">Last Created</th>
+                      <th className="py-3 pl-3 text-left">Last Paid</th>
+                      <th className="py-3 text-right pr-4">Amount</th>
+                      <th className="py-3"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
@@ -3255,7 +3270,9 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
 
   return (
     <>
-      <tr className={`border-b border-stone-50 transition-colors ${
+      {/* Column dividers make a wide table far easier to read across — the eye
+          keeps its place between the name and the amount. */}
+      <tr className={`border-b border-stone-100 transition-colors [&>td]:border-r [&>td]:border-stone-100 [&>td:last-child]:border-r-0 ${
         isSelected ? "bg-blue-50/60"
         : alreadyRan ? "bg-green-50/30"
         : isExpired ? "opacity-50"
@@ -3268,7 +3285,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer" />
         </td>
         <td className="py-[15px] pr-3 text-sm text-stone-400 font-medium">{rowNo}</td>
-        <td className="py-[15px] pr-4 align-top">
+        <td className="py-[15px] pl-1 pr-3 align-top">
           <div className="font-medium text-stone-800 text-base leading-tight">{item.name}</div>
           <div className="flex gap-1 flex-wrap mt-0.5">
             {alreadyRan && (
@@ -3307,12 +3324,12 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             {groupLabel && <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{groupLabel}</span>}
           </div>
         </td>
-        <td className="py-[15px] pr-3 text-base text-stone-600 align-top"><div className="break-words leading-snug">{item.payee_name}</div></td>
-        <td className="py-[15px] pr-4 whitespace-nowrap">
-          <div className="text-sm text-stone-500">{durationLabel()}</div>
+        <td className="py-[15px] pl-3 pr-3 text-base text-stone-600 align-top"><div className="break-words leading-snug">{item.payee_name}</div></td>
+        <td className="py-[15px] pl-3 pr-3 align-top">
+          <div className="text-sm text-stone-500 leading-snug">{durationLabel()}</div>
           {commencedLabel() && <div className="text-[12px] text-stone-400 mt-0.5">{commencedLabel()}</div>}
         </td>
-        <td className="py-[15px] pr-3 align-top">
+        <td className="py-[15px] pl-3 pr-3 align-top">
           {item.current_pv_no && item.last_run ? (
             <div>
               <a href={item.current_pv_id ? `/my-pvs/${item.current_pv_id}` : "#"}
@@ -3321,7 +3338,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             </div>
           ) : <span className="text-sm text-stone-300">—</span>}
         </td>
-        <td className="py-[15px] pr-3 align-top">
+        <td className="py-[15px] pl-3 pr-3 align-top">
           {lastPaid ? (
             <div>
               <a href={`/my-pvs/${lastPaid.id}`}
@@ -3331,8 +3348,8 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
           ) : <span className="text-sm text-stone-300">—</span>}
         </td>
         <td className="py-[15px] pr-4 text-base font-bold text-[#4a6da7] text-right whitespace-nowrap align-top">{formatCurrency(item.amount)}</td>
-        <td className="py-[15px]">
-          <div className="flex items-center gap-0.5 justify-end">
+        <td className="py-[15px] pr-2 align-top">
+          <div className="flex flex-wrap items-center gap-0.5 justify-end">
             {!isExpired && alreadyRan && item.current_pv_id && (
               <a href={`/my-pvs/${item.current_pv_id}`}
                 className="text-[12px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg px-2 py-1 transition-colors border border-green-200 mr-1 whitespace-nowrap">
