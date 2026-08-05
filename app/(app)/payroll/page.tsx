@@ -639,6 +639,11 @@ export default function PayrollPage() {
   const [showStatus, setShowStatus] = useState<"ACTIVE" | "RESIGNED" | "ALL">("ACTIVE");
   const [tagFilter, setTagFilter] = useState<"" | "PASTOR" | "STAFF" | "CONTRACT" | "OFFICE" | "CHURCH">("");
   const [missingOnly, setMissingOnly] = useState(false);
+  const [page, setPage] = useState(1);
+
+  // Any change to what's being filtered should start from the first page,
+  // otherwise a narrower result set can leave you on an empty page.
+  useEffect(() => { setPage(1); }, [search, showStatus, tagFilter, missingOnly]);
   const [runs, setRuns] = useState<PayrollRunLite[]>([]);
   const [lastRunCount, setLastRunCount] = useState<number | null>(null);
   const [modalEmp, setModalEmp] = useState<PayrollEmployee | null>(null);
@@ -731,6 +736,13 @@ export default function PayrollPage() {
       || postingLabel(e).toLowerCase().includes(q);
   });
 
+  // Paged so a full staff list doesn't turn into an endless scroll.
+  const PER_PAGE = 20;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PER_PAGE;
+  const paged = filtered.slice(pageStart, pageStart + PER_PAGE);
+
   // ── Dashboard derivations ──
   const activeEmps = employees.filter(e => e.status === "ACTIVE");
   const missingList = activeEmps.filter(missingDetails);
@@ -800,6 +812,138 @@ export default function PayrollPage() {
           <div className="text-[11px] text-stone-400 mt-0.5">{missingList.length > 0 ? "missing statutory / bank details" : "all records complete"}</div>
         </button>
       </div>
+
+
+      {/* ── Search + filters ── */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, emp no, designation, posting…"
+              className="w-full border border-stone-300 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#4a6da7] bg-white" />
+          </div>
+          <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden text-sm font-semibold bg-white">
+            {([["ACTIVE", "Active"], ["RESIGNED", "Former"], ["ALL", "All"]] as const).map(([val, label]) => (
+              <button key={val} onClick={() => setShowStatus(val)}
+                className={`px-3.5 py-2.5 transition-colors ${showStatus === val ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {([["PASTOR", "Pastor"], ["STAFF", "Staff"], ["CONTRACT", "Contract"], ["OFFICE", "Office"], ["CHURCH", "Church"]] as const).map(([val, label]) => (
+            <button key={val} onClick={() => setTagFilter(t => t === val ? "" : val)}
+              className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                tagFilter === val ? "bg-[#4a6da7] text-white border-transparent" : "bg-white text-stone-500 border-stone-200 hover:border-[#4a6da7]/40"}`}>
+              {label}
+            </button>
+          ))}
+          {missingOnly && (
+            <button onClick={() => setMissingOnly(false)}
+              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors">
+              Missing details <X size={11} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-stone-400 text-sm">
+          {search ? `No employees match "${search}"` : missingOnly ? "No employees with missing details — all records complete." : tagFilter ? "No employees match this filter." : "No employees yet."}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-stone-400">
+            {filtered.length} employee{filtered.length !== 1 ? "s" : ""}
+            {pageCount > 1 && <> · showing {pageStart + 1}–{Math.min(pageStart + PER_PAGE, filtered.length)}</>}
+          </p>
+          {paged.map(e => (
+            <div key={e.id} className="flex flex-col">
+              <Link href={`/payroll/${e.id}`}
+                className="flex items-center gap-3 px-4 py-3 bg-white border border-stone-200 rounded-xl hover:shadow-sm hover:border-[#4a6da7]/40 transition-all">
+                <div className="shrink-0 w-9 h-9 rounded-full bg-[#4a6da7]/10 text-[#4a6da7] flex items-center justify-center">
+                  {e.posting_type === "CHURCH" ? <Church size={16} /> : <Building2 size={16} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-stone-800 truncate">{e.full_name}</span>
+                    <span className="text-[10px] font-mono text-stone-400">{e.emp_no}</span>
+                    {e.is_pastor && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">Pastor</span>}
+                    {e.employment_type === "CONTRACT" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Contract</span>}
+                    {e.is_orang_asli && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">Orang Asli</span>}
+                    {e.status === "RESIGNED" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-medium flex items-center gap-0.5"><UserX size={9} /> Resigned</span>}
+                  </div>
+                  <div className="text-xs text-stone-400 mt-0.5 truncate">{e.designation || "—"} · {postingLabel(e)}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-sm font-bold text-stone-700">{formatCurrency(salaryByEmp[e.id] ?? 0)}</div>
+                  <div className="text-[10px] text-stone-400">gross / month</div>
+                </div>
+                {canEdit && (
+                  <button onClick={ev => { ev.preventDefault(); ev.stopPropagation(); setModalEmp(e); setShowModal(true); }}
+                    title="Edit employee" className="shrink-0 p-1.5 rounded-lg text-stone-400 hover:text-[#4a6da7] hover:bg-stone-100 transition-colors">
+                    <Pencil size={14} />
+                  </button>
+                )}
+                {canEdit && (
+                  <button
+                    onClick={ev => { ev.preventDefault(); ev.stopPropagation(); setDeletingId(deletingId === e.id ? null : e.id); }}
+                    title="Delete employee"
+                    className="shrink-0 p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+                <ChevronRight size={15} className="text-stone-300 shrink-0" />
+              </Link>
+              {/* Inline delete confirm */}
+              {canEdit && deletingId === e.id && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 border-t-0 rounded-b-xl -mt-1">
+                  <span className="text-sm text-red-700 font-medium flex-1">Delete {e.full_name} and all their payroll records?</span>
+                  <button onClick={() => deleteEmployee(e.id)}
+                    className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700">
+                    Yes, Delete
+                  </button>
+                  <button onClick={() => setDeletingId(null)}
+                    className="px-3 py-1 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50">
+                    No
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {pageCount > 1 && (
+            <div className="flex items-center justify-between gap-2 pt-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 disabled:opacity-40 disabled:hover:bg-white">
+                ← Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: pageCount }, (_, i) => i + 1).map(n => (
+                  <button key={n} onClick={() => setPage(n)}
+                    className={`h-8 min-w-8 rounded-lg px-2 text-sm font-semibold transition-colors ${
+                      n === currentPage
+                        ? "bg-[#4a6da7] text-white"
+                        : "border border-stone-200 bg-white text-stone-600 hover:bg-stone-50"}`}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                disabled={currentPage === pageCount}
+                className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 disabled:opacity-40 disabled:hover:bg-white">
+                Next →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Checklist + quick access ── */}
       <div className="grid lg:grid-cols-3 gap-3">
@@ -885,106 +1029,6 @@ export default function PayrollPage() {
           </div>
         </div>
       </div>
-
-      {/* ── Search + filters ── */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, emp no, designation, posting…"
-              className="w-full border border-stone-300 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#4a6da7] bg-white" />
-          </div>
-          <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden text-sm font-semibold bg-white">
-            {([["ACTIVE", "Active"], ["RESIGNED", "Former"], ["ALL", "All"]] as const).map(([val, label]) => (
-              <button key={val} onClick={() => setShowStatus(val)}
-                className={`px-3.5 py-2.5 transition-colors ${showStatus === val ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {([["PASTOR", "Pastor"], ["STAFF", "Staff"], ["CONTRACT", "Contract"], ["OFFICE", "Office"], ["CHURCH", "Church"]] as const).map(([val, label]) => (
-            <button key={val} onClick={() => setTagFilter(t => t === val ? "" : val)}
-              className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${
-                tagFilter === val ? "bg-[#4a6da7] text-white border-transparent" : "bg-white text-stone-500 border-stone-200 hover:border-[#4a6da7]/40"}`}>
-              {label}
-            </button>
-          ))}
-          {missingOnly && (
-            <button onClick={() => setMissingOnly(false)}
-              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors">
-              Missing details <X size={11} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-16 text-stone-400 text-sm">Loading…</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-stone-400 text-sm">
-          {search ? `No employees match "${search}"` : missingOnly ? "No employees with missing details — all records complete." : tagFilter ? "No employees match this filter." : "No employees yet."}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-xs text-stone-400">{filtered.length} employee{filtered.length !== 1 ? "s" : ""}</p>
-          {filtered.map(e => (
-            <div key={e.id} className="flex flex-col">
-              <Link href={`/payroll/${e.id}`}
-                className="flex items-center gap-3 px-4 py-3 bg-white border border-stone-200 rounded-xl hover:shadow-sm hover:border-[#4a6da7]/40 transition-all">
-                <div className="shrink-0 w-9 h-9 rounded-full bg-[#4a6da7]/10 text-[#4a6da7] flex items-center justify-center">
-                  {e.posting_type === "CHURCH" ? <Church size={16} /> : <Building2 size={16} />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-stone-800 truncate">{e.full_name}</span>
-                    <span className="text-[10px] font-mono text-stone-400">{e.emp_no}</span>
-                    {e.is_pastor && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">Pastor</span>}
-                    {e.employment_type === "CONTRACT" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Contract</span>}
-                    {e.is_orang_asli && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">Orang Asli</span>}
-                    {e.status === "RESIGNED" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-medium flex items-center gap-0.5"><UserX size={9} /> Resigned</span>}
-                  </div>
-                  <div className="text-xs text-stone-400 mt-0.5 truncate">{e.designation || "—"} · {postingLabel(e)}</div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-sm font-bold text-stone-700">{formatCurrency(salaryByEmp[e.id] ?? 0)}</div>
-                  <div className="text-[10px] text-stone-400">gross / month</div>
-                </div>
-                {canEdit && (
-                  <button onClick={ev => { ev.preventDefault(); ev.stopPropagation(); setModalEmp(e); setShowModal(true); }}
-                    title="Edit employee" className="shrink-0 p-1.5 rounded-lg text-stone-400 hover:text-[#4a6da7] hover:bg-stone-100 transition-colors">
-                    <Pencil size={14} />
-                  </button>
-                )}
-                {canEdit && (
-                  <button
-                    onClick={ev => { ev.preventDefault(); ev.stopPropagation(); setDeletingId(deletingId === e.id ? null : e.id); }}
-                    title="Delete employee"
-                    className="shrink-0 p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                    <Trash2 size={14} />
-                  </button>
-                )}
-                <ChevronRight size={15} className="text-stone-300 shrink-0" />
-              </Link>
-              {/* Inline delete confirm */}
-              {canEdit && deletingId === e.id && (
-                <div className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 border-t-0 rounded-b-xl -mt-1">
-                  <span className="text-sm text-red-700 font-medium flex-1">Delete {e.full_name} and all their payroll records?</span>
-                  <button onClick={() => deleteEmployee(e.id)}
-                    className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700">
-                    Yes, Delete
-                  </button>
-                  <button onClick={() => setDeletingId(null)}
-                    className="px-3 py-1 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50">
-                    No
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
 
       {showModal && user && (
         <EmployeeModal user={user} existing={modalEmp}
