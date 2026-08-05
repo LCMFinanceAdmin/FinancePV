@@ -61,7 +61,11 @@ SELECT
     ELSE to_char(r.last_run, 'YYYY')
   END,
   COALESCE(r.current_period, to_char(r.last_run, 'Mon YYYY')),
-  r.current_pv_id,
+  -- current_pv_id can point at a voucher that has since been deleted, which
+  -- the foreign key rejects. The PV number is kept either way, so the run is
+  -- still traceable even when the voucher itself is gone.
+  CASE WHEN EXISTS (SELECT 1 FROM pvs p WHERE p.id = r.current_pv_id)
+       THEN r.current_pv_id ELSE NULL END,
   r.current_pv_no,
   COALESCE(r.amount, 0),
   'migration_087',
