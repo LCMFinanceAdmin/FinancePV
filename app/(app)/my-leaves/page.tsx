@@ -16,7 +16,8 @@ interface LeaveType {
 interface LeaveApp {
   id: string; leave_no: string; leave_type_code: string; start_date: string;
   end_date: string; days: number; reason: string; status: string;
-  applied_at: string; approvals: { name: string; action: string; timestamp: string; remarks?: string }[];
+  applied_at: string; approvals: { email?: string; name: string; action: string; timestamp: string; remarks?: string }[];
+  required_approvers?: { email: string; name: string; external?: boolean }[];
 }
 interface ReplacementDay { id: string; work_date: string; days: number; reason: string; }
 
@@ -56,6 +57,7 @@ function MyLeavesInner() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [resending,  setResending]  = useState<string | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok }); setTimeout(() => setToast({ msg: "", ok: true }), 3000);
@@ -135,12 +137,16 @@ function MyLeavesInner() {
       setSubmitting(false);
       return;
     }
-    const resolvedApprovers = resolved.map(a => ({ email: a.email, name: a.name }));
+    // `external` marks approvers with no account — currently the church council
+    // President, who acts through an emailed link rather than signing in.
+    const resolvedApprovers = resolved.map(a => ({
+      email: a.email, name: a.name, ...(a.external ? { external: true } : {}),
+    }));
 
     const { data: leaveNoData, error: noErr } = await supabase.rpc("next_leave_no");
     if (noErr) { showMsg("Could not generate leave number", false); setSubmitting(false); return; }
 
-    const { error } = await supabase.from("leave_applications").insert({
+    const { data: created, error } = await supabase.from("leave_applications").insert({
       leave_no:           leaveNoData,
       applicant_email:    userEmail,
       applicant_name:     userName,
@@ -151,15 +157,49 @@ function MyLeavesInner() {
       reason:             form.reason,
       attachment_url:     form.attachment_url || null,
       required_approvers: resolvedApprovers,
-    });
+    }).select("id").single();
+
+    if (error) { setSubmitting(false); showMsg("Submission failed: " + error.message, false); return; }
+
+    // The church council President can't be notified in-app — they have no
+    // account — so their link goes out by email straight away. A failure here
+    // must not look like the application failed: it's already saved, and the
+    // link can be resent from the pending card.
+    let linkWarning = "";
+    if (created?.id && resolvedApprovers.some(a => a.external)) {
+      const res = await fetch("/api/leave-council-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leave_id: created.id }),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        linkWarning = b.error ?? "the approval link could not be emailed";
+      }
+    }
 
     setSubmitting(false);
-    if (error) { showMsg("Submission failed: " + error.message, false); return; }
-
     setShowApply(false);
     setForm({ leave_type_code: "ANNUAL", start_date: "", end_date: "", reason: "", attachment_url: "" });
-    showMsg("Leave application submitted");
+    if (linkWarning) {
+      showMsg(`Application submitted, but ${linkWarning} — use “Resend council link”.`, false);
+    } else {
+      showMsg("Leave application submitted");
+    }
     await load();
+  }
+
+  async function resendCouncilLink(leaveId: string) {
+    setResending(leaveId);
+    const res = await fetch("/api/leave-council-invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leave_id: leaveId }),
+    });
+    setResending(null);
+    const b = await res.json().catch(() => ({}));
+    if (!res.ok) { showMsg(b.error ?? "Could not send the link", false); return; }
+    showMsg("Approval link emailed to the church council President");
   }
 
   async function cancelLeave(leaveId: string) {
@@ -268,7 +308,8 @@ function MyLeavesInner() {
             <EmptyState icon={<Clock size={24} />} msg="No pending applications" />
           ) : pending.map(app => (
             <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes}
-              onCancel={() => cancelLeave(app.id)} cancelling={cancelling === app.id} />
+              onCancel={() => cancelLeave(app.id)} cancelling={cancelling === app.id}
+              onResendCouncilLink={() => resendCouncilLink(app.id)} resending={resending === app.id} />
           ))}
         </div>
       )}
@@ -370,11 +411,21 @@ function MyLeavesInner() {
   );
 }
 
-function LeaveCard({ app, leaveTypes, onCancel, cancelling }: {
+function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending }: {
   app: LeaveApp; leaveTypes: LeaveType[];
   onCancel?: () => void; cancelling?: boolean;
+  onResendCouncilLink?: () => void; resending?: boolean;
 }) {
   const type = leaveTypes.find(t => t.code === app.leave_type_code);
+
+  // Everyone named has to approve, so say who is still to sign rather than
+  // leaving a half-signed application looking stalled for no visible reason.
+  const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
+  const required = app.required_approvers ?? [];
+  const outstanding = required.filter(r => !app.approvals?.some(
+    a => norm(a.email) === norm(r.email) && a.action === "APPROVED",
+  ));
+  const councilPending = outstanding.some(r => r.external);
   return (
     <div className="cloudlight-card rounded-2xl px-4 py-3.5 space-y-2">
       <div className="flex items-start justify-between gap-3">
@@ -411,12 +462,25 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling }: {
         </div>
       )}
 
+      {app.status === "PENDING" && outstanding.length > 0 && (
+        <p className="text-xs text-amber-600">
+          Waiting on {outstanding.map(a => a.name).join(" and ")}
+          {councilPending ? " (church council, by email)" : ""}
+        </p>
+      )}
+
       {app.status === "PENDING" && onCancel && (
-        <div className="pt-1 border-t border-stone-100">
+        <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-stone-100">
           <button onClick={onCancel} disabled={cancelling}
             className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50">
             {cancelling ? "Cancelling…" : "Cancel Application"}
           </button>
+          {councilPending && onResendCouncilLink && (
+            <button onClick={onResendCouncilLink} disabled={resending}
+              className="text-xs font-medium text-[#4a6da7] hover:underline disabled:opacity-50">
+              {resending ? "Sending…" : "Resend council link"}
+            </button>
+          )}
         </div>
       )}
     </div>

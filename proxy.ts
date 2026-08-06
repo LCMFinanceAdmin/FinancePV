@@ -3,8 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Public routes — no auth required (e.g. the public facility-booking form).
-  if (pathname.startsWith("/login") || pathname.startsWith("/auth") || pathname.startsWith("/book")) {
+  // Public routes — no auth required: the facility-booking form, and the
+  // one-time leave-approval link sent to church council Presidents, who have no
+  // account here and must not be bounced to a login they can't complete.
+  if (
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/book") ||
+    pathname.startsWith("/leave-approval")
+  ) {
     return NextResponse.next();
   }
 

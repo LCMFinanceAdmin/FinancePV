@@ -16,6 +16,7 @@ import { Plus, Trash2, Save, Church, MapPin } from "lucide-react";
 interface District { id: string; name: string; dean_email: string | null; }
 interface Congregation {
   id: string; name: string; district_id: string | null; head_pastor_email: string | null;
+  council_president_name: string | null; council_president_email: string | null;
 }
 interface Person { email: string; full_name: string; is_pastor: boolean; }
 
@@ -82,6 +83,8 @@ export default function ChurchDirectoryPage() {
       name: c.name.trim(),
       district_id: c.district_id || null,
       head_pastor_email: c.head_pastor_email || null,
+      council_president_name: c.council_president_name?.trim() || null,
+      council_president_email: c.council_president_email?.trim().toLowerCase() || null,
       updated_at: new Date().toISOString(),
     };
     const { error } = c.id.startsWith("new-")
@@ -174,7 +177,7 @@ export default function ChurchDirectoryPage() {
           <h2 className="flex items-center gap-2 text-base font-bold text-stone-700">
             <Church size={16} className="text-[#4a6da7]" /> Congregations
           </h2>
-          <Button size="sm" onClick={() => setCongregations(cs => [...cs, { id: `new-${Date.now()}`, name: "", district_id: null, head_pastor_email: null }])}>
+          <Button size="sm" onClick={() => setCongregations(cs => [...cs, { id: `new-${Date.now()}`, name: "", district_id: null, head_pastor_email: null, council_president_name: null, council_president_email: null }])}>
             <Plus size={13} /> Add Congregation
           </Button>
         </div>
@@ -209,13 +212,35 @@ export default function ChurchDirectoryPage() {
                   </div>
                 </div>
 
+                {/* The church council President has no account here — council
+                    office is temporary and they hold no LCM role — so they are
+                    named on the congregation and approve by emailed link. */}
+                <div className="grid gap-3 border-t border-stone-100 pt-3 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs text-stone-400">Church council President</label>
+                    <input className={inp} value={c.council_president_name ?? ""} placeholder="Full name"
+                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, council_president_name: e.target.value } : x))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-stone-400">President&apos;s email</label>
+                    <input className={inp} type="email" value={c.council_president_email ?? ""} placeholder="president@example.com"
+                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, council_president_email: e.target.value } : x))} />
+                    <p className="mt-1 text-[11px] text-stone-400">
+                      Any address — no LCM account needed. They approve through a one-time link.
+                    </p>
+                  </div>
+                </div>
+
                 {/* The consequence of the settings above, stated plainly. */}
                 <p className="rounded-lg bg-[#f4f9ff] px-3 py-2 text-xs text-stone-600">
                   {c.head_pastor_email
-                    ? <>Leave for pastors here is settled by <strong>{people.find(p => p.email === c.head_pastor_email)?.full_name || c.head_pastor_email}</strong> — it doesn&apos;t go to the Bishop.</>
+                    ? <>Leave for pastors here needs <strong>{people.find(p => p.email === c.head_pastor_email)?.full_name || c.head_pastor_email}</strong> (head pastor)</>
                     : district?.dean_email
-                    ? <>No head pastor set, so leave escalates to the Dean <strong>{deanName || district.dean_email}</strong>, then the Bishop.</>
-                    : <>No head pastor and no Dean for this district — leave here would go to the Bishop alone.</>}
+                    ? <>No head pastor set, so leave escalates to the Dean <strong>{deanName || district.dean_email}</strong>, then the <strong>Bishop</strong></>
+                    : <>No head pastor and no Dean for this district — leave here would go to the <strong>Bishop</strong></>}
+                  {c.council_president_email
+                    ? <> and <strong>{c.council_president_name || c.council_president_email}</strong> (church council President, by email). Both must approve.</>
+                    : <>. No council President is set, so nobody from the church council is asked.</>}
                 </p>
 
                 <div className="flex items-center gap-2 border-t border-stone-100 pt-2">
@@ -237,11 +262,13 @@ export default function ChurchDirectoryPage() {
       </div>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-        <strong>How leave routing uses this:</strong> a pastor&apos;s application is settled by their
-        congregation&apos;s head pastor — the Bishop isn&apos;t involved in routine pastoral leave. It
-        escalates only when the congregation has no head pastor, or the head pastor is the one
-        applying: then the district Dean approves, followed by the Bishop. A Dean&apos;s own leave
-        goes straight to the Bishop. Anyone with a specific assignment in Leave Approvers overrides
+        <strong>How leave routing uses this:</strong> a pastor&apos;s application goes to their
+        congregation&apos;s head pastor <em>and</em> the church council President — both must approve,
+        in any order. The Bishop isn&apos;t involved in routine pastoral leave; it escalates only when
+        the congregation has no head pastor, or the head pastor is the one applying, in which case
+        the district Dean approves, followed by the Bishop. A Dean&apos;s own leave goes straight to
+        the Bishop. The President signs through a one-time link emailed when the pastor applies, so
+        they never need an account. Anyone with a specific assignment in Leave Approvers overrides
         all of this.
       </div>
     </div>

@@ -38,6 +38,7 @@ interface UserRole {
 
 interface Congregation {
   id: string; name: string; district_id: string | null; head_pastor_email: string | null;
+  council_president_name: string | null; council_president_email: string | null;
 }
 interface District { id: string; name: string; dean_email: string | null; }
 
@@ -66,17 +67,35 @@ function describeLeaveChain(
     const district = districts.find(d => d.id === cong.district_id);
     const isHead = cong.head_pastor_email?.toLowerCase() === u.email?.toLowerCase();
 
-    // The head pastor settles routine pastoral leave — the Bishop is only
-    // involved when it escalates to the Dean below.
+    // The church council President signs alongside whoever the church chain
+    // lands on, and is not an LCM user — they approve by emailed link.
+    const councilLabel = cong.council_president_email &&
+      cong.council_president_email.toLowerCase() !== u.email?.toLowerCase()
+        ? `${cong.council_president_name || cong.council_president_email} (church council President, by email)`
+        : null;
+    const withCouncil = (chain: string, note: string) =>
+      councilLabel ? `${chain} and ${councilLabel} — both must approve${note}` : `${chain}${note}`;
+
+    // The head pastor settles the church side of routine pastoral leave — the
+    // Bishop is only involved when it escalates to the Dean below.
     if (cong.head_pastor_email && !isHead) {
-      return `${nameOf(cong.head_pastor_email)} (head pastor, ${cong.name}) — that's the full chain.`;
+      return withCouncil(
+        `${nameOf(cong.head_pastor_email)} (head pastor, ${cong.name})`,
+        councilLabel ? "." : " — that's the full chain.",
+      );
     }
     // No head pastor, or this person is the head pastor — the Dean takes it.
     if (district?.dean_email && district.dean_email.toLowerCase() !== u.email?.toLowerCase()) {
       const why = isHead ? "they are the head pastor" : `${cong.name} has no head pastor`;
-      return [`${nameOf(district.dean_email)} (Dean, ${district.name})`, bishopLabel].filter(Boolean).join(" → ") + ` — because ${why}.`;
+      const churchChain = [`${nameOf(district.dean_email)} (Dean, ${district.name})`, bishopLabel]
+        .filter(Boolean).join(" → ");
+      return withCouncil(churchChain, `, because ${why}.`);
     }
-    return bishopLabel ? `${bishopLabel} only — no head pastor or Dean applies.` : "nobody — no head pastor, Dean or Bishop is set.";
+    return bishopLabel
+      ? withCouncil(`${bishopLabel}`, " — no head pastor or Dean applies.")
+      : councilLabel
+      ? `${councilLabel} only — no head pastor, Dean or Bishop is set.`
+      : "nobody — no head pastor, Dean or Bishop is set.";
   }
 
   const gm = people.find(p => p.role === "GENERAL_MANAGER");

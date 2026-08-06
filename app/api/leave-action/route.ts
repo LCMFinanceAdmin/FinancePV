@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { applyLeaveDecision, outstandingApprovers } from "@/lib/leave-decision";
+import type { RequiredApprover, ApprovalEntry } from "@/lib/leave-decision";
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +25,12 @@ export async function POST(req: NextRequest) {
 
     if (fetchErr || !leave) return NextResponse.json({ error: "Leave not found" }, { status: 404 });
 
+    const required: RequiredApprover[] = leave.required_approvers ?? [];
+    const existing: ApprovalEntry[] = leave.approvals ?? [];
+    // A senior acting on a leave they aren't named on is an override, not a
+    // signature on the chain — see below.
+    let isDesignatedApprover = false;
+
     // CANCELLED can only be done by the applicant themselves
     if (action === "CANCELLED") {
       if (leave.applicant_email !== user.email) {
@@ -33,8 +41,9 @@ export async function POST(req: NextRequest) {
       }
     } else {
       // APPROVED / REJECTED — must be a designated approver or Finance Admin / senior
-      const requiredApprovers: { email: string }[] = leave.required_approvers ?? [];
-      const isDesignatedApprover = requiredApprovers.some(a => a.email === user.email);
+      isDesignatedApprover = required.some(
+        a => a.email?.trim().toLowerCase() === (user.email ?? "").trim().toLowerCase(),
+      );
 
       const { data: profile } = await supabase
         .from("user_roles")
@@ -62,20 +71,37 @@ export async function POST(req: NextRequest) {
       .eq("email", user.email)
       .single();
 
-    const approvalEntry = {
-      email: user.email,
-      name: approverProfile?.full_name || user.email,
+    const approvalEntry: ApprovalEntry = {
+      email: user.email ?? "",
+      name: approverProfile?.full_name || user.email || "",
       action,
       timestamp: new Date().toISOString(),
       remarks: remarks ?? "",
     };
 
-    const updatedApprovals = [...(leave.approvals ?? []), approvalEntry];
+    // Everyone named on the chain has to sign — a pastor's leave needs both the
+    // head pastor (or Dean) and the church council President, so one approval
+    // leaves the application pending rather than granting it. A senior acting
+    // on a leave they aren't named on keeps the old override behaviour and
+    // settles it outright.
+    let updatedApprovals: ApprovalEntry[];
+    let newStatus: string;
+    if (action === "CANCELLED") {
+      updatedApprovals = [...existing, approvalEntry];
+      newStatus = "CANCELLED";
+    } else if (isDesignatedApprover) {
+      const decided = applyLeaveDecision(required, existing, approvalEntry);
+      updatedApprovals = decided.approvals;
+      newStatus = decided.status;
+    } else {
+      updatedApprovals = [...existing, approvalEntry];
+      newStatus = action;
+    }
 
     const { error: updateErr } = await supabase
       .from("leave_applications")
       .update({
-        status: action,
+        status: newStatus,
         approvals: updatedApprovals,
         updated_at: new Date().toISOString(),
       })
@@ -83,19 +109,33 @@ export async function POST(req: NextRequest) {
 
     if (updateErr) throw new Error(updateErr.message);
 
-    // Notify applicant
-    await supabase.from("notifications").insert({
-      recipient_email: leave.applicant_email,
-      type: action === "APPROVED" ? "LEAVE_APPROVED" : action === "REJECTED" ? "LEAVE_REJECTED" : "LEAVE_CANCELLED",
-      pv_no: leave.leave_no,
-      message: action === "APPROVED"
-        ? `Your leave application ${leave.leave_no} has been approved.`
-        : action === "REJECTED"
-        ? `Your leave application ${leave.leave_no} was rejected${remarks ? `: ${remarks}` : "."}`
-        : `Leave application ${leave.leave_no} has been cancelled.`,
-    });
+    const stillWaiting = outstandingApprovers(required, updatedApprovals);
 
-    return NextResponse.json({ ok: true, status: action });
+    // Notify applicant — but only when something actually settled. A partial
+    // approval tells them who is left rather than claiming it's granted.
+    if (newStatus === "PENDING") {
+      await supabase.from("notifications").insert({
+        recipient_email: leave.applicant_email,
+        type: "LEAVE_PROGRESS",
+        pv_no: leave.leave_no,
+        message: `${approvalEntry.name} approved ${leave.leave_no}. Still waiting on ${
+          stillWaiting.map(a => a.name).join(" and ")
+        }.`,
+      });
+    } else {
+      await supabase.from("notifications").insert({
+        recipient_email: leave.applicant_email,
+        type: newStatus === "APPROVED" ? "LEAVE_APPROVED" : newStatus === "REJECTED" ? "LEAVE_REJECTED" : "LEAVE_CANCELLED",
+        pv_no: leave.leave_no,
+        message: newStatus === "APPROVED"
+          ? `Your leave application ${leave.leave_no} has been approved.`
+          : newStatus === "REJECTED"
+          ? `Your leave application ${leave.leave_no} was rejected${remarks ? `: ${remarks}` : "."}`
+          : `Leave application ${leave.leave_no} has been cancelled.`,
+      });
+    }
+
+    return NextResponse.json({ ok: true, status: newStatus, outstanding: stillWaiting });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

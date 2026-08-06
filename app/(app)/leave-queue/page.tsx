@@ -10,7 +10,7 @@ interface LeaveApp {
   id: string; leave_no: string; applicant_name: string; applicant_email: string;
   leave_type_code: string; start_date: string; end_date: string; days: number;
   reason: string; status: string; applied_at: string;
-  required_approvers: { email: string; name: string }[];
+  required_approvers: { email: string; name: string; external?: boolean }[];
   approvals: { email: string; name: string; action: string; timestamp: string; remarks?: string }[];
 }
 interface LeaveType { code: string; name: string; }
@@ -59,11 +59,26 @@ export default function LeaveQueuePage() {
   useEffect(() => { load(); }, []);
 
   // Only show leaves where this user is a required approver (or all if senior admin)
+  const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
   const myLeaves = leaves.filter(l =>
-    l.required_approvers?.some(a => a.email === userEmail)
+    l.required_approvers?.some(a => norm(a.email) === norm(userEmail))
   );
-  const pending = myLeaves.filter(l => l.status === "PENDING");
-  const history = myLeaves.filter(l => l.status !== "PENDING");
+
+  // A pastor's leave needs the church council President as well, so an
+  // application can still be PENDING after you have signed it. Those don't
+  // belong in your queue — nothing is asked of you — but they aren't history
+  // either, so they're listed separately.
+  const iSigned = (l: LeaveApp) =>
+    l.approvals?.some(a => norm(a.email) === norm(userEmail) && a.action === "APPROVED");
+
+  const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l));
+  const awaitingOthers = myLeaves.filter(l => l.status === "PENDING" && iSigned(l));
+  const history        = myLeaves.filter(l => l.status !== "PENDING");
+
+  const stillToSign = (l: LeaveApp) =>
+    (l.required_approvers ?? []).filter(r => !l.approvals?.some(
+      a => norm(a.email) === norm(r.email) && a.action === "APPROVED",
+    ));
 
   async function act(leaveId: string, action: "APPROVED" | "REJECTED", rejectRemarks?: string) {
     setActioning(leaveId);
@@ -184,6 +199,17 @@ export default function LeaveQueuePage() {
                   </div>
                 </div>
 
+                {/* Approving doesn't grant the leave on its own when others
+                    are named — say so before they click. */}
+                {stillToSign(app).length > 1 && (
+                  <p className="text-xs text-stone-400">
+                    Also needs {stillToSign(app)
+                      .filter(r => norm(r.email) !== norm(userEmail))
+                      .map(r => r.external ? `${r.name} (church council)` : r.name)
+                      .join(" and ")}
+                  </p>
+                )}
+
                 <div className="flex gap-2 pt-1 border-t border-stone-100">
                   <button
                     disabled={!!actioning}
@@ -202,6 +228,23 @@ export default function LeaveQueuePage() {
               </CardBody>
             </Card>
           ))}
+
+          {awaitingOthers.length > 0 && (
+            <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#4f7fc3]">
+                You&apos;ve signed — waiting on others
+              </p>
+              {awaitingOthers.map(app => (
+                <p key={app.id} className="text-xs text-stone-600">
+                  <span className="font-semibold text-stone-700">{app.applicant_name}</span>{" "}
+                  {formatDate(app.start_date)} → {formatDate(app.end_date)} · waiting on{" "}
+                  {stillToSign(app)
+                    .map(r => r.external ? `${r.name} (church council)` : r.name)
+                    .join(" and ")}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
