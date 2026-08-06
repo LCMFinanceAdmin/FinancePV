@@ -17,8 +17,12 @@ function num(n: number): string { return n.toLocaleString("en-MY", { minimumFrac
 
 interface ComputedRow { emp: PayrollEmployee; line: CalcLine; }
 
+// SOCSO and EIS are both remitted to PERKESO on one payment, so they form a
+// single voucher rather than two — matching how the money actually leaves.
 const VOUCHER_PAYEE: Record<string, string> = {
-  SALARY: "Staff Salaries", EPF: "KWSP (EPF)", SOCSO: "PERKESO (SOCSO)", EIS: "PERKESO (EIS)", PCB: "LHDN (PCB)",
+  SALARY: "Staff Salaries", EPF: "KWSP (EPF)", PERKESO: "PERKESO (SOCSO + EIS)", PCB: "LHDN (PCB)",
+  // Legacy kinds, kept so runs finalized before the merge still render.
+  SOCSO: "PERKESO (SOCSO)", EIS: "PERKESO (EIS)",
 };
 
 export default function PayrollRunDetailPage() {
@@ -37,6 +41,7 @@ export default function PayrollRunDetailPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [showFinalize, setShowFinalize] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
   const [revertReason, setRevertReason] = useState("");
   const [showSendPayslip, setShowSendPayslip] = useState(false);
@@ -200,9 +205,16 @@ export default function PayrollRunDetailPage() {
 
   async function finalize() {
     if (!user || !run) return;
-    if (!confirm(`Finalize ${MONTH_LABELS[run.month]} ${run.year}? This locks the figures and generates the vouchers.`)) return;
+    setShowFinalize(false);
     setBusy(true);
     try {
+      // 0. Clear anything from a previous finalize of this run. Without this a
+      //    run that was reverted and finalized again appended a second set of
+      //    lines and vouchers, doubling every figure on the sheet.
+      await supabase.from("payroll_vouchers").delete().eq("run_id", run.id);
+      await supabase.from("payroll_lines").delete().eq("run_id", run.id);
+      await supabase.from("loan_repayments").delete().eq("payroll_run_id", run.id);
+
       // 1. Persist lines
       const lineRows = computed.map(({ emp, line }) => ({
         run_id: run.id, employee_id: emp.id, employee_name: emp.full_name,
@@ -223,8 +235,10 @@ export default function PayrollRunDetailPage() {
       const tPcb = sumDraft(l => l.pcb);
       const tEr = sumDraft(l => l.totalContrib.er);
       const tGross = sumDraft(l => l.gross);
+      // SOCSO and EIS go to PERKESO on a single remittance, so they are one
+      // voucher — the summary attached to it breaks the two apart.
       const voucherRows = ([
-        ["SALARY", tNet], ["EPF", tEpf], ["SOCSO", tSocso], ["EIS", tEis], ["PCB", tPcb],
+        ["SALARY", tNet], ["EPF", tEpf], ["PERKESO", tSocso + tEis], ["PCB", tPcb],
       ] as const).filter(([, amt]) => amt > 0).map(([kind, amt]) => ({
         run_id: run.id, kind, payee: VOUCHER_PAYEE[kind], total_amount: amt, status: "PENDING",
       }));
@@ -371,9 +385,12 @@ export default function PayrollRunDetailPage() {
         return;
       }
 
-      await supabase.from("payroll_vouchers").update({
-        pv_id: null, pv_no: null, pv_status: null, status: "PENDING", paid_at: null,
-      }).eq("run_id", run.id);
+      // Remove the finalized snapshot entirely rather than just unlinking it.
+      // A draft run recomputes its sheet live, so leaving the old lines and
+      // vouchers behind only meant the next finalize appended a second set.
+      await supabase.from("payroll_vouchers").delete().eq("run_id", run.id);
+      await supabase.from("payroll_lines").delete().eq("run_id", run.id);
+      await supabase.from("loan_repayments").delete().eq("payroll_run_id", run.id);
 
       await supabase.from("payroll_runs").update({
         status: "DRAFT", finalized_at: null,
@@ -452,7 +469,7 @@ export default function PayrollRunDetailPage() {
             </button>
           )}
           {canFinalize && (
-            <button onClick={finalize} disabled={busy || rowCount === 0}
+            <button onClick={() => setShowFinalize(true)} disabled={busy || rowCount === 0}
               className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">
               <CheckCircle2 size={16} /> {busy ? "Finalizing…" : "Finalize & Generate Vouchers"}
             </button>
@@ -601,6 +618,56 @@ export default function PayrollRunDetailPage() {
 
       {showSendPayslip && run && (
         <SendPayslipModal run={run} rows={payslipRows} onClose={() => setShowSendPayslip(false)} />
+      )}
+
+      {/* ── Finalize confirmation ──────────────────────────────────────── */}
+      {showFinalize && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
+          onClick={() => !busy && setShowFinalize(false)}>
+          <div onClick={e => e.stopPropagation()}
+            className="w-full max-w-md overflow-hidden rounded-3xl border border-[#dbe9fb] bg-white shadow-[0_24px_70px_rgba(22,51,94,0.28)]">
+            <div className="flex items-start gap-3 border-b border-[#dbe9fb] bg-[#f4f9ff] px-5 py-4">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#dbeafe] text-[#1d4ed8]">
+                <CheckCircle2 size={18} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-stone-800">Finalize {MONTH_LABELS[run.month]} {run.year}?</h2>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  Locks these figures and produces the voucher set. You can revert afterwards if something needs changing.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 px-5 py-4">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                <dt className="text-stone-500">Employees</dt>
+                <dd className="text-right font-semibold text-stone-800">{rowCount}</dd>
+                <dt className="text-stone-500">Gross</dt>
+                <dd className="text-right font-mono text-stone-800">{formatCurrency(sumDraft(l => l.gross))}</dd>
+                <dt className="text-stone-500">Net to staff</dt>
+                <dd className="text-right font-mono font-bold text-stone-800">{formatCurrency(sumDraft(l => l.net))}</dd>
+                <dt className="text-stone-500">Total LCM cost</dt>
+                <dd className="text-right font-mono text-stone-800">{formatCurrency(sumDraft(l => l.totalLcmPayment))}</dd>
+              </dl>
+              <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] px-4 py-3 text-xs text-stone-600 leading-relaxed">
+                Produces one voucher for staff salaries and one per statutory body — PERKESO covers
+                SOCSO and EIS together, as they are remitted on a single payment. Raise the payment
+                vouchers afterwards with <strong>Generate PV</strong>.
+              </div>
+            </div>
+
+            <div className="flex gap-2 border-t border-stone-100 bg-stone-50 px-5 py-4">
+              <button onClick={finalize} disabled={busy}
+                className="flex-1 rounded-xl bg-[#4a6da7] py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#3d5c8f] disabled:opacity-50">
+                {busy ? "Finalizing…" : "Finalize & generate vouchers"}
+              </button>
+              <button onClick={() => setShowFinalize(false)} disabled={busy}
+                className="rounded-xl border border-stone-300 px-5 py-2.5 text-sm font-medium text-stone-600 transition-colors hover:bg-white disabled:opacity-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Revert a finalized run ─────────────────────────────────────── */}

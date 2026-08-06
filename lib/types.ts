@@ -411,7 +411,9 @@ export interface PayrollSalary {
 }
 
 export type PayrollRunStatus = "DRAFT" | "FINALIZED" | "PAID";
-export type PayrollVoucherKind = "SALARY" | "EPF" | "SOCSO" | "EIS" | "PCB";
+// PERKESO covers SOCSO + EIS on one remittance. SOCSO/EIS remain for runs
+// finalized before they were merged.
+export type PayrollVoucherKind = "SALARY" | "EPF" | "PERKESO" | "PCB" | "SOCSO" | "EIS";
 
 export interface PayrollRun {
   id: string;
