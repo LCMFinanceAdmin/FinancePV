@@ -2,9 +2,8 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { excoAssignableMinistries } from "@/lib/ministries";
-import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw } from "lucide-react";
+import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw, ChevronRight, Search } from "lucide-react";
 
 const ROLES = [
   "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
@@ -58,8 +57,6 @@ function describeLeaveChain(
     people.find(p => p.email?.toLowerCase() === email?.toLowerCase())?.full_name || email || "";
   const bishop = people.find(p => p.role === "BISHOP");
   const bishopLabel = bishop && bishop.email !== u.email ? `${bishop.full_name || "the Bishop"} (Bishop)` : null;
-
-  if (!u.is_lcm_staff) return "not applicable — this person isn't employed by LCM.";
 
   if (u.is_pastor) {
     const cong = congregations.find(c => c.id === u.congregation_id);
@@ -115,6 +112,16 @@ export default function SignatoriesPage() {
   const [ministries, setMinistries] = useState<string[]>([]);
   const [congregations, setCongregations] = useState<Congregation[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
+  // Collapsed by default — the list is long, and most visits are to change one
+  // person. Only the row being edited is open.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+
+  const toggle = (id: string) => setExpanded(s => {
+    const next = new Set(s);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   async function load() {
     const [{ data: ur }, { data: min }, { data: cong }, { data: dist }] = await Promise.all([
@@ -188,6 +195,15 @@ export default function SignatoriesPage() {
 
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
+  // A row being edited stays visible even if the typed name no longer matches,
+  // so a search doesn't yank unsaved changes off the screen.
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? users.filter(u => expanded.has(u.id) || [
+        u.full_name, u.email, u.designation, ROLE_LABELS[u.role] ?? u.role,
+      ].some(f => (f ?? "").toLowerCase().includes(q)))
+    : users;
+
   return (
     <div className="cloudlight-page max-w-5xl space-y-6">
       <div className="flex justify-between items-start">
@@ -196,11 +212,16 @@ export default function SignatoriesPage() {
           <h1 className="text-xl font-bold text-stone-800">Signatories & Roles</h1>
           <p className="text-sm text-stone-400">Manage who can access and approve in the system</p>
         </div>
-        <Button size="sm" onClick={() => setUsers(u => [...u, {
-          id: `new-${Date.now()}`, email: "", full_name: "", role: "STAFF", ministries: [], has_pin: false,
-          is_lcm_staff: true, is_pastor: false, designation: null, congregation_id: null,
-          reports_to: "GM_AND_BISHOP",
-        }])}>
+        <Button size="sm" onClick={() => {
+          const id = `new-${Date.now()}`;
+          setUsers(u => [...u, {
+            id, email: "", full_name: "", role: "STAFF", ministries: [], has_pin: false,
+            is_lcm_staff: true, is_pastor: false, designation: null, congregation_id: null,
+            reports_to: "GM_AND_BISHOP",
+          }]);
+          // A brand new person has nothing to show collapsed, so open it.
+          setExpanded(s => new Set(s).add(id));
+        }}>
           <Plus size={13} /> Add User
         </Button>
       </div>
@@ -218,10 +239,60 @@ export default function SignatoriesPage() {
         />
       )}
 
-      <div className="space-y-3">
-        {users.map((u) => (
-          <Card key={u.id}>
-            <CardBody className="space-y-3">
+      <div className="relative">
+        <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" />
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search by name, email or role…"
+          className="w-full rounded-xl border border-stone-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#4a6da7]"
+        />
+      </div>
+
+      <div className="space-y-2">
+        {visible.length === 0 && (
+          <p className="px-1 py-6 text-center text-sm text-stone-400">Nobody matches “{query}”.</p>
+        )}
+
+        {visible.map((u) => {
+          const open = expanded.has(u.id);
+          return (
+          <div key={u.id} className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white shadow-[0_2px_10px_rgba(41,87,149,0.04)]">
+            {/* Collapsed summary — enough to find someone without opening. */}
+            <button type="button" onClick={() => toggle(u.id)}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#f8fbff]">
+              <ChevronRight size={15}
+                className={`shrink-0 text-stone-300 transition-transform ${open ? "rotate-90" : ""}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="truncate text-sm font-semibold text-stone-800">
+                    {u.full_name || <span className="text-stone-400">Unnamed</span>}
+                  </span>
+                  {!u.is_lcm_staff && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Volunteer</span>
+                  )}
+                  {u.is_pastor && (
+                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Pastor</span>
+                  )}
+                  {["BISHOP", "TREASURER", "SECRETARY"].includes(u.role) && !u.id.startsWith("new-") && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      u.has_pin ? "bg-green-100 text-green-700" : "bg-stone-100 text-stone-500"
+                    }`}>
+                      {u.has_pin ? "PIN set" : "No PIN"}
+                    </span>
+                  )}
+                </div>
+                <p className="truncate text-xs text-stone-400">
+                  {u.email || "no email yet"}{u.designation ? ` · ${u.designation}` : ""}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-[#eef4fd] px-2.5 py-1 text-[11px] font-semibold text-[#3a6db0]">
+                {ROLE_LABELS[u.role] ?? u.role}
+              </span>
+            </button>
+
+            {open && (
+            <div className="space-y-3 border-t border-[#eaf1fb] px-4 py-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-stone-400">Full Name</label>
@@ -285,11 +356,6 @@ export default function SignatoriesPage() {
                       onChange={e => setUsers(us => us.map(x => x.id === u.id ? { ...x, is_pastor: e.target.checked } : x))} />
                     Pastor
                   </label>
-                  {!u.is_lcm_staff && (
-                    <span className="text-xs text-amber-700">
-                      No leave, staff loans or payroll — volunteer access only.
-                    </span>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -307,7 +373,7 @@ export default function SignatoriesPage() {
                         {congregations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
-                  ) : (
+                  ) : u.is_lcm_staff ? (
                     <div>
                       <label className="text-xs text-stone-400">Reports to (for leave)</label>
                       <select className={inp} value={u.reports_to}
@@ -316,15 +382,23 @@ export default function SignatoriesPage() {
                         <option value="BISHOP_ONLY">Bishop only</option>
                       </select>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
-                {/* The resulting approval chain, so a wrong setting is caught
-                    here rather than when someone's leave goes astray. */}
-                <p className="text-xs text-stone-500">
-                  <span className="font-semibold text-stone-600">Leave goes to:</span>{" "}
-                  {describeLeaveChain(u, congregations, districts, users)}
-                </p>
+                {/* Volunteers — a BAM Committee PIC, or a Treasurer who serves
+                    without being employed — take no leave and report to nobody,
+                    so none of that is asked. They are here purely to approve. */}
+                {u.is_lcm_staff ? (
+                  <p className="text-xs text-stone-500">
+                    <span className="font-semibold text-stone-600">Leave goes to:</span>{" "}
+                    {describeLeaveChain(u, congregations, districts, users)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700">
+                    Volunteer — approvals only. No leave, staff loan or payroll access, and no
+                    reporting line.
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-2 items-center pt-1 border-t border-stone-100">
@@ -348,9 +422,11 @@ export default function SignatoriesPage() {
                   <Trash2 size={13} className="text-red-400" />
                 </Button>
               </div>
-            </CardBody>
-          </Card>
-        ))}
+            </div>
+            )}
+          </div>
+          );
+        })}
       </div>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
