@@ -84,7 +84,18 @@ function paidBanner(pv: PV): string {
     </div>`;
 }
 
-export function pvPrintHtml(pv: PV, logoDataUri = ""): string {
+/**
+ * Pages of a PDF attachment already rendered to images, keyed by URL.
+ *
+ * A browser's print engine captures a PDF <iframe> as the *viewer widget*, not
+ * the document inside it, so an attached payslip printed as a picture of a PDF
+ * reader. When rendered pages are supplied they are laid out as ordinary
+ * images, which print in full; without them the iframe is kept so the on-screen
+ * preview still works.
+ */
+export type PdfPageImages = Record<string, { dataUri: string; width: number; height: number }[]>;
+
+export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = {}): string {
   const items = pv.line_items ?? [];
   const approvals: PVApproval[] = pv.approvals ?? [];
   const total = items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0) || pv.amount;
@@ -197,7 +208,14 @@ export function pvPrintHtml(pv: PV, logoDataUri = ""): string {
         ${otherAtts.length ? `<div class="attach-list">${otherAtts.map(u => `<div class="attach-link">📎 <a href="${esc(u)}" target="_blank" rel="noopener">${esc(fileName(u))}</a> <span class="attach-note">(open in new tab to view)</span></div>`).join("")}</div>` : ""}
       </div>
       ${attachUrls.filter(isImageUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))}</div><img src="${esc(u)}" alt="attachment" /></div>`).join("")}
-      ${attachUrls.filter(isPdfUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))} <a href="${esc(u)}" target="_blank" rel="noopener">(open in new tab)</a></div><iframe class="attach-pdf" src="${esc(u)}"></iframe></div>`).join("")}
+      ${attachUrls.filter(isPdfUrl).map(u => {
+        const pages = pdfPages[u];
+        // Rendered pages print properly; the iframe is the on-screen fallback.
+        if (pages && pages.length) {
+          return pages.map((p, i) => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))}${pages.length > 1 ? ` (page ${i + 1} of ${pages.length})` : ""}</div><img class="attach-pdf-page" src="${p.dataUri}" alt="attachment page" /></div>`).join("");
+        }
+        return `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))} <a href="${esc(u)}" target="_blank" rel="noopener">(open in new tab)</a></div><iframe class="attach-pdf" src="${esc(u)}"></iframe></div>`;
+      }).join("")}
       ${attachUrls.filter(isHtmlUrl).map(u => `<div class="attach-page"><div class="attach-cap">Attachment — ${esc(fileName(u))} <a href="${esc(u)}" target="_blank" rel="noopener">(open in new tab)</a></div><iframe class="attach-pdf" src="${esc(u)}"></iframe></div>`).join("")}`
     : "";
 
@@ -282,7 +300,13 @@ export function pvPrintHtml(pv: PV, logoDataUri = ""): string {
   .attach-cap a { color: #1d4ed8; margin-left: 6px; }
   .attach-page img { max-width: 100%; max-height: 1000px; object-fit: contain; border: 1px solid #ddd; display: block; margin: 0 auto; }
   .attach-pdf { width: 100%; height: 900px; border: 1px solid #ddd; }
-  @media print { .attach-pdf { height: 1100px; } }
+  /* A rasterized PDF page is an ordinary image, so it prints in full — one
+     attachment page per sheet, scaled to fit without cropping. */
+  .attach-pdf-page { width: 100%; max-width: 100%; height: auto; border: 1px solid #ddd; display: block; margin: 0 auto; }
+  @media print {
+    .attach-pdf { height: 1100px; }
+    .attach-pdf-page { border: none; max-height: 100vh; width: auto; max-width: 100%; }
+  }
   @media print {
     body { background: #fff; }
     .toolbar { display: none; }

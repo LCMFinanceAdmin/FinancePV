@@ -8,7 +8,7 @@ import {
   pdf, Document, Page, Text, View, StyleSheet, Image,
 } from "@react-pdf/renderer";
 import { PDFDocument } from "pdf-lib";
-import { pvPrintHtml } from "@/components/pv/pv-html";
+import { pvPrintHtml, type PdfPageImages } from "@/components/pv/pv-html";
 
 export async function svgToPngDataUri(svgPath: string, size = 200): Promise<string> {
   return new Promise((resolve) => {
@@ -485,7 +485,27 @@ export default function PVPdfDownload({ pv }: { pv: PV }) {
     setError(null);
     try {
       const logo = await getLogoUri();
-      const html = pvPrintHtml(pv, typeof logo === "string" ? logo : logoDataUri);
+      // Render PDF attachments to page images first. Printing an embedded PDF
+      // gives a picture of the viewer rather than the document, so payslips
+      // came out as a thumbnail of a PDF reader.
+      const pdfUrls = [
+        ...(pv.attachments ?? []),
+        ...(pv.payment_receipt_url ? [pv.payment_receipt_url] : []),
+      ].filter(u => u && /\.pdf(\?|$)/i.test(u));
+      const pdfPages: PdfPageImages = {};
+      if (pdfUrls.length) {
+        // Isolated: if the PDF renderer can't load, the voucher must still
+        // open — the attachments simply fall back to the embedded viewer.
+        try {
+          const { rasterizePdfs } = await import("@/lib/pdf-rasterize");
+          for (const { url, pages } of await rasterizePdfs(pdfUrls)) {
+            if (pages.length) pdfPages[url] = pages;
+          }
+        } catch (err) {
+          console.warn("Could not render PDF attachments for printing", err);
+        }
+      }
+      const html = pvPrintHtml(pv, typeof logo === "string" ? logo : logoDataUri, pdfPages);
       if (win) {
         win.document.open();
         win.document.write(html);
