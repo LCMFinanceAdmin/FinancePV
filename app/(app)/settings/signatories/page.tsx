@@ -27,6 +27,61 @@ interface UserRole {
   role: string;
   ministries: string[];
   has_pin: boolean;
+  // Church directory. Position and employment sit alongside the system role
+  // above — a pastor elected to EXCO is MINISTRY_HEAD with is_pastor true.
+  is_lcm_staff: boolean;
+  is_pastor: boolean;
+  designation: string | null;
+  congregation_id: string | null;
+  reports_to: "BISHOP_ONLY" | "GM_AND_BISHOP";
+}
+
+interface Congregation {
+  id: string; name: string; district_id: string | null; head_pastor_email: string | null;
+}
+interface District { id: string; name: string; dean_email: string | null; }
+
+/**
+ * Plain-English version of resolveLeaveApprovers() in lib/leave-approvers.ts,
+ * shown while editing a person so a wrong congregation or missing Dean is
+ * caught here rather than when someone's leave goes to the wrong person.
+ * Kept in step with that function by hand — it describes the same three rules.
+ */
+function describeLeaveChain(
+  u: UserRole,
+  congregations: Congregation[],
+  districts: District[],
+  people: UserRole[],
+): string {
+  const nameOf = (email?: string | null) =>
+    people.find(p => p.email?.toLowerCase() === email?.toLowerCase())?.full_name || email || "";
+  const bishop = people.find(p => p.role === "BISHOP");
+  const bishopLabel = bishop && bishop.email !== u.email ? `${bishop.full_name || "the Bishop"} (Bishop)` : null;
+
+  if (!u.is_lcm_staff) return "not applicable — this person isn't employed by LCM.";
+
+  if (u.is_pastor) {
+    const cong = congregations.find(c => c.id === u.congregation_id);
+    if (!cong) return "no congregation set, so only the Bishop — assign one to route through the head pastor or Dean.";
+    const district = districts.find(d => d.id === cong.district_id);
+    const isHead = cong.head_pastor_email?.toLowerCase() === u.email?.toLowerCase();
+
+    if (cong.head_pastor_email && !isHead) {
+      return [`${nameOf(cong.head_pastor_email)} (head pastor, ${cong.name})`, bishopLabel].filter(Boolean).join(" → ");
+    }
+    // No head pastor, or this person is the head pastor — the Dean takes it.
+    if (district?.dean_email && district.dean_email.toLowerCase() !== u.email?.toLowerCase()) {
+      const why = isHead ? "they are the head pastor" : `${cong.name} has no head pastor`;
+      return [`${nameOf(district.dean_email)} (Dean, ${district.name})`, bishopLabel].filter(Boolean).join(" → ") + ` — because ${why}.`;
+    }
+    return bishopLabel ? `${bishopLabel} only — no head pastor or Dean applies.` : "nobody — no head pastor, Dean or Bishop is set.";
+  }
+
+  const gm = people.find(p => p.role === "GENERAL_MANAGER");
+  const gmLabel = u.reports_to !== "BISHOP_ONLY" && gm && gm.email !== u.email
+    ? `${gm.full_name || "the General Manager"} (GM)` : null;
+  const chain = [gmLabel, bishopLabel].filter(Boolean);
+  return chain.length ? chain.join(" → ") : "nobody — no GM or Bishop is set.";
 }
 
 export default function SignatoriesPage() {
@@ -37,13 +92,21 @@ export default function SignatoriesPage() {
   const [toast, setToast] = useState("");
   const [pinModal, setPinModal] = useState<{ userId: string; email: string } | null>(null);
   const [ministries, setMinistries] = useState<string[]>([]);
+  const [congregations, setCongregations] = useState<Congregation[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
 
   async function load() {
-    const [{ data: ur }, { data: min }] = await Promise.all([
-      supabase.from("user_roles").select("id,email,full_name,role,ministries,has_pin").order("role"),
+    const [{ data: ur }, { data: min }, { data: cong }, { data: dist }] = await Promise.all([
+      supabase.from("user_roles")
+        .select("id,email,full_name,role,ministries,has_pin,is_lcm_staff,is_pastor,designation,congregation_id,reports_to")
+        .order("role"),
       supabase.from("ministries").select("name").order("name"),
+      supabase.from("congregations").select("*").order("name"),
+      supabase.from("districts").select("*").order("name"),
     ]);
     setUsers(ur ?? []);
+    setCongregations((cong ?? []) as Congregation[]);
+    setDistricts((dist ?? []) as District[]);
     // Only standing committees can be assigned to an EXCO Member — offices,
     // payee groupings and finance functions are filtered out.
     setMinistries(excoAssignableMinistries((min ?? []).map((m: { name: string }) => m.name)));
@@ -56,15 +119,20 @@ export default function SignatoriesPage() {
 
   async function saveUser(u: UserRole) {
     setSaving(true);
+    const profile = {
+      full_name: u.full_name, role: u.role, ministries: u.ministries,
+      is_lcm_staff: u.is_lcm_staff, is_pastor: u.is_pastor,
+      designation: u.designation || null,
+      // A congregation only means something for a pastor, so it is cleared
+      // rather than left dangling if the flag is turned off.
+      congregation_id: u.is_pastor ? (u.congregation_id || null) : null,
+      reports_to: u.reports_to,
+    };
     if (u.id.startsWith("new-")) {
-      const { error } = await supabase.from("user_roles").insert({
-        email: u.email, full_name: u.full_name, role: u.role, ministries: u.ministries,
-      });
+      const { error } = await supabase.from("user_roles").insert({ email: u.email, ...profile });
       if (error) { showToast("Error: " + error.message); setSaving(false); return; }
     } else {
-      const { error } = await supabase.from("user_roles").update({
-        full_name: u.full_name, role: u.role, ministries: u.ministries,
-      }).eq("id", u.id);
+      const { error } = await supabase.from("user_roles").update(profile).eq("id", u.id);
       if (error) { showToast("Error: " + error.message); setSaving(false); return; }
     }
     await load();
@@ -109,6 +177,8 @@ export default function SignatoriesPage() {
         </div>
         <Button size="sm" onClick={() => setUsers(u => [...u, {
           id: `new-${Date.now()}`, email: "", full_name: "", role: "STAFF", ministries: [], has_pin: false,
+          is_lcm_staff: true, is_pastor: false, designation: null, congregation_id: null,
+          reports_to: "GM_AND_BISHOP",
         }])}>
           <Plus size={13} /> Add User
         </Button>
@@ -177,6 +247,63 @@ export default function SignatoriesPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* ── Church directory ────────────────────────────────────── */}
+              <div className="rounded-xl border border-[#dbe9fb] bg-[#f8fbff] p-3 space-y-3">
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
+                    <input type="checkbox" className="accent-[#4a6da7] w-4 h-4"
+                      checked={u.is_lcm_staff}
+                      onChange={e => setUsers(us => us.map(x => x.id === u.id ? { ...x, is_lcm_staff: e.target.checked } : x))} />
+                    Employed by LCM
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
+                    <input type="checkbox" className="accent-[#4a6da7] w-4 h-4"
+                      checked={u.is_pastor}
+                      onChange={e => setUsers(us => us.map(x => x.id === u.id ? { ...x, is_pastor: e.target.checked } : x))} />
+                    Pastor
+                  </label>
+                  {!u.is_lcm_staff && (
+                    <span className="text-xs text-amber-700">
+                      No leave, staff loans or payroll — volunteer access only.
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-stone-400">Designation</label>
+                    <input className={inp} value={u.designation ?? ""} placeholder="e.g. Finance Executive, Pastor"
+                      onChange={e => setUsers(us => us.map(x => x.id === u.id ? { ...x, designation: e.target.value } : x))} />
+                  </div>
+                  {u.is_pastor ? (
+                    <div>
+                      <label className="text-xs text-stone-400">Congregation</label>
+                      <select className={inp} value={u.congregation_id ?? ""}
+                        onChange={e => setUsers(us => us.map(x => x.id === u.id ? { ...x, congregation_id: e.target.value || null } : x))}>
+                        <option value="">— none —</option>
+                        {congregations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-xs text-stone-400">Reports to (for leave)</label>
+                      <select className={inp} value={u.reports_to}
+                        onChange={e => setUsers(us => us.map(x => x.id === u.id ? { ...x, reports_to: e.target.value as UserRole["reports_to"] } : x))}>
+                        <option value="GM_AND_BISHOP">General Manager and Bishop</option>
+                        <option value="BISHOP_ONLY">Bishop only</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* The resulting approval chain, so a wrong setting is caught
+                    here rather than when someone's leave goes astray. */}
+                <p className="text-xs text-stone-500">
+                  <span className="font-semibold text-stone-600">Leave goes to:</span>{" "}
+                  {describeLeaveChain(u, congregations, districts, users)}
+                </p>
               </div>
 
               <div className="flex gap-2 items-center pt-1 border-t border-stone-100">

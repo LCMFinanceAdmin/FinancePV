@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
+import { isStaffMember } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { excoAssignableMinistries } from "@/lib/ministries";
 import { LutherRose } from "@/components/ui/luther-rose";
@@ -173,17 +174,18 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     {
       label: "Payroll",
       items: [
-        { href: "/payroll",       label: "Payroll",        icon: <Wallet size={17} />,       show: user.isFinanceAdmin || user.isGeneralManager },
-        { href: "/payroll/runs",  label: "Payroll Runs",   icon: <CalendarClock size={17} />, show: user.isFinanceAdmin || user.isGeneralManager },
-        { href: "/payroll/loans", label: "Employee Loans", icon: <HandCoins size={17} />,    show: user.isFinanceAdmin || user.isGeneralManager || user.isSignatory },
+        { href: "/payroll",       label: "Payroll",        icon: <Wallet size={17} />,       show: isStaffMember(user) && (user.isFinanceAdmin || user.isGeneralManager) },
+        { href: "/payroll/runs",  label: "Payroll Runs",   icon: <CalendarClock size={17} />, show: isStaffMember(user) && (user.isFinanceAdmin || user.isGeneralManager) },
+        { href: "/payroll/loans", label: "Employee Loans", icon: <HandCoins size={17} />,    show: isStaffMember(user) && (user.isFinanceAdmin || user.isGeneralManager || user.isSignatory) },
       ],
     },
     {
       label: "Staff Services",
       items: [
-        { href: "/my-leaves",   label: "My Leaves",     icon: <CalendarDays size={17} />,   show: true },
-        { href: "/leave-queue", label: "Leave Queue",   icon: <ClipboardCheck size={17} />, show: user.isGeneralManager || user.role === "BISHOP" },
-        { href: "/my-loans",    label: "My Loan (EPL)", icon: <HandCoins size={17} />,      show: user.role !== "TREASURER" && user.email.endsWith("@lcm.org.my") },
+        // Employment entitlements — not for volunteer EXCO members.
+        { href: "/my-leaves",   label: "My Leaves",     icon: <CalendarDays size={17} />,   show: isStaffMember(user) },
+        { href: "/leave-queue", label: "Leave Queue",   icon: <ClipboardCheck size={17} />, show: user.isGeneralManager || user.role === "BISHOP" || user.isDean || user.isPastor },
+        { href: "/my-loans",    label: "My Loan (EPL)", icon: <HandCoins size={17} />,      show: isStaffMember(user) && user.role !== "TREASURER" && user.email.endsWith("@lcm.org.my") },
       ],
     },
   ];

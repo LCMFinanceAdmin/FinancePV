@@ -5,6 +5,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { Plus, CheckCircle2, XCircle, Clock, HandCoins, X, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
+import { StaffOnly } from "@/components/auth/staff-only";
 
 interface LoanApp {
   id: string; loan_app_no: string; amount: number; purpose: string;
@@ -44,6 +45,10 @@ const EPL_TERMS = [
 ];
 
 export default function MyLoansPage() {
+  return <StaffOnly feature="Employee loans"><MyLoansInner /></StaffOnly>;
+}
+
+function MyLoansInner() {
   const supabase = createClient();
   const [loanApps,       setLoanApps]       = useState<LoanApp[]>([]);
   const [activeLoans,    setActiveLoans]     = useState<EmployeeLoan[]>([]);

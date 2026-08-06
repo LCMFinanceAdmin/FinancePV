@@ -23,6 +23,19 @@ async function getUserProfile(): Promise<UserProfile | null> {
   const signatoryRoles = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
   const isSignatory = signatoryRoles.includes(role);
 
+  // Where this person serves, and whether they lead a district. Dean is derived
+  // from the district record rather than a flag, so it can't contradict the
+  // assignment made in Settings.
+  const [{ data: congregation }, { data: deanOf }] = await Promise.all([
+    profile?.congregation_id
+      ? supabase.from("congregations")
+          .select("name, districts(name)")
+          .eq("id", profile.congregation_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase.from("districts").select("name").eq("dean_email", user.email!).maybeSingle(),
+  ]);
+  const districtOfCongregation = (congregation as { districts?: { name?: string } } | null)?.districts?.name;
+
   return {
     id: user.id,
     email: user.email!,
@@ -37,6 +50,14 @@ async function getUserProfile(): Promise<UserProfile | null> {
     isBuildingManager: role === "BUILDING_MANAGER",
     isBamCommittee: false,
     isTestAdmin: TEST_ADMIN_EMAILS.includes(user.email!),
+    // Defaults to true so an account with no directory record behaves exactly
+    // as it did before this was introduced.
+    isLcmStaff: profile?.is_lcm_staff ?? true,
+    isPastor: profile?.is_pastor ?? false,
+    isDean: !!deanOf,
+    congregation: (congregation as { name?: string } | null)?.name ?? undefined,
+    district: deanOf?.name ?? districtOfCongregation ?? undefined,
+    designation: profile?.designation ?? undefined,
   };
 }
 

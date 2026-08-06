@@ -44,6 +44,29 @@ export interface UserProfile {
   isBuildingManager: boolean;
   isBamCommittee?: boolean;
   isTestAdmin: boolean;
+  // Church directory. Position and employment sit alongside the system role
+  // above rather than replacing it: an EXCO member who is also a pastor is
+  // MINISTRY_HEAD with isPastor true, and keeps every EXCO permission.
+  // Optional because several pages build a profile inline from user_roles
+  // without the directory join. Treat an absent isLcmStaff as employed (see
+  // isStaffMember below) so nothing is locked out before the directory is
+  // filled in; absent isPastor/isDean simply grant nothing extra.
+  isLcmStaff?: boolean;  // employed by LCM — gates leave, staff loans, payroll
+  isPastor?: boolean;
+  isDean?: boolean;      // derived: leads a district
+  congregation?: string;
+  district?: string;
+  designation?: string;
+}
+
+/**
+ * Whether someone is employed by LCM, for gating leave, staff loans and
+ * payroll. Absent means "not yet recorded", which must read as employed — the
+ * directory is populated gradually and nobody should lose access meanwhile.
+ * Only an explicit false locks a feature.
+ */
+export function isStaffMember(u: Pick<UserProfile, "isLcmStaff">): boolean {
+  return u.isLcmStaff !== false;
 }
 
 export interface PV {

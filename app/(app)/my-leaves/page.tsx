@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
+import { resolveLeaveApprovers } from "@/lib/leave-approvers";
+import { StaffOnly } from "@/components/auth/staff-only";
 import { CalendarDays, Plus, CheckCircle2, XCircle, Clock, X, Upload, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -32,6 +34,10 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 };
 
 export default function MyLeavesPage() {
+  return <StaffOnly feature="Leave"><MyLeavesInner /></StaffOnly>;
+}
+
+function MyLeavesInner() {
   const supabase = createClient();
   const [leaveTypes,       setLeaveTypes]       = useState<LeaveType[]>([]);
   const [applications,     setApplications]     = useState<LeaveApp[]>([]);
@@ -121,17 +127,15 @@ export default function MyLeavesPage() {
 
     setSubmitting(true);
 
-    // Resolve approvers: check custom assignments first, else use GM + Bishop from user_roles
-    const [{ data: customApprovers }, { data: defaultApprovers }] = await Promise.all([
-      supabase.from("leave_approver_assignments").select("approver_email,approver_name")
-        .eq("employee_email", userEmail).order("sort_order"),
-      supabase.from("user_roles").select("email,full_name")
-        .in("role", ["GENERAL_MANAGER", "BISHOP"]),
-    ]);
-
-    const resolvedApprovers = (customApprovers && customApprovers.length > 0)
-      ? customApprovers.map(a => ({ email: a.approver_email, name: a.approver_name }))
-      : (defaultApprovers ?? []).map(a => ({ email: a.email, name: a.full_name }));
+    // Assigned approvers win; otherwise pastors route through their head pastor
+    // or district Dean, and staff through the GM and/or Bishop per their record.
+    const resolved = await resolveLeaveApprovers(supabase, userEmail);
+    if (resolved.length === 0) {
+      showMsg("No approver could be worked out for your account — ask Finance to check your record.", false);
+      setSubmitting(false);
+      return;
+    }
+    const resolvedApprovers = resolved.map(a => ({ email: a.email, name: a.name }));
 
     const { data: leaveNoData, error: noErr } = await supabase.rpc("next_leave_no");
     if (noErr) { showMsg("Could not generate leave number", false); setSubmitting(false); return; }

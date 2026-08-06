@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
+import { isStaffMember } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -84,17 +85,23 @@ const NAV_SECTIONS = [
   {
     label: "Payroll",
     items: [
-      { href: "/payroll", label: "Payroll", icon: <Wallet size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager },
-      { href: "/payroll/runs", label: "Payroll Runs", icon: <CalendarClock size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager },
-      { href: "/payroll/loans", label: "Employee Loans", icon: <HandCoins size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager || u.isSignatory },
+      // Role plus employment: someone not on LCM's payroll has no business in
+      // payroll administration even if they hold a senior role.
+      { href: "/payroll", label: "Payroll", icon: <Wallet size={16} />, show: (u: UserProfile) => isStaffMember(u) && (u.isFinanceAdmin || u.isGeneralManager) },
+      { href: "/payroll/runs", label: "Payroll Runs", icon: <CalendarClock size={16} />, show: (u: UserProfile) => isStaffMember(u) && (u.isFinanceAdmin || u.isGeneralManager) },
+      { href: "/payroll/loans", label: "Employee Loans", icon: <HandCoins size={16} />, show: (u: UserProfile) => isStaffMember(u) && (u.isFinanceAdmin || u.isGeneralManager || u.isSignatory) },
     ],
   },
   {
     label: "Staff Services",
     items: [
-      { href: "/my-leaves",   label: "My Leaves",    icon: <CalendarDays size={16} />, show: () => true },
-      { href: "/leave-queue", label: "Leave Queue",   icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isGeneralManager || u.role === "BISHOP" },
-      { href: "/my-loans",    label: "My Loan (EPL)", icon: <HandCoins size={16} />, show: (u: UserProfile) => u.role !== "TREASURER" && u.email.endsWith("@lcm.org.my") },
+      // Leave and staff loans are employment entitlements, so they are for LCM
+      // staff only — a volunteer EXCO member has an @lcm.org.my address but no
+      // entitlement to either.
+      { href: "/my-leaves",   label: "My Leaves",    icon: <CalendarDays size={16} />, show: (u: UserProfile) => isStaffMember(u) },
+      // The Dean and head pastors approve leave too, not just the GM and Bishop.
+      { href: "/leave-queue", label: "Leave Queue",   icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isGeneralManager || u.role === "BISHOP" || !!u.isDean || !!u.isPastor },
+      { href: "/my-loans",    label: "My Loan (EPL)", icon: <HandCoins size={16} />, show: (u: UserProfile) => isStaffMember(u) && u.role !== "TREASURER" && u.email.endsWith("@lcm.org.my") },
     ],
   },
   {
