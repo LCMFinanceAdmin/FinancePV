@@ -2228,6 +2228,27 @@ export default function PVDetailPage() {
                     {pv.purpose}
                   </td>
                 </tr>
+                {/* Earlier voucher this one follows from — shown here, on the
+                    voucher itself, so an approver reading the PV sees the
+                    context without having to be told about it separately. */}
+                {pv.reference_pv_no && (
+                  <tr>
+                    <td className="font-bold py-1.5 pr-1 align-top text-[12px] bg-blue-50 whitespace-nowrap">
+                      Ref. earlier PV:
+                    </td>
+                    <td className="border-b border-black py-1.5 px-1 bg-blue-50" colSpan={3}>
+                      {pv.reference_pv_id ? (
+                        <a href={`/my-pvs/${pv.reference_pv_id}`}
+                          className="font-semibold text-[#2563eb] underline print:text-black print:no-underline">
+                          {pv.reference_pv_no}
+                        </a>
+                      ) : (
+                        <span className="font-semibold">{pv.reference_pv_no}</span>
+                      )}
+                      {pv.reference_note ? ` — ${pv.reference_note}` : ""}
+                    </td>
+                  </tr>
+                )}
                 {/* EXCO (conditional) */}
                 {pv.exco_resolution_ref && (
                   <tr>

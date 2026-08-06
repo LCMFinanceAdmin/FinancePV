@@ -7,7 +7,7 @@ import { ApprovalPath } from "@/components/ui/approval-path";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import type { PV, PVStatus } from "@/lib/types";
-import { Search, Send, CheckSquare } from "lucide-react";
+import { Search, Send, CheckSquare, Link2 } from "lucide-react";
 
 const ADMIN_STATUSES: PVStatus[] = ["PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY", "APPROVED"];
 
@@ -25,7 +25,7 @@ export default function AdminPage() {
     setLoading(true);
     let query = supabase
       .from("pvs")
-      .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals,payment_type,loa_required,loa_label")
+      .select("id,pv_no,status,amount,payee_name,ministry,dept,purpose,reference_pv_id,reference_pv_no,reference_note,submitted_at,submitted_by_email,approvals,payment_type,loa_required,loa_label")
       .order("submitted_at", { ascending: false })
       .limit(100);
 
@@ -127,6 +127,23 @@ export default function AdminPage() {
                     {pv.loa_label && <div className="text-xs text-stone-400 mt-0.5">{pv.loa_label}</div>}
                   </div>
                 </div>
+
+                {/* Why a second payment exists, at the point of deciding. */}
+                {pv.reference_pv_no && (
+                  <div className="flex items-start gap-1.5 rounded-lg bg-[#eef4fd] px-2.5 py-1.5 text-[11px] text-stone-600">
+                    <Link2 size={11} className="mt-0.5 shrink-0 text-[#4a6da7]" />
+                    <span>
+                      Relates to{" "}
+                      {pv.reference_pv_id ? (
+                        <a href={`/my-pvs/${pv.reference_pv_id}`}
+                          className="font-semibold text-[#2563eb] hover:underline">{pv.reference_pv_no}</a>
+                      ) : (
+                        <span className="font-semibold text-stone-700">{pv.reference_pv_no}</span>
+                      )}
+                      {pv.reference_note ? ` — ${pv.reference_note}` : ""}
+                    </span>
+                  </div>
+                )}
 
                 {/* Admin actions */}
                 <div className="flex gap-2 flex-wrap">

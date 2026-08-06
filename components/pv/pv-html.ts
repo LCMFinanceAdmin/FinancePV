@@ -353,6 +353,7 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
       <div class="info-cell">Payee Bank A/C No:  ${esc(bankLine)}</div>
       <div class="info-cell">Project:  ${esc(projectLabel)}</div>
       <div class="info-cell">Purpose:  ${esc(pv.purpose)}</div>
+      ${pv.reference_pv_no ? `<div class="info-cell exco-ref">Ref. earlier PV: <b>${esc(pv.reference_pv_no)}</b>${pv.reference_note ? ` — ${esc(pv.reference_note)}` : ""}</div>` : ""}
       ${pv.exco_resolution_ref ? `<div class="info-cell exco-ref">EXCO Resolution Ref: ${esc(pv.exco_resolution_ref)}${pv.exco_resolution_date ? `  dated ${esc(pv.exco_resolution_date)}` : ""}</div>` : ""}
     </div>
 

@@ -19,6 +19,23 @@ Deno.serve(async (req) => {
     const d = await req.json();
     const pvType = ["BAM", "LSC", "HLE"].includes(d.pv_type) ? d.pv_type as "BAM" | "LSC" | "HLE" : "LCM";
 
+    // An earlier voucher this PV follows from. The number is stored as typed —
+    // vouchers predating this system get quoted too — while the id is resolved
+    // only when it matches a real row, so the link works where it can and a
+    // hand-typed reference is never silently dropped.
+    const referencePvNo = (d.reference_pv_no || "").trim();
+    let referencePvId: string | null = null;
+    if (referencePvNo) {
+      const { data: refPv } = await db
+        .from("pvs").select("id").eq("pv_no", referencePvNo).maybeSingle();
+      referencePvId = refPv?.id ?? null;
+    }
+    const referenceCols = {
+      reference_pv_no: referencePvNo || null,
+      reference_pv_id: referencePvId,
+      reference_note: (d.reference_note || "").trim() || null,
+    };
+
     // ── BAM PV flow ─────────────────────────────────────────────────────
     if (pvType === "BAM") {
       if (!BAM_ROLES.includes(profile?.role)) {
@@ -87,6 +104,7 @@ Deno.serve(async (req) => {
         ref_no:                d.ref_no || "",
         ref_no_2:              d.ref_no_2 || "",
         purpose:               d.purpose || "",
+        ...referenceCols,
         amount,
         line_items:            d.line_items || [],
         attachments:           d.attachment_urls || [],
@@ -194,6 +212,7 @@ Deno.serve(async (req) => {
         ref_no:                d.ref_no || "",
         ref_no_2:              d.ref_no_2 || "",
         purpose:               d.purpose || "",
+        ...referenceCols,
         amount,
         line_items:            d.line_items || [],
         attachments:           d.attachment_urls || [],
@@ -311,6 +330,7 @@ Deno.serve(async (req) => {
       ref_no:                d.ref_no || "",
       ref_no_2:              d.ref_no_2 || "",
       purpose:               d.purpose || "",
+      ...referenceCols,
       amount,
       line_items:            d.line_items || [],
       attachments:           d.attachment_urls || [],

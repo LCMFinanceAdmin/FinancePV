@@ -104,6 +104,12 @@ export interface PV {
   payment_receipt_url: string | null;
   exco_resolution_ref: string;
   exco_resolution_date: string;
+  // An earlier voucher this one corrects, tops up or otherwise follows from.
+  // The number is kept alongside the id so the printed PV still reads correctly
+  // even if the referenced row is gone.
+  reference_pv_id?: string | null;
+  reference_pv_no?: string | null;
+  reference_note?: string | null;
   favourite_id: string;
   pv_label: string;
   pv_type: PVType;

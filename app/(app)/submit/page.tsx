@@ -76,6 +76,10 @@ interface FormData {
   ministry: string; project: string; purpose: string;
   line_items: PVLineItem[];
   sig_applicant_name: string; sig_applicant_confirm: boolean;
+  // An earlier voucher this one follows from — a correction, a top-up, a
+  // reversal. Optional, and carried onto the printed PV so approvers and the
+  // audit file can see why a second payment exists.
+  reference_pv_no: string; reference_note: string;
 }
 
 const EMPTY_FORM: FormData = {
@@ -87,7 +91,88 @@ const EMPTY_FORM: FormData = {
   ministry: "", project: "", purpose: "",
   line_items: [{ description: "", amount: 0, date: "" }],
   sig_applicant_name: "", sig_applicant_confirm: false,
+  reference_pv_no: "", reference_note: "",
 };
+
+interface EarlierPv {
+  id: string; pv_no: string; payee_name: string;
+  amount: number; status: string; purpose: string;
+}
+
+/**
+ * "This payment relates to an earlier PV."
+ *
+ * Typing a voucher number is the natural thing to do, so the input is free text
+ * backed by a datalist rather than a dropdown of hundreds of rows. What matters
+ * is that the person can see they picked the right one before submitting —
+ * hence the confirmation line showing payee, amount and status. A number that
+ * matches nothing is still accepted: vouchers predating this system get quoted
+ * too, and refusing them would just push the reference into the purpose field
+ * where nothing can act on it.
+ */
+function ReferenceFields({ form, setField, earlierPvs, compact }: {
+  form: FormData;
+  setField: (k: keyof FormData, v: string) => void;
+  earlierPvs: EarlierPv[];
+  compact?: boolean;
+}) {
+  const typed = form.reference_pv_no.trim().toUpperCase();
+  const match = earlierPvs.find(p => p.pv_no.toUpperCase() === typed);
+  const inputCls = compact ? mInput : uline;
+
+  return (
+    <div className="space-y-2">
+      <div className={compact ? "" : "flex items-end gap-2"}>
+        {compact && <label className={mLabel}>Relates to an earlier PV (optional)</label>}
+        <input
+          className={inputCls}
+          list="earlier-pv-numbers"
+          value={form.reference_pv_no}
+          onChange={e => setField("reference_pv_no", e.target.value)}
+          placeholder="e.g. LCM-2026-015 — leave blank if not applicable"
+        />
+      </div>
+      <datalist id="earlier-pv-numbers">
+        {earlierPvs.map(p => (
+          <option key={p.id} value={p.pv_no}>
+            {p.payee_name} · RM {Number(p.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })} · {p.status}
+          </option>
+        ))}
+      </datalist>
+
+      {typed && (
+        match ? (
+          <p className="text-[11px] text-stone-500">
+            <span className="font-semibold text-stone-700">{match.pv_no}</span> — {match.payee_name},
+            RM {Number(match.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}
+            <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+              match.status === "CANCELLED" || match.status === "REJECTED"
+                ? "bg-stone-100 text-stone-500" : "bg-green-100 text-green-700"
+            }`}>{match.status}</span>
+            {match.purpose ? <span className="block text-stone-400">{match.purpose}</span> : null}
+          </p>
+        ) : (
+          <p className="text-[11px] text-amber-600">
+            No voucher with that number is in the system — it will still be printed on this PV as
+            a written reference.
+          </p>
+        )
+      )}
+
+      {form.reference_pv_no.trim() && (
+        <div>
+          {compact && <label className={mLabel}>Why it&apos;s referenced</label>}
+          <input
+            className={inputCls}
+            value={form.reference_note}
+            onChange={e => setField("reference_note", e.target.value)}
+            placeholder="e.g. Corrects the overpayment on that voucher"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Desktop inline styles ───────────────────────────────────────────────
 const uline = "border-0 border-b border-stone-400 bg-transparent outline-none text-sm text-stone-800 px-1 py-0 w-full focus:border-[#4a6da7] transition-colors placeholder:text-stone-300";
@@ -169,6 +254,7 @@ export default function SubmitPVPage() {
   const [userRole, setUserRole] = useState("");
   const [userMinistries, setUserMinistries] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
+  const [earlierPvs, setEarlierPvs] = useState<EarlierPv[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -471,6 +557,16 @@ export default function SubmitPVPage() {
     loadBudgetProjects(supabase, form.ministry).then(setProjects);
   }, [form.ministry]);
 
+  // Earlier vouchers, for the "relates to" picker. Cancelled and rejected ones
+  // are included on purpose — a correcting PV usually points at exactly those.
+  useEffect(() => {
+    supabase.from("pvs")
+      .select("id,pv_no,payee_name,amount,status,purpose")
+      .order("pv_no", { ascending: false })
+      .limit(400)
+      .then(({ data }) => setEarlierPvs((data ?? []) as EarlierPv[]));
+  }, []);
+
   // Fetch the raw HTML of any HTML attachment so it can be rendered via
   // iframe srcDoc (see htmlCache above). Each URL is fetched at most once.
   useEffect(() => {
@@ -694,6 +790,8 @@ export default function SubmitPVPage() {
           ref_no: form.ref_no,
           ref_no_2: form.ref_no_2,
           purpose: form.purpose,
+          reference_pv_no: form.reference_pv_no.trim(),
+          reference_note: form.reference_note.trim(),
           amount: displayAmount,
           line_items: isTravelClaim
             ? travelItems.filter(i => i.travel_type).map(i => ({
@@ -1163,6 +1261,7 @@ export default function SubmitPVPage() {
           onChange={e => setField("purpose", e.target.value)}
           placeholder="e.g. Monthly Cost of Living Allowance" />
       </div>
+      <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} compact />
     </div>,
 
     // 3: Claim Items
@@ -1761,6 +1860,10 @@ export default function SubmitPVPage() {
             <Row label="Purpose 用途" sublabel="Describe what this payment is for">
               <input className={uline} value={form.purpose}
                 onChange={e => setField("purpose", e.target.value)} placeholder="e.g. Monthly Cost of Living Allowance" required />
+            </Row>
+
+            <Row label="Relates to PV" sublabel="Only if this corrects or follows an earlier voucher">
+              <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} />
             </Row>
           </div>
 

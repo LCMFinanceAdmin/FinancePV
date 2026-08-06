@@ -9,6 +9,7 @@ import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
   Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw, Search, PenLine, Trash2, KeyRound,
+  Link2 as LinkIcon,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -93,7 +94,7 @@ export default function SignatoryPage() {
         supabase.auth.getUser(),
         supabase
           .from("pvs")
-          .select("id,pv_no,pv_type,status,amount,payee_name,ministry,project,dept,purpose,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
+          .select("id,pv_no,pv_type,status,amount,payee_name,ministry,project,dept,purpose,reference_pv_id,reference_pv_no,reference_note,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
           .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED", "APPROVED", "PAID", "GM_REVIEW"])
           .order("submitted_at", { ascending: false }),
         supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount,is_master,child_group_names"),
@@ -521,6 +522,24 @@ export default function SignatoryPage() {
             </div>
             <div className="text-[11px] text-stone-400 mt-1">{formatDate(pv.submitted_at!)}</div>
           </Link>
+
+          {/* Why a second payment exists. Without this a correcting PV looks
+              like a duplicate at exactly the moment someone is deciding. */}
+          {pv.reference_pv_no && (
+            <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-[#eef4fd] px-2.5 py-1.5 text-[11px] text-stone-600">
+              <LinkIcon size={11} className="mt-0.5 shrink-0 text-[#4a6da7]" />
+              <span>
+                Relates to{" "}
+                {pv.reference_pv_id ? (
+                  <Link href={`/my-pvs/${pv.reference_pv_id}`}
+                    className="font-semibold text-[#2563eb] hover:underline">{pv.reference_pv_no}</Link>
+                ) : (
+                  <span className="font-semibold text-stone-700">{pv.reference_pv_no}</span>
+                )}
+                {pv.reference_note ? ` — ${pv.reference_note}` : ""}
+              </span>
+            </div>
+          )}
 
           {/* Budget check, shown only on PVs this user is about to decide on —
               both because that's where it matters and to keep the queue from
