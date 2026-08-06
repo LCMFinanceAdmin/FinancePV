@@ -50,16 +50,37 @@ export function CommitteePicker({
     ? "border border-stone-300 rounded px-1.5 py-1 text-[13px]"
     : "border border-stone-200 rounded-xl px-3 py-2.5 text-sm";
 
+  // Entries are often paths ("ECP Public Bank - Monthly Recurring / Utilities").
+  // Truncating those made every option in a folder read identically, so the
+  // parent is dimmed and the leaf carries the weight — the part that actually
+  // distinguishes one option from the next.
+  const PathLabel = ({ name }: { name: string }) => {
+    const parts = name.split(" / ");
+    const leaf = parts.pop() ?? name;
+    return (
+      <span className="min-w-0 break-words">
+        {parts.length > 0 && (
+          <span className="text-stone-400">{parts.join(" / ")} / </span>
+        )}
+        <span className="font-medium text-stone-700">{leaf}</span>
+      </span>
+    );
+  };
+
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen(o => !o)}
+        title={value || placeholder}
         className={`${btnCls} w-full bg-white flex items-center justify-between gap-1 text-left transition-colors hover:border-[#4a6da7]/60 focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 ${value ? "text-stone-800" : "text-stone-400"}`}>
         <span className="truncate">{value || placeholder}</span>
         <ChevronDown size={14} className={`text-stone-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
+      {/* The dropdown is wider than the trigger when it needs to be: folder
+          paths are long, and one that clips them is no use for choosing
+          between them. */}
       {open && (
-        <div className="absolute z-30 mt-1 w-full min-w-[210px] bg-white border border-stone-200 rounded-xl shadow-xl overflow-hidden">
+        <div className="absolute z-30 mt-1 w-max min-w-full max-w-[min(30rem,88vw)] bg-white border border-stone-200 rounded-xl shadow-xl overflow-hidden">
           <div className="p-2 border-b border-stone-100">
             <input autoFocus value={q} onChange={e => setQ(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && canAdd) { e.preventDefault(); add(); } if (e.key === "Escape") setOpen(false); }}
@@ -74,10 +95,10 @@ export function CommitteePicker({
               </button>
             )}
             {stdShown.map(s => (
-              <button key={s} type="button" onClick={() => { onChange(s); setOpen(false); }}
-                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[13px] hover:bg-stone-50 text-left">
-                {value === s ? <Check size={12} className="text-green-600 shrink-0" /> : <span className="w-3 shrink-0" />}
-                <span className="truncate">{s}</span>
+              <button key={s} type="button" title={s} onClick={() => { onChange(s); setOpen(false); }}
+                className="w-full flex items-start gap-1.5 px-3 py-1.5 text-[13px] hover:bg-stone-50 text-left">
+                {value === s ? <Check size={12} className="mt-0.5 text-green-600 shrink-0" /> : <span className="w-3 shrink-0" />}
+                <PathLabel name={s} />
               </button>
             ))}
             {custShown.length > 0 && stdShown.length > 0 && (
@@ -86,13 +107,13 @@ export function CommitteePicker({
               </div>
             )}
             {custShown.map(c => (
-              <div key={c.id} className="flex items-center gap-1 px-3 py-1.5 text-[13px] hover:bg-stone-50">
-                <button type="button" onClick={() => { onChange(c.name); setOpen(false); }}
-                  className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-                  {value === c.name ? <Check size={12} className="text-green-600 shrink-0 mt-0.5 self-start" /> : <span className="w-3 shrink-0" />}
+              <div key={c.id} className="flex items-start gap-1 px-3 py-1.5 text-[13px] hover:bg-stone-50">
+                <button type="button" title={c.name} onClick={() => { onChange(c.name); setOpen(false); }}
+                  className="flex items-start gap-1.5 flex-1 min-w-0 text-left">
+                  {value === c.name ? <Check size={12} className="text-green-600 shrink-0 mt-0.5" /> : <span className="w-3 shrink-0" />}
                   <span className="min-w-0">
-                    <span className="block truncate">{c.name}</span>
-                    {c.meta && <span className="block text-[11px] text-stone-400 truncate">{c.meta}</span>}
+                    <span className="block"><PathLabel name={c.name} /></span>
+                    {c.meta && <span className="block text-[11px] text-stone-400 break-words">{c.meta}</span>}
                   </span>
                 </button>
                 {onDelete && (
