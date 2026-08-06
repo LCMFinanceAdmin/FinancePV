@@ -2037,8 +2037,10 @@ export default function RecurringPage() {
                       .filter(f => f.pv_type === form.pv_type && f.frequency === form.frequency)
                       .map(f => f.path),
                   ])];
-                  const topFolders = [...new Set(scopedPaths.map(p => parseGroupPath(p).folder))];
-                  const folderOptions = [...new Set([...topFolders, ...scopedPaths])].sort();
+                  // Top-level names only. Listing full paths here as well made
+                  // the folder list read as a wall of near-identical entries,
+                  // and duplicated what the Subfolder field below already does.
+                  const folderOptions = [...new Set(scopedPaths.map(p => parseGroupPath(p).folder))].sort();
                   const subOptions = [...new Set(scopedPaths
                     .map(p => parseGroupPath(p))
                     .filter(p => p.folder === gp.folder && p.subfolder)
@@ -2048,10 +2050,13 @@ export default function RecurringPage() {
                   return (<>
                     <Field label="Folder">
                       <CommitteePicker
-                        value={form.group_name || ""}
-                        onChange={v => setField("group_name", (v.trim() || "General"))}
+                        value={gp.folder}
+                        // Changing folder keeps any subfolder already chosen, so
+                        // moving "Rental / Office" to Utilities lands on
+                        // "Utilities / Office" rather than silently dropping it.
+                        onChange={v => setPath(v.trim() || "General", gp.subfolder ?? "")}
                         standard={folderOptions}
-                        placeholder="Choose a folder / subfolder, or type a new one…"
+                        placeholder="Choose a folder, or type a new one…"
                         size="md"
                       />
                     </Field>
