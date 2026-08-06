@@ -6,7 +6,8 @@ import { ArrowLeft, CheckCircle2, FileText, Banknote, Send, X, FileSpreadsheet, 
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
-import { BankExportModal } from "@/components/payroll/bank-export-modal";
+import { BankExportModal, buildBankRows, generateWorkbook } from "@/components/payroll/bank-export-modal";
+import { generateStatutorySummary } from "@/components/payroll/statutory-summary";
 import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { buildSchedule } from "@/lib/payroll/loan";
@@ -285,6 +286,21 @@ export default function PayrollRunDetailPage() {
   }
 
   /**
+   * Uploads a generated document to the PV attachment bucket and returns its
+   * public URL. Returns null rather than throwing: a missing payslip should
+   * not stop the vouchers being raised, and the failure surfaces in the toast.
+   */
+  async function uploadAttachment(blob: Blob, fileName: string): Promise<string | null> {
+    const path = `payroll/${run?.id}/${Date.now()}_${fileName}`;
+    const { error } = await supabase.storage.from("pv-attachments").upload(path, blob, {
+      contentType: blob.type || "application/octet-stream", upsert: true,
+    });
+    if (error) { console.warn("Attachment upload failed", fileName, error.message); return null; }
+    const { data } = supabase.storage.from("pv-attachments").getPublicUrl(path);
+    return data.publicUrl ?? null;
+  }
+
+  /**
    * Raises a real payment voucher for each payroll voucher, so payroll goes
    * through the same approval chain as every other payment rather than being
    * marked paid inside payroll alone.
@@ -303,9 +319,54 @@ export default function PayrollRunDetailPage() {
       const label = `${MONTH_LABELS[run.month]} ${run.year}`;
       const errors: string[] = [];
 
+      // Supporting documents, built once and shared across the voucher set.
+      // Approvers should not have to take a lump sum on trust: the salary
+      // voucher carries every payslip plus the exact bank file that will be
+      // uploaded, and each statutory voucher carries the breakdown behind it.
+      setToast("Preparing supporting documents…");
+      const empById = Object.fromEntries(employees.map(e => [e.id, e]));
+      const bankRows = buildBankRows(lines, empById);
+      const bankBlob = await generateWorkbook(bankRows.filter(r => r.problems.length === 0));
+      const bankUrl = await uploadAttachment(bankBlob, `ECP_Bank_File_${label.replace(/\s+/g, "_")}.xlsx`);
+
+      const payslipUrls: string[] = [];
+      const { pdf } = await import("@react-pdf/renderer");
+      for (const row of payslipRows) {
+        const blob = await pdf(
+          <PayslipPDF
+            emp={row.emp} monthLabel={MONTH_LABELS[run.month]} year={run.year}
+            salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
+            epfEe={row.epfEe} epfEr={row.epfEr}
+            socsoEe={row.socsoEe} socsoEr={row.socsoEr}
+            eisEe={row.eisEe} eisEr={row.eisEr}
+            eplDeduction={row.eplDeduction} net={row.net}
+            customItems={row.customItems}
+          />
+        ).toBlob();
+        const url = await uploadAttachment(blob, `Payslip_${row.emp.full_name.replace(/\s+/g, "_")}_${label.replace(/\s+/g, "_")}.pdf`);
+        if (url) payslipUrls.push(url);
+      }
+
+      // One summary per statutory body, keyed to the voucher kind it belongs to.
+      const summaryUrls: Partial<Record<string, string>> = {};
+      for (const body of ["EPF", "PERKESO", "PCB"] as const) {
+        if (!pending.some(v => v.kind === body)) continue;
+        const blob = await generateStatutorySummary({ body, periodLabel: label, lines, empById });
+        const url = await uploadAttachment(blob, `${body}_Summary_${label.replace(/\s+/g, "_")}.xlsx`);
+        if (url) summaryUrls[body] = url;
+      }
+
       for (const v of pending) {
         try {
           const purpose = `Payroll ${label} — ${v.payee}`;
+          // Salary gets the payslips; a statutory voucher gets its own
+          // breakdown. Both get the bank file, since that is the instrument
+          // the payment actually goes out on.
+          const attachments = [
+            ...(v.kind === "SALARY" ? payslipUrls : []),
+            ...(summaryUrls[v.kind] ? [summaryUrls[v.kind] as string] : []),
+            ...(bankUrl ? [bankUrl] : []),
+          ];
           const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
@@ -317,6 +378,7 @@ export default function PayrollRunDetailPage() {
               line_items: [{ date: pvDate, description: purpose, amount: Number(v.total_amount) }],
               sig_applicant_name: authUser?.email, sig_applicant_confirm: true,
               pv_type: "LCM",
+              attachment_urls: attachments,
             }),
           });
           const result = await res.json();
@@ -763,10 +825,11 @@ export default function PayrollRunDetailPage() {
             ))}
           </div>
           <p className="text-[11px] text-stone-400 mt-3">
-            Salary voucher = total net to staff. Statutory vouchers = employee + employer contributions per body.
+            Salary voucher = total net to staff. Statutory vouchers = employee + employer contributions per body,
+            with PERKESO covering SOCSO and EIS on one remittance.
             {allPvsGenerated
-              ? " Payment vouchers have been raised and are going through the normal approval chain."
-              : " Use Generate PV to send these for GM and signatory approval."}
+              ? " Payment vouchers have been raised and are going through the normal approval chain — each carries its payslips or contribution summary plus the ECP bank file."
+              : " Generate PV raises these for GM and signatory approval, attaching every payslip and the ECP bank file to the salary voucher and the contribution breakdown to each statutory voucher."}
           </p>
         </div>
       )}

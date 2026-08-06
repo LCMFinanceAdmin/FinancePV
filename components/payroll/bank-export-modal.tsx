@@ -85,7 +85,10 @@ export function buildBankRows(lines: PayrollLine[], empById: Record<string, Payr
   });
 }
 
-async function generateWorkbook(rows: BankExportRow[]): Promise<Blob> {
+// Exported so the same file can be attached to the salary PV when payroll
+// raises its payment vouchers — the bank file the approvers sign off on must
+// be byte-identical to the one Finance uploads to the bank.
+export async function generateWorkbook(rows: BankExportRow[]): Promise<Blob> {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Payment");
