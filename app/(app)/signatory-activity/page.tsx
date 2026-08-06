@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { PVApproval } from "@/lib/types";
+import { PaidArchive } from "@/components/pv/paid-archive";
 
 const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
 
@@ -64,6 +65,8 @@ export default function SignatoryActivityPage() {
     return param && (param in TAB_STATUSES) ? param : "pending";
   });
   const [allPvs, setAllPvs]           = useState<PendingPV[]>([]);
+  const [paidCount, setPaidCount]     = useState(0);
+  const [ministryList, setMinistryList] = useState<string[]>([]);
   const [loading, setLoading]         = useState(true);
   const [userRole, setUserRole]       = useState("");
   const [userEmail, setUserEmail]     = useState("");
@@ -98,14 +101,26 @@ export default function SignatoryActivityPage() {
         const user = session?.user;
         if (!user) return;
 
-        const [{ data: profile }, { data: pvData }, { data: bulkData }] = await Promise.all([
+        // PAID is deliberately absent here. Paid vouchers only accumulate, and
+        // pulling every one of them into the browser to filter in JavaScript is
+        // what would make this page slower every year. They live in the archive
+        // below, which fetches a month at a time — see components/pv/paid-archive.
+        const [{ data: profile }, { data: pvData }, { data: bulkData }, { data: monthData }] = await Promise.all([
           supabase.from("user_roles").select("role,full_name").eq("email", user.email).single(),
           supabase.from("pvs")
             .select("id,pv_no,payee_name,amount,ministry,dept,purpose,status,loa_required,approvals,submitted_at,paid_at,payment_method")
-            .in("status", ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY", "APPROVED", "PAID"])
+            .in("status", ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY", "APPROVED"])
             .order("submitted_at", { ascending: false }),
           supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount,pv_count,is_master,child_group_names"),
+          // One aggregate row per month — enough for the Paid tab's count
+          // without reading a single voucher.
+          supabase.rpc("paid_pv_months"),
         ]);
+
+        setPaidCount(
+          ((monthData ?? []) as { pv_count: number }[])
+            .reduce((s, m) => s + Number(m.pv_count), 0),
+        );
 
         const role = profile?.role ?? "";
         setUserRole(role);
@@ -174,16 +189,27 @@ export default function SignatoryActivityPage() {
     })();
   }, [viewMode, userEmail, minePvs]);
 
+  // Ministries for the archive's filter — loaded once, only when the Paid tab
+  // is actually opened.
+  useEffect(() => {
+    if (statusTab !== "paid" || ministryList.length > 0) return;
+    supabase.from("ministries").select("name").order("name")
+      .then(({ data }) => setMinistryList((data ?? []).map((m: { name: string }) => m.name)));
+  }, [statusTab, ministryList.length, supabase]);
+
   // ── Tab counts ───────────────────────────────────────────────
+  // Paid comes from the month aggregate, not from allPvs, because paid
+  // vouchers are never loaded into the page.
   const tabCounts = useMemo(() => {
-    const counts: Record<StatusTab, number> = { pending: 0, verified: 0, pending_approval: 0, approved: 0, paid: 0 };
+    const counts: Record<StatusTab, number> = { pending: 0, verified: 0, pending_approval: 0, approved: 0, paid: paidCount };
     for (const pv of allPvs) {
       for (const [tab, statuses] of Object.entries(TAB_STATUSES) as [StatusTab, string[]][]) {
+        if (tab === "paid") continue;
         if (statuses.includes(pv.status)) { counts[tab]++; break; }
       }
     }
     return counts;
-  }, [allPvs]);
+  }, [allPvs, paidCount]);
 
   // ── Active tab PVs (filtered by status, then search) ─────────
   const { bulkGroups, standalones } = useMemo(() => {
@@ -508,6 +534,13 @@ export default function SignatoryActivityPage() {
       </div>
       )}
 
+      {/* ── Paid archive ─────────────────────────────────────────
+          Paid vouchers get their own view: they are never loaded with the
+          rest, so they need their own search and their own month folders. */}
+      {viewMode === "activity" && statusTab === "paid" ? (
+        <PaidArchive ministries={ministryList} />
+      ) : (
+      <>
       {/* ── Search ───────────────────────────────────────────── */}
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
@@ -599,6 +632,8 @@ export default function SignatoryActivityPage() {
           {standalones.map(pv => <PVRow key={pv.id} pv={pv} />)}
         </div>
       ))}
+      </>
+      )}
 
       {/* ── "Submitted by me" list ────────────────────────────── */}
       {viewMode === "mine" && (
