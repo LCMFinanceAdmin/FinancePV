@@ -66,8 +66,10 @@ function describeLeaveChain(
     const district = districts.find(d => d.id === cong.district_id);
     const isHead = cong.head_pastor_email?.toLowerCase() === u.email?.toLowerCase();
 
+    // The head pastor settles routine pastoral leave — the Bishop is only
+    // involved when it escalates to the Dean below.
     if (cong.head_pastor_email && !isHead) {
-      return [`${nameOf(cong.head_pastor_email)} (head pastor, ${cong.name})`, bishopLabel].filter(Boolean).join(" → ");
+      return `${nameOf(cong.head_pastor_email)} (head pastor, ${cong.name}) — that's the full chain.`;
     }
     // No head pastor, or this person is the head pastor — the Dean takes it.
     if (district?.dean_email && district.dean_email.toLowerCase() !== u.email?.toLowerCase()) {

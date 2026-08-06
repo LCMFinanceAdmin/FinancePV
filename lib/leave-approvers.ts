@@ -8,9 +8,10 @@
 // Order of precedence:
 //   1. An explicit assignment in leave_approver_assignments always wins. That
 //      is the escape hatch for anyone the rules don't describe.
-//   2. Pastors go to the head pastor of their congregation; if the congregation
-//      has none, or the applicant IS the head pastor, the district Dean takes
-//      it. Then the Bishop.
+//   2. A pastor's own head pastor settles it — the Bishop is NOT involved in
+//      routine pastoral leave. Only when the congregation has no head pastor,
+//      or the applicant IS the head pastor, does it escalate: district Dean,
+//      then the Bishop.
 //   3. Everyone else goes to the Bishop, plus the GM when they report to both.
 //
 // Self-approval is skipped at every step, so a Dean never signs their own
@@ -86,12 +87,16 @@ export async function resolveLeaveApprovers(
     }
 
     if (headPastorEmail && !eq(headPastorEmail, applicantEmail)) {
-      chain.push({
+      // The head pastor settles it. Routine pastoral leave does not go to the
+      // Bishop — that only happens when the chain has to escalate below.
+      return [{
         email: headPastorEmail,
         name: await nameFor(headPastorEmail),
         reason: congregationName ? `head pastor, ${congregationName}` : "head pastor",
-      });
-    } else if (districtId) {
+      }];
+    }
+
+    if (districtId) {
       // No head pastor, or the head pastor is the one applying — the Dean of
       // the district picks it up.
       const { data: district } = await supabase

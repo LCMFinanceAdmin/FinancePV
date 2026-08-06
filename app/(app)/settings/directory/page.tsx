@@ -212,9 +212,9 @@ export default function ChurchDirectoryPage() {
                 {/* The consequence of the settings above, stated plainly. */}
                 <p className="rounded-lg bg-[#f4f9ff] px-3 py-2 text-xs text-stone-600">
                   {c.head_pastor_email
-                    ? <>Leave for pastors here goes to <strong>{people.find(p => p.email === c.head_pastor_email)?.full_name || c.head_pastor_email}</strong>, then the Bishop.</>
+                    ? <>Leave for pastors here is settled by <strong>{people.find(p => p.email === c.head_pastor_email)?.full_name || c.head_pastor_email}</strong> — it doesn&apos;t go to the Bishop.</>
                     : district?.dean_email
-                    ? <>No head pastor set, so leave goes to the Dean <strong>{deanName || district.dean_email}</strong>, then the Bishop.</>
+                    ? <>No head pastor set, so leave escalates to the Dean <strong>{deanName || district.dean_email}</strong>, then the Bishop.</>
                     : <>No head pastor and no Dean for this district — leave here would go to the Bishop alone.</>}
                 </p>
 
@@ -237,11 +237,12 @@ export default function ChurchDirectoryPage() {
       </div>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-        <strong>How leave routing uses this:</strong> a pastor&apos;s application goes to their
-        congregation&apos;s head pastor, then the Bishop. If the congregation has no head pastor — or
-        the head pastor is the one applying — the district Dean takes it instead. A Dean&apos;s own
-        leave goes straight to the Bishop. Anyone with a specific assignment in Leave Approvers
-        overrides all of this.
+        <strong>How leave routing uses this:</strong> a pastor&apos;s application is settled by their
+        congregation&apos;s head pastor — the Bishop isn&apos;t involved in routine pastoral leave. It
+        escalates only when the congregation has no head pastor, or the head pastor is the one
+        applying: then the district Dean approves, followed by the Bishop. A Dean&apos;s own leave
+        goes straight to the Bishop. Anyone with a specific assignment in Leave Approvers overrides
+        all of this.
       </div>
     </div>
   );
