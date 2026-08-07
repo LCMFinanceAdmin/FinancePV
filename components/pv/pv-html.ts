@@ -172,7 +172,11 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
         ministryVerified ? (excoApproval?.name ?? pv.ministry_verified_by ?? pv.dept_head_name ?? "EXCO Member") : null,
         ministryVerified ? `${pv.ministry}  Date: ${fmtDate(excoApproval?.timestamp ?? pv.ministry_verified_at ?? pv.head_verified_at)}` : null,
         "Name: _______________________  Date: ___________");
-    midSection = `${applicant ? `<div class="one-col">${applicant}</div>` : ""}<div class="one-col">${exco}</div>`;
+    // A lone signature box stops two thirds of the way across, with the rest
+    // left blank and unbordered — a box stretched the full width reads as a
+    // large empty field waiting to be filled in.
+    const partRow = (cell: string) => `<div class="one-col">${cell}<div class="filler"></div></div>`;
+    midSection = `${applicant ? partRow(applicant) : ""}${partRow(exco)}`;
   }
 
   // Approved-by (signatory) columns
@@ -188,11 +192,6 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
         </div>
       </div>`;
   }).join("");
-
-  const remarks = approvals.filter(a => a.remarks);
-  const remarksHtml = remarks.length
-    ? `<div class="remarks"><div class="remarks-title">Remarks:</div>${remarks.map(a => `<div class="remark">${esc(roleLabel(a.role))} (${esc(a.name)}): ${esc(a.remarks)}</div>`).join("")}</div>`
-    : "";
 
   // Attachments — every attachment stays visible on this page: images,
   // PDFs, and HTML documents (e.g. a signed worksheet, rendered the same
@@ -265,7 +264,9 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
   table.items th.c, table.items td.c { text-align: center; }
   .two-col { display: flex; margin-bottom: 6px; }
   .two-col .sig-cell:first-child { border-right: none; }
-  .one-col { margin-bottom: 6px; }
+  .one-col { display: flex; margin-bottom: 6px; }
+  .one-col .sig-cell { flex: 2; }
+  .filler { flex: 1; border: none; }
   .sig-cell { flex: 1; border: 1px solid #000; padding: 7.5px 8px; }
   .sig-head { border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; }
   .sig-label { font-weight: 700; font-size: 15px; }
@@ -286,9 +287,6 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
   .appr-cols { display: flex; gap: 6px; }
   .appr-col { flex: 1; text-align: center; }
   .appr-foot { border-top: 1px solid #000; padding-top: 3px; }
-  .remarks { margin-top: 6px; }
-  .remarks-title { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
-  .remark { font-size: 15px; }
   .attach-section { margin-top: 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; }
   .attach-title { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
   .attach-list { font-size: 16px; }
@@ -377,7 +375,6 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
       </div>
     </div>
 
-    ${remarksHtml}
     ${isPaid ? paidBanner(pv) : ""}
     ${attachHtml}
   </div>
