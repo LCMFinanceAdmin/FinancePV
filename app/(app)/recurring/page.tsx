@@ -2022,6 +2022,14 @@ export default function RecurringPage() {
                     <option value="Fire Protection System" />
                   </datalist>
                 </Field>
+                {/* Frequency pairs with the name so the full-width folder pair
+                    below starts on a clean row. It also scopes which folders
+                    are offered, so it belongs before them. */}
+                <Field label="Frequency">
+                  <select className={inp} value={form.frequency} onChange={e => setField("frequency", e.target.value)}>
+                    {FREQ_OPTIONS.map(f => <option key={f} value={f}>{FREQ_LABELS[f]}</option>)}
+                  </select>
+                </Field>
                 {(() => {
                   const gp = parseGroupPath(form.group_name || "");
                   // Existing folder paths for this entity + the chosen frequency —
@@ -2047,35 +2055,53 @@ export default function RecurringPage() {
                     .map(p => p.subfolder as string))].sort();
                   const setPath = (folder: string, sub: string) =>
                     setField("group_name", sub ? `${folder || "General"} / ${sub}` : (folder || "General"));
-                  return (<>
-                    <Field label="Folder">
-                      <CommitteePicker
-                        value={gp.folder}
-                        // Changing folder keeps any subfolder already chosen, so
-                        // moving "Rental / Office" to Utilities lands on
-                        // "Utilities / Office" rather than silently dropping it.
-                        onChange={v => setPath(v.trim() || "General", gp.subfolder ?? "")}
-                        standard={folderOptions}
-                        placeholder="Choose a folder, or type a new one…"
-                        size="md"
-                      />
-                    </Field>
-                    <Field label="Subfolder (optional)">
-                      <CommitteePicker
-                        value={gp.subfolder ?? ""}
-                        onChange={sub => setPath(gp.folder, sub.trim())}
-                        standard={subOptions}
-                        placeholder="None — or choose / create a subfolder"
-                        size="md"
-                      />
-                    </Field>
-                  </>);
+                  // Folder sits directly above Subfolder, in that order, because
+                  // that is the shape of the thing being chosen — a path, read
+                  // top to bottom. Side by side they read as unrelated fields.
+                  return (
+                    <div className="col-span-2 space-y-3">
+                      <Field label="Folder">
+                        <CommitteePicker
+                          value={gp.folder}
+                          // Changing folder keeps any subfolder already chosen, so
+                          // moving "Rental / Office" to Utilities lands on
+                          // "Utilities / Office" rather than silently dropping it.
+                          onChange={v => setPath(v.trim() || "General", gp.subfolder ?? "")}
+                          standard={folderOptions}
+                          placeholder="Choose a folder, or type a new one…"
+                          size="md"
+                        />
+                      </Field>
+                      <Field label="Subfolder (optional)">
+                        <CommitteePicker
+                          value={gp.subfolder ?? ""}
+                          onChange={sub => setPath(gp.folder, sub.trim())}
+                          standard={subOptions}
+                          placeholder="None — or choose / create a subfolder"
+                          size="md"
+                        />
+                        {/* Once a folder with subfolders is picked, offer them
+                            outright. Otherwise an expense quietly lands at the
+                            top level when it belonged in one of them, and the
+                            mistake only shows up when the folder is run. */}
+                        {gp.folder && subOptions.length > 0 && !gp.subfolder && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] text-stone-400">
+                              {gp.folder} has {subOptions.length} subfolder{subOptions.length === 1 ? "" : "s"} —
+                            </span>
+                            {subOptions.map(s => (
+                              <button key={s} type="button" onClick={() => setPath(gp.folder, s)}
+                                className="rounded-full border border-[#dbe9fb] bg-[#f4f9ff] px-2 py-0.5 text-[11px] font-medium text-[#3a6db0] transition-colors hover:border-[#75a8f2]">
+                                {s}
+                              </button>
+                            ))}
+                            <span className="text-[11px] text-stone-300">or leave at top level</span>
+                          </div>
+                        )}
+                      </Field>
+                    </div>
+                  );
                 })()}
-                <Field label="Frequency">
-                  <select className={inp} value={form.frequency} onChange={e => setField("frequency", e.target.value)}>
-                    {FREQ_OPTIONS.map(f => <option key={f} value={f}>{FREQ_LABELS[f]}</option>)}
-                  </select>
-                </Field>
                 <Field label="Term">
                   <select className={inp} value={form.term_type} onChange={e => setField("term_type", e.target.value)}>
                     <option value="INFINITE">Ongoing (no end date)</option>
