@@ -4,113 +4,12 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import { excoAssignableMinistries } from "@/lib/ministries";
-import {
-  LayoutDashboard, FilePlus, FileText, LayoutGrid,
-  RefreshCw, Users, Building2, Settings, LogOut,
-  ChevronRight, Activity, ClipboardCheck, PiggyBank, FlaskConical,
-  ShoppingCart, ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
-  Wallet, HandCoins, CalendarClock,
-} from "lucide-react";
+import { LogOut, ChevronRight, ChevronDown, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
-import { isStaffMember } from "@/lib/types";
+import { visibleGroups, visiblePinned, groupForPath, activeHref } from "@/lib/nav";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ReactNode;
-  show: (u: UserProfile) => boolean;
-}
-
-const NAV_SECTIONS = [
-  {
-    label: null,
-    items: [
-      { href: "/dashboard", label: "Dashboard",  icon: <LayoutDashboard size={16} />, show: (u: UserProfile) => !u.isSignatory },
-      { href: "/submit",    label: "Submit PV",  icon: <FilePlus size={16} />,        show: (u: UserProfile) => !u.isSignatory && !u.isBuildingManager },
-      { href: "/my-pvs",   label: "My PVs",     icon: <FileText size={16} />,        show: (u: UserProfile) => !u.isSignatory && !u.isMinistryHead && !u.isBuildingManager && !u.isFinanceAdmin },
-    ],
-  },
-  {
-    label: "Finance Executive",
-    items: [
-      { href: "/control-center",      label: "Control Center",    icon: <LayoutGrid size={16} />,     show: (u: UserProfile) => u.isFinanceAdmin },
-      { href: "/recurring",           label: "Recurring Expenses",icon: <RefreshCw size={16} />,      show: (u: UserProfile) => u.isFinanceAdmin },
-      { href: "/signatory-activity",  label: "Finance Activity",  icon: <Activity size={16} />,       show: (u: UserProfile) => u.isFinanceAdmin },
-      { href: "/hod-activity",        label: "Finance Activity",  icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isSignatory },
-      { href: "/settings",            label: "Settings",          icon: <Settings size={16} />,       show: (u: UserProfile) => u.isFinanceAdmin },
-    ],
-  },
-  {
-    label: "Approvals",
-    items: [
-      { href: "/signatory",   label: "Signatory Queue", icon: <Users size={16} />,         show: (u: UserProfile) => u.isSignatory },
-      { href: "/ministry",    label: "EXCO Queue",      icon: <Building2 size={16} />,     show: (u: UserProfile) => u.isMinistryHead },
-      { href: "/gm-claims",  label: "GM Claims",        icon: <Inbox size={16} />,         show: (u: UserProfile) => u.isGeneralManager || u.isFinanceAdmin || u.isSignatory },
-    ],
-  },
-  {
-    label: "Budget",
-    items: [
-      { href: "/budget", label: "Ministry Budget", icon: <PiggyBank size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory },
-    ],
-  },
-  {
-    label: "Building / Event",
-    items: [
-      { href: "/submit?type=bam",    label: "Submit BAM PV",       icon: <Hammer size={16} />,    show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
-      { href: "/my-bam-pvs",         label: "BAM Activity",        icon: <FileText size={16} />,  show: (u: UserProfile) => u.isBuildingManager },
-      { href: "/bam-queue",          label: "BAM Queue",           icon: <Building2 size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin || !!u.isBamCommittee },
-      { href: "/recurring?type=bam", label: "BAM Recurring",       icon: <RefreshCw size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
-      { href: "/worksheets",         label: "Worksheets",          icon: <ClipboardList size={16} />, show: (u: UserProfile) => u.isBuildingManager || u.isFinanceAdmin },
-    ],
-  },
-  {
-    label: "Income & Collections",
-    items: [
-      { href: "/bookings", label: "Facility Bookings", icon: <CalendarDays size={16} />, show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
-      { href: "/income",   label: "Income Records",    icon: <TrendingUp size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin || u.isBuildingManager },
-    ],
-  },
-  {
-    label: "Requests & Payments",
-    items: [
-      { href: "/payment-requests", label: "Payment Requests", icon: <ShoppingCart size={16} />, show: () => true },
-      { href: "/payments",          label: "Payments",          icon: <CreditCard size={16} />,   show: (u: UserProfile) => u.isFinanceAdmin },
-      { href: "/banking",           label: "Banking",           icon: <Landmark size={16} />,     show: (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager },
-    ],
-  },
-  {
-    label: "Payroll",
-    items: [
-      // Role plus employment: someone not on LCM's payroll has no business in
-      // payroll administration even if they hold a senior role.
-      { href: "/payroll", label: "Payroll", icon: <Wallet size={16} />, show: (u: UserProfile) => isStaffMember(u) && (u.isFinanceAdmin || u.isGeneralManager) },
-      { href: "/payroll/runs", label: "Payroll Runs", icon: <CalendarClock size={16} />, show: (u: UserProfile) => isStaffMember(u) && (u.isFinanceAdmin || u.isGeneralManager) },
-      { href: "/payroll/loans", label: "Employee Loans", icon: <HandCoins size={16} />, show: (u: UserProfile) => isStaffMember(u) && (u.isFinanceAdmin || u.isGeneralManager || u.isSignatory) },
-    ],
-  },
-  {
-    label: "Staff Services",
-    items: [
-      // Leave and staff loans are employment entitlements, so they are for LCM
-      // staff only — a volunteer EXCO member has an @lcm.org.my address but no
-      // entitlement to either.
-      { href: "/my-leaves",   label: "My Leaves",    icon: <CalendarDays size={16} />, show: (u: UserProfile) => isStaffMember(u) },
-      // The Dean and head pastors approve leave too, not just the GM and Bishop.
-      { href: "/leave-queue", label: "Leave Queue",   icon: <ClipboardCheck size={16} />, show: (u: UserProfile) => u.isGeneralManager || u.role === "BISHOP" || !!u.isDean || !!u.isPastor },
-      { href: "/my-loans",    label: "My Loan (EPL)", icon: <HandCoins size={16} />, show: (u: UserProfile) => isStaffMember(u) && u.role !== "TREASURER" && u.email.endsWith("@lcm.org.my") },
-    ],
-  },
-  {
-    label: "Testing",
-    items: [
-      { href: "/switch-role", label: "Switch Role", icon: <FlaskConical size={16} />, show: (u: UserProfile) => u.isTestAdmin },
-    ],
-  },
-] satisfies { label: string | null; items: NavItem[] }[];
 
 const TEST_ROLES = [
   { value: "FINANCE_ADMIN",    label: "Finance Executive" },
@@ -184,10 +83,36 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
     window.location.reload();
   }
 
-  const visibleSections = NAV_SECTIONS.map(s => ({
-    ...s,
-    items: s.items.filter(n => n.show(user)),
-  })).filter(s => s.items.length > 0);
+  const groups = visibleGroups(user);
+  const pinned = visiblePinned(user);
+  const activeGroup = groupForPath(groups, pathname);
+  // Only the most specific entry is highlighted — see activeHref.
+  const current = activeHref(groups, pinned, pathname);
+
+  // Which groups are open. The group holding the current page is always open —
+  // you should be able to see where you are — and the rest remember whatever
+  // the person last chose, so a preferred shape survives a reload.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let stored: string[] = [];
+    try { stored = JSON.parse(localStorage.getItem("lcm-nav-open") ?? "[]"); } catch { /* first run */ }
+    setOpenGroups(new Set(stored));
+  }, []);
+
+  function toggleGroup(id: string) {
+    setOpenGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem("lcm-nav-open", JSON.stringify([...next])); } catch { /* private mode */ }
+      return next;
+    });
+  }
+
+  // A count on a collapsed group has to show on the group itself, or closing
+  // the group hides the fact that something is waiting.
+  const groupBadge = (groupId: string) =>
+    groups.find(g => g.id === groupId)?.items
+      .reduce((n, i) => n + (i.badge === "gmClaims" ? gmClaimCount : 0), 0) ?? 0;
 
   return (
     <aside className="hidden md:flex print:hidden flex-col w-[17.25rem] shrink-0 bg-white/85 border-r border-[#dbe9fb] shadow-[8px_0_28px_rgba(85,135,205,.05)] h-full backdrop-blur-xl">
@@ -203,43 +128,89 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 py-4 px-3 overflow-y-auto space-y-5">
-        {visibleSections.map((section, si) => (
-          <div key={si}>
-            {section.label && (
-              <div className="px-3 mb-1.5 text-[10px] font-bold tracking-[.14em] uppercase text-[#8ba0bb]">
-                {section.label}
+      {/* Nav — a short list of groups rather than one long list of pages.
+          Only the group you're working in is expanded, so the sidebar stays
+          roughly the same height however many features exist. */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <div className="space-y-0.5">
+          {pinned.map(n => {
+            const active = current === n.href;
+            return (
+              <Link key={n.href} href={n.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-all duration-200",
+                  active
+                    ? "bg-gradient-to-r from-[#e4f2ff] to-[#f1edff] font-semibold text-[#1d4ed8] shadow-[0_5px_12px_rgba(72,130,214,.10)]"
+                    : "text-[#526985] hover:bg-[#eef6ff] hover:text-[#244b80]",
+                )}>
+                {n.icon}
+                <span className="flex-1">{n.label}</span>
+                {active && <ChevronRight size={13} />}
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 space-y-1">
+          {groups.map(g => {
+            const isActiveGroup = activeGroup === g.id;
+            const open = isActiveGroup || openGroups.has(g.id);
+            const badge = groupBadge(g.id);
+            return (
+              <div key={g.id}>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(g.id)}
+                  aria-expanded={open}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-colors",
+                    isActiveGroup
+                      ? "font-semibold text-[#244b80]"
+                      : "text-[#526985] hover:bg-[#eef6ff] hover:text-[#244b80]",
+                  )}>
+                  <span className={isActiveGroup ? "text-[#1d4ed8]" : "text-[#8ba0bb]"}>{g.icon}</span>
+                  <span className="flex-1 text-left">{g.label}</span>
+                  {badge > 0 && !open && (
+                    <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                      {badge}
+                    </span>
+                  )}
+                  {open
+                    ? <ChevronDown size={13} className="text-[#a8bcd4]" />
+                    : <ChevronRight size={13} className="text-[#a8bcd4]" />}
+                </button>
+
+                {open && (
+                  <div className="ml-[1.55rem] space-y-0.5 border-l border-[#e1edfb] pb-1 pl-2">
+                    {g.items.map(n => {
+                      const active = current === n.href;
+                      const count = n.badge === "gmClaims" ? gmClaimCount : 0;
+                      return (
+                        <Link key={n.href} href={n.href}
+                          className={cn(
+                            "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
+                            active
+                              ? "bg-[#eaf2ff] font-semibold text-[#1d4ed8]"
+                              : "text-[#61779a] hover:bg-[#f2f8ff] hover:text-[#244b80]",
+                          )}>
+                          <span className={cn("shrink-0", active ? "text-[#1d4ed8]" : "text-[#a8bcd4]")}>
+                            {n.icon}
+                          </span>
+                          <span className="flex-1">{n.label}</span>
+                          {count > 0 && (
+                            <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                              {count}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-            <div className="space-y-0.5">
-              {section.items.map((n) => {
-                const active = pathname === n.href || (n.href !== "/dashboard" && pathname.startsWith(n.href));
-                return (
-                  <Link
-                    key={n.href}
-                    href={n.href}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-xl text-[14px] transition-all duration-200",
-                      active
-                        ? "bg-gradient-to-r from-[#e4f2ff] to-[#f1edff] text-[#1d4ed8] font-semibold shadow-[0_5px_12px_rgba(72,130,214,.10)]"
-                        : "text-[#526985] hover:bg-[#eef6ff] hover:text-[#244b80]"
-                    )}
-                  >
-                    {n.icon}
-                    <span className="flex-1">{n.label}</span>
-                    {n.href === "/gm-claims" && gmClaimCount > 0 && (
-                      <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center leading-none">
-                        {gmClaimCount}
-                      </span>
-                    )}
-                    {active && <ChevronRight size={13} />}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+            );
+          })}
+        </div>
       </nav>
 
       {/* User footer */}

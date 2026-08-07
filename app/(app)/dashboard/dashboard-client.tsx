@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
-import type { PV } from "@/lib/types";
+import type { PV, UserProfile } from "@/lib/types";
+import { FeatureDirectory } from "@/components/layout/feature-directory";
 import {
   FilePlus, Clock, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
   FileText, ChevronDown, ChevronUp, X, Inbox, AlertCircle,
@@ -32,7 +33,7 @@ function greeting(name: string) {
   return `Good ${tod}, ${name}`;
 }
 
-export default function DashboardPage() {
+export default function DashboardPage({ profile }: { profile?: UserProfile | null }) {
   const supabase = createClient();
 
   const [pvs,          setPvs]          = useState<Partial<PV>[]>([]);
@@ -511,6 +512,11 @@ export default function DashboardPage() {
           })}
         </div>
       </div>
+
+      {/* ── Everything this person can reach ──────────────────────────
+          The sidebar shows a handful of groups, collapsed; this is the full
+          map for when you know the app does something but not where. */}
+      {profile && <FeatureDirectory user={profile} />}
 
       {/* ── Main content: PV list + Banking panel ─────────────────────── */}
       <div className={`grid gap-5 ${isFinanceAdmin && bankAccounts.length > 0 ? "md:grid-cols-[1fr_280px]" : "grid-cols-1"}`}>

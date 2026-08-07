@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import DashboardClient from "./dashboard-client";
+import { getUserProfile } from "@/lib/user-profile";
 
 const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
 
@@ -20,5 +21,6 @@ export default async function DashboardPage() {
     }
   }
 
-  return <DashboardClient />;
+  const profile = await getUserProfile();
+  return <DashboardClient profile={profile} />;
 }
