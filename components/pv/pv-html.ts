@@ -228,7 +228,7 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #f1f5f9; font-size: 12px; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #f1f5f9; font-size: 17px; }
   .toolbar { position: sticky; top: 0; z-index: 5; display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #e2e8f0; }
   .toolbar button { font: 600 13px Arial, sans-serif; border: none; border-radius: 8px; padding: 9px 18px; cursor: pointer; }
   .btn-print { background: #173a72; color: #fff; }
@@ -236,50 +236,50 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
   .sheet { max-width: 820px; margin: 20px auto; background: #fff; padding: 34px 40px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
   .r { text-align: right; } .c { text-align: center; }
   .paid { display: flex; align-items: center; gap: 12px; border: 2px solid #16a34a; border-radius: 6px; background: #f0fdf4; padding: 8px 12px; margin-bottom: 10px; }
-  .paid-stamp { border: 3px solid #16a34a; border-radius: 4px; padding: 4px 12px; transform: rotate(-8deg); font-size: 19px; font-weight: 700; color: #16a34a; letter-spacing: 3px; }
+  .paid-stamp { border: 3px solid #16a34a; border-radius: 4px; padding: 4px 12px; transform: rotate(-8deg); font-size: 24px; font-weight: 700; color: #16a34a; letter-spacing: 3px; }
   .paid-title { font-weight: 700; color: #166534; }
-  .paid-line { color: #15803d; font-size: 11px; margin-top: 1px; }
+  .paid-line { color: #15803d; font-size: 16px; margin-top: 1px; }
   .head { display: flex; gap: 10px; margin-bottom: 8px; }
   .head-org { flex: 1; display: flex; gap: 8px; }
   .head-org img { width: 50px; height: 50px; }
-  .org-name { font-size: 14px; font-weight: 700; }
-  .org-line { font-size: 10px; color: #555; }
-  .office-use { width: 150px; border: 1px solid #000; padding: 6px 8px; text-align: center; }
-  .ou-title { font-weight: 700; font-size: 10px; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 3px; }
-  .ou-badge { font-weight: 700; font-size: 20px; letter-spacing: 1px; }
-  .ou-badge-sub { font-size: 10px; border-top: 1px solid #000; padding-top: 2px; margin-top: 2px; }
-  .ou-none { font-size: 10px; color: #bbb; font-style: italic; }
-  .ou-ref { font-size: 10px; margin-top: 4px; text-align: left; }
-  .title-main { text-align: center; font-weight: 700; font-size: 13px; margin-bottom: 1px; }
-  .title-sub { text-align: center; font-size: 12px; margin-bottom: 6px; }
+  .org-name { font-size: 19px; font-weight: 700; }
+  .org-line { font-size: 15px; color: #555; }
+  .office-use { width: 178px; border: 1px solid #000; padding: 7.5px 8px; text-align: center; }
+  .ou-title { font-weight: 700; font-size: 15px; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 3px; }
+  .ou-badge { font-weight: 700; font-size: 25px; letter-spacing: 1px; }
+  .ou-badge-sub { font-size: 15px; border-top: 1px solid #000; padding-top: 2px; margin-top: 2px; }
+  .ou-none { font-size: 15px; color: #bbb; font-style: italic; }
+  .ou-ref { font-size: 15px; margin-top: 4px; text-align: left; }
+  .title-main { text-align: center; font-weight: 700; font-size: 18px; margin-bottom: 1px; }
+  .title-sub { text-align: center; font-size: 17px; margin-bottom: 6px; }
   table.grid { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
   .info { border: 1px solid #000; margin-bottom: 6px; }
   .info-row { display: flex; }
-  .info-cell { padding: 4px 6px; border: 1px solid #000; flex: 1; font-size: 11px; }
+  .info-cell { padding: 5.5px 6px; border: 1px solid #000; flex: 1; font-size: 16px; }
   .info-cell b { font-weight: 700; }
   .exco-ref { background: #fef3c7; font-weight: 700; }
   table.items { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-  table.items th, table.items td { border: 1px solid #000; padding: 4px 6px; font-size: 11px; }
+  table.items th, table.items td { border: 1px solid #000; padding: 5.5px 6px; font-size: 16px; }
   table.items th { background: #f0f0f0; text-align: left; }
   table.items th.r, table.items td.r { text-align: right; }
   table.items th.c, table.items td.c { text-align: center; }
   .two-col { display: flex; margin-bottom: 6px; }
   .two-col .sig-cell:first-child { border-right: none; }
   .one-col { margin-bottom: 6px; }
-  .sig-cell { flex: 1; border: 1px solid #000; padding: 6px 8px; }
+  .sig-cell { flex: 1; border: 1px solid #000; padding: 7.5px 8px; }
   .sig-head { border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; }
-  .sig-label { font-weight: 700; font-size: 10px; }
-  .sig-sub { font-size: 10px; color: #555; }
-  .sig-space { height: 46px; display: flex; align-items: flex-end; }
+  .sig-label { font-weight: 700; font-size: 15px; }
+  .sig-sub { font-size: 15px; color: #555; }
+  .sig-space { height: 49px; display: flex; align-items: flex-end; }
   .sig-space.center { justify-content: center; }
-  .sig-space img { max-height: 44px; max-width: 100%; object-fit: contain; }
+  .sig-space img { max-height: 47px; max-width: 100%; object-fit: contain; }
   .sig-foot { border-top: 1px solid #000; padding-top: 3px; }
-  .sig-name { font-weight: 700; font-size: 10px; }
-  .sig-date { font-size: 10px; }
-  .sig-pending { font-size: 10px; color: #999; }
-  .fin-header { background: #000; color: #fff; text-align: center; font-weight: 700; font-size: 11px; padding: 3px; margin-top: 8px; }
+  .sig-name { font-weight: 700; font-size: 15px; }
+  .sig-date { font-size: 15px; }
+  .sig-pending { font-size: 15px; color: #999; }
+  .fin-header { background: #000; color: #fff; text-align: center; font-weight: 700; font-size: 16px; padding: 4.5px; margin-top: 8px; }
   .fin-row { display: flex; border: 1px solid #000; border-top: none; }
-  .fin-col { flex: 1; border-right: 1px solid #000; padding: 6px 8px; }
+  .fin-col { flex: 1; border-right: 1px solid #000; padding: 7.5px 8px; }
   .fin-col:last-child { border-right: none; }
   .fin-col .sig-cell { border: none; padding: 0; }
   .appr-head { border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; }
@@ -287,16 +287,16 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
   .appr-col { flex: 1; text-align: center; }
   .appr-foot { border-top: 1px solid #000; padding-top: 3px; }
   .remarks { margin-top: 6px; }
-  .remarks-title { font-weight: 700; font-size: 10px; margin-bottom: 2px; }
-  .remark { font-size: 10px; }
+  .remarks-title { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
+  .remark { font-size: 15px; }
   .attach-section { margin-top: 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; }
-  .attach-title { font-weight: 700; font-size: 11px; margin-bottom: 4px; }
-  .attach-list { font-size: 11px; }
+  .attach-title { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+  .attach-list { font-size: 16px; }
   .attach-link { margin-top: 2px; }
   .attach-link a { color: #1d4ed8; }
-  .attach-note { color: #6b7280; font-size: 10px; }
+  .attach-note { color: #6b7280; font-size: 15px; }
   .attach-page { page-break-before: always; margin-top: 16px; }
-  .attach-cap { font-size: 10px; color: #555; margin-bottom: 6px; }
+  .attach-cap { font-size: 15px; color: #555; margin-bottom: 6px; }
   .attach-cap a { color: #1d4ed8; margin-left: 6px; }
   .attach-page img { max-width: 100%; max-height: 1000px; object-fit: contain; border: 1px solid #ddd; display: block; margin: 0 auto; }
   .attach-pdf { width: 100%; height: 900px; border: 1px solid #ddd; }
