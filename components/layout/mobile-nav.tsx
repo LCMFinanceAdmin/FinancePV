@@ -5,15 +5,14 @@ import { useState, useEffect } from "react";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2,
-  FlaskConical, X, ClipboardList, RefreshCw, Settings, Activity,
-  ClipboardCheck, PiggyBank, ShoppingCart, CreditCard, Menu, LogOut, Hammer,
-  CalendarDays, TrendingUp, Inbox, Landmark, Wallet, HandCoins, CalendarClock,
+  FlaskConical, X, ClipboardList, Activity, PiggyBank, Menu, LogOut, Hammer,
+  CalendarDays, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
-import { isStaffMember } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { excoAssignableMinistries } from "@/lib/ministries";
+import { visibleGroups, visiblePinned } from "@/lib/nav";
 import { LutherRose } from "@/components/ui/luther-rose";
 
 const SIDEBAR_GRADIENT = "linear-gradient(160deg, #1e3a6f 0%, #2a4d8f 40%, #4a2080 100%)";
@@ -118,76 +117,12 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     { href: "/bookings",           label: "Bookings",   icon: <CalendarDays size={21} />,    show: !!user.isBuildingManager },
   ].filter(i => i.show).slice(0, 4);
 
+  // Same nav model as the sidebar and the dashboard directory — the More
+  // sheet used to keep its own copy, which is how a page could appear in one
+  // place and be missing from another.
   const moreSections = [
-    {
-      label: null,
-      items: [
-        { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} />, show: !user.isSignatory },
-        { href: "/submit",    label: "Submit PV", icon: <FilePlus size={17} />,        show: !user.isSignatory && !user.isBuildingManager },
-        { href: "/my-pvs",   label: "My PVs",    icon: <FileText size={17} />,        show: !user.isSignatory && !user.isBuildingManager && !user.isFinanceAdmin },
-      ],
-    },
-    {
-      label: "Finance Executive",
-      items: [
-        { href: "/control-center",     label: "Control Center",     icon: <LayoutGrid size={17} />,     show: user.isFinanceAdmin },
-        { href: "/recurring",          label: "Recurring Expenses", icon: <RefreshCw size={17} />,      show: user.isFinanceAdmin },
-        { href: "/signatory-activity", label: "Finance Activity",   icon: <Activity size={17} />,       show: user.isFinanceAdmin },
-        { href: "/hod-activity",       label: "Finance Activity",   icon: <ClipboardCheck size={17} />, show: user.isMinistryHead || user.isSignatory },
-        { href: "/settings",           label: "Settings",           icon: <Settings size={17} />,       show: user.isFinanceAdmin },
-      ],
-    },
-    {
-      label: "Approvals",
-      items: [
-        { href: "/signatory",  label: "Signatory Queue", icon: <Users size={17} />,         show: user.isSignatory },
-        { href: "/ministry",   label: "EXCO Queue",      icon: <Building2 size={17} />,     show: !!user.isMinistryHead },
-        { href: "/gm-claims",  label: "GM Claims",       icon: <Inbox size={17} />,         show: user.isGeneralManager || user.isFinanceAdmin || user.isSignatory },
-      ],
-    },
-    {
-      label: "Budget",
-      items: [
-        { href: "/budget", label: "Ministry Budget", icon: <PiggyBank size={17} />, show: user.isFinanceAdmin || !!user.isMinistryHead || user.isSignatory },
-      ],
-    },
-    {
-      label: "Building / Event",
-      items: [
-        { href: "/submit?type=bam",    label: "Submit BAM PV",  icon: <Hammer size={17} />,        show: !!user.isBuildingManager || user.isFinanceAdmin },
-        { href: "/my-bam-pvs",         label: "BAM Activity",   icon: <FileText size={17} />,      show: !!user.isBuildingManager },
-        { href: "/bam-queue",          label: "BAM Queue",      icon: <Building2 size={17} />,     show: !!user.isBuildingManager || user.isFinanceAdmin || !!user.isBamCommittee },
-        { href: "/recurring?type=bam", label: "BAM Recurring",  icon: <RefreshCw size={17} />,     show: !!user.isBuildingManager || user.isFinanceAdmin },
-        { href: "/worksheets",         label: "Worksheets",     icon: <ClipboardList size={17} />, show: !!user.isBuildingManager || user.isFinanceAdmin },
-        { href: "/bookings",           label: "Facility Bookings",icon: <CalendarDays size={17} />, show: user.isFinanceAdmin || !!user.isBuildingManager },
-        { href: "/income",             label: "Income Records",  icon: <TrendingUp size={17} />,   show: user.isFinanceAdmin || !!user.isBuildingManager },
-      ],
-    },
-    {
-      label: "Requests & Payments",
-      items: [
-        { href: "/payment-requests", label: "Payment Requests", icon: <ShoppingCart size={17} />, show: true },
-        { href: "/payments",          label: "Payments",          icon: <CreditCard size={17} />,   show: user.isFinanceAdmin },
-        { href: "/banking",           label: "Banking",           icon: <Landmark size={17} />,     show: user.isFinanceAdmin || user.isGeneralManager },
-      ],
-    },
-    {
-      label: "Payroll",
-      items: [
-        { href: "/payroll",       label: "Payroll",        icon: <Wallet size={17} />,       show: isStaffMember(user) && (user.isFinanceAdmin || user.isGeneralManager) },
-        { href: "/payroll/runs",  label: "Payroll Runs",   icon: <CalendarClock size={17} />, show: isStaffMember(user) && (user.isFinanceAdmin || user.isGeneralManager) },
-        { href: "/payroll/loans", label: "Employee Loans", icon: <HandCoins size={17} />,    show: isStaffMember(user) && (user.isFinanceAdmin || user.isGeneralManager || user.isSignatory) },
-      ],
-    },
-    {
-      label: "Staff Services",
-      items: [
-        // Employment entitlements — not for volunteer EXCO members.
-        { href: "/my-leaves",   label: "My Leaves",     icon: <CalendarDays size={17} />,   show: isStaffMember(user) },
-        { href: "/leave-queue", label: "Leave Queue",   icon: <ClipboardCheck size={17} />, show: user.isGeneralManager || user.role === "BISHOP" || user.isDean || user.isPastor },
-        { href: "/my-loans",    label: "My Loan (EPL)", icon: <HandCoins size={17} />,      show: isStaffMember(user) && user.role !== "TREASURER" && user.email.endsWith("@lcm.org.my") },
-      ],
-    },
+    { label: null, items: visiblePinned(user) },
+    ...visibleGroups(user).map(g => ({ label: g.label, items: g.items })),
   ];
 
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -232,7 +167,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
             {/* Nav sections */}
             <div className="overflow-y-auto flex-1 py-3 px-3 space-y-4 bg-white">
               {moreSections.map((section, si) => {
-                const visible = section.items.filter(n => n.show);
+                const visible = section.items.filter(n => n.show(user));
                 if (visible.length === 0) return null;
                 return (
                   <div key={si}>
