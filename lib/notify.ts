@@ -77,6 +77,45 @@ function emailHtml(subject: string, lines: string[], link: string, urgent: boole
 }
 
 /**
+ * Just the email part. Separate because the payment-voucher flows run in edge
+ * functions, which record their own in-app notifications and only need this
+ * half (see app/api/notify-email).
+ *
+ * Returns how many actually sent — a caller can then say "emailed to 2 people"
+ * rather than guessing.
+ */
+export async function sendNotificationEmails(
+  to: NotifyRecipient[],
+  subject: string,
+  lines: string[],
+  path?: string,
+  urgent?: boolean,
+): Promise<number> {
+  const recipients = to.filter(r => r.email?.includes("@"));
+  const transport = mailer();
+  if (!transport || recipients.length === 0) return 0;
+
+  const link = `${siteUrl()}${path ?? "/dashboard"}`;
+  const results = await Promise.allSettled(recipients.map(r =>
+    transport.sendMail({
+      from: process.env.SMTP_FROM ?? `"LCM Finance" <${process.env.SMTP_USER}>`,
+      to: r.email,
+      subject: urgent ? `Action needed: ${subject}` : subject,
+      text: [
+        r.name ? `Dear ${r.name},` : "Hello,",
+        "",
+        ...lines,
+        "",
+        `Open the system: ${link}`,
+        "",
+        "Lutheran Church in Malaysia",
+      ].join("\n"),
+      html: emailHtml(subject, lines, link, !!urgent),
+    })));
+  return results.filter(r => r.status === "fulfilled").length;
+}
+
+/**
  * Record and send. Returns what actually went out, so a caller can tell the
  * user "emailed to 2 people" rather than guessing.
  */
@@ -99,28 +138,7 @@ export async function notifyPeople(input: NotifyInput): Promise<{ recorded: numb
   if (!insErr) recorded = recipients.length;
 
   // 2. Email — the channel that reaches people who aren't in the app.
-  let emailed = 0;
-  const transport = mailer();
-  if (transport) {
-    const link = `${siteUrl()}${path ?? "/dashboard"}`;
-    const results = await Promise.allSettled(recipients.map(r =>
-      transport.sendMail({
-        from: process.env.SMTP_FROM ?? `"LCM Finance" <${process.env.SMTP_USER}>`,
-        to: r.email,
-        subject: urgent ? `Action needed: ${subject}` : subject,
-        text: [
-          r.name ? `Dear ${r.name},` : "Hello,",
-          "",
-          ...lines,
-          "",
-          `Open the system: ${link}`,
-          "",
-          "Lutheran Church in Malaysia",
-        ].join("\n"),
-        html: emailHtml(subject, lines, link, !!urgent),
-      })));
-    emailed = results.filter(r => r.status === "fulfilled").length;
-  }
+  const emailed = await sendNotificationEmails(recipients, subject, lines, path, urgent);
 
   return { recorded, emailed };
 }

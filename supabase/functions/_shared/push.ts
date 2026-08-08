@@ -8,6 +8,46 @@ interface PushPayload {
   title: string;
   body: string;
   url?: string;
+  /** Extra sentences for the email only — push bodies must stay short. */
+  detail?: string[];
+  /** Marks the email subject as needing action. */
+  urgent?: boolean;
+  /** Set to skip the email, e.g. for purely informational nudges. */
+  noEmail?: boolean;
+}
+
+/**
+ * Email the same people the push went to.
+ *
+ * Web push is instant but easy to miss, and on iPhone it only arrives at all
+ * once someone has added the app to their Home Screen — which most people
+ * never do. Email is the channel everyone already checks, so both go out
+ * together and every existing caller gets the email for free.
+ *
+ * Edge functions have no SMTP, so the Next app sends it (app/api/notify-email).
+ * Failures are swallowed: an approval must not fail because a mail server did.
+ */
+async function emailSamePeople(emails: string[], payload: PushPayload) {
+  if (payload.noEmail || emails.length === 0) return;
+  const appUrl = Deno.env.get("APP_URL");
+  const secret = Deno.env.get("NOTIFY_SHARED_SECRET");
+  if (!appUrl || !secret) return;
+
+  try {
+    await fetch(`${appUrl.replace(/\/$/, "")}/api/notify-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-notify-secret": secret },
+      body: JSON.stringify({
+        to: emails,
+        subject: payload.title,
+        lines: [payload.body, ...(payload.detail ?? [])],
+        path: payload.url ?? "/dashboard",
+        urgent: payload.urgent,
+      }),
+    });
+  } catch {
+    // Nothing to do — the action itself already succeeded.
+  }
 }
 
 function initVapid() {
@@ -20,7 +60,11 @@ function initVapid() {
 }
 
 export async function sendPushToEmails(db: DB, emails: string[], payload: PushPayload) {
-  if (!emails.length || !initVapid()) return;
+  if (!emails.length) return;
+  // Email first, and independently of push: push needs VAPID keys and a
+  // subscription, and neither is a reason to withhold the email.
+  await emailSamePeople(emails, payload);
+  if (!initVapid()) return;
 
   const { data: subs } = await db
     .from("push_subscriptions")

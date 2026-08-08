@@ -125,6 +125,7 @@ Deno.serve(async (req) => {
           );
           await sendPushToRoles(db, ["GENERAL_MANAGER"], {
             title: "BAM PV Awaiting Your Approval",
+            urgent: true,
             body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) needs your sign-off`,
             url: "/signatory",
           });
@@ -168,6 +169,7 @@ Deno.serve(async (req) => {
         }),
         sendPushToRoles(db, ["GENERAL_MANAGER"], {
           title: "PV Awaiting GM Approval",
+          urgent: true,
           body: `PV ${pv.pv_no} (${formatRM(pv.amount)}) has been reviewed by Finance and needs your approval`,
           url: "/signatory",
         }),

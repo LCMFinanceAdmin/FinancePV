@@ -143,6 +143,7 @@ Deno.serve(async (req) => {
         );
         await sendPushToRoles(db, sigRoles, {
           title: "BAM PV Awaiting Your Signature",
+          urgent: true,
           body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) approved by GM — please sign`,
           url: "/signatory",
         });
@@ -238,6 +239,7 @@ Deno.serve(async (req) => {
       await Promise.all([
         sendPushToRoles(db, ["BISHOP", "TREASURER", "SECRETARY"], {
           title: "PV Awaiting Your Signature",
+          urgent: true,
           body: `PV ${pvLabel} approved by GM — please sign`,
           url: "/signatory",
         }),

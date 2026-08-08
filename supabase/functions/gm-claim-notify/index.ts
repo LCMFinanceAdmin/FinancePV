@@ -21,6 +21,7 @@ Deno.serve(async (req) => {
 
     await sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
       title: `New GM Instruction — ${typeLabel}`,
+      urgent: true,
       body: `${claim_no} · ${claimant_name} · ${amtStr}`,
       url: "/control-center",
     });

@@ -150,6 +150,7 @@ Deno.serve(async (req) => {
       }
       await sendPushToRoles(db, ["GENERAL_MANAGER"], {
         title: "New Claim Awaiting Your Acceptance",
+        urgent: true,
         body: `${claimNo} — ${pr.title} (${formatRM(Number(pr.estimated_amount || 0))})`,
         url: "/gm-claims",
       });
@@ -243,6 +244,7 @@ Deno.serve(async (req) => {
     }
     await sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
       title: "GM Instruction — Raise a PV",
+      urgent: true,
       body: `${pr.request_no} — ${pr.title} (${formatRM(Number(pr.estimated_amount || 0))})`,
       url: "/gm-claims",
     });
