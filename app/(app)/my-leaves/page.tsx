@@ -62,6 +62,8 @@ function MyLeavesInner() {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [resending,  setResending]  = useState<string | null>(null);
   const [applicantSig, setApplicantSig] = useState<string | null>(null);
+  // Set while amending an existing application rather than making a new one.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok }); setTimeout(() => setToast({ msg: "", ok: true }), 3000);
@@ -124,6 +126,55 @@ function MyLeavesInner() {
     return count;
   }
 
+  function startEdit(app: LeaveApp) {
+    setForm({
+      leave_type_code: app.leave_type_code,
+      start_date: app.start_date,
+      end_date: app.end_date,
+      reason: app.reason,
+      attachment_url: "",
+    });
+    // A fresh signature is required: the applicant is declaring the amended
+    // details, not the ones they signed before.
+    setApplicantSig(null);
+    setEditingId(app.id);
+    setShowApply(true);
+  }
+
+  function closeApply() {
+    setShowApply(false);
+    setEditingId(null);
+    setApplicantSig(null);
+    setForm({ leave_type_code: "ANNUAL", start_date: "", end_date: "", reason: "", attachment_url: "" });
+  }
+
+  async function amendLeave() {
+    const days = calcDays(form.start_date, form.end_date);
+    setSubmitting(true);
+    const res = await fetch("/api/leave-amend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        leave_id: editingId,
+        leave_type_code: form.leave_type_code,
+        start_date: form.start_date,
+        end_date: form.end_date,
+        days,
+        reason: form.reason,
+        attachment_url: form.attachment_url || null,
+        applicant_signature: applicantSig,
+      }),
+    });
+    setSubmitting(false);
+    const b = await res.json().catch(() => ({}));
+    if (!res.ok) { showMsg(b.error ?? "Could not amend the application", false); return; }
+    closeApply();
+    showMsg(b.cleared > 0
+      ? `Application amended — ${b.cleared} approval${b.cleared === 1 ? "" : "s"} cleared, it needs signing again`
+      : "Application amended");
+    await load();
+  }
+
   async function submitLeave() {
     if (!form.start_date || !form.end_date || !form.reason.trim()) {
       showMsg("Please fill in all required fields", false); return;
@@ -134,6 +185,10 @@ function MyLeavesInner() {
     if (!applicantSig) { showMsg("Please sign the application before submitting", false); return; }
     const days = calcDays(form.start_date, form.end_date);
     if (days <= 0) { showMsg("End date must be after start date", false); return; }
+
+    // Amending an existing application keeps its leave number and its place in
+    // the queue; only a brand new one takes a fresh number.
+    if (editingId) { await amendLeave(); return; }
 
     setSubmitting(true);
 
@@ -189,9 +244,7 @@ function MyLeavesInner() {
     }
 
     setSubmitting(false);
-    setShowApply(false);
-    setForm({ leave_type_code: "ANNUAL", start_date: "", end_date: "", reason: "", attachment_url: "" });
-    setApplicantSig(null);
+    closeApply();
     if (linkWarning) {
       showMsg(`Application submitted, but ${linkWarning} — use “Resend council link”.`, false);
     } else {
@@ -330,7 +383,7 @@ function MyLeavesInner() {
             <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes}
               onCancel={() => cancelLeave(app.id)} cancelling={cancelling === app.id}
               onResendCouncilLink={() => resendCouncilLink(app.id)} resending={resending === app.id}
-              onViewForm={() => viewForm(app)} />
+              onViewForm={() => viewForm(app)} onEdit={() => startEdit(app)} />
           ))}
         </div>
       )}
@@ -353,9 +406,9 @@ function MyLeavesInner() {
             <div className="flex justify-between items-center">
               <div>
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Staff services</p>
-                <h2 className="text-base font-bold text-stone-800">Apply for Leave</h2>
+                <h2 className="text-base font-bold text-stone-800">{editingId ? "Amend Application" : "Apply for Leave"}</h2>
               </div>
-              <button onClick={() => setShowApply(false)} className="text-stone-400 hover:text-stone-600">
+              <button onClick={closeApply} className="text-stone-400 hover:text-stone-600">
                 <X size={18} />
               </button>
             </div>
@@ -421,6 +474,13 @@ function MyLeavesInner() {
               </div>
             )}
 
+            {editingId && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Amending clears any approval already given — the officers signed the
+                original dates, so they&apos;ll be asked to sign again.
+              </p>
+            )}
+
             {/* The applicant signs the form. Each approving officer signs the
                 same sheet as they act, so the finished application carries
                 every hand that touched it. */}
@@ -436,9 +496,9 @@ function MyLeavesInner() {
 
             <div className="flex gap-2 pt-1">
               <Button className="flex-1" loading={submitting} disabled={!applicantSig} onClick={submitLeave}>
-                Submit Application
+                {editingId ? "Save Amendment" : "Submit Application"}
               </Button>
-              <Button variant="ghost" onClick={() => setShowApply(false)}>Cancel</Button>
+              <Button variant="ghost" onClick={closeApply}>Cancel</Button>
             </div>
           </div>
         </div>
@@ -447,11 +507,12 @@ function MyLeavesInner() {
   );
 }
 
-function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending, onViewForm }: {
+function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending, onViewForm, onEdit }: {
   app: LeaveApp; leaveTypes: LeaveType[];
   onCancel?: () => void; cancelling?: boolean;
   onResendCouncilLink?: () => void; resending?: boolean;
   onViewForm?: () => void;
+  onEdit?: () => void;
 }) {
   const type = leaveTypes.find(t => t.code === app.leave_type_code);
 
@@ -512,9 +573,15 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink,
 
       {app.status === "PENDING" && onCancel && (
         <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-stone-100">
+          {onEdit && (
+            <button onClick={onEdit}
+              className="text-xs font-medium text-[#4a6da7] hover:underline">
+              Edit
+            </button>
+          )}
           <button onClick={onCancel} disabled={cancelling}
             className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50">
-            {cancelling ? "Cancelling…" : "Cancel Application"}
+            {cancelling ? "Withdrawing…" : "Withdraw"}
           </button>
           {councilPending && onResendCouncilLink && (
             <button onClick={onResendCouncilLink} disabled={resending}
