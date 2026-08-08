@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { ApprovalEntry, RequiredApprover } from "@/lib/leave-decision";
+import { notifyPeople } from "@/lib/notify";
 
 // Amending a leave application that is still pending.
 //
@@ -81,14 +82,19 @@ export async function POST(req: NextRequest) {
 
     // Tell anyone who had already signed that what they signed has changed.
     if (signers.length > 0) {
-      await supabase.from("notifications").insert(
-        signers.map(s => ({
-          recipient_email: s.email,
-          type: "LEAVE_AMENDED",
-          pv_no: leave.leave_no,
-          message: `${leave.applicant_name} amended leave application ${leave.leave_no} after you approved it. Your approval has been cleared and it needs signing again.`,
-        })),
-      );
+      await notifyPeople({
+        supabase,
+        to: signers.map(s => ({ email: s.email, name: s.name })),
+        type: "LEAVE_AMENDED",
+        ref: leave.leave_no,
+        urgent: true,
+        subject: `Leave application changed after you approved it — ${leave.leave_no}`,
+        lines: [
+          `${leave.applicant_name} has amended leave application ${leave.leave_no} after you approved it.`,
+          "Because the dates changed, your approval has been cleared and the application needs signing again.",
+        ],
+        path: "/leave-queue",
+      });
     }
 
     const required: RequiredApprover[] = leave.required_approvers ?? [];

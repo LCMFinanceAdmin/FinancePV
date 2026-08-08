@@ -226,6 +226,17 @@ function MyLeavesInner() {
 
     if (error) { setSubmitting(false); showMsg("Submission failed: " + error.message, false); return; }
 
+    // Tell the approvers it's waiting on them. Fire-and-forget: the
+    // application is already saved, and a mail problem must not read as a
+    // failed submission.
+    if (created?.id) {
+      fetch("/api/leave-submitted", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leave_id: created.id }),
+      }).catch(() => {});
+    }
+
     // The church council President can't be notified in-app — they have no
     // account — so their link goes out by email straight away. A failure here
     // must not look like the application failed: it's already saved, and the

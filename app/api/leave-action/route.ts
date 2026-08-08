@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { applyLeaveDecision, outstandingApprovers } from "@/lib/leave-decision";
 import type { RequiredApprover, ApprovalEntry } from "@/lib/leave-decision";
+import { notifyPeople } from "@/lib/notify";
 
 const ROLE_TITLES: Record<string, string> = {
   GENERAL_MANAGER: "General Manager",
@@ -155,27 +156,44 @@ export async function POST(req: NextRequest) {
 
     const stillWaiting = outstandingApprovers(required, updatedApprovals);
 
-    // Notify applicant — but only when something actually settled. A partial
-    // approval tells them who is left rather than claiming it's granted.
+    // Tell the applicant, by email as well as in-app — they may not be in the
+    // system today, and this is the answer they are waiting on.
+    const who = approvalEntry.position
+      ? `${approvalEntry.name} (${approvalEntry.position})`
+      : approvalEntry.name;
+
     if (newStatus === "PENDING") {
-      await supabase.from("notifications").insert({
-        recipient_email: leave.applicant_email,
+      await notifyPeople({
+        supabase,
+        to: [{ email: leave.applicant_email, name: leave.applicant_name }],
         type: "LEAVE_PROGRESS",
-        pv_no: leave.leave_no,
-        message: `${approvalEntry.name} approved ${leave.leave_no}. Still waiting on ${
-          stillWaiting.map(a => a.name).join(" and ")
-        }.`,
+        ref: leave.leave_no,
+        subject: `${who} approved your leave — ${leave.leave_no}`,
+        lines: [
+          `${who} has approved your leave application ${leave.leave_no}.`,
+          `It still needs ${stillWaiting.map(a => a.name).join(" and ")} before it is granted.`,
+        ],
+        path: "/my-leaves",
       });
     } else {
-      await supabase.from("notifications").insert({
-        recipient_email: leave.applicant_email,
+      await notifyPeople({
+        supabase,
+        to: [{ email: leave.applicant_email, name: leave.applicant_name }],
         type: newStatus === "APPROVED" ? "LEAVE_APPROVED" : newStatus === "REJECTED" ? "LEAVE_REJECTED" : "LEAVE_CANCELLED",
-        pv_no: leave.leave_no,
-        message: newStatus === "APPROVED"
-          ? `Your leave application ${leave.leave_no} has been approved.`
+        ref: leave.leave_no,
+        subject: newStatus === "APPROVED"
+          ? `Your leave has been approved — ${leave.leave_no}`
           : newStatus === "REJECTED"
-          ? `Your leave application ${leave.leave_no} was rejected${remarks ? `: ${remarks}` : "."}`
-          : `Leave application ${leave.leave_no} has been cancelled.`,
+          ? `Your leave was not approved — ${leave.leave_no}`
+          : `Leave application cancelled — ${leave.leave_no}`,
+        lines: newStatus === "APPROVED"
+          ? [`Your leave application ${leave.leave_no} has been approved in full.`,
+             "You can open the system to print the signed leave form."]
+          : newStatus === "REJECTED"
+          ? [`${who} did not approve your leave application ${leave.leave_no}.`,
+             ...(remarks ? [`Reason given: ${remarks}`] : [])]
+          : [`Leave application ${leave.leave_no} has been cancelled.`],
+        path: "/my-leaves",
       });
     }
 
