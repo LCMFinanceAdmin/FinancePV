@@ -13,16 +13,22 @@ export interface ApprovalEntry {
   action: string;
   timestamp: string;
   remarks?: string;
+  /** The chain slot this settles, when the signer isn't the person named. */
+  for_email?: string;
 }
 
 const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
+
+export function fills(a: ApprovalEntry, slotEmail: string): boolean {
+  return norm(a.email) === norm(slotEmail) || norm(a.for_email) === norm(slotEmail);
+}
 
 export function outstandingApprovers(
   required: RequiredApprover[],
   approvals: ApprovalEntry[],
 ): RequiredApprover[] {
   return required.filter((r) =>
-    !approvals.some((a) => norm(a.email) === norm(r.email) && a.action === "APPROVED")
+    !approvals.some((a) => a.action === "APPROVED" && fills(a, r.email))
   );
 }
 

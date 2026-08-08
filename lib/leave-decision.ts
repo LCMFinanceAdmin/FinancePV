@@ -24,9 +24,20 @@ export interface ApprovalEntry {
   action: string;
   timestamp: string;
   remarks?: string;
+  /**
+   * The chain slot this signature settles, when the signer isn't the person
+   * originally named — the post changed hands, and whoever holds it now signed
+   * instead. The signature stays attributed to whoever actually gave it.
+   */
+  for_email?: string;
 }
 
 const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
+
+/** Does this decision answer the slot held by `slotEmail`? */
+export function fills(a: ApprovalEntry, slotEmail: string): boolean {
+  return norm(a.email) === norm(slotEmail) || norm(a.for_email) === norm(slotEmail);
+}
 
 /** Has this person already recorded a decision? */
 export function hasActed(approvals: ApprovalEntry[], email: string): boolean {
@@ -39,7 +50,7 @@ export function outstandingApprovers(
   approvals: ApprovalEntry[],
 ): RequiredApprover[] {
   return required.filter(r => !approvals.some(
-    a => norm(a.email) === norm(r.email) && a.action === "APPROVED",
+    a => a.action === "APPROVED" && fills(a, r.email),
   ));
 }
 

@@ -11,7 +11,7 @@ interface LeaveApp {
   leave_type_code: string; start_date: string; end_date: string; days: number;
   reason: string; status: string; applied_at: string;
   required_approvers: { email: string; name: string; external?: boolean }[];
-  approvals: { email: string; name: string; action: string; timestamp: string; remarks?: string }[];
+  approvals: { email: string; name: string; action: string; timestamp: string; remarks?: string; for_email?: string }[];
 }
 interface LeaveType { code: string; name: string; }
 
@@ -35,6 +35,10 @@ export default function LeaveQueuePage() {
   const [remarks,     setRemarks]     = useState("");
   const [toast,       setToast]       = useState({ msg: "", ok: true });
   const [userEmail,   setUserEmail]   = useState("");
+  const [userRole,    setUserRole]    = useState("");
+  // email → role, so a chain slot can be matched by the post rather than only
+  // by the person who held it when the application was submitted.
+  const [roleByEmail, setRoleByEmail] = useState<Record<string, string>>({});
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok }); setTimeout(() => setToast({ msg: "", ok: true }), 3000);
@@ -46,23 +50,39 @@ export default function LeaveQueuePage() {
     const email = session?.user?.email ?? "";
     setUserEmail(email);
 
-    const [{ data: apps }, { data: lt }] = await Promise.all([
+    const [{ data: apps }, { data: lt }, { data: me }, { data: people }] = await Promise.all([
       supabase.from("leave_applications").select("*").order("applied_at", { ascending: false }),
       supabase.from("leave_types").select("code,name").order("sort_order"),
+      supabase.from("user_roles").select("role").eq("email", email).maybeSingle(),
+      supabase.from("user_roles").select("email,role"),
     ]);
 
     setLeaves(apps ?? []);
     setLeaveTypes(lt ?? []);
+    setUserRole(me?.role ?? "");
+    setRoleByEmail(Object.fromEntries(
+      ((people ?? []) as { email: string; role: string }[])
+        .map(p => [p.email.trim().toLowerCase(), p.role]),
+    ));
     setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
 
-  // Only show leaves where this user is a required approver (or all if senior admin)
   const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
-  const myLeaves = leaves.filter(l =>
-    l.required_approvers?.some(a => norm(a.email) === norm(userEmail))
-  );
+
+  // An application names the people who must approve it, captured when it was
+  // submitted. Matching on email alone strands an application the moment the
+  // post changes hands — the outgoing GM is still named, and the incoming one
+  // sees nothing. So a slot also matches when you now hold the role the named
+  // person held. (This is what the /api/leave-action route already allows: it
+  // accepts any senior role, so this only surfaces what could already be done.)
+  const isMine = (l: LeaveApp) =>
+    (l.required_approvers ?? []).some(a =>
+      norm(a.email) === norm(userEmail) ||
+      (!!userRole && roleByEmail[norm(a.email)] === userRole));
+
+  const myLeaves = leaves.filter(isMine);
 
   // A pastor's leave needs the church council President as well, so an
   // application can still be PENDING after you have signed it. Those don't
@@ -71,13 +91,18 @@ export default function LeaveQueuePage() {
   const iSigned = (l: LeaveApp) =>
     l.approvals?.some(a => norm(a.email) === norm(userEmail) && a.action === "APPROVED");
 
+  // A slot is answered either by the person named or by whoever signed in their
+  // place — see for_email in lib/leave-decision.
+  const filled = (a: { email?: string; for_email?: string }, slot: string) =>
+    norm(a.email) === norm(slot) || norm(a.for_email) === norm(slot);
+
   const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l));
   const awaitingOthers = myLeaves.filter(l => l.status === "PENDING" && iSigned(l));
   const history        = myLeaves.filter(l => l.status !== "PENDING");
 
   const stillToSign = (l: LeaveApp) =>
     (l.required_approvers ?? []).filter(r => !l.approvals?.some(
-      a => norm(a.email) === norm(r.email) && a.action === "APPROVED",
+      a => a.action === "APPROVED" && filled(a, r.email),
     ));
 
   async function act(leaveId: string, action: "APPROVED" | "REJECTED", rejectRemarks?: string) {

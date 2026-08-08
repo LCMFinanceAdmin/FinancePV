@@ -30,6 +30,9 @@ export async function POST(req: NextRequest) {
     // A senior acting on a leave they aren't named on is an override, not a
     // signature on the chain — see below.
     let isDesignatedApprover = false;
+    // Which named slot this signature answers, when the signer isn't that
+    // person themselves.
+    let filledSlot: RequiredApprover | null = null;
 
     // CANCELLED can only be done by the applicant themselves
     if (action === "CANCELLED") {
@@ -41,9 +44,27 @@ export async function POST(req: NextRequest) {
       }
     } else {
       // APPROVED / REJECTED — must be a designated approver or Finance Admin / senior
-      isDesignatedApprover = required.some(
-        a => a.email?.trim().toLowerCase() === (user.email ?? "").trim().toLowerCase(),
-      );
+      const same = (a?: string | null, b?: string | null) =>
+        (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+
+      filledSlot = required.find(a => same(a.email, user.email)) ?? null;
+
+      // The chain names people, but posts change hands. If the signer isn't
+      // named yet holds the same role as someone who is, they answer that slot
+      // — otherwise an application is stranded the moment a GM or Bishop
+      // changes, with the outgoing officer the only one who could clear it.
+      if (!filledSlot && required.length > 0) {
+        const { data: named } = await supabase
+          .from("user_roles").select("email,role")
+          .in("email", required.map(a => a.email));
+        const { data: mine } = await supabase
+          .from("user_roles").select("role").eq("email", user.email).maybeSingle();
+        if (mine?.role) {
+          const peer = (named ?? []).find(n => n.role === mine.role);
+          if (peer) filledSlot = required.find(a => same(a.email, peer.email)) ?? null;
+        }
+      }
+      isDesignatedApprover = !!filledSlot;
 
       const { data: profile } = await supabase
         .from("user_roles")
@@ -77,6 +98,11 @@ export async function POST(req: NextRequest) {
       action,
       timestamp: new Date().toISOString(),
       remarks: remarks ?? "",
+      // Signed on behalf of the named officer — recorded so the slot is
+      // satisfied while the signature stays attributed to who actually gave it.
+      ...(filledSlot && filledSlot.email.trim().toLowerCase() !== (user.email ?? "").trim().toLowerCase()
+        ? { for_email: filledSlot.email }
+        : {}),
     };
 
     // Everyone named on the chain has to sign — a pastor's leave needs both the
