@@ -32,6 +32,11 @@ export interface LeaveApprover {
   name: string;
   /** Why this person is on the chain — shown when configuring a person. */
   reason?: string;
+  /**
+   * The office they hold, captured onto the application so the printed form
+   * still reads "General Manager" after the post changes hands.
+   */
+  position?: string;
   /** No account here — approves through a one-time emailed link. */
   external?: boolean;
 }
@@ -54,6 +59,7 @@ export async function resolveLeaveApprovers(
       email: a.approver_email,
       name: a.approver_name,
       reason: "assigned approver",
+      position: "Assigned approver",
     }));
   }
 
@@ -75,7 +81,7 @@ export async function resolveLeaveApprovers(
   const bishops = await supabase.from("user_roles").select("email,full_name").eq("role", "BISHOP");
   const bishopChain: LeaveApprover[] = (bishops.data ?? [])
     .filter(b => !eq(b.email, applicantEmail))
-    .map(b => ({ email: b.email, name: b.full_name, reason: "Bishop" }));
+    .map(b => ({ email: b.email, name: b.full_name, reason: "Bishop", position: "Bishop" }));
 
   // 2. Pastoral chain.
   if (me?.is_pastor) {
@@ -104,6 +110,9 @@ export async function resolveLeaveApprovers(
           reason: congregationName
             ? `church council President, ${congregationName}`
             : "church council President",
+          position: congregationName
+            ? `Church Council President, ${congregationName}`
+            : "Church Council President",
           external: true,
         };
       }
@@ -118,6 +127,7 @@ export async function resolveLeaveApprovers(
           email: headPastorEmail,
           name: await nameFor(headPastorEmail),
           reason: congregationName ? `head pastor, ${congregationName}` : "head pastor",
+          position: congregationName ? `Head Pastor, ${congregationName}` : "Head Pastor",
         },
         ...(council ? [council] : []),
       ];
@@ -133,6 +143,7 @@ export async function resolveLeaveApprovers(
           email: district.dean_email,
           name: await nameFor(district.dean_email),
           reason: district.name ? `Dean, ${district.name}` : "Dean",
+          position: district.name ? `Dean, ${district.name}` : "Dean",
         });
       }
     }
@@ -147,7 +158,7 @@ export async function resolveLeaveApprovers(
       .from("user_roles").select("email,full_name").eq("role", "GENERAL_MANAGER");
     for (const gm of gms ?? []) {
       if (!eq(gm.email, applicantEmail)) {
-        chain.push({ email: gm.email, name: gm.full_name, reason: "General Manager" });
+        chain.push({ email: gm.email, name: gm.full_name, reason: "General Manager", position: "General Manager" });
       }
     }
   }

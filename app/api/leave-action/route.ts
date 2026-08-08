@@ -3,16 +3,30 @@ import { createClient } from "@/lib/supabase/server";
 import { applyLeaveDecision, outstandingApprovers } from "@/lib/leave-decision";
 import type { RequiredApprover, ApprovalEntry } from "@/lib/leave-decision";
 
+const ROLE_TITLES: Record<string, string> = {
+  GENERAL_MANAGER: "General Manager",
+  BISHOP: "Bishop",
+  TREASURER: "Treasurer",
+  SECRETARY: "Secretary",
+  FINANCE_ADMIN: "Finance Executive",
+  FINANCE_ADMIN_2: "Accounts Executive",
+  FINANCE_ADMIN_3: "Finance Executive",
+  MINISTRY_HEAD: "EXCO Member",
+};
+const roleTitle = (role?: string | null) => (role && ROLE_TITLES[role]) || "";
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { leave_id, action, remarks } = await req.json() as {
+    const { leave_id, action, remarks, signature_data } = await req.json() as {
       leave_id: string;
       action: "APPROVED" | "REJECTED" | "CANCELLED";
       remarks?: string;
+      /** The officer's drawn signature — a leave form is signed, not clicked. */
+      signature_data?: string | null;
     };
 
     if (!leave_id || !action) return NextResponse.json({ error: "Missing leave_id or action" }, { status: 400 });
@@ -88,7 +102,7 @@ export async function POST(req: NextRequest) {
     // Fetch approver's name
     const { data: approverProfile } = await supabase
       .from("user_roles")
-      .select("full_name")
+      .select("full_name,role")
       .eq("email", user.email)
       .single();
 
@@ -98,6 +112,10 @@ export async function POST(req: NextRequest) {
       action,
       timestamp: new Date().toISOString(),
       remarks: remarks ?? "",
+      // The office held, so the signed form still reads "General Manager"
+      // years later, and the signature itself.
+      position: filledSlot?.position || roleTitle(approverProfile?.role),
+      ...(signature_data ? { signature_data } : {}),
       // Signed on behalf of the named officer — recorded so the slot is
       // satisfied while the signature stays attributed to who actually gave it.
       ...(filledSlot && filledSlot.email.trim().toLowerCase() !== (user.email ?? "").trim().toLowerCase()

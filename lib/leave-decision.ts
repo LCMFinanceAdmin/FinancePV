@@ -14,6 +14,8 @@
 export interface RequiredApprover {
   email: string;
   name: string;
+  /** The office held — captured so a printed form still names the post. */
+  position?: string;
   /** True for approvers with no account, who act through a signed link. */
   external?: boolean;
 }
@@ -24,6 +26,9 @@ export interface ApprovalEntry {
   action: string;
   timestamp: string;
   remarks?: string;
+  position?: string;
+  /** The officer's drawn signature, as a data URI. */
+  signature_data?: string;
   /**
    * The chain slot this signature settles, when the signer isn't the person
    * originally named — the post changed hands, and whoever holds it now signed

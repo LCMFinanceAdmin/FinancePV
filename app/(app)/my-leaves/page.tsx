@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import { resolveLeaveApprovers } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
+import { SignaturePad } from "@/components/ui/signature-pad";
+import { openLeaveForm } from "@/components/leave/leave-form-html";
 import { CalendarDays, Plus, CheckCircle2, XCircle, Clock, X, Upload, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -15,9 +17,10 @@ interface LeaveType {
 }
 interface LeaveApp {
   id: string; leave_no: string; leave_type_code: string; start_date: string;
+  applicant_email?: string; applicant_name?: string; applicant_signature?: string | null;
   end_date: string; days: number; reason: string; status: string;
-  applied_at: string; approvals: { email?: string; name: string; action: string; timestamp: string; remarks?: string }[];
-  required_approvers?: { email: string; name: string; external?: boolean }[];
+  applied_at: string; approvals: { email?: string; name: string; position?: string; action: string; timestamp: string; remarks?: string; for_email?: string; signature_data?: string }[];
+  required_approvers?: { email: string; name: string; position?: string; external?: boolean }[];
 }
 interface ReplacementDay { id: string; work_date: string; days: number; reason: string; }
 
@@ -58,6 +61,7 @@ function MyLeavesInner() {
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [resending,  setResending]  = useState<string | null>(null);
+  const [applicantSig, setApplicantSig] = useState<string | null>(null);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok }); setTimeout(() => setToast({ msg: "", ok: true }), 3000);
@@ -124,6 +128,10 @@ function MyLeavesInner() {
     if (!form.start_date || !form.end_date || !form.reason.trim()) {
       showMsg("Please fill in all required fields", false); return;
     }
+    // A leave form is signed by the person asking for it — approving officers
+    // sign the same sheet, so an unsigned application would be a form with a
+    // blank in the first box.
+    if (!applicantSig) { showMsg("Please sign the application before submitting", false); return; }
     const days = calcDays(form.start_date, form.end_date);
     if (days <= 0) { showMsg("End date must be after start date", false); return; }
 
@@ -140,7 +148,8 @@ function MyLeavesInner() {
     // `external` marks approvers with no account — currently the church council
     // President, who acts through an emailed link rather than signing in.
     const resolvedApprovers = resolved.map(a => ({
-      email: a.email, name: a.name, ...(a.external ? { external: true } : {}),
+      email: a.email, name: a.name, position: a.position ?? "",
+      ...(a.external ? { external: true } : {}),
     }));
 
     const { data: leaveNoData, error: noErr } = await supabase.rpc("next_leave_no");
@@ -156,6 +165,7 @@ function MyLeavesInner() {
       days,
       reason:             form.reason,
       attachment_url:     form.attachment_url || null,
+      applicant_signature: applicantSig,
       required_approvers: resolvedApprovers,
     }).select("id").single();
 
@@ -181,6 +191,7 @@ function MyLeavesInner() {
     setSubmitting(false);
     setShowApply(false);
     setForm({ leave_type_code: "ANNUAL", start_date: "", end_date: "", reason: "", attachment_url: "" });
+    setApplicantSig(null);
     if (linkWarning) {
       showMsg(`Application submitted, but ${linkWarning} — use “Resend council link”.`, false);
     } else {
@@ -214,6 +225,15 @@ function MyLeavesInner() {
     showMsg("Leave cancelled");
     await load();
   }
+
+  const viewForm = (l: LeaveApp) => openLeaveForm({
+    ...l,
+    applicant_name: l.applicant_name ?? userName,
+    applicant_email: l.applicant_email ?? userEmail,
+    leave_type: leaveTypes.find(t => t.code === l.leave_type_code)?.name ?? l.leave_type_code,
+    required_approvers: l.required_approvers ?? [],
+    approvals: l.approvals ?? [],
+  });
 
   const pending  = applications.filter(a => a.status === "PENDING");
   const history  = applications.filter(a => a.status !== "PENDING");
@@ -309,7 +329,8 @@ function MyLeavesInner() {
           ) : pending.map(app => (
             <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes}
               onCancel={() => cancelLeave(app.id)} cancelling={cancelling === app.id}
-              onResendCouncilLink={() => resendCouncilLink(app.id)} resending={resending === app.id} />
+              onResendCouncilLink={() => resendCouncilLink(app.id)} resending={resending === app.id}
+              onViewForm={() => viewForm(app)} />
           ))}
         </div>
       )}
@@ -320,7 +341,7 @@ function MyLeavesInner() {
           {history.length === 0 ? (
             <EmptyState icon={<CalendarDays size={24} />} msg="No leave history" />
           ) : history.map(app => (
-            <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes} />
+            <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes} onViewForm={() => viewForm(app)} />
           ))}
         </div>
       )}
@@ -400,8 +421,23 @@ function MyLeavesInner() {
               </div>
             )}
 
+            {/* The applicant signs the form. Each approving officer signs the
+                same sheet as they act, so the finished application carries
+                every hand that touched it. */}
+            <div>
+              <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">
+                Your signature <span className="text-red-400">*</span>
+              </label>
+              <SignaturePad value={applicantSig ?? ""} onChange={setApplicantSig} />
+              <p className="mt-1 text-[11px] text-stone-400">
+                Signing declares the details above are correct.
+              </p>
+            </div>
+
             <div className="flex gap-2 pt-1">
-              <Button className="flex-1" loading={submitting} onClick={submitLeave}>Submit Application</Button>
+              <Button className="flex-1" loading={submitting} disabled={!applicantSig} onClick={submitLeave}>
+                Submit Application
+              </Button>
               <Button variant="ghost" onClick={() => setShowApply(false)}>Cancel</Button>
             </div>
           </div>
@@ -411,10 +447,11 @@ function MyLeavesInner() {
   );
 }
 
-function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending }: {
+function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending, onViewForm }: {
   app: LeaveApp; leaveTypes: LeaveType[];
   onCancel?: () => void; cancelling?: boolean;
   onResendCouncilLink?: () => void; resending?: boolean;
+  onViewForm?: () => void;
 }) {
   const type = leaveTypes.find(t => t.code === app.leave_type_code);
 
@@ -462,10 +499,14 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink,
         </div>
       )}
 
+      <button onClick={() => onViewForm?.()}
+        className="text-xs font-medium text-[#4a6da7] hover:underline">
+        View signed form →
+      </button>
+
       {app.status === "PENDING" && outstanding.length > 0 && (
         <p className="text-xs text-amber-600">
-          Waiting on {outstanding.map(a => a.name).join(" and ")}
-          {councilPending ? " (church council, by email)" : ""}
+          Waiting on {outstanding.map(a => a.position ? `${a.name} (${a.position})` : a.name).join(" and ")}
         </p>
       )}
 

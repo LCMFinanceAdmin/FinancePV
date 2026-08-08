@@ -4,6 +4,8 @@
 export interface RequiredApprover {
   email: string;
   name: string;
+  /** The office held — captured so a printed form still names the post. */
+  position?: string;
   external?: boolean;
 }
 
@@ -13,6 +15,9 @@ export interface ApprovalEntry {
   action: string;
   timestamp: string;
   remarks?: string;
+  position?: string;
+  /** The officer's drawn signature, as a data URI. */
+  signature_data?: string;
   /** The chain slot this settles, when the signer isn't the person named. */
   for_email?: string;
 }
