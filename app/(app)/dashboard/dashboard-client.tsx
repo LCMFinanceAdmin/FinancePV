@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import type { PV, UserProfile } from "@/lib/types";
 import { FeatureDirectory } from "@/components/layout/feature-directory";
+import { InstallApp } from "@/components/install-app";
 import {
   FilePlus, Clock, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
   FileText, ChevronDown, ChevronUp, X, Inbox, AlertCircle,
@@ -492,6 +493,11 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
           ))}
         </div>
       )}
+
+      {/* Offered once, near the top, because installing is what makes the
+          app openable from the home screen and push work on iPhone. Hides
+          itself once installed or dismissed. */}
+      <InstallApp />
 
       {/* ── Quick shortcuts ───────────────────────────────────────────── */}
       <div>
