@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
+import { describeApprovers } from "@/lib/approver-label";
 import { resolveLeaveApprovers } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
@@ -64,6 +65,9 @@ function MyLeavesInner() {
   const [applicantSig, setApplicantSig] = useState<string | null>(null);
   // Set while amending an existing application rather than making a new one.
   const [editingId, setEditingId] = useState<string | null>(null);
+  // email → role, so an application submitted before positions were recorded
+  // still names the office rather than showing a bare name.
+  const [roleByEmail, setRoleByEmail] = useState<Record<string, string>>({});
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok }); setTimeout(() => setToast({ msg: "", ok: true }), 3000);
@@ -75,19 +79,24 @@ function MyLeavesInner() {
     const email = session?.user?.email ?? "";
     setUserEmail(email);
 
-    const [{ data: lt }, { data: apps }, { data: rdays }, { data: profile }] = await Promise.all([
+    const [{ data: lt }, { data: apps }, { data: rdays }, { data: profile }, { data: people }] = await Promise.all([
       supabase.from("leave_types").select("*").eq("active", true).order("sort_order"),
       supabase.from("leave_applications").select("*").eq("applicant_email", email)
         .order("applied_at", { ascending: false }),
       supabase.from("replacement_days_earned").select("*").eq("employee_email", email)
         .gte("work_date", `${year}-01-01`).lte("work_date", `${year}-12-31`),
       supabase.from("user_roles").select("full_name").eq("email", email).single(),
+      supabase.from("user_roles").select("email,role"),
     ]);
 
     setLeaveTypes(lt ?? []);
     setApplications(apps ?? []);
     setReplacementDays(rdays ?? []);
     setUserName(profile?.full_name ?? email);
+    setRoleByEmail(Object.fromEntries(
+      ((people ?? []) as { email: string; role: string }[])
+        .map(p => [p.email.trim().toLowerCase(), p.role]),
+    ));
     setLoading(false);
   }
 
@@ -394,7 +403,7 @@ function MyLeavesInner() {
             <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes}
               onCancel={() => cancelLeave(app.id)} cancelling={cancelling === app.id}
               onResendCouncilLink={() => resendCouncilLink(app.id)} resending={resending === app.id}
-              onViewForm={() => viewForm(app)} onEdit={() => startEdit(app)} />
+              onViewForm={() => viewForm(app)} onEdit={() => startEdit(app)} roleByEmail={roleByEmail} />
           ))}
         </div>
       )}
@@ -405,7 +414,7 @@ function MyLeavesInner() {
           {history.length === 0 ? (
             <EmptyState icon={<CalendarDays size={24} />} msg="No leave history" />
           ) : history.map(app => (
-            <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes} onViewForm={() => viewForm(app)} />
+            <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes} onViewForm={() => viewForm(app)} roleByEmail={roleByEmail} />
           ))}
         </div>
       )}
@@ -518,12 +527,13 @@ function MyLeavesInner() {
   );
 }
 
-function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending, onViewForm, onEdit }: {
+function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending, onViewForm, onEdit, roleByEmail = {} }: {
   app: LeaveApp; leaveTypes: LeaveType[];
   onCancel?: () => void; cancelling?: boolean;
   onResendCouncilLink?: () => void; resending?: boolean;
   onViewForm?: () => void;
   onEdit?: () => void;
+  roleByEmail?: Record<string, string>;
 }) {
   const type = leaveTypes.find(t => t.code === app.leave_type_code);
 
@@ -578,7 +588,7 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink,
 
       {app.status === "PENDING" && outstanding.length > 0 && (
         <p className="text-xs text-amber-600">
-          Waiting on {outstanding.map(a => a.position ? `${a.name} (${a.position})` : a.name).join(" and ")}
+          Waiting on {describeApprovers(outstanding, roleByEmail)}
         </p>
       )}
 

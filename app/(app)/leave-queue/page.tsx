@@ -2,11 +2,11 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
+import { describeApprover as describe, type LabelledApprover } from "@/lib/approver-label";
 import { CheckCircle2, XCircle, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { SignaturePad } from "@/components/ui/signature-pad";
-import { roleLabel } from "@/lib/utils";
 import { openLeaveForm } from "@/components/leave/leave-form-html";
 
 interface LeaveApp {
@@ -135,15 +135,7 @@ export default function LeaveQueuePage() {
 
   const typeName = (code: string) => leaveTypes.find(t => t.code === code)?.name ?? code;
 
-  // "Jeffrey Koit (General Manager)". The position is captured onto the
-  // application when it is submitted; applications made before that fall back
-  // to the person's current role, so old rows still read properly.
-  const describeApprover = (a: { email: string; name: string; position?: string; external?: boolean }) => {
-    const post = a.position
-      || (a.external ? "Church Council President" : "")
-      || (roleByEmail[norm(a.email)] ? roleLabel(roleByEmail[norm(a.email)]) : "");
-    return post ? `${a.name} (${post})` : a.name;
-  };
+  const describeApprover = (a: LabelledApprover) => describe(a, roleByEmail);
 
   // The application, as the signed document HR files.
   const viewForm = (l: LeaveApp) => openLeaveForm({
