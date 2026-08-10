@@ -1893,10 +1893,21 @@ export default function RecurringPage() {
                 </div>
 
                 {already && (
-                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
-                    {chosen?.label} already has voucher <strong>{already.pv_no}</strong> for this expense.
-                    Choose a different period, or clear that entry first.
-                  </p>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800">
+                    <p>
+                      {chosen?.label} already has voucher <strong>{already.pv_no}</strong> for this expense.
+                    </p>
+                    {/* Telling someone to clear the entry without giving them a
+                        way to do it just sends them hunting. */}
+                    <button type="button"
+                      onClick={() => clearPeriodRun(raiseItem.id, raisePeriodKey)}
+                      className="mt-1.5 font-semibold text-amber-900 underline hover:no-underline">
+                      Clear that entry so this period can be raised again
+                    </button>
+                    <p className="mt-1 text-[11px] text-amber-700">
+                      Cancel {already.pv_no} separately if that voucher is not needed.
+                    </p>
+                  </div>
                 )}
               </div>
 
