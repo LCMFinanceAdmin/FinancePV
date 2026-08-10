@@ -2853,7 +2853,7 @@ export default function RecurringPage() {
                 <col className="hidden sm:table-column sm:w-[11%]" />{/* duration */}
                 <col className="hidden sm:table-column sm:w-[10%]" />{/* last created */}
                 <col className="hidden sm:table-column sm:w-[10%]" />{/* last paid */}
-                <col className="w-[88px] sm:w-[11%]" />{/* amount */}
+                <col className="hidden sm:table-column sm:w-[11%]" />{/* amount */}
                 <col className="w-[68px] sm:w-[128px]" />{/* actions */}
               </colgroup>
               <thead>
@@ -2865,7 +2865,7 @@ export default function RecurringPage() {
                   <th className="py-3 pl-3 text-left hidden sm:table-cell">Duration</th>
                   <th className="py-3 pl-3 text-left hidden sm:table-cell">Last Created</th>
                   <th className="py-3 pl-3 text-left hidden sm:table-cell">Last Paid</th>
-                  <th className="py-3 text-right pr-4">Amount</th>
+                  <th className="hidden py-3 pr-4 text-right sm:table-cell">Amount</th>
                   <th className="py-3"></th>
                 </tr>
               </thead>
@@ -3253,7 +3253,7 @@ export default function RecurringPage() {
                         their space to the payee name. */}
                     <col className="hidden sm:table-column sm:w-[10%]" />{/* last created */}
                     <col className="hidden sm:table-column sm:w-[10%]" />{/* last paid */}
-                    <col className="w-[88px] sm:w-[11%]" />{/* amount */}
+                    <col className="hidden sm:table-column sm:w-[11%]" />{/* amount */}
                     <col className="w-[68px] sm:w-[128px]" />{/* actions — five icon buttons */}
                   </colgroup>
                   <thead>
@@ -3268,7 +3268,7 @@ export default function RecurringPage() {
                       <th className="py-3 pl-3 text-left hidden sm:table-cell">Duration</th>
                       <th className="py-3 pl-3 text-left hidden sm:table-cell">Last Created</th>
                       <th className="py-3 pl-3 text-left hidden sm:table-cell">Last Paid</th>
-                      <th className="py-3 text-right pr-4">Amount</th>
+                      <th className="hidden py-3 pr-4 text-right sm:table-cell">Amount</th>
                       <th className="py-3"></th>
                     </tr>
                   </thead>
@@ -3636,6 +3636,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
               hidden, so the name carries them — a row still has to say who is
               paid and whether this month is done. */}
           <div className="mt-1 space-y-0.5 sm:hidden">
+            <div className="text-base font-bold text-[#4a6da7]">{formatCurrency(item.amount)}</div>
             <div className="text-[13px] leading-snug text-stone-500">{item.payee_name}</div>
             <div className="text-[12px] text-stone-400">
               {durationLabel()}
@@ -3709,7 +3710,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             </div>
           ) : <span className="text-sm text-stone-300">—</span>}
         </td>
-        <td className="py-[15px] pr-4 text-base font-bold text-[#4a6da7] text-right whitespace-nowrap align-top">{formatCurrency(item.amount)}</td>
+        <td className="hidden py-[15px] pr-4 text-right align-top text-base font-bold whitespace-nowrap text-[#4a6da7] sm:table-cell">{formatCurrency(item.amount)}</td>
         <td className="py-[15px] pr-1 align-top sm:pr-2">
           {/* Two icons wide on a phone rather than a single tall strip: every
               action stays reachable without the column eating the width the
