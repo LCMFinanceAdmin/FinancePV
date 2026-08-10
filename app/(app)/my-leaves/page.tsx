@@ -20,7 +20,9 @@ interface LeaveApp {
   id: string; leave_no: string; leave_type_code: string; start_date: string;
   applicant_email?: string; applicant_name?: string; applicant_signature?: string | null;
   end_date: string; days: number; reason: string; status: string;
-  applied_at: string; approvals: { email?: string; name: string; position?: string; action: string; timestamp: string; remarks?: string; for_email?: string; signature_data?: string }[];
+  applied_at: string;
+  balance_annual_before?: number | null; balance_medical_before?: number | null;
+  approvals: { email?: string; name: string; position?: string; action: string; timestamp: string; remarks?: string; for_email?: string; signature_data?: string }[];
   required_approvers?: { email: string; name: string; position?: string; external?: boolean }[];
 }
 interface ReplacementDay { id: string; work_date: string; days: number; reason: string; }
@@ -52,6 +54,7 @@ function MyLeavesInner() {
   const [showApply,        setShowApply]        = useState(false);
   const [userEmail,        setUserEmail]        = useState("");
   const [userName,         setUserName]         = useState("");
+  const [userDesignation,  setUserDesignation]  = useState("");
   const [toast,            setToast]            = useState({ msg: "", ok: true });
   const year = new Date().getFullYear();
 
@@ -85,7 +88,7 @@ function MyLeavesInner() {
         .order("applied_at", { ascending: false }),
       supabase.from("replacement_days_earned").select("*").eq("employee_email", email)
         .gte("work_date", `${year}-01-01`).lte("work_date", `${year}-12-31`),
-      supabase.from("user_roles").select("full_name").eq("email", email).single(),
+      supabase.from("user_roles").select("full_name,designation").eq("email", email).single(),
       supabase.from("user_roles").select("email,role"),
     ]);
 
@@ -93,6 +96,7 @@ function MyLeavesInner() {
     setApplications(apps ?? []);
     setReplacementDays(rdays ?? []);
     setUserName(profile?.full_name ?? email);
+    setUserDesignation(profile?.designation ?? "");
     setRoleByEmail(Object.fromEntries(
       ((people ?? []) as { email: string; role: string }[])
         .map(p => [p.email.trim().toLowerCase(), p.role]),
@@ -185,8 +189,8 @@ function MyLeavesInner() {
   }
 
   async function submitLeave() {
-    if (!form.start_date || !form.end_date || !form.reason.trim()) {
-      showMsg("Please fill in all required fields", false); return;
+    if (!form.start_date || !form.end_date) {
+      showMsg("Please choose your first and last day of leave", false); return;
     }
     // A leave form is signed by the person asking for it — approving officers
     // sign the same sheet, so an unsigned application would be a form with a
@@ -216,6 +220,13 @@ function MyLeavesInner() {
       ...(a.external ? { external: true } : {}),
     }));
 
+    // The form prints "days before this application", so capture it now — a
+    // figure recalculated later would silently rewrite a signed document.
+    const annualType  = leaveTypes.find(t => t.code === "ANNUAL");
+    const medicalType = leaveTypes.find(t => t.code === "MEDICAL");
+    const balanceAnnual  = annualType  ? getBalance("ANNUAL", annualType).remaining   : null;
+    const balanceMedical = medicalType ? getBalance("MEDICAL", medicalType).remaining : null;
+
     const { data: leaveNoData, error: noErr } = await supabase.rpc("next_leave_no");
     if (noErr) { showMsg("Could not generate leave number", false); setSubmitting(false); return; }
 
@@ -231,6 +242,8 @@ function MyLeavesInner() {
       attachment_url:     form.attachment_url || null,
       applicant_signature: applicantSig,
       required_approvers: resolvedApprovers,
+      balance_annual_before:  balanceAnnual,
+      balance_medical_before: balanceMedical,
     }).select("id").single();
 
     if (error) { setSubmitting(false); showMsg("Submission failed: " + error.message, false); return; }

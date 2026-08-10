@@ -13,6 +13,7 @@ interface LeaveApp {
   id: string; leave_no: string; applicant_name: string; applicant_email: string;
   leave_type_code: string; start_date: string; end_date: string; days: number;
   reason: string; status: string; applied_at: string; applicant_signature?: string | null;
+  balance_annual_before?: number | null; balance_medical_before?: number | null;
   required_approvers: { email: string; name: string; position?: string; external?: boolean }[];
   approvals: { email: string; name: string; position?: string; action: string; timestamp: string; remarks?: string; for_email?: string; signature_data?: string }[];
 }
@@ -141,6 +142,9 @@ export default function LeaveQueuePage() {
   const viewForm = (l: LeaveApp) => openLeaveForm({
     ...l,
     leave_type: typeName(l.leave_type_code),
+    leave_type_code: l.leave_type_code,
+    balance_annual_before: l.balance_annual_before,
+    balance_medical_before: l.balance_medical_before,
     applicant_signature: l.applicant_signature,
     required_approvers: l.required_approvers ?? [],
     approvals: l.approvals ?? [],
@@ -275,10 +279,26 @@ export default function LeaveQueuePage() {
                     <span className="w-24 shrink-0 text-stone-400">Period</span>
                     <span className="text-stone-700 font-medium">{formatDate(app.start_date)} → {formatDate(app.end_date)}</span>
                   </div>
-                  {app.reason && (
+                  {/* What an approver actually needs to judge the request:
+                      how much leave this person had left before asking. The
+                      figure is the one snapshotted onto the application, so it
+                      matches the printed form exactly. */}
+                  {app.balance_annual_before != null && (
                     <div className="flex gap-2">
-                      <span className="w-24 shrink-0 text-stone-400">Reason</span>
-                      <span className="text-stone-700">{app.reason}</span>
+                      <span className="w-24 shrink-0 text-stone-400">Annual left</span>
+                      <span className="font-medium text-stone-700">
+                        {app.balance_annual_before} day{Number(app.balance_annual_before) === 1 ? "" : "s"}
+                        <span className="text-stone-400"> before this application</span>
+                      </span>
+                    </div>
+                  )}
+                  {app.balance_medical_before != null && (
+                    <div className="flex gap-2">
+                      <span className="w-24 shrink-0 text-stone-400">Medical left</span>
+                      <span className="font-medium text-stone-700">
+                        {app.balance_medical_before} day{Number(app.balance_medical_before) === 1 ? "" : "s"}
+                        <span className="text-stone-400"> before this application</span>
+                      </span>
                     </div>
                   )}
                   <div className="flex gap-2">
