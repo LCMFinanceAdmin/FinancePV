@@ -2846,14 +2846,15 @@ export default function RecurringPage() {
           <div className="overflow-x-auto rounded-xl border border-stone-200">
             <table className="w-full text-sm border-collapse table-fixed min-w-[1200px]">
               <colgroup>
-                <col className="w-9" /><col className="w-8" />
-                <col className="w-[25%]" />{/* description */}
-                <col className="w-[18%]" />{/* payable to */}
-                <col className="w-[11%]" />{/* duration */}
-                <col className="w-[10%]" />{/* last created */}
-                <col className="w-[10%]" />{/* last paid */}
-                <col className="w-[11%]" />{/* amount */}
-                <col className="w-[128px]" />{/* actions */}
+                <col className="w-8 sm:w-9" />
+                <col className="hidden w-8 sm:table-column" />{/* row no */}
+                <col className="w-auto sm:w-[25%]" />{/* description */}
+                <col className="hidden sm:table-column sm:w-[18%]" />{/* payable to */}
+                <col className="hidden sm:table-column sm:w-[11%]" />{/* duration */}
+                <col className="hidden sm:table-column sm:w-[10%]" />{/* last created */}
+                <col className="hidden sm:table-column sm:w-[10%]" />{/* last paid */}
+                <col className="w-[88px] sm:w-[11%]" />{/* amount */}
+                <col className="w-[68px] sm:w-[128px]" />{/* actions */}
               </colgroup>
               <thead>
                 <tr className="text-[11px] text-stone-500 font-bold uppercase tracking-normal bg-stone-50 border-b-2 border-stone-200 [&>th]:border-r [&>th]:border-stone-200 [&>th:last-child]:border-r-0">
@@ -3243,17 +3244,17 @@ export default function RecurringPage() {
               <div className="overflow-x-auto rounded-xl border border-stone-200">
                 <table className="w-full border-collapse text-sm table-auto sm:table-fixed sm:min-w-[1120px]">
                   <colgroup>
-                    <col className="w-9" />{/* checkbox */}
-                    <col className="w-8" />{/* row no */}
+                    <col className="w-8 sm:w-9" />{/* checkbox */}
+                    <col className="hidden w-8 sm:table-column" />{/* row no */}
                     <col className="w-auto sm:w-[27%]" />{/* description — widest, it carries the name */}
-                    <col className="w-[20%]" />{/* payable to — full names shouldn't wrap */}
-                    <col className="w-[11%]" />{/* duration */}
+                    <col className="hidden sm:table-column sm:w-[20%]" />{/* payable to — full names shouldn't wrap */}
+                    <col className="hidden sm:table-column sm:w-[11%]" />{/* duration */}
                     {/* PV columns only hold a reference and a date, so they give
                         their space to the payee name. */}
-                    <col className="w-[10%]" />{/* last created */}
-                    <col className="w-[10%]" />{/* last paid */}
-                    <col className="w-[11%]" />{/* amount */}
-                    <col className="w-[128px]" />{/* actions — five icon buttons */}
+                    <col className="hidden sm:table-column sm:w-[10%]" />{/* last created */}
+                    <col className="hidden sm:table-column sm:w-[10%]" />{/* last paid */}
+                    <col className="w-[88px] sm:w-[11%]" />{/* amount */}
+                    <col className="w-[68px] sm:w-[128px]" />{/* actions — five icon buttons */}
                   </colgroup>
                   <thead>
                     {/* Headers are smaller than the rows on purpose — they're a
@@ -3709,8 +3710,11 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
           ) : <span className="text-sm text-stone-300">—</span>}
         </td>
         <td className="py-[15px] pr-4 text-base font-bold text-[#4a6da7] text-right whitespace-nowrap align-top">{formatCurrency(item.amount)}</td>
-        <td className="py-[15px] pr-2 align-top">
-          <div className="flex flex-wrap items-center gap-0.5 justify-end">
+        <td className="py-[15px] pr-1 align-top sm:pr-2">
+          {/* Two icons wide on a phone rather than a single tall strip: every
+              action stays reachable without the column eating the width the
+              expense name needs. */}
+          <div className="grid w-[64px] grid-cols-2 justify-items-end gap-0.5 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
             {!isExpired && alreadyRan && item.current_pv_id && (
               <a href={`/my-pvs/${item.current_pv_id}`}
                 className="text-[12px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg px-2 py-1 transition-colors border border-green-200 mr-1 whitespace-nowrap">
