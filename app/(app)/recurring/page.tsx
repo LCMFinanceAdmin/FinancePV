@@ -1313,7 +1313,7 @@ export default function RecurringPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          roles: ["GENERAL_MANAGER", "BISHOP"],
+          roles: ["GENERAL_MANAGER", "BISHOP", "TREASURER"],
           type: "RECURRING_RUN",
           urgent: true,
           title: `Recurring payments raised — ${period.label}`,
