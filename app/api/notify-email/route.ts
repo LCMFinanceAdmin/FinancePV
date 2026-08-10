@@ -34,14 +34,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing recipients or subject" }, { status: 400 });
     }
 
-    const sent = await sendNotificationEmails(
+    const result = await sendNotificationEmails(
       to.map(email => ({ email })),
       subject,
       lines ?? [],
       path,
       urgent,
     );
-    return NextResponse.json({ ok: true, sent });
+    // The caller is a server, so the reason has to come back in the response —
+    // there is nobody watching a screen to notice a silent zero.
+    if (result.problem) console.error("[notify-email] not sent:", result.problem);
+    return NextResponse.json({ ok: result.sent > 0, ...result });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

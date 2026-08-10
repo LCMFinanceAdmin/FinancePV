@@ -84,16 +84,32 @@ function emailHtml(subject: string, lines: string[], link: string, urgent: boole
  * Returns how many actually sent — a caller can then say "emailed to 2 people"
  * rather than guessing.
  */
+export interface SendResult {
+  sent: number;
+  /** Why nothing went out, when nothing went out. */
+  problem?: string;
+}
+
 export async function sendNotificationEmails(
   to: NotifyRecipient[],
   subject: string,
   lines: string[],
   path?: string,
   urgent?: boolean,
-): Promise<number> {
+): Promise<SendResult> {
   const recipients = to.filter(r => r.email?.includes("@"));
+  if (recipients.length === 0) return { sent: 0, problem: "no valid recipients" };
+
+  // A silent zero is the worst possible answer: it looks like success and
+  // hides a missing password or a refused connection. Say what went wrong.
   const transport = mailer();
-  if (!transport || recipients.length === 0) return 0;
+  if (!transport) {
+    const missing = [
+      process.env.SMTP_USER ? null : "SMTP_USER",
+      process.env.SMTP_PASS ? null : "SMTP_PASS",
+    ].filter(Boolean).join(" and ");
+    return { sent: 0, problem: `email is not configured — ${missing} is not set` };
+  }
 
   const link = `${siteUrl()}${path ?? "/dashboard"}`;
   const results = await Promise.allSettled(recipients.map(r =>
@@ -112,7 +128,16 @@ export async function sendNotificationEmails(
       ].join("\n"),
       html: emailHtml(subject, lines, link, !!urgent),
     })));
-  return results.filter(r => r.status === "fulfilled").length;
+
+  const sent = results.filter(r => r.status === "fulfilled").length;
+  if (sent > 0) return { sent };
+
+  const first = results.find(r => r.status === "rejected") as PromiseRejectedResult | undefined;
+  const reason = first?.reason;
+  return {
+    sent: 0,
+    problem: reason instanceof Error ? reason.message : String(reason ?? "send failed"),
+  };
 }
 
 /**
@@ -138,7 +163,8 @@ export async function notifyPeople(input: NotifyInput): Promise<{ recorded: numb
   if (!insErr) recorded = recipients.length;
 
   // 2. Email — the channel that reaches people who aren't in the app.
-  const emailed = await sendNotificationEmails(recipients, subject, lines, path, urgent);
+  const result = await sendNotificationEmails(recipients, subject, lines, path, urgent);
+  if (result.problem) console.error("[notify] email not sent:", result.problem);
 
-  return { recorded, emailed };
+  return { recorded, emailed: result.sent };
 }
