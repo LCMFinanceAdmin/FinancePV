@@ -170,7 +170,7 @@ interface LineItem { description: string; amount: number; }
 
 interface RecurringPV {
   id: string; name: string; frequency: string; next_due: string | null;
-  last_run: string | null; active: boolean; payee_name: string;
+  last_run: string | null; last_created_at?: string | null; active: boolean; payee_name: string;
   payee_bank_name: string; payee_bank_acct: string; payment_method: string;
   biller_code: string; ref_no: string; ref_no_2: string; cheque_no: string;
   amount: number; ministry: string; dept: string; project: string;
@@ -643,8 +643,8 @@ export default function RecurringPage() {
           const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
           const newPvId = pvRow?.id ?? null;
           const period = defaultPeriodLabel(item.frequency);
-          await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period }).eq("id", item.id);
-          setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period } : i));
+          await supabase.from("recurring_pvs").update({ last_run: today, last_created_at: new Date().toISOString(), next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period }).eq("id", item.id);
+          setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, last_created_at: new Date().toISOString(), next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period } : i));
           if (newPvId) created.push({ id: newPvId, pv_no: result.pv_no, amount: item.amount });
         } catch (e) { showMsg(`${item.name}: ${(e as Error).message}`, false); }
         setBatchProgress(p => p ? { ...p, done: p.done + 1, errors: p.errors } : null);
@@ -1287,11 +1287,12 @@ export default function RecurringPage() {
         setRunsByPeriod(prev => ({ ...prev, [`${item.id}|${period.key}`]: runRow as RecurringRun }));
         await supabase.from("recurring_pvs").update({
           last_run: pvDate, next_due: calcNextDue(item.frequency),
+          last_created_at: new Date().toISOString(),
           current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD",
           current_pv_id: newPvId, current_period: period.label,
         }).eq("id", item.id);
         setItems(is => is.map(i => i.id === item.id ? {
-          ...i, last_run: pvDate, current_pv_no: result.pv_no,
+          ...i, last_run: pvDate, last_created_at: new Date().toISOString(), current_pv_no: result.pv_no,
           current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period.label,
         } : i));
       } catch (err: unknown) {
@@ -1419,12 +1420,13 @@ export default function RecurringPage() {
       // remember to correct again.
       await supabase.from("recurring_pvs").update({
         last_run: pvDate, next_due: calcNextDue(raiseItem.frequency),
+        last_created_at: new Date().toISOString(),
         current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD",
         current_pv_id: newPvId, current_period: period.label,
         amount, purpose, line_items: lines,
       }).eq("id", raiseItem.id);
       setItems(is => is.map(i => i.id === raiseItem.id ? {
-        ...i, last_run: pvDate, current_pv_no: result.pv_no,
+        ...i, last_run: pvDate, last_created_at: new Date().toISOString(), current_pv_no: result.pv_no,
         current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period.label,
         amount, purpose, line_items: lines,
       } : i));
@@ -1500,8 +1502,8 @@ export default function RecurringPage() {
         const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
         const newPvId = pvRow?.id ?? null;
         const period = defaultPeriodLabel(item.frequency);
-        await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period }).eq("id", item.id);
-        setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period } : i));
+        await supabase.from("recurring_pvs").update({ last_run: today, last_created_at: new Date().toISOString(), next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period }).eq("id", item.id);
+        setItems(is => is.map(i => i.id === item.id ? { ...i, last_run: today, last_created_at: new Date().toISOString(), next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period } : i));
         if (newPvId) created.push({ id: newPvId, pv_no: result.pv_no, amount: item.amount, group: item.group_name || "General", ministry: item.ministry || "" });
       } catch (e) { errors.push(`${item.name}: ${(e as Error).message}`); }
       setBatchProgress(p => p ? { ...p, done: p.done + 1, errors } : null);
@@ -3672,7 +3674,14 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             <div>
               <a href={item.current_pv_id ? `/my-pvs/${item.current_pv_id}` : "#"}
                 className="text-sm text-[#4a6da7] hover:underline font-medium">{item.current_pv_no}</a>
-              <div className="text-[12px] text-stone-400 mt-0.5">{formatDate(item.last_run)}</div>
+              <div className="text-[12px] text-stone-400 mt-0.5">
+                {item.last_created_at
+                  ? new Date(item.last_created_at).toLocaleString("en-MY", {
+                      day: "2-digit", month: "short", year: "numeric",
+                      hour: "2-digit", minute: "2-digit",
+                    })
+                  : formatDate(item.last_run)}
+              </div>
             </div>
           ) : <span className="text-sm text-stone-300">—</span>}
         </td>
@@ -3770,7 +3779,7 @@ function RunNowModal({ item, ministries, projects, onClose, onDone, onError, cal
     // Fetch the new PV's id for direct navigation
     const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
     const newPvId = pvRow?.id;
-    await supabase.from("recurring_pvs").update({ last_run: today, next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId ?? null }).eq("id", item.id);
+    await supabase.from("recurring_pvs").update({ last_run: today, last_created_at: new Date().toISOString(), next_due: nextDue, current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD", current_pv_id: newPvId ?? null }).eq("id", item.id);
     onDone(result.pv_no, nextDue, newPvId);
   }
 

@@ -7,6 +7,7 @@ import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import type { PV, UserProfile } from "@/lib/types";
 import { FeatureDirectory } from "@/components/layout/feature-directory";
 import { InstallApp } from "@/components/install-app";
+import { NotificationsOptIn } from "@/components/notifications-optin";
 import {
   FilePlus, Clock, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
   FileText, ChevronDown, ChevronUp, X, Inbox, AlertCircle,
@@ -498,6 +499,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
           app openable from the home screen and push work on iPhone. Hides
           itself once installed or dismissed. */}
       <InstallApp />
+      <NotificationsOptIn />
 
       {/* ── Quick shortcuts ───────────────────────────────────────────── */}
       <div>

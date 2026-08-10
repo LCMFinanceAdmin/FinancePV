@@ -38,6 +38,61 @@ function playNotificationChime() {
   }
 }
 
+/**
+ * Register this device for notifications.
+ *
+ * Exported so a button can call it. Asking for permission unprompted on page
+ * load is the worst way to do this: the browser's own popup arrives with no
+ * explanation, people dismiss it, and a dismissed prompt can never be shown
+ * again — the account is then silently unreachable forever. So the automatic
+ * path below only subscribes when permission was *already* granted, and asking
+ * is left to a button the person chose to press.
+ */
+export async function subscribeToPush(ask: boolean): Promise<NotificationPermission | "unsupported"> {
+  if (!VAPID_PUBLIC_KEY) return "unsupported";
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    return "unsupported";
+  }
+
+  let permission = Notification.permission;
+  if (permission === "default") {
+    if (!ask) return permission;
+    permission = await Notification.requestPermission();
+  }
+  if (permission !== "granted") return permission;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    const sub = existing ?? await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+    await sendSubscriptionToServer(sub);
+  } catch {
+    // The registration failed; the permission state is still the useful answer.
+  }
+  return permission;
+}
+
+async function sendSubscriptionToServer(sub: PushSubscription) {
+  const supabase = createClient();
+  const session = (await supabase.auth.getSession()).data.session;
+  if (!session) return;
+  const subJson = sub.toJSON();
+  await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/subscribe-push`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      endpoint: subJson.endpoint,
+      keys: subJson.keys,
+    }),
+  });
+}
+
 export function usePushNotifications() {
   useEffect(() => {
     // Listen for the service worker "play sound + show banner" broadcast
@@ -57,56 +112,9 @@ export function usePushNotifications() {
   }, []);
 
   useEffect(() => {
-    if (!VAPID_PUBLIC_KEY) return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-
-    async function subscribe() {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        const existing = await registration.pushManager.getSubscription();
-        if (existing) {
-          // Already subscribed — ensure server has it
-          await sendToServer(existing);
-          return;
-        }
-
-        // Only subscribe if the user has granted or not decided yet
-        const permission = await Notification.requestPermission();
-        if (permission !== "granted") return;
-
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-        });
-
-        await sendToServer(subscription);
-      } catch {
-        // Silently fail — push notifications are a nice-to-have
-      }
-    }
-
-    async function sendToServer(sub: PushSubscription) {
-      const supabase = createClient();
-      const session = (await supabase.auth.getSession()).data.session;
-      if (!session) return;
-
-      const subJson = sub.toJSON();
-      await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/subscribe-push`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            endpoint: subJson.endpoint,
-            keys: subJson.keys,
-          }),
-        }
-      );
-    }
-
-    subscribe();
+    // Re-register a device that already has permission — endpoints expire and
+    // rotate, so this keeps the server's copy current. Permission is never
+    // requested here; see subscribeToPush above for why.
+    subscribeToPush(false);
   }, []);
 }

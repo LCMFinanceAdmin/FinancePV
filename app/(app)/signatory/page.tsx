@@ -12,6 +12,7 @@ import {
   Link2 as LinkIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { NotificationsOptIn } from "@/components/notifications-optin";
 
 
 interface BudgetSummary {
@@ -669,6 +670,9 @@ export default function SignatoryPage() {
 
   return (
     <div className="cloudlight-page max-w-5xl space-y-5">
+      {/* Signatories are sent straight here and never see the dashboard, so
+          the offer to switch alerts on has to live where they work. */}
+      <NotificationsOptIn />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
