@@ -7,10 +7,9 @@ import { resolveLeaveApprovers } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { openLeaveForm } from "@/components/leave/leave-form-html";
-import { CalendarDays, Plus, CheckCircle2, XCircle, Clock, X, Upload, ChevronDown } from "lucide-react";
+import { CalendarDays, Plus, CheckCircle2, XCircle, Clock, X, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
-import { StatusBadge } from "@/components/ui/badge";
 
 interface LeaveType {
   code: string; name: string; days_per_year: number;
@@ -68,6 +67,8 @@ function MyLeavesInner() {
   const [applicantSig, setApplicantSig] = useState<string | null>(null);
   // Set while amending an existing application rather than making a new one.
   const [editingId, setEditingId] = useState<string | null>(null);
+  // When the form was opened — the date printed on it, set by the click.
+  const [openedAt, setOpenedAt] = useState<Date | null>(null);
   // email → role, so an application submitted before positions were recorded
   // still names the office rather than showing a bare name.
   const [roleByEmail, setRoleByEmail] = useState<Record<string, string>>({});
@@ -151,12 +152,14 @@ function MyLeavesInner() {
     // details, not the ones they signed before.
     setApplicantSig(null);
     setEditingId(app.id);
+    setOpenedAt(new Date());
     setShowApply(true);
   }
 
   function closeApply() {
     setShowApply(false);
     setEditingId(null);
+    setOpenedAt(null);
     setApplicantSig(null);
     setForm({ leave_type_code: "ANNUAL", start_date: "", end_date: "", reason: "", attachment_url: "" });
   }
@@ -220,12 +223,10 @@ function MyLeavesInner() {
       ...(a.external ? { external: true } : {}),
     }));
 
-    // The form prints "days before this application", so capture it now — a
-    // figure recalculated later would silently rewrite a signed document.
-    const annualType  = leaveTypes.find(t => t.code === "ANNUAL");
-    const medicalType = leaveTypes.find(t => t.code === "MEDICAL");
-    const balanceAnnual  = annualType  ? getBalance("ANNUAL", annualType).remaining   : null;
-    const balanceMedical = medicalType ? getBalance("MEDICAL", medicalType).remaining : null;
+    // The balances shown on the form are the ones stored, so the record and
+    // what the applicant signed can never disagree.
+    const balanceAnnual  = annualBalance;
+    const balanceMedical = medicalBalance;
 
     const { data: leaveNoData, error: noErr } = await supabase.rpc("next_leave_no");
     if (noErr) { showMsg("Could not generate leave number", false); setSubmitting(false); return; }
@@ -326,6 +327,41 @@ function MyLeavesInner() {
   const selected = leaveTypes.find(t => t.code === form.leave_type_code);
   const previewDays = calcDays(form.start_date, form.end_date);
 
+  // The figures the printed form asks for, worked out once and reused both
+  // here and on submission, so what the applicant sees is exactly what is
+  // snapshotted onto the record.
+  const annualType   = leaveTypes.find(t => t.code === "ANNUAL");
+  const medicalType  = leaveTypes.find(t => t.code === "MEDICAL");
+  const annualBalance  = annualType  ? getBalance("ANNUAL", annualType).remaining   : null;
+  const medicalBalance = medicalType ? getBalance("MEDICAL", medicalType).remaining : null;
+
+  // Captured when the form is opened rather than read during render: the date
+  // on a form is "when it was filled in", and reading the clock while
+  // rendering makes the server and the browser disagree.
+  const todayLabel = openedAt
+    ? openedAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "";
+
+  // Note 1: Annual Leave wants 7 days' notice. Warn rather than block — the
+  // rule has exceptions, and the approvers can see the dates for themselves.
+  const noticeShort = !!openedAt && form.leave_type_code === "ANNUAL" && !!form.start_date &&
+    (new Date(form.start_date).getTime() - openedAt.getTime()) < 7 * 86400_000;
+
+  // Who this will go to, resolved live so the applicant knows before sending.
+  const [chainPreview, setChainPreview] = useState("");
+  useEffect(() => {
+    if (!showApply || !userEmail) return;
+    let cancelled = false;
+    resolveLeaveApprovers(supabase, userEmail).then(list => {
+      if (cancelled) return;
+      setChainPreview(list.length
+        ? list.map(a => a.position ? `${a.name} (${a.position})` : a.name).join(" and ")
+        : "No approver could be worked out — ask Finance to check your record.");
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [showApply, userEmail, supabase]);
+
+
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   return (
@@ -337,7 +373,7 @@ function MyLeavesInner() {
           <h1 className="text-xl font-bold text-stone-800">My Leave</h1>
           <p className="text-sm text-stone-400">{year} leave summary for {userName}</p>
         </div>
-        <Button size="sm" onClick={() => setShowApply(true)}>
+        <Button size="sm" onClick={() => { setOpenedAt(new Date()); setShowApply(true); }}>
           <Plus size={13} /> Apply for Leave
         </Button>
       </div>
@@ -434,101 +470,188 @@ function MyLeavesInner() {
 
       {/* ── Apply Modal ── */}
       {showApply && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/35 p-4 backdrop-blur-[2px] sm:items-center">
-          <div className="w-full max-w-md max-h-[90vh] space-y-4 overflow-y-auto rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
-            <div className="flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
+          {/* The paper form, made fillable — the same blocks in the same order,
+              so someone who has filled this in by hand recognises it at once
+              and nobody has to learn a new layout. */}
+          <div className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-[#dbe9fb] bg-white shadow-[0_24px_70px_rgba(22,51,94,0.24)] sm:rounded-3xl">
+
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-stone-200 bg-white px-6 pb-3 pt-5">
               <div>
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Staff services</p>
-                <h2 className="text-base font-bold text-stone-800">{editingId ? "Amend Application" : "Apply for Leave"}</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">
+                  Lutheran Church in Malaysia
+                </p>
+                <h2 className="text-lg font-bold tracking-wide text-stone-800">
+                  {editingId ? "AMEND LEAVE APPLICATION" : "LEAVE APPLICATION FORM"}
+                </h2>
               </div>
-              <button onClick={closeApply} className="text-stone-400 hover:text-stone-600">
-                <X size={18} />
+              <button onClick={closeApply} aria-label="Close"
+                className="rounded-full p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-600">
+                <X size={20} />
               </button>
             </div>
 
-            {/* Leave type */}
-            <div>
-              <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">Leave Type</label>
-              <div className="relative">
-                <select value={form.leave_type_code}
-                  onChange={e => setForm(f => ({ ...f, leave_type_code: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#4a6da7] appearance-none bg-white">
-                  {leaveTypes.filter(t => t.active).map(t => (
-                    <option key={t.code} value={t.code}>{t.name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-              </div>
-              {selected && !selected.is_replacement && (
-                <p className="text-xs text-stone-400 mt-1">Entitlement: {selected.days_per_year} days/year</p>
-              )}
-            </div>
-
-            {/* Dates */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">Start Date</label>
-                <input type="date" value={form.start_date}
-                  onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">End Date</label>
-                <input type="date" value={form.end_date} min={form.start_date}
-                  onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]" />
-              </div>
-            </div>
-
-            {previewDays > 0 && (
-              <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2 text-sm text-blue-700 font-medium">
-                {previewDays} working day{previewDays !== 1 ? "s" : ""} (weekends excluded)
-              </div>
-            )}
-
-            {/* Reason */}
-            <div>
-              <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">Reason *</label>
-              <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                rows={3} placeholder="Brief reason for leave…"
-                className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#4a6da7] resize-none" />
-            </div>
-
-            {/* Supporting doc */}
-            {selected?.requires_doc && (
-              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                <p className="text-xs text-amber-700 font-medium flex items-center gap-1.5">
-                  <Upload size={12} /> Supporting document required for {selected.name}
+            <div className="px-6 py-5">
+              {editingId && (
+                <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+                  Amending clears any approval already given — the officers signed the
+                  original dates, so they&apos;ll be asked to sign again.
                 </p>
-                <input type="url" value={form.attachment_url}
-                  onChange={e => setForm(f => ({ ...f, attachment_url: e.target.value }))}
-                  placeholder="Paste document URL or upload separately…"
-                  className="mt-2 w-full border border-amber-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-[#4a6da7] bg-white" />
+              )}
+
+              {/* ── Submitted by ─────────────────────────────────────── */}
+              <table className="w-full border-collapse text-[14px]">
+                <tbody>
+                  <tr>
+                    <td rowSpan={4} className="w-[26%] border border-stone-300 bg-stone-50 p-2.5 align-top font-semibold text-stone-700">
+                      Submitted by
+                    </td>
+                    <td className="w-[22%] border border-stone-300 p-2.5 font-medium text-stone-600">Name</td>
+                    <td className="border border-stone-300 p-2.5 text-stone-800">{userName}</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-stone-300 p-2.5 font-medium text-stone-600">
+                      Signature <span className="text-red-500">*</span>
+                    </td>
+                    <td className="border border-stone-300 p-2">
+                      <SignaturePad value={applicantSig ?? ""} onChange={setApplicantSig} />
+                      <p className="mt-1 text-[11px] text-stone-400">
+                        Sign with your finger or mouse. This declares the details are correct.
+                      </p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="border border-stone-300 p-2.5 font-medium text-stone-600">Position</td>
+                    <td className="border border-stone-300 p-2.5 text-stone-800">
+                      {userDesignation || <span className="text-stone-400">Not set — ask Finance to add your designation</span>}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="border border-stone-300 p-2.5 font-medium text-stone-600">Date</td>
+                    <td className="border border-stone-300 p-2.5 text-stone-800">{todayLabel}</td>
+                  </tr>
+
+                  {/* Balances are the system's own figures — shown, not asked
+                      for, because the applicant shouldn't have to work them out
+                      and shouldn't be able to state them wrongly. */}
+                  <tr>
+                    <td colSpan={2} className="border border-stone-300 bg-stone-50 p-2.5 font-semibold text-stone-700">
+                      Balance Annual Leave <span className="font-normal text-stone-500">(No. of days before this application)</span>
+                    </td>
+                    <td className="border border-stone-300 p-2.5 font-semibold text-stone-800">
+                      {annualBalance ?? "—"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan={2} className="border border-stone-300 bg-stone-50 p-2.5 font-semibold text-stone-700">
+                      Balance Medical Leave <span className="font-normal text-stone-500">(No. of days before this application)</span>
+                    </td>
+                    <td className="border border-stone-300 p-2.5 font-semibold text-stone-800">
+                      {medicalBalance ?? "—"}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td colSpan={2} className="border border-stone-300 bg-stone-50 p-2.5 align-top font-semibold text-stone-700">
+                      Dates and No. of Leave Days applied <span className="text-red-500">*</span>
+                    </td>
+                    <td className="border border-stone-300 p-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input type="date" value={form.start_date}
+                          onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
+                          className="rounded-lg border border-stone-300 px-3 py-2 text-[14px] outline-none focus:border-[#4a6da7]" />
+                        <span className="text-stone-400">to</span>
+                        <input type="date" value={form.end_date} min={form.start_date}
+                          onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))}
+                          className="rounded-lg border border-stone-300 px-3 py-2 text-[14px] outline-none focus:border-[#4a6da7]" />
+                        {previewDays > 0 && (
+                          <span className="rounded-full bg-[#eaf2ff] px-3 py-1 text-[13px] font-semibold text-[#1d4ed8]">
+                            {previewDays} day{previewDays !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-[11px] text-stone-400">Weekends are not counted.</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* ── Leave type, as the form's tick grid ──────────────── */}
+              <p className="mb-1.5 mt-4 text-[13px] font-semibold text-stone-600">
+                Tick the type of leave <span className="text-red-500">*</span>
+              </p>
+              <div className="grid grid-cols-1 gap-px border border-stone-300 bg-stone-300 sm:grid-cols-3">
+                {leaveTypes.filter(t => t.active).map(t => {
+                  const on = form.leave_type_code === t.code;
+                  return (
+                    <button key={t.code} type="button"
+                      onClick={() => setForm(f => ({ ...f, leave_type_code: t.code }))}
+                      className={`flex items-center gap-2.5 px-3 py-3 text-left text-[14px] transition-colors ${
+                        on ? "bg-[#eaf2ff] font-semibold text-[#1d4ed8]" : "bg-white text-stone-700 hover:bg-stone-50"
+                      }`}>
+                      <span className={`grid h-[18px] w-[18px] shrink-0 place-items-center border text-[12px] font-bold ${
+                        on ? "border-[#1d4ed8] bg-[#1d4ed8] text-white" : "border-stone-400 bg-white text-transparent"
+                      }`}>✓</span>
+                      {t.name}
+                    </button>
+                  );
+                })}
               </div>
-            )}
 
-            {editingId && (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Amending clears any approval already given — the officers signed the
-                original dates, so they&apos;ll be asked to sign again.
-              </p>
-            )}
+              {selected && !selected.is_replacement && selected.days_per_year > 0 && (
+                <p className="mt-1.5 text-[12px] text-stone-400">
+                  Entitlement: {selected.days_per_year} days a year
+                </p>
+              )}
 
-            {/* The applicant signs the form. Each approving officer signs the
-                same sheet as they act, so the finished application carries
-                every hand that touched it. */}
-            <div>
-              <label className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5 block">
-                Your signature <span className="text-red-400">*</span>
-              </label>
-              <SignaturePad value={applicantSig ?? ""} onChange={setApplicantSig} />
-              <p className="mt-1 text-[11px] text-stone-400">
-                Signing declares the details above are correct.
-              </p>
+              {/* Note 1 on the form — surfaced when it actually applies,
+                  rather than left for someone to read at the bottom. */}
+              {noticeShort && (
+                <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+                  Annual Leave should be applied for at least 7 days in advance (note 1).
+                  You can still submit — your approvers will see the dates.
+                </p>
+              )}
+
+              {selected?.requires_doc && (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <p className="flex items-center gap-1.5 text-[13px] font-medium text-amber-800">
+                    <Upload size={13} /> {selected.name} must be supported by a document (note 2)
+                  </p>
+                  <input type="url" value={form.attachment_url}
+                    onChange={e => setForm(f => ({ ...f, attachment_url: e.target.value }))}
+                    placeholder="Link to the medical certificate or other document…"
+                    className="mt-2 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#4a6da7]" />
+                </div>
+              )}
+
+              {/* ── Who will sign ───────────────────────────────────── */}
+              <div className="mt-4 rounded-xl border border-[#dbe9fb] bg-[#f4f9ff] p-3">
+                <p className="text-[13px] font-semibold text-stone-600">This form will be sent to</p>
+                <p className="mt-0.5 text-[13px] text-stone-600">
+                  {chainPreview || "Working out your approvers…"}
+                </p>
+              </div>
+
+              <details className="mt-4 text-[12px] text-stone-500">
+                <summary className="cursor-pointer font-semibold text-stone-600">
+                  Notes on the leave form
+                </summary>
+                <ol className="mt-2 list-decimal space-y-1 pl-5">
+                  <li>Annual Leave should be submitted at least 7 days before the leave.</li>
+                  <li>All other leave must be supported by relevant documents (medical certificate, death certificate, etc.).</li>
+                  <li>Emergency Leave must be supported by documents, and is then classified as Annual Leave or Unpaid Leave taken.</li>
+                  <li>Pastors and Parish Workers travelling overseas must apply one month in advance, with the Bishop&apos;s approval.</li>
+                  <li>Up to 10 unused days may be carried into the next calendar year, and must be used by 30 April.</li>
+                  <li>The signed form is filed in your Personal Record File at Head Office.</li>
+                </ol>
+              </details>
             </div>
 
-            <div className="flex gap-2 pt-1">
-              <Button className="flex-1" loading={submitting} disabled={!applicantSig} onClick={submitLeave}>
+            <div className="sticky bottom-0 flex gap-2 border-t border-stone-200 bg-white px-6 py-4">
+              <Button className="flex-1 py-3 text-[15px]" loading={submitting}
+                disabled={!applicantSig || !form.start_date || !form.end_date}
+                onClick={submitLeave}>
                 {editingId ? "Save Amendment" : "Submit Application"}
               </Button>
               <Button variant="ghost" onClick={closeApply}>Cancel</Button>
