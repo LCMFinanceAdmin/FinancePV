@@ -735,6 +735,23 @@ export default function PVDetailPage() {
     }
   }
 
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteCancelled() {
+    if (!pv) return;
+    if (!confirm(
+      `Delete ${pv.pv_no}?
+
+The voucher is removed and its number goes back into use, so the next voucher raised will carry ${pv.pv_no}. This cannot be undone.`
+    )) return;
+    setDeleting(true);
+    const { data, error } = await supabase.rpc("delete_cancelled_pv", { target_id: pv.id });
+    setDeleting(false);
+    if (error) { alert(error.message); return; }
+    alert(`${data} deleted. Its number is back in use.`);
+    router.push("/signatory-activity");
+  }
+
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
   if (!pv) return <div className="p-8 text-center text-stone-400 text-sm">PV not found</div>;
 
@@ -1226,6 +1243,28 @@ export default function PVDetailPage() {
                 {officeSaving ? "Saving…" : "Save"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deleting a cancelled voucher releases its number so the series stays
+          unbroken. Offered only for CANCELLED — anything approved or paid is a
+          financial record, and removing it would destroy evidence of a real
+          decision. */}
+      {user?.isFinanceAdmin && pv.status === "CANCELLED" && (
+        <div className="print:hidden mx-auto mt-3 max-w-4xl px-4">
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-red-800">Delete this cancelled voucher</p>
+              <p className="text-xs text-red-700">
+                {pv.pv_no} will be removed and its number returned to the pool, so the next
+                voucher raised takes it and the numbering has no gap. This cannot be undone.
+              </p>
+            </div>
+            <button onClick={deleteCancelled} disabled={deleting}
+              className="shrink-0 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+              {deleting ? "Deleting…" : "Delete & free the number"}
+            </button>
           </div>
         </div>
       )}

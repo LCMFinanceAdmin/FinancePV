@@ -65,6 +65,37 @@ export function isSignatoryApprovalFinal(approvals: { role: string; action: stri
   // ───────────────────────────────────────────────────────────────────
 }
 
+
+/**
+ * Take a number released by a deleted cancelled voucher, if there is one.
+ *
+ * Reusing a freed number keeps the series unbroken, which is what an auditor
+ * expects to see. Marking it reissued in the same step is what stops it being
+ * handed to two vouchers — the check-then-use is deliberately narrow.
+ */
+async function takeReclaimedNo(db: ReturnType<typeof getServiceClient>, prefix: string): Promise<string | null> {
+  const { data: free } = await db
+    .from("pv_number_pool")
+    .select("id,pv_no")
+    .eq("prefix", prefix)
+    .is("reissued_at", null)
+    .order("pv_no", { ascending: true })
+    .limit(1);
+
+  const row = free?.[0];
+  if (!row) return null;
+
+  // Only claim it if it is still unclaimed at the moment of writing.
+  const { data: claimed } = await db
+    .from("pv_number_pool")
+    .update({ reissued_at: new Date().toISOString() })
+    .eq("id", row.id)
+    .is("reissued_at", null)
+    .select("pv_no");
+
+  return claimed?.[0]?.pv_no ?? null;
+}
+
 export async function nextPrNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `PR-${year}-`;
@@ -84,6 +115,8 @@ export async function nextPrNo(db: ReturnType<typeof getServiceClient>): Promise
 export async function nextPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `LCM-${year}-`;
+  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
     .select("pv_no")
@@ -100,6 +133,8 @@ export async function nextPvNo(db: ReturnType<typeof getServiceClient>): Promise
 export async function nextBamPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `BAM-${year}-`;
+  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
     .select("pv_no")
@@ -116,6 +151,8 @@ export async function nextBamPvNo(db: ReturnType<typeof getServiceClient>): Prom
 export async function nextLscPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `LSC-${year}-`;
+  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
     .select("pv_no")
@@ -131,6 +168,8 @@ export async function nextLscPvNo(db: ReturnType<typeof getServiceClient>): Prom
 export async function nextHlePvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `HLE-${year}-`;
+  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
     .select("pv_no")

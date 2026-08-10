@@ -1306,6 +1306,104 @@ export default function RecurringPage() {
     if (errors.length) showMsg(`${errors.length} failed — see the list`, false);
   }
 
+  // ── Raising one expense on its own ──────────────────────────────────
+  // Running a whole folder is right for rent day; it is wrong for a single
+  // electricity bill whose amount changes every month. Clicking the name opens
+  // the voucher with the template's details filled in, so the figure and the
+  // wording can be corrected against the actual bill before it is submitted.
+  const [raiseItem, setRaiseItem] = useState<RecurringPV | null>(null);
+  const [raiseAmount, setRaiseAmount] = useState("");
+  const [raiseDescription, setRaiseDescription] = useState("");
+  const [raisePeriodKey, setRaisePeriodKey] = useState("");
+  const [raising, setRaising] = useState(false);
+
+  function openRaise(item: RecurringPV) {
+    const period = currentPeriod(item.frequency);
+    setRaiseItem(item);
+    setRaiseAmount(String(item.amount ?? ""));
+    setRaiseDescription(item.purpose || item.name);
+    setRaisePeriodKey(period.key);
+    setRaising(false);
+  }
+
+  async function submitRaise() {
+    if (!raiseItem) return;
+    const amount = Number(raiseAmount);
+    if (!(amount > 0)) { showMsg("Enter the amount to be paid", false); return; }
+    if (!raiseDescription.trim()) { showMsg("Enter a description", false); return; }
+
+    const periods = periodsForYear(raiseItem.frequency, new Date().getFullYear());
+    const period = periods.find(p => p.key === raisePeriodKey) ?? currentPeriod(raiseItem.frequency);
+
+    // The same guard the folder run relies on: one voucher per period per
+    // expense, so a bill can't quietly be paid twice.
+    const existing = runsByPeriod[`${raiseItem.id}|${period.key}`];
+    if (existing) {
+      showMsg(`${raiseItem.name} already has ${existing.pv_no} for ${period.label}`, false);
+      return;
+    }
+
+    setRaising(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const session = (await supabase.auth.getSession()).data.session;
+      const pvDate = periodVoucherDate(period);
+      const description = raiseDescription.trim();
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          applicant_email: user?.email, applicant_name: user?.email,
+          payee_name: raiseItem.payee_name, payee_bank_name: raiseItem.payee_bank_name,
+          payee_bank_acct: raiseItem.payee_bank_acct, payment_method: raiseItem.payment_method,
+          biller_code: raiseItem.biller_code, ref_no: raiseItem.ref_no,
+          ref_no_2: raiseItem.ref_no_2, cheque_no: raiseItem.cheque_no,
+          ministry: raiseItem.ministry, dept: raiseItem.dept, project: raiseItem.project,
+          purpose: `${description} (for ${period.label})`,
+          pv_label: raiseItem.pv_label, amount,
+          payment_type: raiseItem.payment_type,
+          line_items: [{ date: pvDate, description: `${description} — ${period.label}`, amount }],
+          pvDate,
+          sig_applicant_name: user?.email, sig_applicant_confirm: true,
+          recurring_id: raiseItem.id,
+          pv_type: (raiseItem as RecurringPV & { pv_type?: string }).pv_type || "LCM",
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "Failed");
+
+      const { data: pvRow } = await supabase.from("pvs").select("id").eq("pv_no", result.pv_no).single();
+      const newPvId = pvRow?.id ?? null;
+
+      // Recorded against the period at the amount actually raised — not the
+      // template's figure — so the table shows what was really paid.
+      const { data: runRow, error: runErr } = await supabase.from("recurring_runs").insert({
+        recurring_id: raiseItem.id, period_key: period.key, period_label: period.label,
+        pv_id: newPvId, pv_no: result.pv_no, amount, run_by: user?.email ?? null,
+      }).select().single();
+      if (runErr) throw new Error(`PV ${result.pv_no} raised but not recorded: ${runErr.message}`);
+
+      setRunsByPeriod(prev => ({ ...prev, [`${raiseItem.id}|${period.key}`]: runRow as RecurringRun }));
+      await supabase.from("recurring_pvs").update({
+        last_run: pvDate, next_due: calcNextDue(raiseItem.frequency),
+        current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD",
+        current_pv_id: newPvId, current_period: period.label,
+      }).eq("id", raiseItem.id);
+      setItems(is => is.map(i => i.id === raiseItem.id ? {
+        ...i, last_run: pvDate, current_pv_no: result.pv_no,
+        current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period.label,
+      } : i));
+
+      showMsg(`${result.pv_no} raised for ${period.label}`);
+      setRaiseItem(null);
+    } catch (err: unknown) {
+      showMsg(err instanceof Error ? err.message : "Could not raise the voucher", false);
+    } finally {
+      setRaising(false);
+    }
+  }
+
   /** Undo a period entry so it can be processed again after a bad PV. */
   async function clearPeriodRun(itemId: string, periodKey: string) {
     const run = runsByPeriod[`${itemId}|${periodKey}`];
@@ -1631,6 +1729,104 @@ export default function RecurringPage() {
       )}
 
       {/* Toast */}
+      {/* Raise one expense — the template's details, with the two things that
+          actually vary from month to month left editable. */}
+      {raiseItem && (() => {
+        const periods = periodsForYear(raiseItem.frequency, new Date().getFullYear());
+        const chosen = periods.find(p => p.key === raisePeriodKey);
+        const already = runsByPeriod[`${raiseItem.id}|${raisePeriodKey}`];
+        const amountNum = Number(raiseAmount);
+        const changed = amountNum > 0 && Math.abs(amountNum - Number(raiseItem.amount)) > 0.005;
+        return (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
+            <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-[#dbe9fb] bg-white shadow-[0_24px_70px_rgba(22,51,94,0.24)] sm:rounded-3xl">
+              <div className="flex items-start justify-between gap-3 border-b border-stone-200 px-6 pb-3 pt-5">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">
+                    Raise a payment voucher
+                  </p>
+                  <h2 className="truncate text-lg font-bold text-stone-800">{raiseItem.name}</h2>
+                  <p className="truncate text-xs text-stone-400">{raiseItem.payee_name}</p>
+                </div>
+                <button onClick={() => setRaiseItem(null)} aria-label="Close"
+                  className="rounded-full p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-600">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4 px-6 py-5">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500">
+                    Which period is this paying for?
+                  </label>
+                  <select value={raisePeriodKey} onChange={e => setRaisePeriodKey(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]">
+                    {periods.map(pd => {
+                      const done = runsByPeriod[`${raiseItem.id}|${pd.key}`];
+                      return (
+                        <option key={pd.key} value={pd.key}>
+                          {pd.label}{done ? `  — already raised (${done.pv_no})` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <p className="mt-1 text-[11px] text-stone-400">
+                    The voucher will be dated for this period and say so on its face.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500">
+                    Description
+                  </label>
+                  <input value={raiseDescription} onChange={e => setRaiseDescription(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]"
+                    placeholder="What this payment is for" />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500">
+                    Amount (RM)
+                  </label>
+                  <input type="number" step="0.01" min="0" value={raiseAmount}
+                    onChange={e => setRaiseAmount(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-lg font-semibold outline-none focus:border-[#4a6da7]" />
+                  {changed && (
+                    <p className="mt-1 text-[12px] text-amber-700">
+                      The saved figure is {formatCurrency(raiseItem.amount)}. This voucher will use{" "}
+                      {formatCurrency(amountNum)} — the template itself is left unchanged.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-[#dbe9fb] bg-[#f4f9ff] p-3 text-[12px] text-stone-600">
+                  <div className="flex justify-between gap-3"><span className="text-stone-400">Payable to</span><span className="text-right font-medium">{raiseItem.payee_name}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-400">Ministry</span><span className="text-right">{raiseItem.ministry || "—"}</span></div>
+                  {raiseItem.project && <div className="flex justify-between gap-3"><span className="text-stone-400">Project</span><span className="text-right">{raiseItem.project}</span></div>}
+                  <div className="flex justify-between gap-3"><span className="text-stone-400">Method</span><span className="text-right">{raiseItem.payment_method || "—"}</span></div>
+                </div>
+
+                {already && (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+                    {chosen?.label} already has voucher <strong>{already.pv_no}</strong> for this expense.
+                    Choose a different period, or clear that entry first.
+                  </p>
+                )}
+              </div>
+
+              <div className="sticky bottom-0 flex gap-2 border-t border-stone-200 bg-white px-6 py-4">
+                <Button className="flex-1 py-3" loading={raising}
+                  disabled={!!already || !(Number(raiseAmount) > 0) || !raiseDescription.trim()}
+                  onClick={submitRaise}>
+                  Save &amp; Submit Voucher
+                </Button>
+                <Button variant="ghost" onClick={() => setRaiseItem(null)}>Cancel</Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white flex items-center gap-2 ${toast.ok ? "bg-green-600" : "bg-red-500"}`}>
           {toast.ok ? <CheckCircle2 size={15} /> : <X size={15} />}
@@ -2578,6 +2774,7 @@ export default function RecurringPage() {
                     onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
                     onDelete={() => deleteItem(item.id)}
                     onReset={() => resetItem(item.id)}
+                    onRaise={() => openRaise(item)}
                     showHistory={historyId === item.id}
                     batchRunning={batchRunning}
                   />
@@ -2984,6 +3181,7 @@ export default function RecurringPage() {
                         onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
                         onDelete={() => deleteItem(item.id)}
                         onReset={() => resetItem(item.id)}
+                        onRaise={() => openRaise(item)}
                         showHistory={historyId === item.id}
                         batchRunning={batchRunning}
                       />
@@ -3022,6 +3220,7 @@ export default function RecurringPage() {
                             onHistory={() => setHistoryId(h => h === item.id ? null : item.id)}
                             onDelete={() => deleteItem(item.id)}
                             onReset={() => resetItem(item.id)}
+                        onRaise={() => openRaise(item)}
                             showHistory={historyId === item.id}
                             batchRunning={batchRunning}
                           />
@@ -3134,7 +3333,7 @@ function GroupCheckbox({ groupItems, selected, onToggle }: { groupItems: Recurri
 function RecurringCard({ item, isSelected, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
   item: RecurringPV; isSelected: boolean; onToggleSelect: () => void;
   onEdit: () => void; onToggleActive: () => void;
-  onHistory: () => void; onDelete: () => void; onReset: () => void; showHistory: boolean; batchRunning: boolean;
+  onHistory: () => void; onDelete: () => void; onReset: () => void; onRaise: () => void; showHistory: boolean; batchRunning: boolean;
 }) {
   const supabase = createClient();
   const isExpired = !!(item.term_type === "FIXED" && item.term_end_date && item.next_due && new Date(item.next_due) > new Date(item.term_end_date));
@@ -3247,12 +3446,12 @@ function RecurringCard({ item, isSelected, onToggleSelect, onEdit, onToggleActiv
 }
 
 // --- Recurring Row (table view) ---
-function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, showHistory, batchRunning }: {
+function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel, onToggleSelect, onEdit, onToggleActive, onHistory, onDelete, onReset, onRaise, showHistory, batchRunning }: {
   item: RecurringPV; rowNo: number; isSelected: boolean; isAtRisk?: boolean;
   lastPaid: { id: string; pv_no: string; paid_at: string } | null;
   groupLabel?: string;
   onToggleSelect: () => void; onEdit: () => void; onToggleActive: () => void;
-  onHistory: () => void; onDelete: () => void; onReset: () => void;
+  onHistory: () => void; onDelete: () => void; onReset: () => void; onRaise: () => void;
   showHistory: boolean; batchRunning: boolean;
 }) {
   const supabase = createClient();
@@ -3317,7 +3516,10 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
         </td>
         <td className="py-[15px] pr-3 text-sm text-stone-400 font-medium">{rowNo}</td>
         <td className="py-[15px] pl-1 pr-3 align-top">
-          <div className="font-medium text-stone-800 text-base leading-tight">{item.name}</div>
+          <button type="button" onClick={onRaise} title="Raise a voucher for this expense"
+            className="text-left font-medium text-stone-800 text-base leading-tight hover:text-[#1d4ed8] hover:underline">
+            {item.name}
+          </button>
           <div className="flex gap-1 flex-wrap mt-0.5">
             {alreadyRan && (
               editingPeriod ? (
