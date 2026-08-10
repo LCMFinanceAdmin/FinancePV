@@ -45,7 +45,9 @@ interface District { id: string; name: string; dean_email: string | null; }
  * Plain-English version of resolveLeaveApprovers() in lib/leave-approvers.ts,
  * shown while editing a person so a wrong congregation or missing Dean is
  * caught here rather than when someone's leave goes to the wrong person.
- * Kept in step with that function by hand — it describes the same three rules.
+ * Kept in step with that function by hand. It follows note 6 on the church's
+ * leave form: pastors need the Council Chairman/Rep and their Dean, a Dean
+ * needs the Bishop, and everyone else answers to the GM and/or Bishop.
  */
 function describeLeaveChain(
   u: UserRole,
@@ -53,6 +55,8 @@ function describeLeaveChain(
   districts: District[],
   people: UserRole[],
 ): string {
+  const eqEmail = (a?: string | null, b?: string | null) =>
+    !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
   const nameOf = (email?: string | null) =>
     people.find(p => p.email?.toLowerCase() === email?.toLowerCase())?.full_name || email || "";
   const bishop = people.find(p => p.role === "BISHOP");
@@ -60,39 +64,32 @@ function describeLeaveChain(
 
   if (u.is_pastor) {
     const cong = congregations.find(c => c.id === u.congregation_id);
-    if (!cong) return "no congregation set, so only the Bishop — assign one to route through the head pastor or Dean.";
+    const leadsDistrict = districts.find(d => eqEmail(d.dean_email, u.email));
+
+    // Note 6(b) on the leave form: a Dean's own leave goes to the Bishop.
+    if (leadsDistrict) {
+      return bishopLabel
+        ? `${bishopLabel} — a Dean's leave goes to the Bishop.`
+        : "nobody — no Bishop is set.";
+    }
+    if (!cong) return "no congregation set — assign one so the Council Chairman and Dean can be worked out.";
+
     const district = districts.find(d => d.id === cong.district_id);
-    const isHead = cong.head_pastor_email?.toLowerCase() === u.email?.toLowerCase();
+    // Note 6(a): Council Chairman/Rep and Dean, both.
+    const parts = [
+      cong.council_president_email
+        ? `${cong.council_president_name || cong.council_president_email} (Council Chairman/Rep, ${cong.name}, by email)`
+        : null,
+      district?.dean_email && !eqEmail(district.dean_email, u.email)
+        ? `${nameOf(district.dean_email)} (Dean, ${district.name})`
+        : null,
+    ].filter(Boolean);
 
-    // The church council President signs alongside whoever the church chain
-    // lands on, and is not an LCM user — they approve by emailed link.
-    const councilLabel = cong.council_president_email &&
-      cong.council_president_email.toLowerCase() !== u.email?.toLowerCase()
-        ? `${cong.council_president_name || cong.council_president_email} (church council President, by email)`
-        : null;
-    const withCouncil = (chain: string, note: string) =>
-      councilLabel ? `${chain} and ${councilLabel} — both must approve${note}` : `${chain}${note}`;
-
-    // The head pastor settles the church side of routine pastoral leave — the
-    // Bishop is only involved when it escalates to the Dean below.
-    if (cong.head_pastor_email && !isHead) {
-      return withCouncil(
-        `${nameOf(cong.head_pastor_email)} (head pastor, ${cong.name})`,
-        councilLabel ? "." : " — that's the full chain.",
-      );
-    }
-    // No head pastor, or this person is the head pastor — the Dean takes it.
-    if (district?.dean_email && district.dean_email.toLowerCase() !== u.email?.toLowerCase()) {
-      const why = isHead ? "they are the head pastor" : `${cong.name} has no head pastor`;
-      const churchChain = [`${nameOf(district.dean_email)} (Dean, ${district.name})`, bishopLabel]
-        .filter(Boolean).join(" → ");
-      return withCouncil(churchChain, `, because ${why}.`);
-    }
+    if (parts.length === 2) return `${parts.join(" and ")} — both must approve.`;
+    if (parts.length === 1) return `${parts[0]} only — the other is not set up yet.`;
     return bishopLabel
-      ? withCouncil(`${bishopLabel}`, " — no head pastor or Dean applies.")
-      : councilLabel
-      ? `${councilLabel} only — no head pastor, Dean or Bishop is set.`
-      : "nobody — no head pastor, Dean or Bishop is set.";
+      ? `${bishopLabel} — no Council Chairman or Dean is set, so it falls back to the Bishop.`
+      : "nobody — no Council Chairman, Dean or Bishop is set.";
   }
 
   const gm = people.find(p => p.role === "GENERAL_MANAGER");
