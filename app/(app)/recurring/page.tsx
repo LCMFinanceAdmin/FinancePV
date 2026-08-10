@@ -1309,28 +1309,51 @@ export default function RecurringPage() {
   // ── Raising one expense on its own ──────────────────────────────────
   // Running a whole folder is right for rent day; it is wrong for a single
   // electricity bill whose amount changes every month. Clicking the name opens
-  // the voucher with the template's details filled in, so the figure and the
-  // wording can be corrected against the actual bill before it is submitted.
+  // the voucher with the expense's details filled in, so the particulars and
+  // the figures can be set against the actual bill before submitting — and
+  // what is submitted becomes the expense's new standing detail.
   const [raiseItem, setRaiseItem] = useState<RecurringPV | null>(null);
-  const [raiseAmount, setRaiseAmount] = useState("");
-  const [raiseDescription, setRaiseDescription] = useState("");
+  const [raisePurpose, setRaisePurpose] = useState("");
+  // The particulars table on the voucher. A bill is rarely one figure — there
+  // are meter readings, arrears, a rebate — and typing them here is what stops
+  // them being squeezed into the purpose line or lost entirely.
+  const [raiseLines, setRaiseLines] = useState<{ description: string; amount: string }[]>([]);
   const [raisePeriodKey, setRaisePeriodKey] = useState("");
   const [raising, setRaising] = useState(false);
+
+  const raiseTotal = raiseLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
 
   function openRaise(item: RecurringPV) {
     const period = currentPeriod(item.frequency);
     setRaiseItem(item);
-    setRaiseAmount(String(item.amount ?? ""));
-    setRaiseDescription(item.purpose || item.name);
+    setRaisePurpose(item.purpose || item.name);
+    setRaiseLines(
+      item.line_items?.length
+        ? item.line_items.map(li => ({ description: li.description, amount: String(li.amount ?? "") }))
+        : [{ description: item.purpose || item.name, amount: String(item.amount ?? "") }],
+    );
     setRaisePeriodKey(period.key);
     setRaising(false);
   }
 
+  function setRaiseLine(i: number, patch: Partial<{ description: string; amount: string }>) {
+    setRaiseLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  }
+  function addRaiseLine() { setRaiseLines(ls => [...ls, { description: "", amount: "" }]); }
+  function removeRaiseLine(i: number) {
+    setRaiseLines(ls => ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls);
+  }
+
   async function submitRaise() {
     if (!raiseItem) return;
-    const amount = Number(raiseAmount);
-    if (!(amount > 0)) { showMsg("Enter the amount to be paid", false); return; }
-    if (!raiseDescription.trim()) { showMsg("Enter a description", false); return; }
+    const lines = raiseLines
+      .map(l => ({ description: l.description.trim(), amount: Number(l.amount) || 0 }))
+      .filter(l => l.description || l.amount > 0);
+    const amount = lines.reduce((sum, l) => sum + l.amount, 0);
+    if (lines.length === 0) { showMsg("Add at least one particular", false); return; }
+    if (!(amount > 0)) { showMsg("The particulars add up to nothing — check the amounts", false); return; }
+    if (lines.some(l => !l.description)) { showMsg("Every particular needs a description", false); return; }
+    if (!raisePurpose.trim()) { showMsg("Enter what this payment is for", false); return; }
 
     const periods = periodsForYear(raiseItem.frequency, new Date().getFullYear());
     const period = periods.find(p => p.key === raisePeriodKey) ?? currentPeriod(raiseItem.frequency);
@@ -1348,7 +1371,7 @@ export default function RecurringPage() {
       const { data: { user } } = await supabase.auth.getUser();
       const session = (await supabase.auth.getSession()).data.session;
       const pvDate = periodVoucherDate(period);
-      const description = raiseDescription.trim();
+      const purpose = raisePurpose.trim();
 
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-pv`, {
         method: "POST",
@@ -1360,10 +1383,16 @@ export default function RecurringPage() {
           biller_code: raiseItem.biller_code, ref_no: raiseItem.ref_no,
           ref_no_2: raiseItem.ref_no_2, cheque_no: raiseItem.cheque_no,
           ministry: raiseItem.ministry, dept: raiseItem.dept, project: raiseItem.project,
-          purpose: `${description} (for ${period.label})`,
+          purpose: `${purpose} (for ${period.label})`,
           pv_label: raiseItem.pv_label, amount,
           payment_type: raiseItem.payment_type,
-          line_items: [{ date: pvDate, description: `${description} — ${period.label}`, amount }],
+          // The period is stated on the first line only — repeating it on every
+          // row makes the voucher harder to read, not clearer.
+          line_items: lines.map((l, i) => ({
+            date: pvDate,
+            description: i === 0 ? `${l.description} — ${period.label}` : l.description,
+            amount: l.amount,
+          })),
           pvDate,
           sig_applicant_name: user?.email, sig_applicant_confirm: true,
           recurring_id: raiseItem.id,
@@ -1385,14 +1414,19 @@ export default function RecurringPage() {
       if (runErr) throw new Error(`PV ${result.pv_no} raised but not recorded: ${runErr.message}`);
 
       setRunsByPeriod(prev => ({ ...prev, [`${raiseItem.id}|${period.key}`]: runRow as RecurringRun }));
+      // The template takes on what was actually raised, so next month opens
+      // with the latest figures rather than a stale estimate somebody has to
+      // remember to correct again.
       await supabase.from("recurring_pvs").update({
         last_run: pvDate, next_due: calcNextDue(raiseItem.frequency),
         current_pv_no: result.pv_no, current_pv_status: "PENDING_HEAD",
         current_pv_id: newPvId, current_period: period.label,
+        amount, purpose, line_items: lines,
       }).eq("id", raiseItem.id);
       setItems(is => is.map(i => i.id === raiseItem.id ? {
         ...i, last_run: pvDate, current_pv_no: result.pv_no,
         current_pv_status: "PENDING_HEAD", current_pv_id: newPvId, current_period: period.label,
+        amount, purpose, line_items: lines,
       } : i));
 
       showMsg(`${result.pv_no} raised for ${period.label}`);
@@ -1729,14 +1763,13 @@ export default function RecurringPage() {
       )}
 
       {/* Toast */}
-      {/* Raise one expense — the template's details, with the two things that
-          actually vary from month to month left editable. */}
+      {/* Raise one expense — the voucher as it will be submitted, with the
+          particulars typed against the real bill. */}
       {raiseItem && (() => {
         const periods = periodsForYear(raiseItem.frequency, new Date().getFullYear());
         const chosen = periods.find(p => p.key === raisePeriodKey);
         const already = runsByPeriod[`${raiseItem.id}|${raisePeriodKey}`];
-        const amountNum = Number(raiseAmount);
-        const changed = amountNum > 0 && Math.abs(amountNum - Number(raiseItem.amount)) > 0.005;
+        const changed = raiseTotal > 0 && Math.abs(raiseTotal - Number(raiseItem.amount)) > 0.005;
         return (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
             <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-[#dbe9fb] bg-white shadow-[0_24px_70px_rgba(22,51,94,0.24)] sm:rounded-3xl">
@@ -1777,24 +1810,77 @@ export default function RecurringPage() {
 
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500">
-                    Description
+                    Purpose of payment
                   </label>
-                  <input value={raiseDescription} onChange={e => setRaiseDescription(e.target.value)}
+                  <input value={raisePurpose} onChange={e => setRaisePurpose(e.target.value)}
                     className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]"
                     placeholder="What this payment is for" />
+                  <p className="mt-1 text-[11px] text-stone-400">
+                    Printed on the voucher next to &ldquo;Purpose&rdquo;.
+                  </p>
                 </div>
 
+                {/* The voucher's particulars table, typed here. */}
                 <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500">
-                    Amount (RM)
-                  </label>
-                  <input type="number" step="0.01" min="0" value={raiseAmount}
-                    onChange={e => setRaiseAmount(e.target.value)}
-                    className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-lg font-semibold outline-none focus:border-[#4a6da7]" />
+                  <div className="mb-1 flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+                      Particulars
+                    </label>
+                    <button type="button" onClick={addRaiseLine}
+                      className="text-[12px] font-semibold text-[#1d4ed8] hover:underline">
+                      + Add line
+                    </button>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-stone-200">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-stone-50 text-[11px] uppercase tracking-wide text-stone-500">
+                          <th className="px-3 py-2 text-left font-semibold">Description</th>
+                          <th className="w-32 px-3 py-2 text-right font-semibold">Amount (RM)</th>
+                          <th className="w-9" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {raiseLines.map((line, i) => (
+                          <tr key={i} className="border-t border-stone-100">
+                            <td className="p-1.5">
+                              <input value={line.description}
+                                onChange={e => setRaiseLine(i, { description: e.target.value })}
+                                placeholder={i === 0 ? "e.g. Electricity charges" : "e.g. Arrears from previous month"}
+                                className="w-full rounded-lg border border-transparent px-2 py-2 text-sm outline-none hover:border-stone-200 focus:border-[#4a6da7]" />
+                            </td>
+                            <td className="p-1.5">
+                              <input type="number" step="0.01" min="0" value={line.amount}
+                                onChange={e => setRaiseLine(i, { amount: e.target.value })}
+                                className="w-full rounded-lg border border-transparent px-2 py-2 text-right text-sm outline-none hover:border-stone-200 focus:border-[#4a6da7]" />
+                            </td>
+                            <td className="p-1.5 text-center">
+                              {raiseLines.length > 1 && (
+                                <button type="button" onClick={() => removeRaiseLine(i)}
+                                  aria-label="Remove this line"
+                                  className="rounded p-1 text-stone-300 hover:bg-red-50 hover:text-red-500">
+                                  <X size={14} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="border-t border-stone-200 bg-stone-50">
+                          <td className="px-3 py-2.5 text-right text-sm font-semibold text-stone-600">Total</td>
+                          <td className="px-3 py-2.5 text-right text-base font-bold text-stone-800">
+                            {formatCurrency(raiseTotal)}
+                          </td>
+                          <td />
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
                   {changed && (
                     <p className="mt-1 text-[12px] text-amber-700">
-                      The saved figure is {formatCurrency(raiseItem.amount)}. This voucher will use{" "}
-                      {formatCurrency(amountNum)} — the template itself is left unchanged.
+                      Last raised at {formatCurrency(raiseItem.amount)}. Submitting at{" "}
+                      {formatCurrency(raiseTotal)} updates this expense, so next month starts here.
                     </p>
                   )}
                 </div>
@@ -1816,7 +1902,7 @@ export default function RecurringPage() {
 
               <div className="sticky bottom-0 flex gap-2 border-t border-stone-200 bg-white px-6 py-4">
                 <Button className="flex-1 py-3" loading={raising}
-                  disabled={!!already || !(Number(raiseAmount) > 0) || !raiseDescription.trim()}
+                  disabled={!!already || !(raiseTotal > 0) || !raisePurpose.trim()}
                   onClick={submitRaise}>
                   Save &amp; Submit Voucher
                 </Button>
