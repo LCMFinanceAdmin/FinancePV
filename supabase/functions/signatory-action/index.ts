@@ -124,6 +124,14 @@ Deno.serve(async (req) => {
           read: false, created_at: now,
         });
         await Promise.all([
+          // The signatories were next in line and would otherwise keep waiting
+          // for a voucher that is never coming.
+          sendPushToRoles(db, ["BISHOP", "TREASURER", "SECRETARY"], {
+            title: "BAM PV Rejected by the General Manager",
+            body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount ?? 0)}) will not reach you for signature`,
+            detail: remarks ? [`Reason given: ${remarks}`] : [],
+            url: "/signatory",
+          }),
           sendPushToEmails(db, [pv.submitted_by_email], {
             title: "BAM PV Rejected by the General Manager",
             body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount ?? 0)}) was rejected`,
@@ -321,6 +329,15 @@ Deno.serve(async (req) => {
           detail: remarks ? [`Reason given: ${remarks}`] : [],
           url: "/my-pvs",
         }),
+        // If the GM rejected it, the signatories were next in line and are
+        // still expecting it. A signatory rejecting needs no such notice —
+        // that is their own decision.
+        isGM ? sendPushToRoles(db, ["BISHOP", "TREASURER", "SECRETARY"], {
+          title: "PV Rejected by the General Manager",
+          body: `PV ${pvLabel} will not reach you for signature`,
+          detail: remarks ? [`Reason given: ${remarks}`] : [],
+          url: "/signatory",
+        }) : Promise.resolve(),
       ]);
     } else if (action === "APPROVED") {
       // A signature that doesn't yet complete the voucher: two officers are
