@@ -8,9 +8,10 @@
 // Order of precedence:
 //   1. An explicit assignment in leave_approver_assignments always wins. That
 //      is the escape hatch for anyone the rules don't describe.
-//   2. A pastor's leave needs their congregation's Council Chairman/Rep AND
-//      their district Dean — note 6(a) on the church's leave form. A Dean's
-//      own leave goes to the Bishop, note 6(b).
+//   2. A pastor's leave needs three signatures: the head pastor of their
+//      congregation, its Council Chairman/Rep, and their district Dean —
+//      note 6(a) on the church's leave form, plus the head pastor as LCM
+//      practice adds. A Dean's own leave goes to the Bishop, note 6(b).
 //   3. Everyone else goes to the Bishop, plus the GM when they report to both.
 //
 // The Council Chairman/Rep holds a church council office, not an LCM post: they
@@ -93,6 +94,7 @@ export async function resolveLeaveApprovers(
 
     let congregationName = "";
     let districtId: string | null = null;
+    let headPastorEmail: string | null = null;
     // The Council Chairman/Rep — a church council office, not an LCM post, so
     // they have no login here and approve through a signed emailed link.
     let council: LeaveApprover | null = null;
@@ -100,11 +102,12 @@ export async function resolveLeaveApprovers(
     if (me?.congregation_id) {
       const { data: cong } = await supabase
         .from("congregations")
-        .select("name,district_id,council_president_name,council_president_email")
+        .select("name,head_pastor_email,district_id,council_president_name,council_president_email")
         .eq("id", me.congregation_id!)
         .maybeSingle();
       congregationName = cong?.name ?? "";
       districtId = cong?.district_id ?? null;
+      headPastorEmail = cong?.head_pastor_email ?? null;
 
       if (cong?.council_president_email && !eq(cong.council_president_email, applicantEmail)) {
         council = {
@@ -139,15 +142,25 @@ export async function resolveLeaveApprovers(
       }
     }
 
-    // Note 6(a): a pastor's leave is approved by the Council Chairman/Rep and
-    // the Dean. Both must sign; neither alone settles it. The head pastor is
-    // deliberately not on the chain — the congregation is represented by its
-    // council, not by a fellow pastor.
-    //
-    // If neither can be worked out (no council recorded, no Dean for the
-    // district) the Bishop is the fallback, so an application is never left
+    // The pastor in charge of the congregation signs too — LCM practice adds
+    // them to the Council Chairman/Rep and Dean named in note 6(a). Skipped
+    // when the applicant is the head pastor, since nobody approves their own
+    // leave; the Council Chairman and Dean then settle it between them.
+    const headPastor: LeaveApprover[] =
+      headPastorEmail && !eq(headPastorEmail, applicantEmail)
+        ? [{
+            email: headPastorEmail,
+            name: await nameFor(headPastorEmail),
+            reason: congregationName ? `head pastor, ${congregationName}` : "head pastor",
+            position: congregationName ? `Head Pastor, ${congregationName}` : "Head Pastor",
+          }]
+        : [];
+
+    // All three must sign; none of them alone settles it. If none can be
+    // worked out — no head pastor, no council recorded, no Dean for the
+    // district — the Bishop is the fallback, so an application is never left
     // with nobody able to act on it.
-    const pastoral = [...(council ? [council] : []), ...chain];
+    const pastoral = [...headPastor, ...(council ? [council] : []), ...chain];
     return pastoral.length > 0 ? pastoral : bishopChain;
   }
 

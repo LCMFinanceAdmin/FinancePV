@@ -234,13 +234,38 @@ export default function ChurchDirectoryPage() {
 
                 {/* The consequence of the settings above, stated plainly. */}
                 <p className="rounded-lg bg-[#f4f9ff] px-3 py-2 text-xs text-stone-600">
-                  {c.council_president_email && district?.dean_email
-                    ? <>Leave for pastors here needs <strong>{c.council_president_name || c.council_president_email}</strong> (Council Chairman/Rep, by email) and the Dean <strong>{deanName || district.dean_email}</strong>. Both must approve.</>
-                    : c.council_president_email
-                    ? <>Only <strong>{c.council_president_name || c.council_president_email}</strong> (Council Chairman/Rep) — no Dean is set for this district, so nobody else is asked.</>
-                    : district?.dean_email
-                    ? <>Only the Dean <strong>{deanName || district.dean_email}</strong> — add a Council Chairman/Rep so the congregation is represented too.</>
-                    : <>No Council Chairman and no Dean, so leave here falls back to the <strong>Bishop</strong>.</>}
+                  {(() => {
+                    // Named plainly so a gap here is obvious before it
+                    // misroutes somebody's leave.
+                    const parts = [
+                      c.head_pastor_email
+                        ? `${people.find(p => p.email === c.head_pastor_email)?.full_name || c.head_pastor_email} (head pastor)`
+                        : null,
+                      c.council_president_email
+                        ? `${c.council_president_name || c.council_president_email} (Council Chairman/Rep, by email)`
+                        : null,
+                      district?.dean_email
+                        ? `${deanName || district.dean_email} (Dean)`
+                        : null,
+                    ].filter(Boolean) as string[];
+                    if (parts.length === 0) {
+                      return <>Nothing is set here, so leave for pastors falls back to the <strong>Bishop</strong>.</>;
+                    }
+                    const missing = [
+                      c.head_pastor_email ? null : "head pastor",
+                      c.council_president_email ? null : "Council Chairman/Rep",
+                      district?.dean_email ? null : "Dean",
+                    ].filter(Boolean) as string[];
+                    return (
+                      <>
+                        Leave for pastors here needs <strong>{parts.join(", ")}</strong>
+                        {parts.length > 1 ? " — all must approve." : "."}
+                        {missing.length > 0 && (
+                          <span className="text-amber-700"> No {missing.join(" or ")} set yet.</span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </p>
 
                 <div className="flex items-center gap-2 border-t border-stone-100 pt-2">
@@ -263,9 +288,9 @@ export default function ChurchDirectoryPage() {
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
         <strong>How leave routing uses this</strong> — following note 6 on the church&apos;s leave
-        form. A pastor&apos;s application goes to their congregation&apos;s <strong>Council
-        Chairman/Rep</strong> and their district <strong>Dean</strong>; both must approve, in any
-        order. A <strong>Dean&apos;s</strong> own leave goes to the <strong>Bishop</strong>. If
+        form. A pastor&apos;s application goes to their congregation&apos;s <strong>head
+        pastor</strong>, its <strong>Council Chairman/Rep</strong> and their district
+        <strong> Dean</strong>; all three must approve, in any order. A <strong>Dean&apos;s</strong> own leave goes to the <strong>Bishop</strong>. If
         neither a Council Chairman nor a Dean can be worked out, it falls back to the Bishop so an
         application is never left with nobody able to act. The Council Chairman is not LCM staff, so
         they sign through a one-time link emailed when the pastor applies. Anyone with a specific

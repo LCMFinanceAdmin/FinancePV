@@ -46,8 +46,9 @@ interface District { id: string; name: string; dean_email: string | null; }
  * shown while editing a person so a wrong congregation or missing Dean is
  * caught here rather than when someone's leave goes to the wrong person.
  * Kept in step with that function by hand. It follows note 6 on the church's
- * leave form: pastors need the Council Chairman/Rep and their Dean, a Dean
- * needs the Bishop, and everyone else answers to the GM and/or Bishop.
+ * leave form: pastors need their head pastor, the Council Chairman/Rep and
+ * their Dean; a Dean needs the Bishop; everyone else answers to the GM
+ * and/or Bishop.
  */
 function describeLeaveChain(
   u: UserRole,
@@ -72,11 +73,14 @@ function describeLeaveChain(
         ? `${bishopLabel} — a Dean's leave goes to the Bishop.`
         : "nobody — no Bishop is set.";
     }
-    if (!cong) return "no congregation set — assign one so the Council Chairman and Dean can be worked out.";
+    if (!cong) return "no congregation set — assign one so the head pastor, Council Chairman and Dean can be worked out.";
 
     const district = districts.find(d => d.id === cong.district_id);
-    // Note 6(a): Council Chairman/Rep and Dean, both.
+    // Head pastor, Council Chairman/Rep and Dean — all three.
     const parts = [
+      cong.head_pastor_email && !eqEmail(cong.head_pastor_email, u.email)
+        ? `${nameOf(cong.head_pastor_email)} (Head Pastor, ${cong.name})`
+        : null,
       cong.council_president_email
         ? `${cong.council_president_name || cong.council_president_email} (Council Chairman/Rep, ${cong.name}, by email)`
         : null,
@@ -85,11 +89,14 @@ function describeLeaveChain(
         : null,
     ].filter(Boolean);
 
-    if (parts.length === 2) return `${parts.join(" and ")} — both must approve.`;
-    if (parts.length === 1) return `${parts[0]} only — the other is not set up yet.`;
+    if (parts.length > 1) {
+      const last = parts.pop();
+      return `${parts.join(", ")} and ${last} — all must approve.`;
+    }
+    if (parts.length === 1) return `${parts[0]} only — the others are not set up yet.`;
     return bishopLabel
-      ? `${bishopLabel} — no Council Chairman or Dean is set, so it falls back to the Bishop.`
-      : "nobody — no Council Chairman, Dean or Bishop is set.";
+      ? `${bishopLabel} — no head pastor, Council Chairman or Dean is set, so it falls back to the Bishop.`
+      : "nobody — no head pastor, Council Chairman, Dean or Bishop is set.";
   }
 
   const gm = people.find(p => p.role === "GENERAL_MANAGER");
