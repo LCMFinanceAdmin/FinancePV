@@ -1557,13 +1557,14 @@ export default function RecurringPage() {
 
   return (
     <div className="p-3 sm:p-5 max-w-6xl mx-auto space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="flex-1">
+      {/* Header — stacked on a phone. Side by side, three buttons squeezed the
+          title into a column one word wide. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-stone-800">Recurring Expenses</h1>
           <p className="text-sm text-stone-400">Scheduled payment voucher templates</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!showForm && entityTab === "LCM" && (
             <button
               onClick={() => { setMasterMode(m => !m); setMasterSelected(new Set()); setMasterName(""); }}
@@ -2857,12 +2858,12 @@ export default function RecurringPage() {
               <thead>
                 <tr className="text-[11px] text-stone-500 font-bold uppercase tracking-normal bg-stone-50 border-b-2 border-stone-200 [&>th]:border-r [&>th]:border-stone-200 [&>th:last-child]:border-r-0">
                   <th className="py-3 pl-3 text-left"></th>
-                  <th className="py-3 text-left">No</th>
+                  <th className="py-3 text-left hidden sm:table-cell">No</th>
                   <th className="py-3 pl-1 text-left">Description</th>
-                  <th className="py-3 pl-3 text-left">Payable To</th>
-                  <th className="py-3 pl-3 text-left">Duration</th>
-                  <th className="py-3 pl-3 text-left">Last Created</th>
-                  <th className="py-3 pl-3 text-left">Last Paid</th>
+                  <th className="py-3 pl-3 text-left hidden sm:table-cell">Payable To</th>
+                  <th className="py-3 pl-3 text-left hidden sm:table-cell">Duration</th>
+                  <th className="py-3 pl-3 text-left hidden sm:table-cell">Last Created</th>
+                  <th className="py-3 pl-3 text-left hidden sm:table-cell">Last Paid</th>
                   <th className="py-3 text-right pr-4">Amount</th>
                   <th className="py-3"></th>
                 </tr>
@@ -2913,9 +2914,9 @@ export default function RecurringPage() {
                   const allDone = freqTotal > 0 && doneIds === freqTotal;
                   return (
                     <div key={freq}
-                      className="w-full flex flex-wrap items-center gap-3 px-5 py-4 bg-white border border-stone-200 rounded-2xl hover:border-stone-300 hover:shadow-sm transition-all group">
+                      className="group flex w-full flex-col gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-4 transition-all hover:border-stone-300 hover:shadow-sm sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
                       <button onClick={() => { setNavFreq(freq); setNavFolder(null); }}
-                        className="flex items-center gap-4 flex-1 min-w-0 text-left">
+                        className="flex min-w-0 flex-1 items-center gap-4 text-left">
                         <div className={`w-1.5 h-10 rounded-full shrink-0 ${tab.color}`} />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-bold text-stone-800">{FREQ_DISPLAY[freq]}</div>
@@ -2927,7 +2928,7 @@ export default function RecurringPage() {
                       </button>
 
                       {/* Progress for the period in view */}
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex shrink-0 items-center gap-2">
                         <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border ${
                           allDone ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                           : doneIds > 0 ? "bg-amber-50 text-amber-800 border-amber-200"
@@ -2937,22 +2938,25 @@ export default function RecurringPage() {
                         </span>
                       </div>
 
-                      <div className="text-right shrink-0">
+                      <div className="shrink-0 text-left sm:text-right">
                         <div className="text-sm font-bold text-stone-800">{formatCurrency(totalAmt)}</div>
-                        <div className="text-xs text-stone-400 mt-0.5">per {FREQ_DISPLAY[freq].toLowerCase()} cycle</div>
+                        <div className="mt-0.5 text-xs text-stone-400">per {FREQ_DISPLAY[freq].toLowerCase()} cycle</div>
                       </div>
 
-                      <button
-                        onClick={() => openPeriodRun(freq)}
-                        disabled={freqTotal === 0}
-                        className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#4a6da7] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#3d5a8e] disabled:opacity-40">
-                        <PlayCircle size={14} /> Run period
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openPeriodRun(freq)}
+                          disabled={freqTotal === 0}
+                          className="flex flex-1 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#4a6da7] px-3 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-[#3d5a8e] disabled:opacity-40 sm:flex-none sm:py-2">
+                          <PlayCircle size={14} /> Run period
+                        </button>
 
-                      <button onClick={() => { setNavFreq(freq); setNavFolder(null); }}
-                        className="shrink-0 text-stone-300 hover:text-stone-500 transition-colors">
-                        <ChevronRight size={16} />
-                      </button>
+                        <button onClick={() => { setNavFreq(freq); setNavFolder(null); }}
+                          aria-label={`Open ${FREQ_DISPLAY[freq]}`}
+                          className="shrink-0 text-stone-300 transition-colors hover:text-stone-500">
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -3237,11 +3241,11 @@ export default function RecurringPage() {
                   Last Paid stay on screen instead of being pushed off the right
                   edge — with auto layout the long expense names kept winning. */}
               <div className="overflow-x-auto rounded-xl border border-stone-200">
-                <table className="w-full text-sm border-collapse table-fixed min-w-[1120px]">
+                <table className="w-full border-collapse text-sm table-auto sm:table-fixed sm:min-w-[1120px]">
                   <colgroup>
                     <col className="w-9" />{/* checkbox */}
                     <col className="w-8" />{/* row no */}
-                    <col className="w-[27%]" />{/* description — widest, it carries the name */}
+                    <col className="w-auto sm:w-[27%]" />{/* description — widest, it carries the name */}
                     <col className="w-[20%]" />{/* payable to — full names shouldn't wrap */}
                     <col className="w-[11%]" />{/* duration */}
                     {/* PV columns only hold a reference and a date, so they give
@@ -3257,12 +3261,12 @@ export default function RecurringPage() {
                         "Last Created PV" wrap onto two lines. */}
                     <tr className="text-[11px] text-stone-500 font-bold uppercase tracking-normal bg-stone-50 border-b-2 border-stone-200 [&>th]:border-r [&>th]:border-stone-200 [&>th:last-child]:border-r-0">
                       <th className="py-3 pl-3 text-left"></th>
-                      <th className="py-3 text-left">No</th>
+                      <th className="py-3 text-left hidden sm:table-cell">No</th>
                       <th className="py-3 pl-1 text-left">Description</th>
-                      <th className="py-3 pl-3 text-left">Payable To</th>
-                      <th className="py-3 pl-3 text-left">Duration</th>
-                      <th className="py-3 pl-3 text-left">Last Created</th>
-                      <th className="py-3 pl-3 text-left">Last Paid</th>
+                      <th className="py-3 pl-3 text-left hidden sm:table-cell">Payable To</th>
+                      <th className="py-3 pl-3 text-left hidden sm:table-cell">Duration</th>
+                      <th className="py-3 pl-3 text-left hidden sm:table-cell">Last Created</th>
+                      <th className="py-3 pl-3 text-left hidden sm:table-cell">Last Paid</th>
                       <th className="py-3 text-right pr-4">Amount</th>
                       <th className="py-3"></th>
                     </tr>
@@ -3621,12 +3625,22 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             disabled={isExpired || batchRunning}
             className="w-3.5 h-3.5 rounded accent-[#4a6da7] cursor-pointer" />
         </td>
-        <td className="py-[15px] pr-3 text-sm text-stone-400 font-medium">{rowNo}</td>
+        <td className="hidden py-[15px] pr-3 text-sm font-medium text-stone-400 sm:table-cell">{rowNo}</td>
         <td className="py-[15px] pl-1 pr-3 align-top">
           <button type="button" onClick={onRaise} title="Raise a voucher for this expense"
             className="text-left font-medium text-stone-800 text-base leading-tight hover:text-[#1d4ed8] hover:underline">
             {item.name}
           </button>
+          {/* On a phone the payee, schedule and last voucher columns are
+              hidden, so the name carries them — a row still has to say who is
+              paid and whether this month is done. */}
+          <div className="mt-1 space-y-0.5 sm:hidden">
+            <div className="text-[13px] leading-snug text-stone-500">{item.payee_name}</div>
+            <div className="text-[12px] text-stone-400">
+              {durationLabel()}
+              {item.current_pv_no && <> · <span className="text-[#4a6da7]">{item.current_pv_no}</span></>}
+            </div>
+          </div>
           <div className="flex gap-1 flex-wrap mt-0.5">
             {alreadyRan && (
               editingPeriod ? (
@@ -3664,12 +3678,12 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             {groupLabel && <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{groupLabel}</span>}
           </div>
         </td>
-        <td className="py-[15px] pl-3 pr-3 text-base text-stone-600 align-top"><div className="break-words leading-snug">{item.payee_name}</div></td>
-        <td className="py-[15px] pl-3 pr-3 align-top">
+        <td className="hidden py-[15px] pl-3 pr-3 align-top text-base text-stone-600 sm:table-cell"><div className="break-words leading-snug">{item.payee_name}</div></td>
+        <td className="hidden py-[15px] pl-3 pr-3 align-top sm:table-cell">
           <div className="text-sm text-stone-500 leading-snug">{durationLabel()}</div>
           {commencedLabel() && <div className="text-[12px] text-stone-400 mt-0.5">{commencedLabel()}</div>}
         </td>
-        <td className="py-[15px] pl-3 pr-3 align-top">
+        <td className="hidden py-[15px] pl-3 pr-3 align-top sm:table-cell">
           {item.current_pv_no && item.last_run ? (
             <div>
               <a href={item.current_pv_id ? `/my-pvs/${item.current_pv_id}` : "#"}
@@ -3685,7 +3699,7 @@ function RecurringRow({ item, rowNo, isSelected, isAtRisk, lastPaid, groupLabel,
             </div>
           ) : <span className="text-sm text-stone-300">—</span>}
         </td>
-        <td className="py-[15px] pl-3 pr-3 align-top">
+        <td className="hidden py-[15px] pl-3 pr-3 align-top sm:table-cell">
           {lastPaid ? (
             <div>
               <a href={`/my-pvs/${lastPaid.id}`}
