@@ -15,15 +15,21 @@ Deno.serve(async (req) => {
     const profile = await getProfileByEmail(db, user.email!);
     if (profile?.role !== "GENERAL_MANAGER") return json({ error: "GM only" }, 403);
 
-    const { claim_no, claim_type, claimant_name, amount } = await req.json();
+    const { claim_no, claim_type, claimant_name, amount, event } = await req.json();
     const typeLabel = claim_type === "PURCHASE_ORDER" ? "Purchase Order" : "Expense Claim";
     const amtStr = `RM ${Number(amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}`;
+    const cancelled = event === "CANCELLED";
 
     await sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
-      title: `New GM Instruction — ${typeLabel}`,
-      urgent: true,
+      title: cancelled
+        ? `GM Withdrew a Claim — ${typeLabel}`
+        : `New GM Instruction — ${typeLabel}`,
+      urgent: !cancelled,
       body: `${claim_no} · ${claimant_name} · ${amtStr}`,
-      url: "/control-center",
+      detail: cancelled
+        ? ["The General Manager has withdrawn this claim. Do not raise a voucher for it — and cancel one already raised."]
+        : ["The General Manager has accepted this claim and asked Finance to raise the voucher."],
+      url: "/gm-claims",
     });
 
     return json({ ok: true });

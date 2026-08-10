@@ -1,4 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
+import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {
@@ -76,6 +77,14 @@ Deno.serve(async (req) => {
           );
         }
 
+        await sendPushToRoles(db, ["BAM_COMMITTEE"], {
+          title: "BAM PV Awaiting Your Verification",
+          urgent: true,
+          body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) verified by the Building Manager`,
+          detail: [`Payable to ${pv.payee_name ?? "—"}.`, "It needs your verification as BAM Committee before Finance can proceed."],
+          url: "/bam-queue",
+        });
+
         return json({ ok: true, status: "BAM_COMMITTEE_REVIEW" });
       } else {
         // BAM Committee (or Finance Admin override) → send to Finance Review
@@ -100,6 +109,21 @@ Deno.serve(async (req) => {
           );
         }
 
+        await Promise.all([
+          sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+            title: "BAM PV Verified — Ready for Finance",
+            urgent: true,
+            body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) verified by ${actorLabel}`,
+            detail: [`Payable to ${pv.payee_name ?? "—"}.`, "It is now waiting on your finance review."],
+            url: "/bam-queue",
+          }),
+          sendPushToEmails(db, [pv.submitted_by_email], {
+            title: "Your BAM PV has been verified",
+            body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) was verified by ${actorLabel}`,
+            url: "/my-bam-pvs",
+          }),
+        ]);
+
         return json({ ok: true, status: "FINANCE_REVIEW" });
       }
     } else {
@@ -120,6 +144,21 @@ Deno.serve(async (req) => {
         read: false,
         created_at: now,
       });
+
+      await Promise.all([
+        sendPushToEmails(db, [pv.submitted_by_email], {
+          title: "BAM PV Rejected",
+          body: `BAM PV ${pv.pv_no} was rejected by ${actorLabel}`,
+          detail: remarks ? [`Reason given: ${remarks}`] : [],
+          url: "/my-bam-pvs",
+        }),
+        sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+          title: "BAM PV Rejected",
+          body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount)}) was rejected by ${actorLabel}`,
+          detail: remarks ? [`Reason given: ${remarks}`] : [],
+          url: "/bam-queue",
+        }),
+      ]);
 
       return json({ ok: true, status: "REJECTED" });
     }

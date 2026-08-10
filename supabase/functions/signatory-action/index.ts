@@ -123,6 +123,20 @@ Deno.serve(async (req) => {
           message: `BAM PV ${pv.pv_no} was rejected by GM${remarks ? `: ${remarks}` : ""}`,
           read: false, created_at: now,
         });
+        await Promise.all([
+          sendPushToEmails(db, [pv.submitted_by_email], {
+            title: "BAM PV Rejected by the General Manager",
+            body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount ?? 0)}) was rejected`,
+            detail: remarks ? [`Reason given: ${remarks}`] : [],
+            url: "/my-bam-pvs",
+          }),
+          sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+            title: "BAM PV Rejected by the General Manager",
+            body: `BAM PV ${pv.pv_no} (${formatRM(pv.amount ?? 0)}) was rejected`,
+            detail: remarks ? [`Reason given: ${remarks}`] : [],
+            url: "/bam-queue",
+          }),
+        ]);
         return json({ ok: true, status: "REJECTED" });
       }
 
@@ -270,6 +284,7 @@ Deno.serve(async (req) => {
         sendPushToRoles(db, ["GENERAL_MANAGER"], {
           title: "PV Fully Approved",
           body: `PV ${pvLabel} has been fully approved`,
+          detail: [`Signed off by ${profile?.full_name || user.email} (${roleLabel(profile?.role)}).`],
           url: "/signatory",
         }),
         pv.ministry ? sendPushToMinistryHeads(db, pv.ministry, {
@@ -284,16 +299,46 @@ Deno.serve(async (req) => {
         }),
       ]);
     } else if (newStatus === "REJECTED") {
+      const who = `${profile?.full_name || user.email} (${roleLabel(profile?.role)})`;
       await Promise.all([
         sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
           title: "PV Rejected",
-          body: `PV ${pvLabel} was rejected${remarks ? `: ${remarks}` : ""}`,
+          body: `PV ${pvLabel} was rejected by ${who}`,
+          detail: remarks ? [`Reason given: ${remarks}`] : [],
           url: "/control-center",
+        }),
+        // The GM approved this before it reached the signatories, so a
+        // rejection reverses their decision — they need to know.
+        sendPushToRoles(db, ["GENERAL_MANAGER"], {
+          title: "PV Rejected by a Signatory",
+          body: `PV ${pvLabel} was rejected by ${who}`,
+          detail: remarks ? [`Reason given: ${remarks}`] : [],
+          url: "/signatory",
         }),
         sendPushToEmails(db, [pv.submitted_by_email], {
           title: "PV Rejected",
-          body: `Your PV ${pvLabel} was rejected${remarks ? `: ${remarks}` : ""}`,
+          body: `Your PV ${pvLabel} was rejected by ${who}`,
+          detail: remarks ? [`Reason given: ${remarks}`] : [],
           url: "/my-pvs",
+        }),
+      ]);
+    } else if (action === "APPROVED") {
+      // A signature that doesn't yet complete the voucher: two officers are
+      // needed above RM30,000, and without this the first signature was silent
+      // — nobody could see the voucher had started moving.
+      const who = `${profile?.full_name || user.email} (${roleLabel(profile?.role)})`;
+      await Promise.all([
+        sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+          title: "PV Signed — One More Needed",
+          body: `PV ${pvLabel} signed by ${who}`,
+          detail: ["This voucher needs a second officer before it is fully approved."],
+          url: "/control-center",
+        }),
+        sendPushToRoles(db, ["GENERAL_MANAGER"], {
+          title: "PV Signed — One More Needed",
+          body: `PV ${pvLabel} signed by ${who}`,
+          detail: ["This voucher needs a second officer before it is fully approved."],
+          url: "/signatory",
         }),
       ]);
     }
@@ -313,4 +358,16 @@ function json(data: unknown, status = 200) {
 
 function formatRM(n: number) {
   return `RM ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+}
+
+// Officer titles as people say them, so a notification reads "Rt. Rev Bishop
+// Thomas Low (Bishop)" rather than exposing the internal role name.
+function roleLabel(role?: string | null): string {
+  const labels: Record<string, string> = {
+    BISHOP: "Bishop", TREASURER: "Treasurer", SECRETARY: "Secretary",
+    GENERAL_MANAGER: "General Manager",
+    FINANCE_ADMIN: "Finance Executive", FINANCE_ADMIN_2: "Accounts Executive",
+    FINANCE_ADMIN_3: "Finance Executive",
+  };
+  return labels[role ?? ""] ?? (role ?? "").replace(/_/g, " ");
 }

@@ -402,6 +402,30 @@ export default function PayrollRunDetailPage() {
         action: "PVS_GENERATED", entity: label,
         detail: `${pending.length - errors.length} payment voucher(s) raised for approval`,
       });
+      // The GM and Bishop approve these, and payroll is the month's largest
+      // payment — they should hear it has been run rather than find it in a
+      // queue.
+      const raised = pending.length - errors.length;
+      if (raised > 0) {
+        const total = vouchers.reduce((sum, v) => sum + Number(v.total_amount ?? 0), 0);
+        fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/notify-roles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            roles: ["GENERAL_MANAGER", "BISHOP"],
+            type: "PAYROLL_PVS_RAISED",
+            urgent: true,
+            title: `Payroll confirmed — ${label}`,
+            body: `${raised} payment voucher${raised === 1 ? "" : "s"} raised for ${label}`,
+            detail: [
+              `Total ${total.toLocaleString("en-MY", { style: "currency", currency: "MYR" })}, covering salaries and the statutory payments.`,
+              "They are waiting for your approval.",
+            ],
+            url: "/signatory",
+          }),
+        }).catch(() => {});
+      }
+
       setToast(errors.length
         ? `${pending.length - errors.length} raised, ${errors.length} failed — ${errors[0]}`
         : `${pending.length} payment voucher${pending.length === 1 ? "" : "s"} raised for approval`);

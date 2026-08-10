@@ -1303,6 +1303,30 @@ export default function RecurringPage() {
 
     setPeriodRunning(false);
     const ok = todo.length - errors.length;
+
+    // A period run is the month's batch of standing payments — rent, utilities,
+    // allowances. The GM and Bishop approve them, so they hear it has been run
+    // rather than discovering a queue of vouchers.
+    if (ok > 0) {
+      const total = todo.reduce((sum, i) => sum + Number(i.amount ?? 0), 0);
+      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/notify-roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          roles: ["GENERAL_MANAGER", "BISHOP"],
+          type: "RECURRING_RUN",
+          urgent: true,
+          title: `Recurring payments raised — ${period.label}`,
+          body: `${ok} voucher${ok === 1 ? "" : "s"} raised for ${period.label}`,
+          detail: [
+            `Total ${total.toLocaleString("en-MY", { style: "currency", currency: "MYR" })} of standing payments.`,
+            "They are waiting for your approval.",
+          ],
+          url: "/signatory",
+        }),
+      }).catch(() => {});
+    }
+
     if (ok > 0) showMsg(`${ok} voucher${ok === 1 ? "" : "s"} raised for ${period.label}`);
     if (errors.length) showMsg(`${errors.length} failed — see the list`, false);
   }

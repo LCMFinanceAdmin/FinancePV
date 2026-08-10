@@ -772,6 +772,22 @@ export default function GMClaimsPage() {
       showToast("Delete was blocked by the database — the gm_claims delete permission still needs to be applied.", false);
       return;
     }
+    // Finance may already be preparing this voucher, so tell them it is off.
+    const gone = claims.find(c => c.id === claimId);
+    if (gone) {
+      const session = (await supabase.auth.getSession()).data.session;
+      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/gm-claim-notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          event: "CANCELLED",
+          claim_no: gone.claim_no,
+          claim_type: gone.claim_type,
+          claimant_name: gone.claimant_name,
+          amount: gone.amount,
+        }),
+      }).catch(() => {});
+    }
     setClaims(prev => prev.filter(c => c.id !== claimId));
     showToast("Claim deleted");
   }
