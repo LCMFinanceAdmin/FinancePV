@@ -10,7 +10,12 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/auth") ||
     pathname.startsWith("/book") ||
-    pathname.startsWith("/leave-approval")
+    pathname.startsWith("/leave-approval") ||
+    // The Supabase edge functions call this to send notification emails —
+    // they are servers, not people, and carry a shared secret instead of a
+    // session cookie. Without this they were redirected to /login and every
+    // voucher email was silently dropped. The route checks the secret itself.
+    pathname === "/api/notify-email"
   ) {
     return NextResponse.next();
   }
