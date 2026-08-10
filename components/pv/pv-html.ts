@@ -258,7 +258,9 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
   .info-cell b { font-weight: 700; }
   .exco-ref { background: #fef3c7; font-weight: 700; }
   table.items { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-  table.items th, table.items td { border: 1px solid #000; padding: 5.5px 6px; font-size: 16px; }
+  table.items th, table.items td { border: 1px solid #000; padding: 5.5px 6px; font-size: 16px;
+    /* Particulars are typed with line breaks and spacing; keep them. */
+    white-space: pre-wrap; }
   table.items th { background: #f0f0f0; text-align: left; }
   table.items th.r, table.items td.r { text-align: right; }
   table.items th.c, table.items td.c { text-align: center; }

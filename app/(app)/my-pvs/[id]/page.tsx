@@ -1662,7 +1662,7 @@ export default function PVDetailPage() {
                     <div className="space-y-2">
                       {(editForm.line_items as {description:string;amount:number}[]).map((li, i) => (
                         <div key={i} className="flex gap-2 items-center">
-                          <input className={`${ei} flex-1`} value={li.description} placeholder="Description"
+                          <textarea rows={2} className={`${ei} flex-1 resize-y min-h-[38px]`} value={li.description} placeholder="Description"
                             onChange={e => setEditForm(f => { const l = [...(f.line_items as {description:string;amount:number}[])]; l[i]={...l[i],description:e.target.value}; return {...f,line_items:l}; })} />
                           <input className={ei} type="number" value={li.amount||""} placeholder="Amount" style={{width:100}}
                             onChange={e => setEditForm(f => { const l = [...(f.line_items as {description:string;amount:number}[])]; l[i]={...l[i],amount:Number(e.target.value)}; return {...f,line_items:l}; })} />
@@ -2378,7 +2378,7 @@ export default function PVDetailPage() {
                   <tr key={i}>
                     <td className="border border-black px-1 py-2 text-center text-stone-900">{i + 1}</td>
                     <td className="border border-black px-2 py-2 text-stone-900">{item.date ? fmtDate(item.date) : ""}</td>
-                    <td className="border border-black px-2 py-2">{item.description}</td>
+                    <td className="border border-black px-2 py-2 whitespace-pre-wrap">{item.description}</td>
                     <td className="border border-black px-2 py-2 text-right tabular-nums">{Number(item.amount).toFixed(2)}</td>
                   </tr>
                 ))}

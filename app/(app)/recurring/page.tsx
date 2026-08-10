@@ -1816,7 +1816,8 @@ export default function RecurringPage() {
                     className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]"
                     placeholder="What this payment is for" />
                   <p className="mt-1 text-[11px] text-stone-400">
-                    Printed on the voucher next to &ldquo;Purpose&rdquo;.
+                    Printed on the voucher next to &ldquo;Purpose&rdquo;. Particulars below can run
+                    to several lines each — press Enter for a new line.
                   </p>
                 </div>
 
@@ -1844,18 +1845,25 @@ export default function RecurringPage() {
                       <tbody>
                         {raiseLines.map((line, i) => (
                           <tr key={i} className="border-t border-stone-100">
-                            <td className="p-1.5">
-                              <input value={line.description}
+                            <td className="p-1.5 align-top">
+                              {/* A textarea, not a single line: a particular is
+                                  often an account number, a meter reading and a
+                                  note, and those want their own lines. The
+                                  breaks are kept on the printed voucher. */}
+                              <textarea value={line.description}
                                 onChange={e => setRaiseLine(i, { description: e.target.value })}
-                                placeholder={i === 0 ? "e.g. Electricity charges" : "e.g. Arrears from previous month"}
-                                className="w-full rounded-lg border border-transparent px-2 py-2 text-sm outline-none hover:border-stone-200 focus:border-[#4a6da7]" />
+                                rows={Math.max(2, line.description.split(/\r?\n/).length)}
+                                placeholder={i === 0
+                                  ? "e.g. A/C NO 220132397203, meter reading, any note"
+                                  : "e.g. Arrears from previous month"}
+                                className="w-full resize-y rounded-lg border border-transparent px-2 py-2 text-sm leading-snug outline-none hover:border-stone-200 focus:border-[#4a6da7]" />
                             </td>
-                            <td className="p-1.5">
+                            <td className="p-1.5 align-top">
                               <input type="number" step="0.01" min="0" value={line.amount}
                                 onChange={e => setRaiseLine(i, { amount: e.target.value })}
                                 className="w-full rounded-lg border border-transparent px-2 py-2 text-right text-sm outline-none hover:border-stone-200 focus:border-[#4a6da7]" />
                             </td>
-                            <td className="p-1.5 text-center">
+                            <td className="p-1.5 text-center align-top">
                               {raiseLines.length > 1 && (
                                 <button type="button" onClick={() => removeRaiseLine(i)}
                                   aria-label="Remove this line"
