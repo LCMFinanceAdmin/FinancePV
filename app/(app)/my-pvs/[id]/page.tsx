@@ -736,20 +736,22 @@ export default function PVDetailPage() {
   }
 
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteToast, setDeleteToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
+  // The browser's own confirm() and alert() jump out of the page, look like
+  // nothing else in the app, and read as a warning from the browser rather than
+  // from us — which is the wrong tone for something irreversible.
   async function deleteCancelled() {
     if (!pv) return;
-    if (!confirm(
-      `Delete ${pv.pv_no}?
-
-The voucher is removed and its number goes back into use, so the next voucher raised will carry ${pv.pv_no}. This cannot be undone.`
-    )) return;
+    setConfirmDelete(false);
     setDeleting(true);
     const { data, error } = await supabase.rpc("delete_cancelled_pv", { target_id: pv.id });
     setDeleting(false);
-    if (error) { alert(error.message); return; }
-    alert(`${data} deleted. Its number is back in use.`);
-    router.push("/signatory-activity");
+    if (error) { setDeleteToast({ msg: error.message, ok: false }); return; }
+    // Held briefly so the confirmation is actually read before the page goes.
+    setDeleteToast({ msg: `${data} deleted — its number is back in use.`, ok: true });
+    setTimeout(() => router.push("/signatory-activity"), 1400);
   }
 
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
@@ -1247,6 +1249,48 @@ The voucher is removed and its number goes back into use, so the next voucher ra
         </div>
       )}
 
+      {deleteToast && (
+        <div className="print:hidden fixed top-4 right-4 z-[60] flex max-w-sm items-start gap-2.5 rounded-2xl px-4 py-3 text-sm text-white shadow-[0_12px_34px_rgba(22,51,94,0.28)]"
+          style={{ background: deleteToast.ok ? "#16a34a" : "#dc2626" }}>
+          {deleteToast.ok ? <CheckCircle size={17} className="mt-px shrink-0" /> : <XCircle size={17} className="mt-px shrink-0" />}
+          <span className="font-medium leading-snug">{deleteToast.msg}</span>
+          <button onClick={() => setDeleteToast(null)} aria-label="Dismiss"
+            className="ml-1 shrink-0 text-white/70 hover:text-white">
+            <XIcon size={15} />
+          </button>
+        </div>
+      )}
+
+      {confirmDelete && pv && (
+        <div className="print:hidden fixed inset-0 z-[60] flex items-end justify-center bg-slate-900/45 p-4 backdrop-blur-[2px] sm:items-center">
+          <div className="w-full max-w-md rounded-3xl border border-red-100 bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.28)]">
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-red-50 text-red-600">
+                <Trash2 size={20} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-stone-800">Delete {pv.pv_no}?</h2>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-stone-600">
+                  The voucher is removed and its number goes back into use, so the next
+                  voucher raised will carry <strong>{pv.pv_no}</strong>.
+                </p>
+                <p className="mt-2 text-[13px] font-semibold text-red-700">This cannot be undone.</p>
+              </div>
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button onClick={deleteCancelled}
+                className="flex-1 rounded-xl bg-red-600 py-3 text-sm font-bold text-white hover:bg-red-700">
+                Yes, delete it
+              </button>
+              <button onClick={() => setConfirmDelete(false)}
+                className="rounded-xl border border-stone-200 px-5 py-3 text-sm font-semibold text-stone-600 hover:bg-stone-50">
+                Keep it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Deleting a cancelled voucher releases its number so the series stays
           unbroken. Offered only for CANCELLED — anything approved or paid is a
           financial record, and removing it would destroy evidence of a real
@@ -1261,7 +1305,7 @@ The voucher is removed and its number goes back into use, so the next voucher ra
                 voucher raised takes it and the numbering has no gap. This cannot be undone.
               </p>
             </div>
-            <button onClick={deleteCancelled} disabled={deleting}
+            <button onClick={() => setConfirmDelete(true)} disabled={deleting}
               className="shrink-0 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
               {deleting ? "Deleting…" : "Delete & free the number"}
             </button>
