@@ -20,6 +20,7 @@ import {
   Briefcase, HandHeart, Truck, UserCog, AlertCircle, CheckCircle2, Handshake,
 } from "lucide-react";
 import Link from "next/link";
+import { fieldClass, labelClass, sectionClass } from "@/lib/field-styles";
 
 // The classifications LCM actually uses. One primary place in the
 // organisation; EXCO is a flag on top, because pastors and lay members alike
@@ -81,8 +82,9 @@ interface OfficeHolding { person_id: string; office_id: string; term_end: string
 interface Office { id: string; name: string; kind: string }
 interface Organisation { id: string; name: string; short_name: string | null; kind: string }
 
-const inp = "w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
-const lbl = "text-[11px] font-medium text-stone-500";
+const inp = fieldClass;
+const lbl = labelClass;
+const sec = sectionClass;
 
 const BLANK: Omit<Person, "id"> = {
   full_name: "", preferred_name: null, category: "HQ_STAFF", status: "ACTIVE",
@@ -392,9 +394,9 @@ export default function PeopleDirectoryPage() {
               </button>
 
               {isOpen && d && (
-                <div className="space-y-5 border-t border-[#eaf1fb] px-4 py-4">
+                <div className="space-y-3.5 border-t border-[#eaf1fb] px-4 py-3.5">
                   {/* Who they are */}
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     <div>
                       <label className={lbl}>Full name *</label>
                       <input className={inp} value={d.full_name} onChange={e => set("full_name", e.target.value)} />
@@ -419,8 +421,8 @@ export default function PeopleDirectoryPage() {
 
                   {/* Contact */}
                   <div>
-                    <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-stone-500">Contact</p>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <p className={sec}>Contact</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
                       <div>
                         <label className={lbl}>Email</label>
                         <input className={inp} type="email" value={d.email ?? ""} onChange={e => set("email", e.target.value)} />
@@ -442,8 +444,8 @@ export default function PeopleDirectoryPage() {
 
                   {/* Personal — the sensitive part of the record */}
                   <div>
-                    <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-stone-500">Personal</p>
-                    <div className="grid gap-3 sm:grid-cols-4">
+                    <p className={sec}>Personal</p>
+                    <div className="grid gap-2 sm:grid-cols-4">
                       <div>
                         <label className={lbl}>IC number</label>
                         <input className={inp} value={d.ic_no ?? ""} onChange={e => set("ic_no", e.target.value)} />
@@ -472,7 +474,7 @@ export default function PeopleDirectoryPage() {
                   {/* Where they serve */}
                   {["PASTOR", "PARISH_WORKER"].includes(d.category) ? (
                     <div>
-                      <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-stone-500">
+                      <p className={sec}>
                         Congregations served
                       </p>
                       {!p.id.startsWith("new-") ? (
@@ -505,7 +507,7 @@ export default function PeopleDirectoryPage() {
                       )}
                     </div>
                   ) : ["VENDOR", "AGENT"].includes(d.category) ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       <div>
                         <label className={lbl}>Company</label>
                         <input className={inp} value={d.company_name ?? ""} onChange={e => set("company_name", e.target.value)} />
@@ -518,7 +520,7 @@ export default function PeopleDirectoryPage() {
                   ) : d.category === "PARTNER" ? (
                     // The body itself is described in Partners & Organisations.
                     // Here we only say which one, and what this person does there.
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       <div>
                         <label className={lbl}>Organisation</label>
                         <select className={inp} value={d.organisation_id ?? ""}
@@ -544,7 +546,7 @@ export default function PeopleDirectoryPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       <div>
                         <label className={lbl}>HQ department</label>
                         <input className={inp} value={d.hq_department ?? ""} onChange={e => set("hq_department", e.target.value)}
@@ -587,14 +589,14 @@ export default function PeopleDirectoryPage() {
 
                   {/* Employment */}
                   <div>
-                    <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-stone-500">Employment</p>
+                    <p className={sec}>Employment</p>
                     <label className="flex items-center gap-2 text-sm text-stone-700">
                       <input type="checkbox" className="h-4 w-4 accent-[#4a6da7]" checked={d.is_employed}
                         onChange={e => set("is_employed", e.target.checked)} />
                       Paid by LCM
                     </label>
                     {d.is_employed && (
-                      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
                         <div>
                           <label className={lbl}>Date joined</label>
                           <input className={inp} type="date" value={d.date_joined ?? ""} onChange={e => set("date_joined", e.target.value)} />

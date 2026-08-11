@@ -16,6 +16,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
   Paperclip, Upload, FileText, Trash2, Download, StickyNote, Plus, X,
 } from "lucide-react";
@@ -46,8 +47,8 @@ interface Doc {
   uploaded_by: string | null; created_at: string;
 }
 
-const inp = "w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
-const lbl = "text-[11px] font-medium text-stone-500";
+const inp = fieldClass;
+const lbl = labelClass;
 
 const fmtDate = (d?: string | null) =>
   d ? new Date(d.length === 10 ? d + "T00:00:00" : d)
@@ -166,7 +167,7 @@ export function DocumentsPanel({ personId, personName }: { personId: string; per
 
       {adding && (
         <div className="mb-3 rounded-xl border border-[#dbe9fb] bg-[#f8fbff] p-3">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div>
               <label className={lbl}>What is it</label>
               <select className={inp} value={kind} onChange={e => setKind(e.target.value)}>

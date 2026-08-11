@@ -17,6 +17,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { Wallet, History, HandCoins, ArrowRight, Plus } from "lucide-react";
+import { fieldClass, labelClass } from "@/lib/field-styles";
 
 interface SalaryRow {
   id: string; effective_from: string;
@@ -43,8 +44,8 @@ export interface PersonForEmployment {
   payroll_employee_id: string | null;
 }
 
-const inp = "w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
-const lbl = "text-[11px] font-medium text-stone-500";
+const inp = fieldClass;
+const lbl = labelClass;
 
 const fmtDate = (d?: string | null) =>
   d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
@@ -170,7 +171,7 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
           and the payroll record is created, ready for the next run.
         </p>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <div>
             <label className={lbl}>Gross monthly salary (RM) *</label>
             <input type="number" step="0.01" min="0" className={inp} value={base}
@@ -195,7 +196,7 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
             placeholder="Anything agreed outside the standard terms — housing, travel, a fixed review date" />
         </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <div>
             <label className={lbl}>Approved by</label>
             <input className={inp} value={approvedBy} onChange={e => setApprovedBy(e.target.value)} />
