@@ -249,6 +249,10 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: <Users size={size} />, show: canManagePeople,
       },
       {
+        href: "/settings/offices", label: "Offices & Elections", desc: "Bishop, Secretary, Treasurer and EXCO portfolios",
+        icon: <Landmark size={size} />, show: canManagePeople,
+      },
+      {
         href: "/settings/signatories", label: "Logins & Roles", desc: "Who can sign in and what they may approve",
         icon: <Briefcase size={size} />, show: (u) => u.isFinanceAdmin,
       },

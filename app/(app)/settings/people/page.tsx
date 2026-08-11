@@ -66,6 +66,8 @@ interface Person {
 interface Congregation { id: string; name: string; district_id: string | null; head_pastor_email: string | null }
 interface District { id: string; name: string; dean_email: string | null }
 interface Link { person_id: string; congregation_id: string; is_primary: boolean }
+interface OfficeHolding { person_id: string; office_id: string; term_end: string | null }
+interface Office { id: string; name: string; kind: string }
 
 const inp = "w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
 const lbl = "text-[11px] font-medium text-stone-500";
@@ -86,6 +88,10 @@ export default function PeopleDirectoryPage() {
   const [congregations, setCongregations] = useState<Congregation[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
+  // Offices are held, not owned: read from the register so this page and
+  // Offices & Elections can never disagree about who is Treasurer.
+  const [offices, setOffices] = useState<Office[]>([]);
+  const [holdings, setHoldings] = useState<OfficeHolding[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [denied, setDenied] = useState(false);
@@ -103,11 +109,13 @@ export default function PeopleDirectoryPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: p, error }, { data: c }, { data: d }, { data: l }] = await Promise.all([
+    const [{ data: p, error }, { data: c }, { data: d }, { data: l }, { data: off }, { data: hold }] = await Promise.all([
       supabase.from("people").select("*").order("full_name"),
       supabase.from("congregations").select("id,name,district_id,head_pastor_email").order("name"),
       supabase.from("districts").select("id,name,dean_email").order("name"),
       supabase.from("person_congregations").select("person_id,congregation_id,is_primary"),
+      supabase.from("offices").select("id,name,kind"),
+      supabase.from("office_holdings").select("person_id,office_id,term_end"),
     ]);
     // An empty list with no error usually means RLS refused — say so plainly
     // rather than showing a page that looks like nobody exists.
@@ -116,6 +124,8 @@ export default function PeopleDirectoryPage() {
     setCongregations((c ?? []) as Congregation[]);
     setDistricts((d ?? []) as District[]);
     setLinks((l ?? []) as Link[]);
+    setOffices((off ?? []) as Office[]);
+    setHoldings((hold ?? []) as OfficeHolding[]);
     setLoading(false);
   }, [supabase]);
 
@@ -137,9 +147,13 @@ export default function PeopleDirectoryPage() {
       const heads = congregations.filter(c => c.head_pastor_email?.trim().toLowerCase() === email);
       if (heads.length) out.push(`Head Pastor, ${heads.map(h => h.name).join(" & ")}`);
     }
-    if (p.is_exco) out.push(p.exco_portfolio ? `EXCO — ${p.exco_portfolio}` : "EXCO");
+    for (const h of holdings) {
+      if (h.person_id !== p.id || h.term_end) continue;
+      const o = offices.find(x => x.id === h.office_id);
+      if (o) out.push(o.kind === "EXCO" ? `EXCO — ${o.name}` : o.name);
+    }
     return out;
-  }, [districts, congregations]);
+  }, [districts, congregations, holdings, offices]);
 
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
@@ -317,7 +331,7 @@ export default function PeopleDirectoryPage() {
         {visible.map(p => {
           const isOpen = openId === p.id;
           const cat = CATEGORIES.find(c => c.key === p.category);
-          const offices = officesOf(p);
+          const offices_ = officesOf(p);
           const myCongs = congsOf(p.id);
           const d = isOpen ? draft : null;
 
@@ -340,7 +354,7 @@ export default function PeopleDirectoryPage() {
                         {p.status}
                       </span>
                     )}
-                    {offices.map(o => (
+                    {offices_.map(o => (
                       <span key={o} className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">{o}</span>
                     ))}
                     {p.is_employed && (
@@ -500,25 +514,24 @@ export default function PeopleDirectoryPage() {
 
                   {/* Offices held. Dean and head pastor are shown, never set —
                       they belong to the district and congregation records. */}
+                  {/* Offices are elected posts with terms, so they are set in
+                      Offices & Elections and only shown here. A free-text
+                      portfolio could name a committee somebody else holds. */}
                   <div className="rounded-xl border border-[#dbe9fb] bg-[#f4f9ff] p-3">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <label className="flex items-center gap-2 text-sm text-stone-700">
-                        <input type="checkbox" className="h-4 w-4 accent-[#4a6da7]" checked={d.is_exco}
-                          onChange={e => set("is_exco", e.target.checked)} />
-                        Elected to the EXCO
-                      </label>
-                      {d.is_exco && (
-                        <input className={`${inp} max-w-xs`} value={d.exco_portfolio ?? ""}
-                          onChange={e => set("exco_portfolio", e.target.value)}
-                          placeholder="Portfolio, e.g. Mission" />
-                      )}
-                    </div>
-                    {offices.filter(o => !o.startsWith("EXCO")).length > 0 && (
-                      <p className="mt-2 text-[12px] text-stone-600">
-                        Also holds: <strong>{offices.filter(o => !o.startsWith("EXCO")).join(", ")}</strong>
-                        <span className="text-stone-400"> — set in Church Directory, shown here.</span>
-                      </p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-stone-500">Offices held</p>
+                    {offices_.length > 0 ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {offices_.map(o => (
+                          <span key={o} className="rounded-full bg-violet-100 px-2.5 py-1 text-[12px] font-semibold text-violet-700">{o}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[13px] text-stone-500">None currently.</p>
                     )}
+                    <p className="mt-2 text-[11px] text-stone-400">
+                      Elected posts are recorded in <strong>Offices &amp; Elections</strong>; Dean and
+                      head pastor in <strong>Church Directory</strong>. Shown here so they cannot disagree.
+                    </p>
                   </div>
 
                   {/* Employment */}
