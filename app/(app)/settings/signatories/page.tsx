@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { excoAssignableMinistries } from "@/lib/ministries";
-import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw, ChevronRight, Search } from "lucide-react";
+import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw, ChevronRight, Search, X } from "lucide-react";
 
 const ROLES = [
   "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
@@ -113,6 +113,10 @@ export default function SignatoriesPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [pinModal, setPinModal] = useState<{ userId: string; email: string } | null>(null);
+  // Adding someone is a decision with several parts — a role, whether they are
+  // employed, who signs their leave. A dialogue asks for them together instead
+  // of dropping a blank row at the bottom of a list of forty people.
+  const [addOpen, setAddOpen] = useState(false);
   const [ministries, setMinistries] = useState<string[]>([]);
   const [congregations, setCongregations] = useState<Congregation[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
@@ -160,20 +164,15 @@ export default function SignatoriesPage() {
       congregation_id: u.is_pastor ? (u.congregation_id || null) : null,
       reports_to: u.reports_to,
     };
-    if (u.id.startsWith("new-")) {
-      const { error } = await supabase.from("user_roles").insert({ email: u.email, ...profile });
-      if (error) { showToast("Error: " + error.message); setSaving(false); return; }
-    } else {
-      const { error } = await supabase.from("user_roles").update(profile).eq("id", u.id);
-      if (error) { showToast("Error: " + error.message); setSaving(false); return; }
-    }
+    // Everyone here already exists — people are created through Add User.
+    const { error } = await supabase.from("user_roles").update(profile).eq("id", u.id);
+    if (error) { showToast("Error: " + error.message); setSaving(false); return; }
     await load();
     setSaving(false);
     showToast("Saved");
   }
 
   async function deleteUser(id: string) {
-    if (id.startsWith("new-")) { setUsers(u => u.filter(x => x.id !== id)); return; }
     await supabase.from("user_roles").delete().eq("id", id);
     setUsers(u => u.filter(x => x.id !== id));
     showToast("Removed");
@@ -216,16 +215,7 @@ export default function SignatoriesPage() {
           <h1 className="text-xl font-bold text-stone-800">Signatories & Roles</h1>
           <p className="text-sm text-stone-400">Manage who can access and approve in the system</p>
         </div>
-        <Button size="sm" onClick={() => {
-          const id = `new-${Date.now()}`;
-          setUsers(u => [...u, {
-            id, email: "", full_name: "", role: "STAFF", ministries: [], has_pin: false,
-            is_lcm_staff: true, is_pastor: false, designation: null, congregation_id: null,
-            reports_to: "GM_AND_BISHOP",
-          }]);
-          // A brand new person has nothing to show collapsed, so open it.
-          setExpanded(s => new Set(s).add(id));
-        }}>
+        <Button size="sm" onClick={() => setAddOpen(true)}>
           <Plus size={13} /> Add User
         </Button>
       </div>
@@ -240,6 +230,27 @@ export default function SignatoriesPage() {
           email={pinModal.email}
           onClose={() => { setPinModal(null); load(); }}
           showToast={showToast}
+        />
+      )}
+
+      {addOpen && (
+        <AddUserModal
+          roles={ROLES}
+          roleLabels={ROLE_LABELS}
+          ministries={ministries}
+          congregations={congregations}
+          districts={districts}
+          users={users}
+          onClose={() => setAddOpen(false)}
+          onSaved={async (newId, name) => {
+            setAddOpen(false);
+            await load();
+            // Open the person just added, so whatever still needs doing —
+            // an initial PIN, a ministry — is in front of you.
+            setExpanded(s => new Set(s).add(newId));
+            setQuery("");
+            showToast(`${name} added`);
+          }}
         />
       )}
 
@@ -278,7 +289,7 @@ export default function SignatoriesPage() {
                   {u.is_pastor && (
                     <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Pastor</span>
                   )}
-                  {["BISHOP", "TREASURER", "SECRETARY"].includes(u.role) && !u.id.startsWith("new-") && (
+                  {["BISHOP", "TREASURER", "SECRETARY"].includes(u.role) && (
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                       u.has_pin ? "bg-green-100 text-green-700" : "bg-stone-100 text-stone-500"
                     }`}>
@@ -310,8 +321,9 @@ export default function SignatoriesPage() {
                       <span className="ml-1.5 text-[10px] text-amber-600 font-medium">(uses magic link login)</span>
                     )}
                   </label>
-                  <input className={inp} value={u.email} placeholder="name@lcm.org.my or personal email" disabled={!u.id.startsWith("new-")}
-                    onChange={(e) => setUsers(us => us.map(x => x.id === u.id ? { ...x, email: e.target.value } : x))} />
+                  {/* The email *is* the login. Changing it here would leave the
+                      account behind, so it is set once when the person is added. */}
+                  <input className={inp} value={u.email} disabled />
                 </div>
               </div>
 
@@ -411,7 +423,7 @@ export default function SignatoriesPage() {
                 </Button>
                 {/* EXCO Members (MINISTRY_HEAD) no longer use an approval PIN —
                     their verification is evidenced by a drawn signature. */}
-                {["BISHOP", "TREASURER", "SECRETARY"].includes(u.role) && !u.id.startsWith("new-") && (
+                {["BISHOP", "TREASURER", "SECRETARY"].includes(u.role) && (
                   u.has_pin ? (
                     <Button size="sm" variant="ghost" loading={saving} onClick={() => resetPin(u.id, u.email)}>
                       <RotateCcw size={13} /> Reset PIN
@@ -437,6 +449,208 @@ export default function SignatoriesPage() {
         <strong>How approval PINs work:</strong> Signatories (Bishop, Treasurer, Secretary) use a 6-digit PIN as a second confirmation when approving PVs. Each person <strong>sets and changes their own PIN privately</strong> from their Signatory Queue page, so nobody else knows it. If someone forgets their PIN, use <strong>Reset PIN</strong> here to clear it; they then set a new one themselves (you never see it). <strong>Set Initial PIN</strong> is only offered for someone who has never set one.
         <br /><br />
         <strong>EXCO Members don&apos;t use a PIN.</strong> They verify payment requests by drawing their signature, which is printed on the resulting payment voucher as proof the ministry examined the expense.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Add a person.
+ *
+ * The old button dropped an empty row at the foot of a list of forty people,
+ * which said nothing about what was needed and was easy to abandon half-filled
+ * — an unnamed row with no email, saved or not, is indistinguishable from a
+ * real one. A dialogue asks the whole question at once, refuses to save until
+ * it can be answered, and shows who will sign this person's leave before the
+ * record exists.
+ */
+function AddUserModal({ roles, roleLabels, ministries, congregations, districts, users, onClose, onSaved }: {
+  roles: string[];
+  roleLabels: Record<string, string>;
+  ministries: string[];
+  congregations: Congregation[];
+  districts: District[];
+  users: UserRole[];
+  onClose: () => void;
+  onSaved: (newId: string, name: string) => void;
+}) {
+  const supabase = createClient();
+  const [draft, setDraft] = useState<Omit<UserRole, "id" | "has_pin">>({
+    email: "", full_name: "", role: "STAFF", ministries: [],
+    is_lcm_staff: true, is_pastor: false, designation: null,
+    congregation_id: null, reports_to: "GM_AND_BISHOP",
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  function set<K extends keyof typeof draft>(k: K, v: (typeof draft)[K]) {
+    setDraft(d => ({ ...d, [k]: v }));
+  }
+
+  const email = draft.email.trim().toLowerCase();
+  const taken = users.some(u => u.email.trim().toLowerCase() === email);
+  const needsPin = ["BISHOP", "TREASURER", "SECRETARY"].includes(draft.role);
+
+  async function save() {
+    if (!draft.full_name.trim()) { setErr("Enter their full name"); return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setErr("Enter a valid email address"); return; }
+    if (taken) { setErr("Somebody with that email already has a login"); return; }
+    setErr("");
+    setSaving(true);
+
+    const { data, error } = await supabase.from("user_roles").insert({
+      email,
+      full_name: draft.full_name.trim(),
+      role: draft.role,
+      ministries: draft.ministries,
+      is_lcm_staff: draft.is_lcm_staff,
+      is_pastor: draft.is_pastor,
+      designation: draft.designation?.trim() || null,
+      congregation_id: draft.is_pastor ? (draft.congregation_id || null) : null,
+      reports_to: draft.reports_to,
+    }).select("id").single();
+
+    setSaving(false);
+    if (error) {
+      setErr(error.code === "23505" ? "Somebody with that email already has a login" : error.message);
+      return;
+    }
+    onSaved(data.id as string, draft.full_name.trim());
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 px-4 py-8 backdrop-blur-[2px]">
+      <div className="w-full max-w-lg space-y-4 rounded-3xl border border-[#dbe9fb] bg-[#fbfdff] p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-bold text-stone-800">Add a user</h2>
+            <p className="mt-0.5 text-xs text-stone-400">
+              Gives someone access to the system. What they may approve follows from their role.
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="text-xs text-stone-500">Full name *</label>
+            <input className={inp} autoFocus value={draft.full_name}
+              placeholder="e.g. Rev. Daniel Tan"
+              onChange={e => set("full_name", e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-stone-500">Email *</label>
+            <input className={inp} type="email" value={draft.email}
+              placeholder="name@lcm.org.my or personal email"
+              onChange={e => set("email", e.target.value)} />
+            {/* The email is the login and cannot be changed afterwards, so it
+                is worth getting right here. */}
+            <p className="mt-1 text-[11px] text-stone-400">
+              {taken
+                ? <span className="font-medium text-red-500">Somebody already signs in with that address.</span>
+                : email && !email.endsWith("@lcm.org.my")
+                  ? "Not an @lcm.org.my address — they will sign in by magic link."
+                  : "This is their login, and cannot be changed later."}
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs text-stone-500">Role</label>
+          <select className={inp} value={draft.role} onChange={e => set("role", e.target.value)}>
+            {roles.map(r => <option key={r} value={r}>{roleLabels[r]}</option>)}
+          </select>
+        </div>
+
+        {draft.role === "MINISTRY_HEAD" && (
+          <div>
+            <label className="text-xs text-stone-500">Assigned ministries</label>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {ministries.map(m => (
+                <label key={m} className="flex cursor-pointer items-center gap-1 text-xs">
+                  <input type="checkbox" className="accent-[#4a6da7]"
+                    checked={draft.ministries.includes(m)}
+                    onChange={e => set("ministries", e.target.checked
+                      ? [...draft.ministries, m]
+                      : draft.ministries.filter(x => x !== m))} />
+                  {m}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-3 rounded-xl border border-[#dbe9fb] bg-[#f8fbff] p-3">
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-700">
+              <input type="checkbox" className="h-4 w-4 accent-[#4a6da7]"
+                checked={draft.is_lcm_staff} onChange={e => set("is_lcm_staff", e.target.checked)} />
+              Employed by LCM
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-700">
+              <input type="checkbox" className="h-4 w-4 accent-[#4a6da7]"
+                checked={draft.is_pastor} onChange={e => set("is_pastor", e.target.checked)} />
+              Pastor
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <label className="text-xs text-stone-400">Designation</label>
+              <input className={inp} value={draft.designation ?? ""}
+                placeholder="e.g. Finance Executive, Pastor"
+                onChange={e => set("designation", e.target.value)} />
+            </div>
+            {draft.is_pastor ? (
+              <div>
+                <label className="text-xs text-stone-400">Congregation</label>
+                <select className={inp} value={draft.congregation_id ?? ""}
+                  onChange={e => set("congregation_id", e.target.value || null)}>
+                  <option value="">— none —</option>
+                  {congregations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            ) : draft.is_lcm_staff ? (
+              <div>
+                <label className="text-xs text-stone-400">Reports to (for leave)</label>
+                <select className={inp} value={draft.reports_to}
+                  onChange={e => set("reports_to", e.target.value as UserRole["reports_to"])}>
+                  <option value="GM_AND_BISHOP">General Manager and Bishop</option>
+                  <option value="BISHOP_ONLY">Bishop only</option>
+                </select>
+              </div>
+            ) : null}
+          </div>
+
+          {draft.is_lcm_staff ? (
+            <p className="text-xs text-stone-500">
+              <span className="font-semibold text-stone-600">Leave will go to:</span>{" "}
+              {describeLeaveChain({ ...draft, id: "", has_pin: false }, congregations, districts, users)}
+            </p>
+          ) : (
+            <p className="text-xs text-amber-700">
+              Volunteer — approvals only. No leave, staff loan or payroll access, and no reporting line.
+            </p>
+          )}
+        </div>
+
+        {needsPin && (
+          <p className="rounded-xl border border-[#dbe9fb] bg-[#f4f9ff] p-3 text-xs text-stone-500">
+            As a signatory they will also need a 6-digit approval PIN. Once added, open their row and
+            choose <strong>Set Initial PIN</strong> — or let them set their own from their queue page.
+          </p>
+        )}
+
+        {err && <p className="text-xs font-medium text-red-500">{err}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <Button className="flex-1" loading={saving} onClick={save}>
+            <Plus size={13} /> Add user
+          </Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
       </div>
     </div>
   );
