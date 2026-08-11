@@ -68,6 +68,7 @@ export const ROLE_LABELS: Record<string, string> = {
   FINANCE_ADMIN_3: "Finance Executive 3",
   GENERAL_MANAGER: "General Manager",
   BISHOP:          "Bishop",
+  ADMINISTRATOR:   "Administrator",
   TREASURER:       "Treasurer",
   SECRETARY:       "Secretary",
   MINISTRY_HEAD:   "EXCO Member",

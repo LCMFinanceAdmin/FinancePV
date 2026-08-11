@@ -8,7 +8,7 @@ import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw, ChevronRight, 
 const ROLES = [
   "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
   "GENERAL_MANAGER", "BISHOP", "TREASURER", "SECRETARY",
-  "MINISTRY_HEAD", "BUILDING_MANAGER", "BAM_COMMITTEE", "STAFF",
+  "MINISTRY_HEAD", "BUILDING_MANAGER", "BAM_COMMITTEE", "ADMINISTRATOR", "STAFF",
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -16,7 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   FINANCE_ADMIN_3: "Finance Executive 3", GENERAL_MANAGER: "General Manager",
   BISHOP: "Bishop", TREASURER: "Treasurer", SECRETARY: "Secretary",
   MINISTRY_HEAD: "EXCO Member", BUILDING_MANAGER: "Building / Event Manager",
-  BAM_COMMITTEE: "BAM Committee", STAFF: "Staff",
+  BAM_COMMITTEE: "BAM Committee", ADMINISTRATOR: "Administrator", STAFF: "Staff",
 };
 
 interface UserRole {

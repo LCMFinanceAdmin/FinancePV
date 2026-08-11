@@ -43,6 +43,7 @@ export interface UserProfile {
   isGeneralManager: boolean;
   isBuildingManager: boolean;
   isBamCommittee?: boolean;
+  isAdministrator?: boolean;
   isTestAdmin: boolean;
   // Church directory. Position and employment sit alongside the system role
   // above rather than replacing it: an EXCO member who is also a pastor is

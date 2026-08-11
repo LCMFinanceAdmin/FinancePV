@@ -41,6 +41,11 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+
+/** May open the people directory — it holds IC numbers and addresses. */
+const canManagePeople = (u: UserProfile) =>
+  u.isFinanceAdmin || u.isGeneralManager || u.isSignatory || !!u.isAdministrator;
+
 const size = 16;
 
 /** Always visible, never nested — the two things done most often. */
@@ -240,7 +245,11 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: <Church size={size} />, show: (u) => u.isFinanceAdmin,
       },
       {
-        href: "/settings/signatories", label: "People & Roles", desc: "Who can access and approve what",
+        href: "/settings/people", label: "People Directory", desc: "Pastors, staff, volunteers, vendors and agents",
+        icon: <Users size={size} />, show: canManagePeople,
+      },
+      {
+        href: "/settings/signatories", label: "Logins & Roles", desc: "Who can sign in and what they may approve",
         icon: <Briefcase size={size} />, show: (u) => u.isFinanceAdmin,
       },
       {
