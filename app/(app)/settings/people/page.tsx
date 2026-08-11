@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { EmploymentPanel } from "@/components/people/employment-panel";
 import { Button } from "@/components/ui/button";
 import {
   Plus, Search, ChevronRight, Save, Trash2, X, Users, Church,
@@ -559,11 +560,27 @@ export default function PeopleDirectoryPage() {
                         </div>
                       </div>
                     )}
-                    {d.is_employed && (
+                    {/* Terms and figures come from payroll, which already keeps
+                        every revision — see components/people/employment-panel. */}
+                    {d.is_employed && !p.id.startsWith("new-") && (
+                      <div className="mt-3">
+                        <EmploymentPanel
+                          person={{
+                            id: p.id, full_name: p.full_name, ic_no: p.ic_no, dob: p.dob,
+                            category: p.category, hq_department: p.hq_department,
+                            date_joined: p.date_joined, payroll_employee_id: p.payroll_employee_id,
+                          }}
+                          congregationName={myCongs[0]?.name}
+                          onLinked={(payrollId) => {
+                            setPeople(ps => ps.map(x => x.id === p.id ? { ...x, payroll_employee_id: payrollId, is_employed: true } : x));
+                            setDraft(dr => dr ? { ...dr, payroll_employee_id: payrollId } : dr);
+                          }}
+                        />
+                      </div>
+                    )}
+                    {d.is_employed && p.id.startsWith("new-") && (
                       <p className="mt-2 text-[12px] text-stone-500">
-                        {d.payroll_employee_id
-                          ? "Linked to a payroll record — salary, allowances and increments are kept there."
-                          : "Not yet linked to payroll. Salary and allowances come next — see the note below."}
+                        Save first, then their payroll record can be set up here.
                       </p>
                     )}
                   </div>
@@ -591,11 +608,10 @@ export default function PeopleDirectoryPage() {
       </div>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-        <strong>Coming next:</strong> salary, allowances and special arrangements approved by the
-        Bishop, with the payroll record created automatically and increments reflected back here;
-        and permanent storage of employment letters and correspondence. Salary deliberately is not
-        held on this page — payroll already keeps every revision, and a second copy would be a
-        second answer to what someone is paid.
+        <strong>Coming next:</strong> permanent storage of employment letters and correspondence.
+        Salary is deliberately not held on this page — payroll already keeps every revision, and a
+        second copy would be a second answer to what someone is paid. What you see under Employment
+        is read from there.
       </div>
     </div>
   );
