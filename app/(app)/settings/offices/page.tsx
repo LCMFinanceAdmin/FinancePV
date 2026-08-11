@@ -17,11 +17,13 @@ import {
 } from "lucide-react";
 
 interface Office {
-  id: string; name: string; kind: "CHURCH" | "EXCO" | "DEAN" | "APPOINTED";
+  id: string; name: string; kind: "CHURCH" | "EXCO" | "DEAN" | "APPOINTED" | "COMMITTEE";
   grants_role: string | null; sort_order: number; active: boolean;
   district_id: string | null;
   /** Elected posts have terms and elections; an appointment has a holder. */
   is_elected: boolean;
+  /** A committee seats several people at once; an office seats one. */
+  single_holder: boolean;
 }
 interface Holding {
   id: string; office_id: string; person_id: string;
@@ -72,6 +74,7 @@ export default function OfficesPage() {
   useEffect(() => { load(); }, [load]);
 
   const currentOf = (officeId: string) => holdings.find(h => h.office_id === officeId && !h.term_end);
+  const currentAll = (officeId: string) => holdings.filter(h => h.office_id === officeId && !h.term_end);
   const pastOf = (officeId: string) =>
     holdings.filter(h => h.office_id === officeId && h.term_end)
       .sort((a, b) => (b.term_end ?? "").localeCompare(a.term_end ?? ""));
@@ -95,15 +98,17 @@ export default function OfficesPage() {
     if (!electing || !personId) { say("Choose who was elected", false); return; }
     setSaving(true);
     try {
-      const outgoing = currentOf(electing.id);
-      if (outgoing?.person_id === personId) {
-        say("That person already holds this office", false);
+      // On a committee nobody is replaced — a new member joins alongside.
+      const seatsOne = electing.single_holder;
+      const outgoing = seatsOne ? currentOf(electing.id) : null;
+      if (currentAll(electing.id).some(h => h.person_id === personId)) {
+        say("That person already holds this post", false);
         setSaving(false);
         return;
       }
 
-      // Close first: the unique index allows only one open term per office, so
-      // this has to happen before the new one is inserted.
+      // Close first: only one open term per single-holder office is allowed,
+      // so this has to happen before the new one is inserted.
       if (outgoing) {
         const dayBefore = new Date(new Date(electedOn + "T00:00:00").getTime() - 86400_000)
           .toISOString().slice(0, 10);
@@ -196,6 +201,7 @@ export default function OfficesPage() {
   const deans     = offices.filter(o => o.kind === "DEAN");
   const exco      = offices.filter(o => o.kind === "EXCO");
   const appointed = offices.filter(o => o.kind === "APPOINTED");
+  const committees = offices.filter(o => o.kind === "COMMITTEE");
 
   const section = (title: string, sub: string, icon: React.ReactNode, list: Office[]) => (
     <div className="space-y-2">
@@ -205,20 +211,40 @@ export default function OfficesPage() {
       </div>
       {list.map(o => {
         const cur = currentOf(o.id);
+        const members = currentAll(o.id);
         const past = pastOf(o.id);
         const showing = historyFor === o.id;
         return (
           <div key={o.id} className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white">
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-bold text-stone-800">{o.name}</div>
-                {cur ? (
-                  <div className="text-[13px] text-stone-600">
-                    {nameOf(cur.person_id)}
-                    <span className="text-stone-400"> · since {fmt(cur.term_start)}</span>
-                  </div>
+                <div className="text-sm font-bold text-stone-800">
+                  {o.name}
+                  {!o.single_holder && members.length > 0 && (
+                    <span className="ml-1.5 text-[12px] font-medium text-stone-400">
+                      {members.length} member{members.length === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </div>
+                {members.length > 0 ? (
+                  <ul className="text-[13px] text-stone-600">
+                    {members.map(m => (
+                      <li key={m.id} className="flex flex-wrap items-baseline gap-x-1.5">
+                        <span>{nameOf(m.person_id)}</span>
+                        <span className="text-stone-400">since {fmt(m.term_start)}</span>
+                        {!o.single_holder && (
+                          <button onClick={() => endTerm(m, o)}
+                            className="text-[11px] text-stone-400 hover:text-red-500">
+                            remove
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 ) : (
-                  <div className="text-[13px] font-medium text-amber-700">Vacant</div>
+                  <div className="text-[13px] font-medium text-amber-700">
+                    {o.single_holder ? "Vacant" : "No members"}
+                  </div>
                 )}
               </div>
 
@@ -229,14 +255,16 @@ export default function OfficesPage() {
                   <ChevronRight size={12} className={showing ? "rotate-90" : ""} />
                 </button>
               )}
-              {cur && (
+              {cur && o.single_holder && (
                 <button onClick={() => endTerm(cur, o)}
                   className="text-[12px] font-medium text-stone-400 hover:text-red-500">
                   End term
                 </button>
               )}
               <Button size="sm" variant="secondary" onClick={() => openElection(o)}>
-                <UserPlus size={13} /> {o.is_elected ? (cur ? "New election" : "Elect") : (cur ? "Replace" : "Appoint")}
+                <UserPlus size={13} /> {!o.single_holder ? "Add member"
+                  : o.is_elected ? (cur ? "New election" : "Elect")
+                  : (cur ? "Replace" : "Appoint")}
               </Button>
             </div>
 
@@ -285,6 +313,8 @@ export default function OfficesPage() {
       {section("EXCO Portfolios", "One elected member per committee", <Users size={16} className="text-[#4a6da7]" />, exco)}
       {appointed.length > 0 && section("Appointed Posts", "Permanent appointments, not up for election",
         <Briefcase size={16} className="text-[#4a6da7]" />, appointed)}
+      {committees.length > 0 && section("Committees", "Several members may serve at once — not EXCO posts",
+        <Users size={16} className="text-[#4a6da7]" />, committees)}
 
       {electing && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
@@ -292,7 +322,8 @@ export default function OfficesPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">
-                  {electing.is_elected ? "Record an election" : "Record an appointment"}
+                  {!electing.single_holder ? "Add a committee member"
+                    : electing.is_elected ? "Record an election" : "Record an appointment"}
                 </p>
                 <h2 className="text-lg font-bold text-stone-800">{electing.name}</h2>
               </div>
@@ -305,7 +336,8 @@ export default function OfficesPage() {
             <div className="mt-4 space-y-3">
               <div>
                 <label className="text-[11px] font-medium text-stone-500">
-                  {electing.is_elected ? "Who was elected" : "Who has been appointed"}
+                  {!electing.single_holder ? "Who is joining"
+                    : electing.is_elected ? "Who was elected" : "Who has been appointed"}
                 </label>
                 <select className={inp} value={personId} onChange={e => setPersonId(e.target.value)}>
                   <option value="">— choose a person —</option>
@@ -317,7 +349,8 @@ export default function OfficesPage() {
               </div>
               <div>
                 <label className="text-[11px] font-medium text-stone-500">
-                  {electing.is_elected ? "Date elected / takes office" : "Date they take office"}
+                  {!electing.single_holder ? "Date they join"
+                    : electing.is_elected ? "Date elected / takes office" : "Date they take office"}
                 </label>
                 <input type="date" className={inp} value={electedOn} onChange={e => setElectedOn(e.target.value)} />
               </div>
@@ -328,7 +361,7 @@ export default function OfficesPage() {
               </div>
             </div>
 
-            {currentOf(electing.id) && (
+            {electing.single_holder && currentOf(electing.id) && (
               <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
                 {nameOf(currentOf(electing.id)!.person_id)}&apos;s term ends the day before, and is kept
                 on the record.
@@ -338,7 +371,8 @@ export default function OfficesPage() {
 
             <div className="mt-4 flex gap-2">
               <Button className="flex-1 py-3" loading={saving} disabled={!personId} onClick={recordElection}>
-                {electing.is_elected ? "Record election" : "Record appointment"}
+                {!electing.single_holder ? "Add to committee"
+                  : electing.is_elected ? "Record election" : "Record appointment"}
               </Button>
               <Button variant="ghost" onClick={() => setElecting(null)}>Cancel</Button>
             </div>

@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { EmploymentPanel } from "@/components/people/employment-panel";
 import { DocumentsPanel } from "@/components/people/documents-panel";
+import { ServiceRecord } from "@/components/people/service-record";
 import { Button } from "@/components/ui/button";
 import {
   Plus, Search, ChevronRight, Save, Trash2, X, Users, Church,
@@ -531,10 +532,13 @@ export default function PeopleDirectoryPage() {
                       <p className="mt-1 text-[13px] text-stone-500">None currently.</p>
                     )}
                     <p className="mt-2 text-[11px] text-stone-400">
-                      Elected posts are recorded in <strong>Offices &amp; Elections</strong>; Dean and
-                      head pastor in <strong>Church Directory</strong>. Shown here so they cannot disagree.
+                      Elected and appointed posts are recorded in <strong>Offices &amp; Elections</strong>;
+                      Dean and head pastor in <strong>Church Directory</strong>. Shown here so they
+                      cannot disagree.
                     </p>
                   </div>
+
+                  {!p.id.startsWith("new-") && <ServiceRecord personId={p.id} />}
 
                   {/* Employment */}
                   <div>
