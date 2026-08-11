@@ -16,7 +16,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, RefreshCw, Users, Building2,
   Settings, Activity, ClipboardCheck, PiggyBank, FlaskConical, ShoppingCart,
   ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
-  Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle,
+  Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle, Handshake,
 } from "lucide-react";
 
 export interface NavItem {
@@ -251,6 +251,12 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/settings/offices", label: "Offices & Elections", desc: "Bishop, Secretary, Treasurer and EXCO portfolios",
         icon: <Landmark size={size} />, show: canManagePeople,
+      },
+      {
+        href: "/settings/organisations", label: "Partners & Organisations",
+        desc: "Companion churches, trusts, foundations and institutions",
+        // No personal data here, so any staff member may look it up.
+        icon: <Handshake size={size} />, show: (u) => isStaffMember(u),
       },
       {
         href: "/settings/signatories", label: "Logins & Roles", desc: "Who can sign in and what they may approve",

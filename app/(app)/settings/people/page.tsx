@@ -17,8 +17,9 @@ import { ServiceRecord } from "@/components/people/service-record";
 import { Button } from "@/components/ui/button";
 import {
   Plus, Search, ChevronRight, Save, Trash2, X, Users, Church,
-  Briefcase, HandHeart, Truck, UserCog, AlertCircle, CheckCircle2,
+  Briefcase, HandHeart, Truck, UserCog, AlertCircle, CheckCircle2, Handshake,
 } from "lucide-react";
+import Link from "next/link";
 
 // The classifications LCM actually uses. One primary place in the
 // organisation; EXCO is a flag on top, because pastors and lay members alike
@@ -30,6 +31,10 @@ const CATEGORIES = [
   { key: "VOLUNTEER",     label: "Volunteers",     icon: <Users size={15} />,      accent: "#16a34a" },
   { key: "VENDOR",        label: "Vendors",        icon: <Truck size={15} />,      accent: "#ea580c" },
   { key: "AGENT",         label: "Agents",         icon: <UserCog size={15} />,    accent: "#db2777" },
+  // Someone at a partner body — a companion church, a trust, a foundation.
+  // The body itself is recorded in Partners & Organisations; this is the
+  // person LCM actually speaks to there.
+  { key: "PARTNER",       label: "Partner Contacts", icon: <Handshake size={15} />, accent: "#0d9488" },
   { key: "OTHER",         label: "Other",          icon: <Users size={15} />,      accent: "#64748b" },
 ] as const;
 
@@ -61,6 +66,9 @@ interface Person {
   date_left: string | null;
   company_name: string | null;
   vendor_service: string | null;
+  // A contact at a partner body: which body, and what they do there.
+  organisation_id: string | null;
+  org_role: string | null;
   user_email: string | null;
   payroll_employee_id: string | null;
   notes: string | null;
@@ -71,6 +79,7 @@ interface District { id: string; name: string; dean_email: string | null }
 interface Link { person_id: string; congregation_id: string; is_primary: boolean }
 interface OfficeHolding { person_id: string; office_id: string; term_end: string | null }
 interface Office { id: string; name: string; kind: string }
+interface Organisation { id: string; name: string; short_name: string | null; kind: string }
 
 const inp = "w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
 const lbl = "text-[11px] font-medium text-stone-500";
@@ -81,7 +90,8 @@ const BLANK: Omit<Person, "id"> = {
   ic_no: null, passport_no: null, dob: null, gender: null, marital_status: null,
   hq_department: null, district_id: null, is_exco: false, exco_portfolio: null,
   is_employed: false, date_joined: null, date_left: null,
-  company_name: null, vendor_service: null, user_email: null,
+  company_name: null, vendor_service: null,
+  organisation_id: null, org_role: null, user_email: null,
   payroll_employee_id: null, notes: null,
 };
 
@@ -95,6 +105,7 @@ export default function PeopleDirectoryPage() {
   // Offices & Elections can never disagree about who is Treasurer.
   const [offices, setOffices] = useState<Office[]>([]);
   const [holdings, setHoldings] = useState<OfficeHolding[]>([]);
+  const [organisations, setOrganisations] = useState<Organisation[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [denied, setDenied] = useState(false);
@@ -112,13 +123,14 @@ export default function PeopleDirectoryPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: p, error }, { data: c }, { data: d }, { data: l }, { data: off }, { data: hold }] = await Promise.all([
+    const [{ data: p, error }, { data: c }, { data: d }, { data: l }, { data: off }, { data: hold }, { data: orgs }] = await Promise.all([
       supabase.from("people").select("*").order("full_name"),
       supabase.from("congregations").select("id,name,district_id,head_pastor_email").order("name"),
       supabase.from("districts").select("id,name,dean_email").order("name"),
       supabase.from("person_congregations").select("person_id,congregation_id,is_primary"),
       supabase.from("offices").select("id,name,kind"),
       supabase.from("office_holdings").select("person_id,office_id,term_end"),
+      supabase.from("organisations").select("id,name,short_name,kind").order("name"),
     ]);
     // An empty list with no error usually means RLS refused — say so plainly
     // rather than showing a page that looks like nobody exists.
@@ -129,6 +141,7 @@ export default function PeopleDirectoryPage() {
     setLinks((l ?? []) as Link[]);
     setOffices((off ?? []) as Office[]);
     setHoldings((hold ?? []) as OfficeHolding[]);
+    setOrganisations((orgs ?? []) as Organisation[]);
     setLoading(false);
   }, [supabase]);
 
@@ -173,11 +186,13 @@ export default function PeopleDirectoryPage() {
       if (!showInactive && p.status !== "ACTIVE" && p.id !== openId) return false;
       if (catFilter !== "ALL" && p.category !== catFilter) return false;
       if (!q) return true;
+      const org = organisations.find(o => o.id === p.organisation_id);
       return [p.full_name, p.preferred_name, p.email, p.phone, p.hq_department,
-              p.company_name, p.vendor_service, p.exco_portfolio]
+              p.company_name, p.vendor_service, p.exco_portfolio,
+              org?.name, org?.short_name, p.org_role]
         .some(f => (f ?? "").toLowerCase().includes(q));
     });
-  }, [people, query, catFilter, showInactive, openId]);
+  }, [people, query, catFilter, showInactive, openId, organisations]);
 
   function openNew() {
     const fresh = { ...BLANK, id: `new-${Date.now()}` } as Person;
@@ -287,7 +302,7 @@ export default function PeopleDirectoryPage() {
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
           <h1 className="text-xl font-bold text-stone-800">People Directory</h1>
           <p className="text-sm text-stone-400">
-            Everyone LCM works with — pastors, staff, volunteers, vendors and agents
+            Everyone LCM works with — pastors, staff, volunteers, vendors, agents and partner contacts
           </p>
         </div>
         <Button size="sm" onClick={openNew}><Plus size={13} /> Add Person</Button>
@@ -365,7 +380,9 @@ export default function PeopleDirectoryPage() {
                     )}
                   </div>
                   <p className="truncate text-xs text-stone-400">
-                    {[p.email, p.phone, myCongs.map(c => c.name).join(" & ") || p.hq_department || p.company_name]
+                    {[p.email, p.phone,
+                      myCongs.map(c => c.name).join(" & ") || p.hq_department || p.company_name
+                        || organisations.find(o => o.id === p.organisation_id)?.name]
                       .filter(Boolean).join(" · ")}
                   </p>
                 </div>
@@ -496,6 +513,34 @@ export default function PeopleDirectoryPage() {
                       <div>
                         <label className={lbl}>Goods or service provided</label>
                         <input className={inp} value={d.vendor_service ?? ""} onChange={e => set("vendor_service", e.target.value)} />
+                      </div>
+                    </div>
+                  ) : d.category === "PARTNER" ? (
+                    // The body itself is described in Partners & Organisations.
+                    // Here we only say which one, and what this person does there.
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className={lbl}>Organisation</label>
+                        <select className={inp} value={d.organisation_id ?? ""}
+                          onChange={e => set("organisation_id", e.target.value || null)}>
+                          <option value="">—</option>
+                          {organisations.map(o => (
+                            <option key={o.id} value={o.id}>
+                              {o.short_name ? `${o.name} (${o.short_name})` : o.name}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-[11px] text-stone-400">
+                          Not on the list?{" "}
+                          <Link href="/settings/organisations" className="font-medium text-[#3a6db0] hover:underline">
+                            Add it under Partners &amp; Organisations
+                          </Link>.
+                        </p>
+                      </div>
+                      <div>
+                        <label className={lbl}>Their role there</label>
+                        <input className={inp} value={d.org_role ?? ""} onChange={e => set("org_role", e.target.value)}
+                          placeholder="e.g. Asia Desk Director, Treasurer" />
                       </div>
                     </div>
                   ) : (
