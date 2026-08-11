@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { excoAssignableMinistries } from "@/lib/ministries";
 import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw, ChevronRight, Search, X } from "lucide-react";
+import { fieldClass } from "@/lib/field-styles";
 
 const ROLES = [
   "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
@@ -308,7 +309,7 @@ export default function SignatoriesPage() {
 
             {open && (
             <div className="space-y-3 border-t border-[#eaf1fb] px-4 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <label className="text-xs text-stone-400">Full Name</label>
                   <input className={inp} value={u.full_name} placeholder="Full name"
@@ -327,7 +328,7 @@ export default function SignatoriesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <label className="text-xs text-stone-400">Role</label>
                   <select className={inp} value={u.role}
@@ -374,7 +375,7 @@ export default function SignatoriesPage() {
                   </label>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <div>
                     <label className="text-xs text-stone-400">Designation</label>
                     <input className={inp} value={u.designation ?? ""} placeholder="e.g. Finance Executive, Pastor"
@@ -727,4 +728,4 @@ function PinSetupModal({ userId, email, onClose, showToast }: {
   );
 }
 
-const inp = "border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full";
+const inp = fieldClass;

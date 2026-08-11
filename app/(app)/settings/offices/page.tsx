@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { roleLabel } from "@/lib/utils";
+import { fieldClass } from "@/lib/field-styles";
 import {
   Landmark, Users, History, UserPlus, X, CheckCircle2, AlertCircle, ChevronRight, Church, Briefcase,
 } from "lucide-react";
@@ -31,7 +32,7 @@ interface Holding {
 }
 interface Person { id: string; full_name: string; user_email: string | null; email: string | null }
 
-const inp = "w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+const inp = fieldClass;
 
 function fmt(d?: string | null) {
   if (!d) return "";

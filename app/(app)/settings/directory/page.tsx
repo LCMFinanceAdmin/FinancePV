@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Plus, Trash2, Save, Church, MapPin } from "lucide-react";
+import { fieldClass } from "@/lib/field-styles";
 
 interface District { id: string; name: string; dean_email: string | null; }
 interface Congregation {
@@ -20,7 +21,7 @@ interface Congregation {
 }
 interface Person { email: string; full_name: string; is_pastor: boolean; }
 
-const inp = "border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full";
+const inp = fieldClass;
 
 export default function ChurchDirectoryPage() {
   const supabase = createClient();
@@ -140,7 +141,7 @@ export default function ChurchDirectoryPage() {
         {districts.map(d => (
           <Card key={d.id}>
             <CardBody className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <div>
                   <label className="text-xs text-stone-400">District name</label>
                   <input className={inp} value={d.name} placeholder="e.g. Central District"
@@ -188,7 +189,7 @@ export default function ChurchDirectoryPage() {
           return (
             <Card key={c.id}>
               <CardBody className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-3">
                   <div>
                     <label className="text-xs text-stone-400">Congregation name</label>
                     <input className={inp} value={c.name} placeholder="e.g. Bangsar Lutheran Church"

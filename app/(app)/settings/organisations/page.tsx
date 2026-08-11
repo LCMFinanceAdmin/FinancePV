@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
   Plus, Search, ChevronRight, Save, Trash2, X, CheckCircle2, AlertCircle,
   Handshake, Globe, Landmark, Building2, HeartHandshake, GraduationCap, Send,
@@ -77,8 +78,8 @@ interface Contact {
   email: string | null; phone: string | null; organisation_id: string | null;
 }
 
-const inp = "w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
-const lbl = "text-[11px] font-medium text-stone-500";
+const inp = fieldClass;
+const lbl = labelClass;
 
 const BLANK: Omit<Organisation, "id"> = {
   name: "", short_name: null, kind: "PARTNER_CHURCH", relationship: null,
@@ -331,7 +332,7 @@ export default function OrganisationsPage() {
               {isOpen && d && (
                 <div className="space-y-5 border-t border-[#eaf1fb] px-4 py-4">
                   <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-90">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       <div>
                         <label className={lbl}>Full name *</label>
                         <input className={inp} value={d.name} onChange={e => set("name", e.target.value)}
@@ -386,7 +387,7 @@ export default function OrganisationsPage() {
 
                     <div>
                       <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-stone-500">Contact</p>
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid gap-2 sm:grid-cols-2">
                         <div>
                           <label className={lbl}>Country</label>
                           <input className={inp} value={d.country ?? ""} onChange={e => set("country", e.target.value)} />
