@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { EmploymentPanel } from "@/components/people/employment-panel";
+import { DocumentsPanel } from "@/components/people/documents-panel";
 import { Button } from "@/components/ui/button";
 import {
   Plus, Search, ChevronRight, Save, Trash2, X, Users, Church,
@@ -592,6 +593,12 @@ export default function PeopleDirectoryPage() {
                       placeholder="Anything worth keeping on the record" />
                   </div>
 
+                  {/* Letters and correspondence outlive every field above, so
+                      they are kept whether or not the person is employed. */}
+                  {!p.id.startsWith("new-") && (
+                    <DocumentsPanel personId={p.id} personName={p.full_name} />
+                  )}
+
                   <div className="flex items-center gap-2 border-t border-stone-100 pt-3">
                     <Button size="sm" variant="secondary" loading={saving} onClick={save}>
                       <Save size={13} /> Save
@@ -608,10 +615,10 @@ export default function PeopleDirectoryPage() {
       </div>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-        <strong>Coming next:</strong> permanent storage of employment letters and correspondence.
         Salary is deliberately not held on this page — payroll already keeps every revision, and a
         second copy would be a second answer to what someone is paid. What you see under Employment
-        is read from there.
+        is read from there. Documents are stored privately and opened through links that expire,
+        so an employment letter cannot be reached by guessing an address.
       </div>
     </div>
   );
