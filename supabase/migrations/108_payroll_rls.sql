@@ -15,9 +15,15 @@
 --   can_manage_payroll()      — Finance, Accounts, the GM. Runs payroll.
 --   my_payroll_employee_id()  — anyone, about themselves only.
 --
--- Signatories are NOT included. A Treasurer approves the payroll voucher as a
--- total; that does not require the individual salaries behind it, and this is
--- the one place where "senior role" has never meant "may see everything".
+-- Two capabilities is not quite enough, because the signatories sit in between:
+-- the Bishop and Treasurer sign loan applications and the audit log is already
+-- open to all three of them. So there is a third, narrower one:
+--   can_oversee_payroll()     — the signatories. Loans, runs and the audit log
+--                               as totals and decisions; never an individual
+--                               salary, payslip or employee record.
+--
+-- That line is deliberate. Approving a payroll voucher means agreeing a total;
+-- it has never meant reading what each person is paid.
 
 -- ── Who runs payroll ──────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION can_manage_payroll()
@@ -35,6 +41,26 @@ AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION can_manage_payroll() TO authenticated;
+
+-- ── Who oversees it without running it ────────────────────────────────────
+-- The signatories. They sign loan applications and read the audit log; both
+-- are already offered to them by the app, and closing them would be a
+-- regression dressed up as a fix.
+CREATE OR REPLACE FUNCTION can_oversee_payroll()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM user_roles ur
+     WHERE ur.email = (auth.jwt() ->> 'email')
+       AND ur.role IN ('BISHOP','TREASURER','SECRETARY')
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION can_oversee_payroll() TO authenticated;
 
 -- ── Which payroll record is mine ──────────────────────────────────────────
 -- The link runs login → people.user_email → people.id → payroll_employees.
@@ -81,12 +107,15 @@ CREATE POLICY "ps_write" ON payroll_salary FOR ALL TO authenticated
 -- ── payroll_runs ──────────────────────────────────────────────────────────
 -- A run is the whole month for the whole church. There is no "my" version of
 -- it, so this one is managers only.
+DROP POLICY IF EXISTS "prun_all"    ON payroll_runs;
 DROP POLICY IF EXISTS "prun_select" ON payroll_runs;
 DROP POLICY IF EXISTS "prun_insert" ON payroll_runs;
 DROP POLICY IF EXISTS "prun_update" ON payroll_runs;
 DROP POLICY IF EXISTS "prun_delete" ON payroll_runs;
 
-CREATE POLICY "prun_all" ON payroll_runs FOR ALL TO authenticated
+CREATE POLICY "prun_read" ON payroll_runs FOR SELECT TO authenticated
+  USING (can_manage_payroll() OR can_oversee_payroll());
+CREATE POLICY "prun_write" ON payroll_runs FOR ALL TO authenticated
   USING (can_manage_payroll()) WITH CHECK (can_manage_payroll());
 
 -- ── payroll_lines ─────────────────────────────────────────────────────────
@@ -102,12 +131,15 @@ CREATE POLICY "pline_write" ON payroll_lines FOR ALL TO authenticated
   USING (can_manage_payroll()) WITH CHECK (can_manage_payroll());
 
 -- ── payroll_vouchers ──────────────────────────────────────────────────────
+DROP POLICY IF EXISTS "pvou_all"    ON payroll_vouchers;
 DROP POLICY IF EXISTS "pvou_select" ON payroll_vouchers;
 DROP POLICY IF EXISTS "pvou_insert" ON payroll_vouchers;
 DROP POLICY IF EXISTS "pvou_update" ON payroll_vouchers;
 DROP POLICY IF EXISTS "pvou_delete" ON payroll_vouchers;
 
-CREATE POLICY "pvou_all" ON payroll_vouchers FOR ALL TO authenticated
+CREATE POLICY "pvou_read" ON payroll_vouchers FOR SELECT TO authenticated
+  USING (can_manage_payroll() OR can_oversee_payroll());
+CREATE POLICY "pvou_write" ON payroll_vouchers FOR ALL TO authenticated
   USING (can_manage_payroll()) WITH CHECK (can_manage_payroll());
 
 -- ── employee_loans ────────────────────────────────────────────────────────
@@ -119,7 +151,7 @@ DROP POLICY IF EXISTS "el_update" ON employee_loans;
 DROP POLICY IF EXISTS "el_delete" ON employee_loans;
 
 CREATE POLICY "el_read" ON employee_loans FOR SELECT TO authenticated
-  USING (can_manage_payroll() OR employee_id = my_payroll_employee_id());
+  USING (can_manage_payroll() OR can_oversee_payroll() OR employee_id = my_payroll_employee_id());
 CREATE POLICY "el_write" ON employee_loans FOR ALL TO authenticated
   USING (can_manage_payroll()) WITH CHECK (can_manage_payroll());
 
@@ -172,7 +204,7 @@ BEGIN
     EXECUTE 'DROP POLICY IF EXISTS "pal_read"   ON payroll_audit_log';
     EXECUTE 'DROP POLICY IF EXISTS "pal_write"  ON payroll_audit_log';
     EXECUTE 'CREATE POLICY "pal_read" ON payroll_audit_log FOR SELECT TO authenticated
-             USING (can_manage_payroll())';
+             USING (can_manage_payroll() OR can_oversee_payroll())';
     -- Append-only: the log is written as actions happen and never amended.
     EXECUTE 'CREATE POLICY "pal_append" ON payroll_audit_log FOR INSERT TO authenticated
              WITH CHECK (can_manage_payroll())';
@@ -258,6 +290,8 @@ $$;
 GRANT EXECUTE ON FUNCTION next_payment_ref(UUID, UUID, TEXT) TO authenticated;
 
 COMMENT ON FUNCTION can_manage_payroll() IS
-  'Finance, Accounts and the GM. Signatories are excluded — approving a total does not require the salaries behind it.';
+  'Finance, Accounts and the GM. Runs payroll.';
+COMMENT ON FUNCTION can_oversee_payroll() IS
+  'Signatories. Loans, runs and the audit log; never an individual salary or payslip.';
 COMMENT ON FUNCTION my_payroll_employee_id() IS
   'The caller''s own payroll record, via people.user_email. NULL when unlinked, which fails closed.';
