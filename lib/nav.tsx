@@ -260,8 +260,8 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/settings/payment-refs", label: "Payment References",
         desc: "Reference series per bank account — prefix, digits, running number",
-        icon: <Hash size={size} />,
-        show: (u) => u.isFinanceAdmin || u.isGeneralManager,
+        // The Accounts Executive keeps these; the Finance Executive covers.
+        icon: <Hash size={size} />, show: (u) => u.isFinanceAdmin,
       },
       {
         href: "/settings/directory", label: "Church Directory", desc: "Districts, congregations, Deans",

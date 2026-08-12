@@ -160,7 +160,8 @@ export default function PaymentRefsPage() {
       {!canEdit && (
         <div className="flex items-start gap-2 rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-3 text-[13px] text-stone-600">
           <AlertCircle size={15} className="mt-0.5 shrink-0 text-[#4a6da7]" />
-          You can see the series but not change them. Finance and the General Manager keep these.
+          You can see the series but not change them. The Accounts Executive keeps these, with
+          the Finance Executive as cover.
         </div>
       )}
 

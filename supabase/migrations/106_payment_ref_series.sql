@@ -143,8 +143,14 @@ GRANT EXECUTE ON FUNCTION next_payment_ref(UUID, UUID, TEXT) TO authenticated;
 
 -- ── Who may read and change the series ────────────────────────────────────
 -- Anyone signed in may read one: a reference on a voucher should be
--- explainable by whoever is looking at it. Only the finance desk sets them,
--- and the Accounts Executive is the one who actually keeps them.
+-- explainable by whoever is looking at it.
+--
+-- Keeping them is the Accounts Executive's job. The Finance Executive can
+-- reach them too, so a series is never stuck waiting on one person — a prefix
+-- that needs correcting on a Friday afternoon should not hold up payments
+-- until Monday. Nobody else, including the General Manager: the numbers are
+-- bookkeeping, and a second hand in them is how two vouchers end up sharing a
+-- reference.
 CREATE OR REPLACE FUNCTION can_manage_payment_refs()
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -155,7 +161,8 @@ AS $$
   SELECT EXISTS (
     SELECT 1 FROM user_roles ur
      WHERE ur.email = (auth.jwt() ->> 'email')
-       AND ur.role IN ('FINANCE_ADMIN','FINANCE_ADMIN_2','FINANCE_ADMIN_3','GENERAL_MANAGER')
+       AND ur.role IN ('FINANCE_ADMIN_2',                    -- keeps them
+                       'FINANCE_ADMIN', 'FINANCE_ADMIN_3')   -- cover
   );
 $$;
 
