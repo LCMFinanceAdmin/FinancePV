@@ -82,6 +82,32 @@ export function roleLabel(role?: string | null): string {
   return ROLE_LABELS[role] ?? role.replace(/_/g, " ");
 }
 
+/**
+ * The roles a test admin can switch into, in the order they are offered.
+ *
+ * The sidebar, the mobile nav and the Switch Role page each kept their own copy
+ * of this list, so a new role reached the switcher only if someone remembered
+ * all three — which is how Administrator came to exist without being testable.
+ * One list now; the labels come from ROLE_LABELS above.
+ */
+export const SWITCHABLE_ROLES = [
+  "FINANCE_ADMIN",
+  "FINANCE_ADMIN_2",
+  "ADMINISTRATOR",
+  "GENERAL_MANAGER",
+  "BISHOP",
+  "TREASURER",
+  "SECRETARY",
+  "MINISTRY_HEAD",
+  "BUILDING_MANAGER",
+  "BAM_COMMITTEE",
+  "STAFF",
+] as const;
+
+/** The same list as {value,label} pairs, ready for a <select>. */
+export const switchableRoleOptions = () =>
+  SWITCHABLE_ROLES.map(value => ({ value, label: roleLabel(value) }));
+
 export const STATUS_LABELS: Record<PVStatus, string> = {
   PENDING_HEAD:       "Pending EXCO Review",
   PENDING:            "Pending Finance Review",

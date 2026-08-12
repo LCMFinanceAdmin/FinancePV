@@ -5,24 +5,13 @@ import { useState, useEffect } from "react";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import { excoAssignableMinistries } from "@/lib/ministries";
 import { LogOut, ChevronRight, ChevronDown, FlaskConical } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, switchableRoleOptions } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 import { visibleGroups, visiblePinned, groupForPath, activeHref } from "@/lib/nav";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
-const TEST_ROLES = [
-  { value: "FINANCE_ADMIN",    label: "Finance Executive" },
-  { value: "FINANCE_ADMIN_2",  label: "Accounts Executive" },
-  { value: "GENERAL_MANAGER",  label: "General Manager" },
-  { value: "BISHOP",           label: "Bishop" },
-  { value: "TREASURER",        label: "Treasurer" },
-  { value: "SECRETARY",        label: "Secretary" },
-  { value: "MINISTRY_HEAD",    label: "EXCO Member" },
-  { value: "BUILDING_MANAGER", label: "Building/Event Mgr" },
-  { value: "BAM_COMMITTEE",    label: "BAM Committee PIC" },
-  { value: "STAFF",            label: "Staff" },
-];
+const TEST_ROLES = switchableRoleOptions();
 
 const TEST_MINISTRIES = [
   "Mission", "Worship", "Youth", "Children", "Discipleship",

@@ -8,7 +8,7 @@ import {
   FlaskConical, X, ClipboardList, Activity, PiggyBank, Menu, LogOut, Hammer,
   CalendarDays, Inbox,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, switchableRoleOptions, ROLE_LABELS as ROLE_LABELS_SHARED } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { excoAssignableMinistries } from "@/lib/ministries";
@@ -17,32 +17,8 @@ import { LutherRose } from "@/components/ui/luther-rose";
 
 const SIDEBAR_GRADIENT = "linear-gradient(160deg, #1e3a6f 0%, #2a4d8f 40%, #4a2080 100%)";
 
-const ROLE_LABELS: Record<string, string> = {
-  FINANCE_ADMIN:    "Finance Executive",
-  FINANCE_ADMIN_2:  "Accounts Executive",
-  FINANCE_ADMIN_3:  "Finance Executive",
-  GENERAL_MANAGER:  "General Manager",
-  BISHOP:           "Bishop",
-  TREASURER:        "Treasurer",
-  SECRETARY:        "Secretary",
-  MINISTRY_HEAD:    "EXCO Member",
-  BUILDING_MANAGER: "Building / Event Mgr",
-  BAM_COMMITTEE:    "BAM Committee PIC",
-  STAFF:            "Staff",
-};
 
-const TEST_ROLES = [
-  { value: "FINANCE_ADMIN",    label: "Finance Executive" },
-  { value: "FINANCE_ADMIN_2",  label: "Accounts Executive" },
-  { value: "GENERAL_MANAGER",  label: "General Manager" },
-  { value: "BISHOP",           label: "Bishop" },
-  { value: "TREASURER",        label: "Treasurer" },
-  { value: "SECRETARY",        label: "Secretary" },
-  { value: "MINISTRY_HEAD",    label: "EXCO Member" },
-  { value: "BUILDING_MANAGER", label: "Building/Event Mgr" },
-  { value: "BAM_COMMITTEE",    label: "BAM Committee PIC" },
-  { value: "STAFF",            label: "Staff" },
-];
+const TEST_ROLES = switchableRoleOptions();
 
 const TEST_MINISTRIES = [
   "Mission", "Worship", "Youth", "Children", "Discipleship",
@@ -126,7 +102,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
   ];
 
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-  const roleLabel = ROLE_LABELS[user.role] ?? user.role;
+  const roleLabel = ROLE_LABELS_SHARED[user.role] ?? user.role;
 
   return (
     <>

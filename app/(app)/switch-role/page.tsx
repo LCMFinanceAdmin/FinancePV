@@ -4,21 +4,30 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { excoAssignableMinistries } from "@/lib/ministries";
 import { Eye, EyeOff } from "lucide-react";
+import { switchableRoleOptions } from "@/lib/utils";
 
 const TEST_ADMIN_EMAILS = ["finance@lcm.org.my", "jermaineaaron1991@gmail.com"];
 
-const ROLES = [
-  { value: "FINANCE_ADMIN",   label: "Finance Executive",  color: "bg-blue-100 text-blue-800 border-blue-200" },
-  { value: "FINANCE_ADMIN_2", label: "Accounts Executive", color: "bg-blue-100 text-blue-800 border-blue-200" },
-  { value: "GENERAL_MANAGER", label: "General Manager",    color: "bg-purple-100 text-purple-800 border-purple-200" },
-  { value: "BISHOP",          label: "Bishop",             color: "bg-indigo-100 text-indigo-800 border-indigo-200" },
-  { value: "TREASURER",       label: "Treasurer",          color: "bg-green-100 text-green-800 border-green-200" },
-  { value: "SECRETARY",       label: "Secretary",          color: "bg-teal-100 text-teal-800 border-teal-200" },
-  { value: "MINISTRY_HEAD",    label: "EXCO Member",           color: "bg-amber-100 text-amber-800 border-amber-200" },
-  { value: "BUILDING_MANAGER", label: "Building/Event Manager", color: "bg-orange-100 text-orange-800 border-orange-200" },
-  { value: "BAM_COMMITTEE",    label: "BAM Committee PIC",      color: "bg-orange-100 text-orange-800 border-orange-200" },
-  { value: "STAFF",            label: "Staff",                  color: "bg-stone-100 text-stone-600 border-stone-200" },
-];
+// Colour per role; the roles themselves and their labels come from the one
+// shared list, so a new role appears here without being added twice.
+const ROLE_COLOURS: Record<string, string> = {
+  FINANCE_ADMIN:    "bg-blue-100 text-blue-800 border-blue-200",
+  FINANCE_ADMIN_2:  "bg-blue-100 text-blue-800 border-blue-200",
+  ADMINISTRATOR:    "bg-violet-100 text-violet-800 border-violet-200",
+  GENERAL_MANAGER:  "bg-purple-100 text-purple-800 border-purple-200",
+  BISHOP:           "bg-indigo-100 text-indigo-800 border-indigo-200",
+  TREASURER:        "bg-green-100 text-green-800 border-green-200",
+  SECRETARY:        "bg-teal-100 text-teal-800 border-teal-200",
+  MINISTRY_HEAD:    "bg-amber-100 text-amber-800 border-amber-200",
+  BUILDING_MANAGER: "bg-orange-100 text-orange-800 border-orange-200",
+  BAM_COMMITTEE:    "bg-orange-100 text-orange-800 border-orange-200",
+  STAFF:            "bg-stone-100 text-stone-600 border-stone-200",
+};
+
+const ROLES = switchableRoleOptions().map(r => ({
+  ...r,
+  color: ROLE_COLOURS[r.value] ?? "bg-stone-100 text-stone-600 border-stone-200",
+}));
 type Role = (typeof ROLES)[number]["value"];
 
 // EXCO Members (MINISTRY_HEAD) and the GM don't use an approval PIN — EXCO
