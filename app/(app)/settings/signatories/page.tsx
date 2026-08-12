@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { excoAssignableMinistries } from "@/lib/ministries";
-import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw, ChevronRight, Search, X } from "lucide-react";
+import { Plus, Trash2, Save, ShieldCheck, Eye, EyeOff, RotateCcw, ChevronRight, Search, X, Unlock } from "lucide-react";
 import { fieldClass } from "@/lib/field-styles";
 
 const ROLES = [
@@ -125,6 +125,10 @@ export default function SignatoriesPage() {
   // person. Only the row being edited is open.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+  // Who cannot approve right now because of wrong PINs. Read through
+  // locked_pins(), which exposes the lock and nothing else — the credentials
+  // table itself stays closed to the browser.
+  const [lockedUntil, setLockedUntil] = useState<Record<string, string>>({});
 
   const toggle = (id: string) => setExpanded(s => {
     const next = new Set(s);
@@ -133,13 +137,14 @@ export default function SignatoriesPage() {
   });
 
   async function load() {
-    const [{ data: ur }, { data: min }, { data: cong }, { data: dist }] = await Promise.all([
+    const [{ data: ur }, { data: min }, { data: cong }, { data: dist }, { data: locks }] = await Promise.all([
       supabase.from("user_roles")
         .select("id,email,full_name,role,ministries,has_pin,is_lcm_staff,is_pastor,designation,congregation_id,reports_to")
         .order("role"),
       supabase.from("ministries").select("name").order("name"),
       supabase.from("congregations").select("*").order("name"),
       supabase.from("districts").select("*").order("name"),
+      supabase.rpc("locked_pins"),
     ]);
     setUsers(ur ?? []);
     setCongregations((cong ?? []) as Congregation[]);
@@ -147,6 +152,10 @@ export default function SignatoriesPage() {
     // Only standing committees can be assigned to an EXCO Member — offices,
     // payee groupings and finance functions are filtered out.
     setMinistries(excoAssignableMinistries((min ?? []).map((m: { name: string }) => m.name)));
+    setLockedUntil(Object.fromEntries(
+      ((locks ?? []) as { email: string; locked_until: string }[])
+        .map(l => [l.email.trim().toLowerCase(), l.locked_until]),
+    ));
     setLoading(false);
   }
 
@@ -177,6 +186,28 @@ export default function SignatoriesPage() {
     await supabase.from("user_roles").delete().eq("id", id);
     setUsers(u => u.filter(x => x.id !== id));
     showToast("Removed");
+  }
+
+  /**
+   * Clear a lockout without touching the PIN.
+   *
+   * Someone who mistyped five times on a Sunday morning knows their PIN — they
+   * typed it badly. Making them choose a new one to get back to signing would
+   * be a punishment for a slip.
+   */
+  async function unlockPin(userId: string, email: string) {
+    setSaving(true);
+    const session = (await supabase.auth.getSession()).data.session;
+    const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/set-pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ target_user_id: userId, unlock: true }),
+    });
+    const result = await res.json();
+    setSaving(false);
+    if (!res.ok) { showToast("Error: " + result.error); return; }
+    await load();
+    showToast(`${email} can approve again`);
   }
 
   // Clear a signatory's PIN so they set a fresh one themselves on their own
@@ -295,6 +326,11 @@ export default function SignatoriesPage() {
                       u.has_pin ? "bg-green-100 text-green-700" : "bg-stone-100 text-stone-500"
                     }`}>
                       {u.has_pin ? "PIN set" : "No PIN"}
+                    </span>
+                  )}
+                  {lockedUntil[u.email.trim().toLowerCase()] && (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                      Locked out
                     </span>
                   )}
                 </div>
@@ -424,6 +460,11 @@ export default function SignatoriesPage() {
                 </Button>
                 {/* EXCO Members (MINISTRY_HEAD) no longer use an approval PIN —
                     their verification is evidenced by a drawn signature. */}
+                {lockedUntil[u.email.trim().toLowerCase()] && (
+                  <Button size="sm" variant="secondary" loading={saving} onClick={() => unlockPin(u.id, u.email)}>
+                    <Unlock size={13} /> Unlock PIN
+                  </Button>
+                )}
                 {["BISHOP", "TREASURER", "SECRETARY"].includes(u.role) && (
                   u.has_pin ? (
                     <Button size="sm" variant="ghost" loading={saving} onClick={() => resetPin(u.id, u.email)}>

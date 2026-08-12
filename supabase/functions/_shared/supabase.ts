@@ -30,7 +30,7 @@ export async function getProfileByEmail(
   // readable directory profile. This helper runs only in service-role actions.
   const { data: credentials } = await db
     .from("user_security_credentials")
-    .select("pin_hash,has_pin,saved_signatures")
+    .select("pin_hash,has_pin,saved_signatures,pin_failed_attempts,pin_last_failed_at,pin_locked_until")
     .eq("email", email)
     .maybeSingle();
 
@@ -40,6 +40,9 @@ export async function getProfileByEmail(
     has_pin: credentials?.has_pin ?? false,
     saved_signature: null,
     saved_signatures: credentials?.saved_signatures ?? {},
+    pin_failed_attempts: credentials?.pin_failed_attempts ?? 0,
+    pin_last_failed_at: credentials?.pin_last_failed_at ?? null,
+    pin_locked_until: credentials?.pin_locked_until ?? null,
   };
 }
 

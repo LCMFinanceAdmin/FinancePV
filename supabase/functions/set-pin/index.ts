@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const db = getServiceClient();
-    const { target_user_id, pin, reset } = await req.json();
+    const { target_user_id, pin, reset, unlock } = await req.json();
 
     // ── RESET: a Finance Executive clears a signatory's PIN so they can set a
     // fresh one themselves. The admin never learns the new PIN — this is the
@@ -26,10 +26,31 @@ Deno.serve(async (req) => {
       const { data: target } = await db.from("user_roles").select("email").eq("id", target_user_id).maybeSingle();
       if (!target?.email) return json({ error: "Target user not found" }, 404);
       const { error: clearError } = await db.from("user_security_credentials").upsert({
-        email: target.email, pin_hash: null, has_pin: false, updated_at: new Date().toISOString(),
+        email: target.email, pin_hash: null, has_pin: false,
+        pin_failed_attempts: 0, pin_last_failed_at: null, pin_locked_until: null,
+        updated_at: new Date().toISOString(),
       }, { onConflict: "email" });
       if (clearError) return json({ error: "Failed to reset PIN" }, 500);
       return json({ ok: true, reset: true });
+    }
+
+    // ── UNLOCK: clear a lockout without touching the PIN. Someone who mistyped
+    // five times on a Sunday morning should not have to choose a new PIN to get
+    // back to signing — they know theirs, they just typed it badly. ──
+    if (unlock) {
+      if (!target_user_id) return json({ error: "target_user_id required to unlock a PIN" }, 400);
+      const caller = await getProfileByEmail(db, user.email!, "role");
+      if (!["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(caller?.role)) {
+        return json({ error: "Finance Executive only" }, 403);
+      }
+      const { data: target } = await db.from("user_roles").select("email").eq("id", target_user_id).maybeSingle();
+      if (!target?.email) return json({ error: "Target user not found" }, 404);
+      const { error: unlockError } = await db.from("user_security_credentials").update({
+        pin_failed_attempts: 0, pin_last_failed_at: null, pin_locked_until: null,
+        updated_at: new Date().toISOString(),
+      }).eq("email", target.email);
+      if (unlockError) return json({ error: "Failed to unlock PIN" }, 500);
+      return json({ ok: true, unlocked: true });
     }
 
     if (!pin || !/^\d{6}$/.test(pin)) return json({ error: "PIN must be 6 digits" }, 400);

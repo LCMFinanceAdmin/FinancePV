@@ -89,8 +89,59 @@ Deno.serve(async (req) => {
       if (!pin) return json({ error: "Approval PIN required" }, 400);
       const userRole = await getProfileByEmail(db, user.email!, "pin_hash,has_pin");
       if (!userRole?.has_pin) return json({ error: "No approval PIN set. Ask Finance Executive to set your PIN." }, 403);
+
+      // A six-digit PIN can be guessed a million ways. Five wrong attempts
+      // within fifteen minutes locks it for fifteen — long enough that trying
+      // the whole space would take years, short enough that a mistyped PIN
+      // costs a cup of tea rather than a telephone call. Finance can clear it.
+      const MAX_ATTEMPTS = 5;
+      const WINDOW_MS = 15 * 60_000;
+      const LOCK_MS = 15 * 60_000;
+
+      const lockedUntil = userRole.pin_locked_until ? new Date(userRole.pin_locked_until) : null;
+      if (lockedUntil && lockedUntil > new Date()) {
+        const mins = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60_000));
+        return json({
+          error: `Too many incorrect PINs. Try again in ${mins} minute${mins === 1 ? "" : "s"}, or ask Finance to unlock it.`,
+        }, 429);
+      }
+
       const check = await verifyPin(pin, userRole.pin_hash);
-      if (!check.ok) return json({ error: "Incorrect PIN" }, 403);
+      if (!check.ok) {
+        // Attempts far apart are not an attack, so the count decays rather than
+        // creeping up over months of the occasional slip.
+        const lastFailed = userRole.pin_last_failed_at ? new Date(userRole.pin_last_failed_at) : null;
+        const withinWindow = lastFailed && Date.now() - lastFailed.getTime() < WINDOW_MS;
+        const attempts = (withinWindow ? (userRole.pin_failed_attempts ?? 0) : 0) + 1;
+        const nowIso = new Date().toISOString();
+
+        await db.from("user_security_credentials").update({
+          pin_failed_attempts: attempts,
+          pin_last_failed_at: nowIso,
+          pin_locked_until: attempts >= MAX_ATTEMPTS
+            ? new Date(Date.now() + LOCK_MS).toISOString()
+            : null,
+          updated_at: nowIso,
+        }).eq("email", user.email!);
+
+        if (attempts >= MAX_ATTEMPTS) {
+          return json({
+            error: "Too many incorrect PINs. The PIN is locked for 15 minutes — or ask Finance to unlock it.",
+          }, 429);
+        }
+        const left = MAX_ATTEMPTS - attempts;
+        return json({
+          error: `Incorrect PIN. ${left} attempt${left === 1 ? "" : "s"} left before it locks.`,
+        }, 403);
+      }
+
+      // A correct PIN clears the count — the run of failures is over.
+      if ((userRole.pin_failed_attempts ?? 0) > 0 || userRole.pin_locked_until) {
+        await db.from("user_security_credentials").update({
+          pin_failed_attempts: 0, pin_last_failed_at: null, pin_locked_until: null,
+          updated_at: new Date().toISOString(),
+        }).eq("email", user.email!);
+      }
       // A PIN still stored under the old scheme is rewritten the moment it is
       // used correctly, so nobody is asked to re-set one. Failing to write it
       // back is not worth refusing the approval over — it will upgrade next
