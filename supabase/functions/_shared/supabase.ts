@@ -28,11 +28,26 @@ export async function getProfileByEmail(
 
   // PIN hashes and reusable signatures intentionally live outside the broadly
   // readable directory profile. This helper runs only in service-role actions.
-  const { data: credentials } = await db
+  // The lockout columns arrive with migration 111. A function deploy and a
+  // migration are two separate acts and will not land in the same instant, so
+  // this asks for them and falls back to the columns that have always been
+  // there if they are not present yet. Without that, the gap between deploying
+  // and migrating is a gap in which no signatory can approve anything — the
+  // failed select returns no credentials at all, and every PIN reads as unset.
+  let { data: credentials } = await db
     .from("user_security_credentials")
     .select("pin_hash,has_pin,saved_signatures,pin_failed_attempts,pin_last_failed_at,pin_locked_until")
     .eq("email", email)
     .maybeSingle();
+
+  if (!credentials) {
+    const fallback = await db
+      .from("user_security_credentials")
+      .select("pin_hash,has_pin,saved_signatures")
+      .eq("email", email)
+      .maybeSingle();
+    credentials = fallback.data;
+  }
 
   return {
     ...profile,
