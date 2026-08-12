@@ -152,8 +152,8 @@ export default function PaymentsPage() {
         // One reference per voucher, not one for the batch: the bank statement
         // shows a line per payment, and reconciling needs them to match 1:1.
         let ref = payRef.trim();
+        const pv = approved.find(p => p.id === pvId);
         if (autoRef) {
-          const pv = approved.find(p => p.id === pvId);
           const { data, error } = await supabase.rpc("next_payment_ref", {
             p_account_id: payAccountId,
             p_pv_id: pvId,
@@ -182,8 +182,18 @@ export default function PaymentsPage() {
           }),
         });
         const result = await res.json();
-        if (res.ok) successCount++;
-        else lastError = result.error ?? "Failed";
+        if (res.ok) { successCount++; continue; }
+
+        lastError = result.error ?? "Failed";
+        // The number was issued a moment ago and this voucher did not take it.
+        // Carrying on would burn one number per failure, so stop here and say
+        // which reference is now stranded — it is in the ledger, and whoever
+        // reconciles the statement will otherwise be looking for a payment
+        // that was never made.
+        if (autoRef) {
+          lastError = `${lastError} — ${ref} was issued but not recorded. Check ${pv?.pv_no ?? "the voucher"} before retrying.`;
+          break;
+        }
       }
 
       // The series moved, so the preview in the modal is now stale.
