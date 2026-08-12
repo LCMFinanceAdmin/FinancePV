@@ -16,7 +16,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, RefreshCw, Users, Building2,
   Settings, Activity, ClipboardCheck, PiggyBank, FlaskConical, ShoppingCart,
   ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
-  Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle, Handshake, Hash,
+  Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle, Handshake, Hash, CalendarCheck,
 } from "lucide-react";
 
 export interface NavItem {
@@ -55,6 +55,14 @@ const canManagePeople = (u: UserProfile) =>
 const isAcct = (u: UserProfile) => !!u.isAccountsExec;
 /** Finance, but not the Accounts Executive. */
 const financeNotAcct = (u: UserProfile) => u.isFinanceAdmin && !isAcct(u);
+
+/**
+ * The Administrator keeps the church's records and watches the leave. She has
+ * no part in the money at all — not budgets, not vouchers, not payroll — so
+ * rather than qualifying every finance entry with "and not her", the finance
+ * groups check this once.
+ */
+const isAdmin = (u: UserProfile) => !!u.isAdministrator;
 
 const size = 16;
 
@@ -127,7 +135,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/payment-requests", label: "Payment Requests", desc: "Request a payment from your ministry",
-        icon: <ShoppingCart size={size} />, show: () => true,
+        icon: <ShoppingCart size={size} />, show: (u) => !isAdmin(u),
       },
       {
         href: "/recurring", label: "Recurring Expenses", desc: "Scheduled monthly and yearly payments",
@@ -265,7 +273,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/settings/directory", label: "Church Directory", desc: "Districts, congregations, Deans",
-        icon: <Church size={size} />, show: (u) => u.isFinanceAdmin,
+        icon: <Church size={size} />, show: (u) => u.isFinanceAdmin || isAdmin(u),
       },
       {
         href: "/settings/people", label: "People Directory", desc: "Pastors, staff, volunteers, vendors and agents",
@@ -284,6 +292,12 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/settings/signatories", label: "Logins & Roles", desc: "Who can sign in and what they may approve",
         icon: <Briefcase size={size} />, show: financeNotAcct,
+      },
+      {
+        href: "/leave-overview", label: "Leave Overview",
+        desc: "Everyone's balances, and who still has to sign",
+        icon: <CalendarCheck size={size} />,
+        show: (u) => isAdmin(u) || u.isGeneralManager || financeNotAcct(u),
       },
       {
         href: "/switch-role", label: "Switch Role", desc: "Test the app as another role",
