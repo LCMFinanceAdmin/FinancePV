@@ -162,6 +162,24 @@ export async function nextLscPvNo(db: ReturnType<typeof getServiceClient>): Prom
   return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`;
 }
 
+/** Lutheran Garden Berhad — its own series, paid from Hong Leong. */
+export async function nextLgbPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `LGB-${year}-`;
+  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  if (reclaimed) return reclaimed;
+  const { data } = await db
+    .from("pvs")
+    .select("pv_no")
+    .like("pv_no", `${prefix}%`)
+    .order("pv_no", { ascending: false })
+    .limit(1);
+  const lastSeq = data?.[0]?.pv_no
+    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
+    : 0;
+  return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`;
+}
+
 export async function nextHlePvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `HLE-${year}-`;

@@ -38,12 +38,13 @@ const FREQ_DISPLAY: Record<string, string> = {
   MONTHLY: "Monthly", QUARTERLY: "Quarterly", HALF_YEARLY: "Bi-Annual", ANNUAL: "Yearly", WEEKLY: "Weekly",
 };
 
-type EntityKey = "LCM" | "BAM" | "LSC" | "HLE";
+type EntityKey = "LCM" | "BAM" | "LSC" | "HLE" | "LGB";
 const ENTITY_TABS: { key: EntityKey; label: string; subtitle?: string; color: string; textColor: string; borderColor: string; badgeBg: string; badgeText: string }[] = [
   { key: "LCM", label: "LCM",  color: "bg-[#4a6da7]", textColor: "text-[#4a6da7]", borderColor: "border-[#4a6da7]", badgeBg: "bg-blue-100", badgeText: "text-blue-700" },
   { key: "BAM", label: "BAM",  color: "bg-green-600",  textColor: "text-green-600",  borderColor: "border-green-600",  badgeBg: "bg-green-100", badgeText: "text-green-700" },
   { key: "LSC", label: "LSC",  subtitle: "RHB Bank",   color: "bg-purple-600", textColor: "text-purple-600", borderColor: "border-purple-600", badgeBg: "bg-purple-100", badgeText: "text-purple-700" },
   { key: "HLE", label: "HLE",  subtitle: "Maybank",    color: "bg-amber-500",  textColor: "text-amber-600",  borderColor: "border-amber-500",  badgeBg: "bg-amber-100", badgeText: "text-amber-700" },
+  { key: "LGB", label: "LGB",  subtitle: "Hong Leong",  color: "bg-rose-500",   textColor: "text-rose-600",   borderColor: "border-rose-500",   badgeBg: "bg-rose-100",  badgeText: "text-rose-700" },
 ];
 const PAYMENT_METHODS = ["Bank transfer", "JomPAY", "Online Transfer", "Cheque", "Cash", "Auto Debit", "Other"];
 

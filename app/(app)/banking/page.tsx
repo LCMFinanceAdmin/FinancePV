@@ -28,6 +28,7 @@ interface BankAccount {
   is_bam_cashflow_ref: boolean;
   is_lsc_cashflow_ref: boolean;
   is_hle_cashflow_ref: boolean;
+  is_lgb_cashflow_ref: boolean;
   is_active: boolean;
   sort_order: number;
   notes: string | null;
@@ -82,6 +83,7 @@ const ENTITY_LABELS: Record<string, { label: string; color: string }> = {
   BAM:             { label: "BAM",             color: "bg-green-100 text-green-700" },
   LSC:             { label: "LSC",             color: "bg-purple-100 text-purple-700" },
   HLE:             { label: "HLE",             color: "bg-amber-100 text-amber-700" },
+  LGB:             { label: "LGB",             color: "bg-rose-100 text-rose-700" },
   LUTHERAN_GARDEN: { label: "Lutheran Garden", color: "bg-emerald-100 text-emerald-700" },
   STUDY_CENTRE:    { label: "Study Centre",    color: "bg-purple-100 text-purple-700" },
   GENERAL:         { label: "General",         color: "bg-stone-100 text-stone-600" },
@@ -303,15 +305,18 @@ export default function BankingPage() {
   const bamRef = currentAccounts.find(a => a.is_bam_cashflow_ref);
   const lscRef = currentAccounts.find(a => a.is_lsc_cashflow_ref);
   const hleRef = currentAccounts.find(a => a.is_hle_cashflow_ref);
+  const lgbRef = currentAccounts.find(a => a.is_lgb_cashflow_ref);
 
-  const lcmPvs = pvs.filter(p => !["BAM", "LSC", "HLE"].includes(p.pv_type));
+  const lcmPvs = pvs.filter(p => !["BAM", "LSC", "HLE", "LGB"].includes(p.pv_type));
   const bamPvs = pvs.filter(p => p.pv_type === "BAM");
   const lscPvs = pvs.filter(p => p.pv_type === "LSC");
   const hlePvs = pvs.filter(p => p.pv_type === "HLE");
+  const lgbPvs = pvs.filter(p => p.pv_type === "LGB");
   const selLcm = lcmPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
   const selBam = bamPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
   const selLsc = lscPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
   const selHle = hlePvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
+  const selLgb = lgbPvs.filter(p => selectedPvIds.has(p.id)).reduce((s, p) => s + p.amount, 0);
 
   // FD certificates grouped by account
   const certsByAccount = useMemo(() => {
@@ -1191,7 +1196,7 @@ export default function BankingPage() {
           <div className="space-y-4">
             <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
               Tick the approved PVs you plan to pay. The net balance shows what remains in the reference account after those payments.
-              LCM uses Public Bank; BAM uses Maybank BAM; LSC uses RHB; HLE uses Maybank HLE.
+              LCM uses Public Bank; BAM uses Maybank BAM; LSC uses RHB; HLE uses Maybank HLE; LGB uses Hong Leong.
             </div>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1200,6 +1205,7 @@ export default function BankingPage() {
                 { label: "BAM Cashflow", ref: bamRef, pvList: bamPvs, selTotal: selBam },
                 { label: "LSC Cashflow", ref: lscRef, pvList: lscPvs, selTotal: selLsc },
                 { label: "HLE Cashflow", ref: hleRef, pvList: hlePvs, selTotal: selHle },
+                { label: "LGB Cashflow", ref: lgbRef, pvList: lgbPvs, selTotal: selLgb },
               ].map(({ label, ref, pvList, selTotal }) => {
                 const net = (ref?.current_balance ?? 0) - selTotal;
                 const allSel = pvList.every(p => selectedPvIds.has(p.id));
@@ -1330,6 +1336,7 @@ export default function BankingPage() {
                   <option value="BAM">BAM</option>
                   <option value="LSC">LSC (Luther Study Centre)</option>
                   <option value="HLE">HLE (Highlands Lakeview)</option>
+                  <option value="LGB">LGB (Lutheran Garden Berhad)</option>
                   <option value="LUTHERAN_GARDEN">Lutheran Garden</option>
                   <option value="STUDY_CENTRE">Study Centre</option>
                   <option value="GENERAL">General</option>
@@ -1354,6 +1361,7 @@ export default function BankingPage() {
                   { key: "is_bam_cashflow_ref", label: "Use as BAM Cashflow Reference account (Maybank BAM)" },
                   { key: "is_lsc_cashflow_ref", label: "Use as LSC Cashflow Reference account (RHB)" },
                   { key: "is_hle_cashflow_ref", label: "Use as HLE Cashflow Reference account (Maybank HLE)" },
+                { key: "is_lgb_cashflow_ref", label: "Use as LGB Cashflow Reference account (Hong Leong)" },
                 ].map(({ key, label }) => (
                   <label key={key} className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={accForm[key as keyof typeof accForm] as boolean}

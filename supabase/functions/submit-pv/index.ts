@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, nextLscPvNo, nextHlePvNo, getProfileByEmail } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, nextLscPvNo, nextHlePvNo, nextLgbPvNo, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
 const BAM_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "BUILDING_MANAGER"];
@@ -166,18 +166,24 @@ Deno.serve(async (req) => {
       return json({ ok: true, pv_no: pvNo, pv_id: bamPvId, status: initialStatus });
     }
 
-    // ── LSC (RHB) and HLE (Maybank) flows — same approval chain as LCM ──
-    if (pvType === "LSC" || pvType === "HLE") {
+    // ── The other entities LCM's finance office keeps books for: the Study
+    //    Centre (RHB), Highlands Lakeview (Maybank) and Lutheran Garden Berhad
+    //    (Hong Leong). Each has its own numbering series; the approval chain is
+    //    the same as an LCM voucher, because the same officers sign them. ──
+    if (pvType === "LSC" || pvType === "HLE" || pvType === "LGB") {
       if (!["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(profile?.role)) {
         return json({ error: "Finance Executive only" }, 403);
       }
-      const pvNo = pvType === "LSC" ? await nextLscPvNo(db) : await nextHlePvNo(db);
+      const pvNo = pvType === "LSC" ? await nextLscPvNo(db)
+                 : pvType === "LGB" ? await nextLgbPvNo(db)
+                 : await nextHlePvNo(db);
       const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const now = new Date().toISOString();
       const amount = Number(d.amount) || 0;
       const loa = getLOATier(amount, d.payment_type);
       const applicantEmail = (d.applicant_email || user.email || "").toLowerCase().trim();
-      const ministry = pvType === "LSC" ? "Luther Study Centre" : "";
+      const ministry = pvType === "LSC" ? "Luther Study Centre"
+                     : pvType === "LGB" ? "Lutheran Garden Berhad" : "";
 
       const financeEntry = d.finance_signature_data
         ? [{ role: "FINANCE_ADMIN", email: user.email, name: profile?.full_name || user.email,

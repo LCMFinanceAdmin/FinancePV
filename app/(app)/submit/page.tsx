@@ -243,12 +243,13 @@ export default function SubmitPVPage() {
   const supabase = createClient();
 
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
-  const [pvType, setPvType] = useState<"LCM" | "BAM" | "LSC" | "HLE">(() => {
+  const [pvType, setPvType] = useState<"LCM" | "BAM" | "LSC" | "HLE" | "LGB">(() => {
     if (typeof window === "undefined") return "LCM";
     const t = new URLSearchParams(window.location.search).get("type");
     if (t === "bam") return "BAM";
     if (t === "lsc") return "LSC";
     if (t === "hle") return "HLE";
+    if (t === "lgb") return "LGB";
     return "LCM";
   });
   const [userRole, setUserRole] = useState("");
@@ -389,8 +390,10 @@ export default function SubmitPVPage() {
         // (BAM/LSC/HLE are hard-gated server-side too) — catch it here so the
         // person isn't left filling out a whole form only to hit a 403 at the end.
         const canBAM = isFA || isBM;
-        const canLscHle = isFA;
-        if ((pvType === "BAM" && !canBAM) || ((pvType === "LSC" || pvType === "HLE") && !canLscHle)) {
+        // LSC, Highlands and Lutheran Garden are the other books this office
+        // keeps; raising their vouchers is finance work, Accounts included.
+        const canEntity = isFA;
+        if ((pvType === "BAM" && !canBAM) || (["LSC", "HLE", "LGB"].includes(pvType) && !canEntity)) {
           setPvType("LCM");
           setTypeRestricted(true);
         }
@@ -779,7 +782,7 @@ export default function SubmitPVPage() {
           applicant_email: form.applicant_email,
           pvDate: form.pvDate,
           dept: form.dept,
-          ministry: pvType === "BAM" ? (form.ministry || "Property") : pvType === "LSC" ? "Luther Study Centre" : form.ministry,
+          ministry: pvType === "BAM" ? (form.ministry || "Property") : pvType === "LSC" ? "Luther Study Centre" : pvType === "LGB" ? "Lutheran Garden Berhad" : form.ministry,
           project: form.project,
           payee_name: form.payee_name,
           payment_method: form.payment_method,
@@ -1219,8 +1222,10 @@ export default function SubmitPVPage() {
       {pvType !== "HLE" && (
         <div>
           <label className={mLabel}>Ministry <span className="text-red-400">*</span></label>
-          {pvType === "LSC" ? (
-            <div className={`${mInput} text-stone-500 bg-stone-50`}>Luther Study Centre</div>
+          {pvType === "LSC" || pvType === "LGB" ? (
+            <div className={`${mInput} text-stone-500 bg-stone-50`}>
+              {pvType === "LSC" ? "Luther Study Centre" : "Lutheran Garden Berhad"}
+            </div>
           ) : (
             <div className="relative">
               <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.ministry}
@@ -1472,6 +1477,7 @@ export default function SubmitPVPage() {
             {pvType === "BAM" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">BAM (MAYBANK)</span>}
             {pvType === "LSC" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">LSC (RHB)</span>}
             {pvType === "HLE" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">Highlands (MAYBANK)</span>}
+            {pvType === "LGB" && <span className="text-xs font-bold px-2 py-0.5 rounded border border-stone-800 text-stone-800">LGB (HONG LEONG)</span>}
           </div>
           <div className="flex gap-1 mt-2.5">
             {SECTION_TITLES.map((_, i) => (
@@ -1630,6 +1636,12 @@ export default function SubmitPVPage() {
               Highlands <span className="text-[10px] opacity-80">(MAYBANK)</span>
             </button>
           )}
+          {!isBuildingManagerRole && (
+            <button type="button" onClick={() => { setPvType("LGB"); setForm(f => ({ ...f, ministry: "Lutheran Garden Berhad" })); }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${pvType === "LGB" ? "bg-[#4a6da7] text-white border-[#4a6da7]" : "bg-white text-stone-600 border-stone-300 hover:border-[#4a6da7]"}`}>
+              LGB <span className="text-[10px] opacity-80">(HONG LEONG)</span>
+            </button>
+          )}
           <button type="button" onClick={copyShareLink}
             title="Copy a shareable link that opens this form pre-set to the selected type"
             className="ml-1 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-dashed border-stone-300 text-stone-500 hover:border-[#4a6da7] hover:text-[#4a6da7] transition-colors">
@@ -1683,6 +1695,11 @@ export default function SubmitPVPage() {
                 {pvType === "HLE" ? (
                   <>
                     <div className="text-[10px] font-bold text-stone-600 uppercase tracking-wide">Highlands Lakeview Enterprises Sdn. Bhd.</div>
+                    <div className="text-[9px] text-stone-400">Managed by Lutheran Church in Malaysia</div>
+                  </>
+                ) : pvType === "LGB" ? (
+                  <>
+                    <div className="text-[10px] font-bold text-stone-600 uppercase tracking-wide">Lutheran Garden Berhad</div>
                     <div className="text-[9px] text-stone-400">Managed by Lutheran Church in Malaysia</div>
                   </>
                 ) : pvType === "LSC" ? (
