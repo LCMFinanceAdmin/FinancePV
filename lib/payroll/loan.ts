@@ -41,6 +41,54 @@ export function buildSchedule(loan: Pick<EmployeeLoan, "principal" | "monthly_in
   return rows;
 }
 
+/**
+ * What is still owed, from what has actually been repaid.
+ *
+ * The schedule says what *should* have been deducted by now; this says what
+ * has. They part company the moment a month is missed — a run not done, a run
+ * reverted and not redone — and only this one can be reconciled against the
+ * money.
+ *
+ * `excludeRunId` leaves out the repayment belonging to the run being finalised,
+ * so re-finalising the same month sees the balance as it stood before that
+ * month rather than deducting twice from it.
+ */
+export function outstandingBalance(
+  loan: Pick<EmployeeLoan, "id" | "principal">,
+  repayments: { loan_id: string; amount: number; payroll_run_id?: string | null }[],
+  excludeRunId?: string,
+): number {
+  const paid = repayments
+    .filter(r => r.loan_id === loan.id && (!excludeRunId || r.payroll_run_id !== excludeRunId))
+    .reduce((s, r) => s + Number(r.amount), 0);
+  return round2(Math.max(0, Number(loan.principal) - paid));
+}
+
+/**
+ * The deduction for a given month, taken from the balance rather than the
+ * schedule position.
+ *
+ * Never more than one installment, so a missed month is not clawed back in a
+ * lump from someone's salary — the loan simply runs a month longer. Never more
+ * than the balance, so the last installment settles it exactly and no more.
+ */
+export function dueFromBalance(
+  loan: Pick<EmployeeLoan, "id" | "principal" | "monthly_installment" | "start_month" | "status">,
+  repayments: { loan_id: string; amount: number; payroll_run_id?: string | null }[],
+  year: number,
+  month: number,
+  excludeRunId?: string,
+): { amount: number; balanceAfter: number } {
+  if (loan.status !== "ACTIVE" || !loan.start_month) return { amount: 0, balanceAfter: 0 };
+  const start = new Date(loan.start_month);
+  const started = (year > start.getFullYear())
+    || (year === start.getFullYear() && month >= start.getMonth() + 1);
+  const outstanding = outstandingBalance(loan, repayments, excludeRunId);
+  if (!started || outstanding <= 0) return { amount: 0, balanceAfter: outstanding };
+  const amount = round2(Math.min(Number(loan.monthly_installment), outstanding));
+  return { amount, balanceAfter: round2(outstanding - amount) };
+}
+
 // Scheduled installment for a specific calendar month (0 if outside the term).
 export function installmentForMonth(loan: Pick<EmployeeLoan, "principal" | "monthly_installment" | "term_months" | "final_installment" | "start_month" | "status">, year: number, month: number): number {
   if (loan.status !== "ACTIVE" || !loan.start_month) return 0;

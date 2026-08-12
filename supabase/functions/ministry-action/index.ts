@@ -29,6 +29,23 @@ Deno.serve(async (req) => {
       return json({ error: "Not your ministry" }, 403);
     }
 
+    // Nor your own voucher.
+    //
+    // submit-pv already routes past this stage when the applicant is the
+    // department head — but that check compares against departments.head_email
+    // while this one gates on the committees you sit on, and those are
+    // different fields. A voucher whose department has a different head but
+    // whose ministry is yours reached your queue and you could verify it. The
+    // guard belongs where the decision is taken, not only where it is routed.
+    const me = (user.email ?? "").trim().toLowerCase();
+    const paysMe = [pv.applicant_email, pv.submitted_by_email]
+      .some((e: string | null) => (e ?? "").trim().toLowerCase() === me);
+    if (paysMe && action === "APPROVED") {
+      return json({
+        error: "This voucher is yours, so another member of the committee has to verify it.",
+      }, 403);
+    }
+
     const newStatus = action === "APPROVED" ? "PENDING" : "REJECTED_HEAD";
 
     await db.from("pvs").update({

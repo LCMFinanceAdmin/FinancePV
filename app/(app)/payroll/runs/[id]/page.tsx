@@ -10,7 +10,10 @@ import { BankExportModal, buildBankRows, generateWorkbook } from "@/components/p
 import { generateStatutorySummary } from "@/components/payroll/statutory-summary";
 import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { logPayrollAudit } from "@/lib/payroll/audit";
-import { buildSchedule } from "@/lib/payroll/loan";
+import { dueFromBalance } from "@/lib/payroll/loan";
+
+/** Only the fields the balance needs; the full row lives in the table. */
+interface LoanRepaymentRow { loan_id: string; amount: number; payroll_run_id: string | null }
 import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem } from "@/lib/types";
 
 const MONTH_LABELS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "13th Month"];
@@ -34,6 +37,7 @@ export default function PayrollRunDetailPage() {
   const [employees, setEmployees] = useState<PayrollEmployee[]>([]);
   const [salByEmp, setSalByEmp] = useState<Record<string, PayrollSalary>>({});
   const [loansByEmp, setLoansByEmp] = useState<Record<string, EmployeeLoan[]>>({});
+  const [repayments, setRepayments] = useState<LoanRepaymentRow[]>([]);
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [lines, setLines] = useState<PayrollLine[]>([]);
   const [vouchers, setVouchers] = useState<PayrollVoucher[]>([]);
@@ -71,11 +75,14 @@ export default function PayrollRunDetailPage() {
     setRun(runRow);
     if (!runRow) { setLoading(false); return; }
 
-    const [{ data: rateRow }, { data: emps }, { data: sals }, { data: lns }] = await Promise.all([
+    const [{ data: rateRow }, { data: emps }, { data: sals }, { data: lns }, { data: reps }] = await Promise.all([
       supabase.from("payroll_statutory_rates").select("*").eq("year", runRow.year).maybeSingle(),
       supabase.from("payroll_employees").select("*").order("full_name"),
       supabase.from("payroll_salary").select("*").order("effective_from", { ascending: false }),
       supabase.from("employee_loans").select("*").eq("status", "ACTIVE"),
+      // What has actually been repaid — the deduction is worked out from the
+      // balance, not from where the schedule says we ought to be by now.
+      supabase.from("loan_repayments").select("loan_id,amount,payroll_run_id"),
     ]);
     setRates((rateRow as RateConfig) ?? undefined);
     setEmployees((emps as PayrollEmployee[]) ?? []);
@@ -87,6 +94,7 @@ export default function PayrollRunDetailPage() {
     const byEmp: Record<string, EmployeeLoan[]> = {};
     for (const ln of (lns as EmployeeLoan[]) ?? []) (byEmp[ln.employee_id] ??= []).push(ln);
     setLoansByEmp(byEmp);
+    setRepayments((reps as LoanRepaymentRow[]) ?? []);
 
     if (runRow.status !== "DRAFT") {
       const [{ data: pl }, { data: pv }] = await Promise.all([
@@ -146,10 +154,8 @@ export default function PayrollRunDetailPage() {
       const sal = salByEmp[e.id];
       if (!sal) return null;
       const gross = grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override);
-      const epl = is13th ? 0 : (loansByEmp[e.id] ?? []).reduce((s, ln) => {
-        const row = buildSchedule(ln).find(x => x.year === run.year && x.month === run.month);
-        return s + (row?.amount ?? 0);
-      }, 0);
+      const epl = is13th ? 0 : (loansByEmp[e.id] ?? []).reduce((s, ln) =>
+        s + dueFromBalance(ln, repayments, run.year, run.month, run.id).amount, 0);
       const line = calcLine({
         gross, age: ageAt(e.dob, run.year, ageMonth), employmentType: e.employment_type,
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
@@ -245,10 +251,10 @@ export default function PayrollRunDetailPage() {
       // Loan repayments, skipped for the 13th month.
       const repaymentRows = is13th ? [] : computed.flatMap(({ emp }) =>
         (loansByEmp[emp.id] ?? []).flatMap(ln => {
-          const row = buildSchedule(ln).find(x => x.year === run.year && x.month === run.month);
-          return row && row.amount > 0
+          const due = dueFromBalance(ln, repayments, run.year, run.month, run.id);
+          return due.amount > 0
             ? [{ loan_id: ln.id, year: run.year, month: run.month,
-                 amount: row.amount, balance_after: row.balanceAfter }]
+                 amount: due.amount, balance_after: due.balanceAfter }]
             : [];
         }));
 
