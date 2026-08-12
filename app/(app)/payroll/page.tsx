@@ -321,7 +321,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
     }
   }
 
-  const inputCls = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  const inputCls = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const labelCls = "block text-xs font-semibold text-stone-600 mb-1";
 
   return (
@@ -478,7 +478,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                 <div>
                   <label className={labelCls}>Month</label>
                   <select value={itemMonth} onChange={e => setItemMonth(Number(e.target.value))}
-                    className="border border-stone-300 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#4a6da7]">
+                    className="border-2 border-stone-800 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#2f5b9c]">
                     {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
                       <option key={i + 1} value={i + 1}>{m}</option>
                     ))}
@@ -488,7 +488,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                 <div>
                   <label className={labelCls}>Year</label>
                   <input type="number" value={itemYear} onChange={e => setItemYear(Number(e.target.value))}
-                    className="border border-stone-300 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#4a6da7] w-24" />
+                    className="border-2 border-stone-800 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#2f5b9c] w-24" />
                 </div>
               </div>
 
@@ -531,9 +531,9 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                     <input value={newItemLabel} onChange={e => setNewItemLabel(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && addCustomItem()}
                       placeholder="Label (e.g. Housing Allowance)"
-                      className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7] flex-1 min-w-[160px]" />
+                      className="border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c] flex-1 min-w-[160px]" />
                     <select value={newItemType} onChange={e => setNewItemType(e.target.value as "allowance" | "deduction")}
-                      className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]">
+                      className="border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c]">
                       <option value="allowance">Allowance +</option>
                       <option value="deduction">Deduction −</option>
                     </select>
@@ -542,7 +542,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                     <input type="number" value={newItemAmount} onChange={e => setNewItemAmount(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && addCustomItem()}
                       placeholder="Amount (RM)"
-                      className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7] w-36" />
+                      className="border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c] w-36" />
                   </div>
                   {/* Recurring toggle */}
                   <label className="flex items-center gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
@@ -560,7 +560,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[11px] text-stone-500">Until:</span>
                           <select value={newItemUntilMonth} onChange={e => setNewItemUntilMonth(Number(e.target.value))}
-                            className="border border-stone-300 rounded-lg px-2 py-1 text-[12px] outline-none focus:border-[#4a6da7]">
+                            className="border-2 border-stone-800 rounded-lg px-2 py-1 text-[12px] outline-none focus:border-[#2f5b9c]">
                             {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
                               <option key={i + 1} value={i + 1}>{m}</option>
                             ))}
@@ -568,7 +568,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                           </select>
                           <input type="number" value={newItemUntilYear} onChange={e => setNewItemUntilYear(e.target.value === "" ? "" : Number(e.target.value))}
                             placeholder="Year"
-                            className="border border-stone-300 rounded-lg px-2 py-1 text-[12px] outline-none focus:border-[#4a6da7] w-20" />
+                            className="border-2 border-stone-800 rounded-lg px-2 py-1 text-[12px] outline-none focus:border-[#2f5b9c] w-20" />
                         </div>
                       )}
                     </div>
@@ -820,7 +820,7 @@ export default function PayrollPage() {
           <div className="flex-1 relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, emp no, designation, posting…"
-              className="w-full border border-stone-300 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#4a6da7] bg-white" />
+              className="w-full border-2 border-stone-800 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#2f5b9c] bg-white" />
           </div>
           <div className="inline-flex rounded-xl border border-stone-200 overflow-hidden text-sm font-semibold bg-white">
             {([["ACTIVE", "Active"], ["RESIGNED", "Former"], ["ALL", "All"]] as const).map(([val, label]) => (

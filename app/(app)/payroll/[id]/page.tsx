@@ -365,7 +365,7 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.gross)}</td>
                       <td className="border border-stone-200 px-0.5 py-0.5 text-right">
                         <input type="number" value={pcb[i] || ""} onChange={e => setPcb(p => { const n = [...p]; n[i] = parseFloat(e.target.value) || 0; return n; })}
-                          className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#4a6da7] outline-none bg-transparent" placeholder="0.00" />
+                          className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
                       </td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.epf.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.epf.er)}</td>
@@ -430,7 +430,7 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.gross)}</td>
                       <td className="border border-stone-200 px-0.5 py-0.5 text-right">
                         <input type="number" value={pcb[12] || ""} onChange={e => setPcb(p => { const n = [...p]; n[12] = parseFloat(e.target.value) || 0; return n; })}
-                          className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#4a6da7] outline-none bg-transparent" placeholder="0.00" />
+                          className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
                       </td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.epf.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.epf.er)}</td>
@@ -1143,7 +1143,7 @@ function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose,
     onSaved();
   }
 
-  const inputCls = "border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]";
+  const inputCls = "border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c]";
 
   function recurLabel(item: PayrollEmployeeCustomItem): string {
     const from = `${monthShort(item.month)} ${item.year}`;
@@ -1586,7 +1586,7 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
     { key: "family_allowance", label: "Family allowance" },
     { key: "stm_allowance", label: "STM / allowance" },
   ];
-  const inputCls = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  const inputCls = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const labelCls = "block text-xs font-semibold text-stone-600 mb-1";
 
   return (

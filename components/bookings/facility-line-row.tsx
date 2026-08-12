@@ -67,7 +67,7 @@ export function FacilityLineRow({ item, tier, facilities, isDayUnavailable, onCh
     <div className="py-2.5 border-b border-stone-100 last:border-0 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <select
-          className="flex-1 min-w-[180px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
+          className="flex-1 min-w-[180px] border-2 border-stone-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#2f5b9c]"
           value={item.facility_id}
           onChange={e => {
             const def = facilities.find(f => f.id === e.target.value);
@@ -112,7 +112,7 @@ export function FacilityLineRow({ item, tier, facilities, isDayUnavailable, onCh
             Check-in
             <input
               type="date"
-              className="border border-stone-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#4a6da7]"
+              className="border-2 border-stone-800 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#2f5b9c]"
               value={stayCheckIn}
               onChange={e => setStay(e.target.value, stayCheckOut && stayCheckOut > e.target.value ? stayCheckOut : "")}
             />
@@ -122,7 +122,7 @@ export function FacilityLineRow({ item, tier, facilities, isDayUnavailable, onCh
             Check-out
             <input
               type="date"
-              className="border border-stone-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#4a6da7]"
+              className="border-2 border-stone-800 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#2f5b9c]"
               value={stayCheckOut}
               min={stayCheckIn || undefined}
               onChange={e => setStay(stayCheckIn, e.target.value)}

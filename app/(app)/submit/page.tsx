@@ -175,11 +175,11 @@ function ReferenceFields({ form, setField, earlierPvs, compact }: {
 }
 
 // ── Desktop inline styles ───────────────────────────────────────────────
-const uline = "border-0 border-b border-stone-400 bg-transparent outline-none text-sm text-stone-800 px-1 py-0 w-full focus:border-[#4a6da7] transition-colors placeholder:text-stone-300";
+const uline = "border-0 border-b border-stone-800 bg-transparent outline-none text-sm text-stone-800 px-1 py-0 w-full focus:border-[#2f5b9c] transition-colors placeholder:text-stone-300";
 const uselect = `${uline} cursor-pointer appearance-none pr-6`;
 
 // ── Mobile styles ───────────────────────────────────────────────────────
-const mInput = "w-full border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-800 outline-none focus:border-[#4a6da7] bg-white transition-colors placeholder:text-stone-300";
+const mInput = "w-full border-2 border-stone-800 rounded-xl px-4 py-3 text-sm text-stone-800 outline-none focus:border-[#2f5b9c] bg-white transition-colors placeholder:text-stone-300";
 const mLabel = "block text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1.5";
 
 function InlineSelect({ value, onChange, children, className = "" }: {
@@ -1919,13 +1919,13 @@ export default function SubmitPVPage() {
                           {item.travel_type === "mileage" ? (
                             <div className="flex flex-col gap-1 py-0.5">
                               <div className="flex items-center gap-1">
-                                <input list="lcm-locations" className="outline-none text-xs bg-transparent border-b border-stone-300 flex-1 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300" placeholder="From" value={item.from} onChange={e => updateTravelItem(idx, { from: e.target.value })} />
+                                <input list="lcm-locations" className="outline-none text-xs bg-transparent border-b border-stone-800 flex-1 min-w-0 focus:border-[#2f5b9c] placeholder:text-stone-300" placeholder="From" value={item.from} onChange={e => updateTravelItem(idx, { from: e.target.value })} />
                                 <span className="text-stone-400 text-xs shrink-0">→</span>
-                                <input list="lcm-locations" className="outline-none text-xs bg-transparent border-b border-stone-300 flex-1 min-w-0 focus:border-[#4a6da7] placeholder:text-stone-300" placeholder="To" value={item.to} onChange={e => updateTravelItem(idx, { to: e.target.value })} />
+                                <input list="lcm-locations" className="outline-none text-xs bg-transparent border-b border-stone-800 flex-1 min-w-0 focus:border-[#2f5b9c] placeholder:text-stone-300" placeholder="To" value={item.to} onChange={e => updateTravelItem(idx, { to: e.target.value })} />
                               </div>
                               <div className="flex items-center gap-1">
                                 <span className="text-stone-400 text-[10px] shrink-0">KM:</span>
-                                <input type="number" min="0" step="0.1" className="outline-none text-xs bg-transparent border-b border-stone-300 w-20 focus:border-[#4a6da7] placeholder:text-stone-300" placeholder="0" value={item.km || ""} onChange={e => updateTravelItem(idx, { km: Number(e.target.value) })} />
+                                <input type="number" min="0" step="0.1" className="outline-none text-xs bg-transparent border-b border-stone-800 w-20 focus:border-[#2f5b9c] placeholder:text-stone-300" placeholder="0" value={item.km || ""} onChange={e => updateTravelItem(idx, { km: Number(e.target.value) })} />
                               </div>
                             </div>
                           ) : (
@@ -2093,7 +2093,7 @@ export default function SubmitPVPage() {
             </p>
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Your Full Name <span className="text-red-400">*</span></label>
-              <input className="w-full border-b border-stone-400 bg-transparent outline-none text-sm px-1 py-1 focus:border-[#4a6da7] transition-colors"
+              <input className="w-full border-b border-stone-800 bg-transparent outline-none text-sm px-1 py-1 focus:border-[#2f5b9c] transition-colors"
                 value={form.sig_applicant_name} onChange={e => setField("sig_applicant_name", e.target.value)} required />
             </div>
             <div>

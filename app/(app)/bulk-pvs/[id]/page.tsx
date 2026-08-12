@@ -1057,7 +1057,7 @@ export default function BulkPVPage() {
             <h2 className="text-lg font-bold text-stone-800 mb-1">Reject All Pending PVs</h2>
             <textarea value={rejectRemarks} onChange={e => setRejectRemarks(e.target.value)}
               placeholder="Reason for rejection…"
-              className="w-full border border-stone-300 rounded-lg p-3 text-sm outline-none min-h-[80px] resize-none mt-3" />
+              className="w-full border-2 border-stone-800 rounded-lg p-3 text-sm outline-none min-h-[80px] resize-none mt-3" />
             <div className="flex gap-2 mt-4">
               <button onClick={() => handleBulkAction("REJECT", pendingPvs, { remarks: rejectRemarks })}
                 disabled={!rejectRemarks.trim() || actionLoading}
@@ -1078,13 +1078,13 @@ export default function BulkPVPage() {
             <div className="space-y-3">
               <div><label className="text-xs font-semibold text-stone-600 block mb-1">Payment Reference</label>
                 <input value={payForm.ref} onChange={e => setPayForm(p => ({ ...p, ref: e.target.value }))}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm outline-none" placeholder="IBG/TT ref" /></div>
+                  className="w-full border-2 border-stone-800 rounded-lg p-2.5 text-sm outline-none" placeholder="IBG/TT ref" /></div>
               <div><label className="text-xs font-semibold text-stone-600 block mb-1">Payment Date</label>
                 <input type="date" value={payForm.date} onChange={e => setPayForm(p => ({ ...p, date: e.target.value }))}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm outline-none" /></div>
+                  className="w-full border-2 border-stone-800 rounded-lg p-2.5 text-sm outline-none" /></div>
               <div><label className="text-xs font-semibold text-stone-600 block mb-1">Payment Method</label>
                 <select value={payForm.method} onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm bg-white outline-none">
+                  className="w-full border-2 border-stone-800 rounded-lg p-2.5 text-sm bg-white outline-none">
                   <option>Bank Transfer</option><option>Cheque</option><option>Cash</option><option>JomPay</option>
                 </select></div>
             </div>
@@ -1187,7 +1187,7 @@ export default function BulkPVPage() {
                   <label className="text-xs font-semibold text-stone-600 block">Approval PIN *</label>
                   <input type="password" value={pin} onChange={e => { setPin(e.target.value); setPinError(""); }}
                     placeholder="Enter 4-digit PIN"
-                    className={`w-full border rounded-lg p-2.5 text-sm outline-none text-center tracking-widest ${pinError ? "border-red-400 bg-red-50" : "border-stone-300"}`}
+                    className={`w-full border rounded-lg p-2.5 text-sm outline-none text-center tracking-widest ${pinError ? "border-red-400 bg-red-50" : "border-2 border-stone-800"}`}
                     maxLength={6} />
                   {pinError && <p className="text-xs text-red-600">{pinError}</p>}
                 </div>

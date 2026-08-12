@@ -177,7 +177,7 @@ export default function LeaveQueuePage() {
             <p className="text-sm text-stone-500">{rejectTarget.leave_no} — {rejectTarget.applicant_name}</p>
             <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
               rows={3} placeholder="Reason for rejection (required)…"
-              className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-red-400 resize-none" />
+              className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none focus:border-red-400 resize-none" />
             <div className="flex gap-2">
               <Button className="flex-1 bg-red-600 hover:bg-red-700"
                 disabled={!remarks.trim() || !!actioning}

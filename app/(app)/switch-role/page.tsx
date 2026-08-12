@@ -25,7 +25,7 @@ type Role = (typeof ROLES)[number]["value"];
 // verification is evidenced by their drawn signature instead.
 const PIN_ROLES = ["BISHOP", "TREASURER", "SECRETARY"];
 
-const inp = "border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white w-full";
+const inp = "border-2 border-stone-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] bg-white w-full";
 
 export default function SwitchRolePage() {
   const supabase = createClient();

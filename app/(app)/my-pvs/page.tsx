@@ -348,7 +348,7 @@ export default function MyPVsPage() {
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
         <input
-          className="w-full border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7]"
+          className="w-full border-2 border-stone-800 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#2f5b9c]"
           placeholder="Search by PV no., payee, ministry, or purpose…"
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -383,7 +383,7 @@ export default function MyPVsPage() {
             <p className="text-sm text-stone-500">{rejectTarget.pv_no} — {rejectTarget.payee_name}</p>
             <textarea value={rejectRemarks} onChange={e => setRejectRemarks(e.target.value)}
               placeholder="Reason for rejection (required)…"
-              className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
+              className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
             <div className="flex gap-2">
               <button
                 onClick={() => {
@@ -415,7 +415,7 @@ export default function MyPVsPage() {
             {sigModal.action === "REJECTED" && (
               <textarea value={sigRemarks} onChange={e => setSigRemarks(e.target.value)}
                 placeholder="Reason for rejection (required)…"
-                className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
+                className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
             )}
             {needsPin && (
               <div>
@@ -424,7 +424,7 @@ export default function MyPVsPage() {
                 </label>
                 <input type="password" value={sigPin} onChange={e => setSigPin(e.target.value)}
                   placeholder="Enter your PIN" maxLength={8} autoFocus
-                  className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-[#4a6da7] text-center tracking-widest text-base"
+                  className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none focus:border-[#2f5b9c] text-center tracking-widest text-base"
                   onKeyDown={e => {
                     if (e.key === "Enter" && sigPin.length >= 4 && (sigModal.action !== "REJECTED" || sigRemarks.trim()))
                       callSignatoryAction(sigModal.pv.id!, sigModal.action, sigPin, sigRemarks, sigModal.bulkId);

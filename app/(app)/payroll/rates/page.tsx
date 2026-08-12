@@ -182,7 +182,7 @@ export default function PayrollRatesPage() {
       }).length
     : 0;
 
-  const inputCls = "w-28 border border-stone-300 rounded-lg px-2 py-1.5 text-sm text-right font-mono outline-none focus:border-[#4a6da7] disabled:bg-stone-50 disabled:text-stone-400";
+  const inputCls = "w-28 border-2 border-stone-800 rounded-lg px-2 py-1.5 text-sm text-right font-mono outline-none focus:border-[#2f5b9c] disabled:bg-stone-50 disabled:text-stone-400";
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">

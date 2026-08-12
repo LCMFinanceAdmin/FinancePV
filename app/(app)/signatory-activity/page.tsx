@@ -545,7 +545,7 @@ export default function SignatoryActivityPage() {
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
         <input
-          className="w-full pl-9 pr-3 py-2 border border-stone-200 rounded-xl text-sm outline-none focus:border-[#4a6da7] bg-white"
+          className="w-full pl-9 pr-3 py-2 border-2 border-stone-800 rounded-xl text-sm outline-none focus:border-[#2f5b9c] bg-white"
           placeholder="Search PV no., payee, ministry…"
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -670,7 +670,7 @@ export default function SignatoryActivityPage() {
             </div>
             <p className="text-sm text-stone-500">Enter your PIN to revert your decision on this PV.</p>
             <input type="password" inputMode="numeric" maxLength={6} value={pin} onChange={e => setPin(e.target.value)}
-              placeholder="••••••" className="w-full border border-stone-300 rounded-xl px-4 py-3 text-center text-2xl tracking-widest outline-none focus:border-amber-400" />
+              placeholder="••••••" className="w-full border-2 border-stone-800 rounded-xl px-4 py-3 text-center text-2xl tracking-widest outline-none focus:border-amber-400" />
             <div className="flex gap-2">
               <button onClick={() => doRevert(revertPinModal.pvId, pin)} disabled={!pin || actioning}
                 className="flex-1 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors">
@@ -692,7 +692,7 @@ export default function SignatoryActivityPage() {
             <h2 className="text-base font-bold text-stone-800">Enter Approval PIN</h2>
             <p className="text-sm text-stone-500">Approving {pinModal.pvIds.length} PV{pinModal.pvIds.length > 1 ? "s" : ""}. Enter your PIN to confirm.</p>
             <input type="password" inputMode="numeric" maxLength={6} value={pin} onChange={e => setPin(e.target.value)}
-              placeholder="••••••" className="w-full border border-stone-300 rounded-xl px-4 py-3 text-center text-2xl tracking-widest outline-none focus:border-[#4a6da7]" />
+              placeholder="••••••" className="w-full border-2 border-stone-800 rounded-xl px-4 py-3 text-center text-2xl tracking-widest outline-none focus:border-[#2f5b9c]" />
             <div className="flex gap-2">
               <button onClick={() => callSignatoryAction(pinModal.pvIds, "APPROVED", "", pin)} disabled={!pin || actioning}
                 className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors">
@@ -714,7 +714,7 @@ export default function SignatoryActivityPage() {
             <h2 className="text-base font-bold text-stone-800">Reject {rejectModal.pvIds.length > 1 ? `${rejectModal.pvIds.length} PVs` : "PV"}</h2>
             <textarea value={rejectRemarks} onChange={e => setRejectRemarks(e.target.value)}
               placeholder="Reason for rejection (required)…"
-              className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
+              className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
             <div className="flex gap-2">
               <button onClick={() => callSignatoryAction(rejectModal.pvIds, "REJECTED", rejectRemarks)} disabled={!rejectRemarks.trim() || actioning}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors">

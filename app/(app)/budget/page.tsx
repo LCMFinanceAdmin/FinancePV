@@ -623,7 +623,7 @@ function BudgetInner() {
             value={selectedYear}
             onChange={e => setSelectedYear(Number(e.target.value))}
             title="Budget year"
-            className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-[#4a6da7]">
+            className="rounded-xl border-2 border-stone-800 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-[#2f5b9c]">
             {[CURRENT_YEAR + 1, CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2].map(y => (
               <option key={y} value={y}>
                 {y}{y === CURRENT_YEAR ? " (current)" : y === CURRENT_YEAR + 1 ? " (next)" : ""}
@@ -634,7 +634,7 @@ function BudgetInner() {
             value={reportPeriod}
             onChange={e => setReportPeriod(e.target.value as BudgetPeriod)}
             title="Report breakdown"
-            className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-[#4a6da7]">
+            className="rounded-xl border-2 border-stone-800 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-[#2f5b9c]">
             <option value="MONTHLY">Monthly</option>
             <option value="QUARTERLY">Quarterly</option>
             <option value="BIANNUAL">Half-yearly</option>
@@ -1016,7 +1016,7 @@ function BudgetInner() {
                   placeholder={decisionModal === "APPROVE"
                     ? "e.g. Approved at EXCO meeting 12 Nov"
                     : "What needs changing before this can be approved?"}
-                  className="h-20 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+                  className="h-20 w-full resize-none rounded-xl border-2 border-stone-800 px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" />
               </div>
             </div>
 
@@ -1165,7 +1165,7 @@ function BudgetInner() {
                   value={itemForm.project_name}
                   onChange={e => setItemForm(f => ({ ...f, project_name: e.target.value }))}
                   placeholder="e.g. Soup Kitchen 2026"
-                  className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]"
+                  className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
                   autoFocus
                 />
               </div>
@@ -1178,7 +1178,7 @@ function BudgetInner() {
                   onChange={e => setItemForm(f => ({ ...f, description: e.target.value }))}
                   rows={2}
                   placeholder={itemForm.project_type === "expense" ? "What is this budget for?" : "Describe the grant or income source…"}
-                  className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7] resize-none"
+                  className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c] resize-none"
                 />
               </div>
 
@@ -1191,7 +1191,7 @@ function BudgetInner() {
                     value={itemForm.estimated_expenses || ""}
                     onChange={e => setItemForm(f => ({ ...f, estimated_expenses: parseFloat(e.target.value) || 0 }))}
                     placeholder="0.00"
-                    className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]"
+                    className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
                   />
                   <p className="text-xs text-stone-400 mt-1">Total amount budgeted for expenses in this project</p>
                 </div>
@@ -1204,7 +1204,7 @@ function BudgetInner() {
                       value={itemForm.estimated_income || ""}
                       onChange={e => setItemForm(f => ({ ...f, estimated_income: parseFloat(e.target.value) || 0 }))}
                       placeholder="0.00"
-                      className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]"
+                      className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -1215,7 +1215,7 @@ function BudgetInner() {
                         value={itemForm.contributions_received || ""}
                         onChange={e => setItemForm(f => ({ ...f, contributions_received: parseFloat(e.target.value) || 0 }))}
                         placeholder="0.00"
-                        className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]"
+                        className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
                       />
                     </div>
                     <div>
@@ -1225,7 +1225,7 @@ function BudgetInner() {
                         value={itemForm.contributions_expected || ""}
                         onChange={e => setItemForm(f => ({ ...f, contributions_expected: parseFloat(e.target.value) || 0 }))}
                         placeholder="0.00"
-                        className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7]"
+                        className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
                       />
                     </div>
                   </div>
@@ -1248,7 +1248,7 @@ function BudgetInner() {
                   onChange={e => setItemForm(f => ({ ...f, special_notes: e.target.value }))}
                   rows={2}
                   placeholder="e.g. Shared with Education ministry, approved by Bishop…"
-                  className="w-full border-2 border-stone-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#4a6da7] resize-none"
+                  className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c] resize-none"
                 />
               </div>
 
@@ -1378,7 +1378,7 @@ function BudgetInner() {
                   onChange={e => setRejectionReason(e.target.value)}
                   rows={2}
                   placeholder="Reason for rejection (optional)…"
-                  className="w-full border-2 border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#4a6da7] resize-none"
+                  className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2f5b9c] resize-none"
                 />
               </div>
             </div>

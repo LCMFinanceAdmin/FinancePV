@@ -292,7 +292,7 @@ function ControlCenterInner() {
                       <input
                         autoFocus
                         type="email"
-                        className="w-full text-sm border border-stone-200 rounded-lg px-3 py-1.5 outline-none focus:border-[#4a6da7] bg-white placeholder:text-stone-300"
+                        className="w-full text-sm border-2 border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:border-[#2f5b9c] bg-white placeholder:text-stone-300"
                         placeholder="Enter Google / email address"
                         value={assignEmail}
                         onChange={e => setAssignEmail(e.target.value)}

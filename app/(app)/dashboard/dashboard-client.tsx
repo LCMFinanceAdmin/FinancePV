@@ -710,7 +710,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
             <p className="text-sm text-stone-500">{rejectTarget.pv_no} — {rejectTarget.payee_name}</p>
             <textarea value={rejectRemarks} onChange={e => setRejectRemarks(e.target.value)}
               placeholder="Reason for rejection (required)…"
-              className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
+              className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none" />
             <div className="flex gap-2">
               <button
                 onClick={() => {
@@ -742,7 +742,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
             {sigModal.action === "REJECTED" && (
               <textarea value={sigRemarks} onChange={e => setSigRemarks(e.target.value)}
                 placeholder="Reason for rejection (required)…"
-                className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none min-h-[80px] resize-none" />
+                className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none min-h-[80px] resize-none" />
             )}
             {needsPin && (
               <div>
@@ -751,7 +751,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
                 </label>
                 <input type="password" value={sigPin} onChange={e => setSigPin(e.target.value)}
                   placeholder="Enter your PIN" maxLength={8} autoFocus
-                  className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none text-center tracking-widest text-base" />
+                  className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none text-center tracking-widest text-base" />
               </div>
             )}
             <div className="flex gap-2">

@@ -314,13 +314,13 @@ function LineItemRow({ item, index, onChange, onRemove }: {
     <div className="grid grid-cols-[1fr_48px_80px_80px_28px] gap-1 items-start">
       <input type="text" value={item.description} placeholder="Description"
         onChange={e => onChange(index, "description", e.target.value)}
-        className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30" />
+        className="border-2 border-stone-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30" />
       <input type="number" value={item.qty || ""} placeholder="Qty" min="1"
         onChange={e => onChange(index, "qty", e.target.value)}
-        className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 text-right" />
+        className="border-2 border-stone-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 text-right" />
       <input type="number" value={item.unit_price || ""} placeholder="Unit RM" min="0" step="0.01"
         onChange={e => onChange(index, "unit_price", e.target.value)}
-        className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 text-right" />
+        className="border-2 border-stone-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 text-right" />
       <div className="border border-stone-100 rounded-lg px-2 py-1.5 text-xs text-right bg-stone-50 text-stone-500">
         {item.amount > 0 ? formatCurrency(item.amount) : "—"}
       </div>
@@ -1451,28 +1451,28 @@ export default function GMClaimsPage() {
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <input type="date" value={newRow.received_at}
                           onChange={e => setNewRow(r => ({ ...r, received_at: e.target.value }))}
-                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white" />
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <input type="text" placeholder="Purpose / Claims description…" value={newRow.purpose}
                           onChange={e => setNewRow(r => ({ ...r, purpose: e.target.value }))}
-                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
                         <input type="text" placeholder="Notes (optional)…" value={newRow.description}
                           onChange={e => setNewRow(r => ({ ...r, description: e.target.value }))}
-                          className="border border-stone-200 rounded px-1.5 py-1 text-[11px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 bg-white text-stone-500" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[11px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 bg-white text-stone-500" />
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <input type="number" placeholder="0.00" value={newRow.amount}
                           onChange={e => setNewRow(r => ({ ...r, amount: e.target.value }))}
-                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white text-right font-bold" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white text-right font-bold" />
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <input type="text" placeholder="Claimant name…" value={newRow.claimant_name}
                           onChange={e => setNewRow(r => ({ ...r, claimant_name: e.target.value }))}
-                          className="border border-stone-300 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
                         <select value={newRow.claimant_type}
                           onChange={e => setNewRow(r => ({ ...r, claimant_type: e.target.value }))}
-                          className="border border-stone-200 rounded px-1 py-1 text-[11px] w-full focus:outline-none bg-white text-stone-500">
+                          className="border-2 border-stone-800 rounded px-1 py-1 text-[11px] w-full focus:outline-none bg-white text-stone-500">
                           <option value="">Type…</option>
                           {CLAIMANT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
@@ -1964,7 +1964,7 @@ export default function GMClaimsPage() {
               <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Submission</label>
               <input type="date" value={form.received_at}
                 onChange={e => setF("received_at", e.target.value)}
-                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
 
             {/* Claimant */}
@@ -1974,12 +1974,12 @@ export default function GMClaimsPage() {
                 <input type="text" value={form.claimant_name}
                   onChange={e => setF("claimant_name", e.target.value)}
                   placeholder="Full name"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Claimant Type</label>
                 <select value={form.claimant_type} onChange={e => setF("claimant_type", e.target.value)}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
                   <option value="">— Select —</option>
                   {CLAIMANT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -2007,7 +2007,7 @@ export default function GMClaimsPage() {
               <input type="email" value={form.claimant_email}
                 onChange={e => setF("claimant_email", e.target.value)}
                 placeholder="optional"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
 
             {/* Bank details */}
@@ -2015,7 +2015,7 @@ export default function GMClaimsPage() {
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Bank</label>
                 <select value={form.payee_bank} onChange={e => setF("payee_bank", e.target.value)}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
                   <option value="">— Select bank —</option>
                   {MALAYSIA_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
@@ -2025,7 +2025,7 @@ export default function GMClaimsPage() {
                 <input type="text" value={form.payee_bank_acct}
                   onChange={e => setF("payee_bank_acct", e.target.value)}
                   placeholder="e.g. 1234567890"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
             </div>
 
@@ -2037,14 +2037,14 @@ export default function GMClaimsPage() {
                   <input type="text" value={form.supplier_name}
                     onChange={e => setF("supplier_name", e.target.value)}
                     placeholder="Company or individual name"
-                    className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                    className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-stone-600 mb-1">Supplier Address</label>
                   <textarea rows={2} value={form.supplier_address}
                     onChange={e => setF("supplier_address", e.target.value)}
                     placeholder="Street, city, postcode…"
-                    className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
+                    className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
                 </div>
                 <div className="flex items-center gap-2">
                   <input type="checkbox" id="is_fixed_asset" checked={form.is_fixed_asset}
@@ -2060,7 +2060,7 @@ export default function GMClaimsPage() {
                     <input type="text" value={form.asset_description}
                       onChange={e => setF("asset_description", e.target.value)}
                       placeholder="e.g. Yamaha Grand Piano, Model C3X"
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                      className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
                   </div>
                 )}
                 <div>
@@ -2099,7 +2099,7 @@ export default function GMClaimsPage() {
               <input type="number" value={form.amount}
                 onChange={e => setF("amount", e.target.value)}
                 placeholder="0.00" step="0.01" min="0"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
 
             <div>
@@ -2107,7 +2107,7 @@ export default function GMClaimsPage() {
               <input type="text" value={form.purpose}
                 onChange={e => setF("purpose", e.target.value)}
                 placeholder={isPO ? "Brief description of what is being purchased" : "Brief purpose of the claim"}
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
 
             <div>
@@ -2115,7 +2115,7 @@ export default function GMClaimsPage() {
               <textarea rows={2} value={form.description}
                 onChange={e => setF("description", e.target.value)}
                 placeholder="Any additional details…"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
             </div>
 
             <div>
@@ -2123,7 +2123,7 @@ export default function GMClaimsPage() {
               <textarea rows={2} value={form.notes}
                 onChange={e => setF("notes", e.target.value)}
                 placeholder="Internal notes visible to Finance Executive…"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
             </div>
 
             <button onClick={saveClaim} disabled={saving}
@@ -2147,7 +2147,7 @@ export default function GMClaimsPage() {
             </p>
             <input autoFocus type="text" value={pvSearch} onChange={e => setPvSearch(e.target.value)}
               placeholder="Search by PV number…"
-              className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             <div className="space-y-1.5 max-h-56 overflow-y-auto">
               {pvOptions.length === 0
                 ? <div className="text-xs text-stone-400 text-center py-4">{pvSearch ? "No PVs found" : "Type a PV number to search"}</div>
@@ -2177,7 +2177,7 @@ export default function GMClaimsPage() {
             <p className="text-xs text-stone-500">{notesModal.claimant_name} — {notesModal.claim_no}</p>
             <textarea rows={5} value={notesDraft} onChange={e => setNotesDraft(e.target.value)}
               placeholder="Add internal notes about this claim…"
-              className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
+              className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 resize-none" />
             <button onClick={saveNotes} disabled={savingNotes}
               className="w-full py-2.5 rounded-xl bg-[#4a6da7] text-white text-sm font-semibold hover:bg-[#3a5d97] disabled:opacity-50">
               {savingNotes ? "Saving…" : "Save Notes"}

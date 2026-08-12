@@ -346,7 +346,7 @@ function DocumentModal({ employeeId, existing, defaultFolder, onClose, onSaved }
     }
   }
 
-  const inp = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  const inp = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const lbl = "block text-xs font-semibold text-stone-600 mb-1";
 
   return (

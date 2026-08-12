@@ -211,7 +211,7 @@ export default function LeaveApprovalPage({ params }: { params: Promise<{ token:
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Full name"
-            className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+            className="mt-1 w-full rounded-lg border-2 border-stone-800 bg-white px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
           />
 
           {showDecline && (
@@ -221,7 +221,7 @@ export default function LeaveApprovalPage({ params }: { params: Promise<{ token:
                 value={remarks}
                 onChange={e => setRemarks(e.target.value)}
                 rows={3}
-                className="mt-1 w-full resize-none rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-red-400"
+                className="mt-1 w-full resize-none rounded-lg border-2 border-stone-800 px-3 py-2 text-sm outline-none focus:border-red-400"
               />
             </div>
           )}

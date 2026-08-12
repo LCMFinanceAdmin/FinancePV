@@ -299,7 +299,7 @@ function MyLoansInner() {
               <input type="number" min="0" step="100" value={form.amount}
                 onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
                 placeholder="e.g. 5000"
-                className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#4a6da7]" />
+                className="w-full border-2 border-stone-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#2f5b9c]" />
             </div>
 
             <div>
@@ -309,7 +309,7 @@ function MyLoansInner() {
               <div className="relative">
                 <select value={form.requested_term_months}
                   onChange={e => setForm(f => ({ ...f, requested_term_months: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#4a6da7] appearance-none bg-white">
+                  className="w-full border-2 border-stone-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#2f5b9c] appearance-none bg-white">
                   {TERM_OPTIONS.map(t => (
                     <option key={t} value={t}>{t} months</option>
                   ))}
@@ -329,7 +329,7 @@ function MyLoansInner() {
               </label>
               <textarea value={form.purpose} onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))}
                 rows={3} placeholder="Describe the purpose of this loan…"
-                className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#4a6da7] resize-none" />
+                className="w-full border-2 border-stone-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#2f5b9c] resize-none" />
             </div>
 
             {/* T&C */}

@@ -718,7 +718,7 @@ export default function WorksheetsPage() {
     }
   }
 
-  const inp = "w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  const inp = "w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const label = "block text-xs font-semibold text-stone-500 mb-1";
 
   // ── Shared display helpers ─────────────────────────────────────────────
@@ -829,7 +829,7 @@ export default function WorksheetsPage() {
           <div className="relative flex-1">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
             <input
-              className="w-full border border-stone-200 rounded-xl pl-8 pr-8 py-2 text-sm outline-none focus:border-[#4a6da7]"
+              className="w-full border-2 border-stone-800 rounded-xl pl-8 pr-8 py-2 text-sm outline-none focus:border-[#2f5b9c]"
               placeholder="Search by name or worksheet no…"
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -1098,11 +1098,11 @@ export default function WorksheetsPage() {
                         <div key={idx} className="border border-stone-200 rounded-xl p-2.5 space-y-1.5">
                           <div className="flex items-center gap-2">
                             <input type="date" className={`${inp} flex-1`} value={e.date} onChange={ev => updateEntry(idx, { date: ev.target.value })} />
-                            <input type="time" className="w-[105px] border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                            <input type="time" className="w-[105px] border-2 border-stone-800 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                               value={e.start_time ?? ""} onChange={ev => updateEntry(idx, { start_time: ev.target.value })}
                               onFocus={() => { if (!e.start_time) updateEntry(idx, { start_time: defaultTimeNow() }); }} />
                             <span className="text-stone-400 text-xs shrink-0">to</span>
-                            <input type="time" className="w-[105px] border border-stone-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                            <input type="time" className="w-[105px] border-2 border-stone-800 rounded-xl px-2 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                               value={e.end_time ?? ""} onChange={ev => updateEntry(idx, { end_time: ev.target.value })}
                               onFocus={() => { if (!e.end_time) updateEntry(idx, { end_time: defaultTimeNow() }); }} />
                             <span className="text-xs font-semibold text-stone-600 whitespace-nowrap w-12 text-right">{hrs > 0 ? `${hrsDisplay}h` : "—"}</span>
@@ -1306,14 +1306,14 @@ export default function WorksheetsPage() {
                         </td>
                         <td className="px-2 py-1.5">
                           <input type="time"
-                            className="w-[108px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
+                            className="w-[108px] border-2 border-stone-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#2f5b9c]"
                             value={row.start_time}
                             onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, start_time: e.target.value } : r))}
                             onFocus={() => { if (!row.start_time) setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, start_time: defaultTimeNow() } : r)); }} />
                         </td>
                         <td className="px-2 py-1.5">
                           <input type="time"
-                            className="w-[108px] border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7]"
+                            className="w-[108px] border-2 border-stone-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#2f5b9c]"
                             value={row.end_time}
                             onChange={e => setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, end_time: e.target.value } : r))}
                             onFocus={() => { if (!row.end_time) setScheduleRows(prev => prev.map((r, i) => i === idx ? { ...r, end_time: defaultTimeNow() } : r)); }} />
@@ -1325,7 +1325,7 @@ export default function WorksheetsPage() {
                         </td>
                         <td className="px-2 py-1.5">
                           <input
-                            className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4a6da7] disabled:bg-transparent disabled:border-transparent disabled:text-stone-300"
+                            className="w-full border-2 border-stone-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#2f5b9c] disabled:bg-transparent disabled:border-transparent disabled:text-stone-300"
                             placeholder={worked ? "Remarks…" : ""}
                             disabled={!worked}
                             value={row.purpose}

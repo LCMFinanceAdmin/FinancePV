@@ -47,7 +47,7 @@ export function FeatureDirectory({ user }: { user: UserProfile }) {
             value={q}
             onChange={e => setQ(e.target.value)}
             placeholder="Find a feature…"
-            className="w-full rounded-xl border border-stone-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#4a6da7]"
+            className="w-full rounded-xl border-2 border-stone-800 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#2f5b9c]"
           />
         </div>
       </div>

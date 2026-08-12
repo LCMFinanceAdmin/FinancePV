@@ -141,7 +141,7 @@ function LoginForm() {
                   onKeyDown={e => e.key === "Enter" && sendMagicLink()}
                   placeholder="your@email.com"
                   autoFocus
-                  className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#4a6da7] transition-colors"
+                  className="w-full border-2 border-stone-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#2f5b9c] transition-colors"
                 />
                 <Button
                   onClick={sendMagicLink}

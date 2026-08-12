@@ -701,14 +701,14 @@ export default function SignatoryPage() {
         <div className="relative flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input
-            className="w-full border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7]"
+            className="w-full border-2 border-stone-800 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#2f5b9c]"
             placeholder="Search by PV no., payee, amount (e.g. >1000, 500-2000), date, purpose…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
         <select
-          className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7] text-stone-600"
+          className="border-2 border-stone-800 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-[#2f5b9c] text-stone-600"
           value={ministryFilter}
           onChange={e => setMinistryFilter(e.target.value)}>
           <option>All Ministries</option>
@@ -816,13 +816,13 @@ export default function SignatoryPage() {
               <label className="text-xs text-stone-500 block mb-1">
                 Remarks {pinModal.action === "REJECTED" ? <span className="text-red-400">* required</span> : "(optional)"}
               </label>
-              <textarea className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
+              <textarea className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] resize-none h-16"
                 placeholder={pinModal.action === "REJECTED" ? "Reason for rejection…" : "Optional remarks…"}
                 value={remarks} onChange={e => setRemarks(e.target.value)} />
             </div>
             <div>
               <label className="text-xs text-stone-500 block mb-1">Approval PIN <span className="text-red-400">*</span></label>
-              <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#4a6da7] font-mono"
+              <input className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#2f5b9c] font-mono"
                 type="password" maxLength={6} placeholder="••••••" value={pin}
                 onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} autoFocus />
             </div>
@@ -855,13 +855,13 @@ export default function SignatoryPage() {
             </div>
             <div>
               <label className="text-xs text-stone-500 block mb-1">New PIN</label>
-              <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#4a6da7] font-mono"
+              <input className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#2f5b9c] font-mono"
                 type="password" maxLength={6} placeholder="••••••" value={newPin} autoFocus
                 onChange={e => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 6))} />
             </div>
             <div>
               <label className="text-xs text-stone-500 block mb-1">Confirm new PIN</label>
-              <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#4a6da7] font-mono"
+              <input className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-[#2f5b9c] font-mono"
                 type="password" maxLength={6} placeholder="••••••" value={newPinConfirm}
                 onChange={e => setNewPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 onKeyDown={e => { if (e.key === "Enter" && newPin.length === 6 && newPinConfirm.length === 6) saveMyPin(); }} />

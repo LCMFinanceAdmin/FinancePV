@@ -249,7 +249,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
             {showRoleSwitcher && (
               <div className="space-y-2 pt-1 border-t border-amber-100">
                 <select
-                  className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#4a6da7] bg-white"
+                  className="w-full border-2 border-stone-800 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#2f5b9c] bg-white"
                   value={selectedRole}
                   onChange={e => { setSelectedRole(e.target.value); setSelectedMinistries([]); }}
                 >

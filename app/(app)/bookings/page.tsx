@@ -384,19 +384,19 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Full Name *</label>
-                <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={bookerName} onChange={e => setBookerName(e.target.value)} placeholder="Contact person name" />
+                <input className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={bookerName} onChange={e => setBookerName(e.target.value)} placeholder="Contact person name" />
               </div>
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Organisation</label>
-                <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={bookerOrg} onChange={e => setBookerOrg(e.target.value)} placeholder="Church / Company name" />
+                <input className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={bookerOrg} onChange={e => setBookerOrg(e.target.value)} placeholder="Church / Company name" />
               </div>
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Email</label>
-                <input type="email" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={bookerEmail} onChange={e => setBookerEmail(e.target.value)} />
+                <input type="email" className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={bookerEmail} onChange={e => setBookerEmail(e.target.value)} />
               </div>
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Phone</label>
-                <input type="tel" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={bookerPhone} onChange={e => setBookerPhone(e.target.value)} />
+                <input type="tel" className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={bookerPhone} onChange={e => setBookerPhone(e.target.value)} />
               </div>
             </div>
           </section>
@@ -421,11 +421,11 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
               </div>
               <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Event Name</label>
-                <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={eventName} onChange={e => setEventName(e.target.value)} placeholder="e.g. Sunday Service, Wedding Reception" />
+                <input className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={eventName} onChange={e => setEventName(e.target.value)} placeholder="e.g. Sunday Service, Wedding Reception" />
               </div>
               <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Purpose / Description</label>
-                <textarea rows={2} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none" value={purpose} onChange={e => setPurpose(e.target.value)} />
+                <textarea rows={2} className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] resize-none" value={purpose} onChange={e => setPurpose(e.target.value)} />
               </div>
             </div>
             {conflicts.length > 0 && (
@@ -447,11 +447,11 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Notes (visible on receipt)</label>
-                <textarea rows={2} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none" value={notes} onChange={e => setNotes(e.target.value)} />
+                <textarea rows={2} className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] resize-none" value={notes} onChange={e => setNotes(e.target.value)} />
               </div>
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Internal Notes (not on receipt)</label>
-                <textarea rows={2} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none" value={internalNotes} onChange={e => setInternal(e.target.value)} />
+                <textarea rows={2} className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] resize-none" value={internalNotes} onChange={e => setInternal(e.target.value)} />
               </div>
             </div>
           </section>
@@ -576,17 +576,17 @@ function PayModal({ booking, onClose, onPaid }: PayModalProps) {
           </div>
           <div>
             <label className="text-xs text-stone-500 mb-1 block">Payment Method *</label>
-            <select className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={method} onChange={e => setMethod(e.target.value)}>
+            <select className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={method} onChange={e => setMethod(e.target.value)}>
               {METHODS.map(m => <option key={m}>{m}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs text-stone-500 mb-1 block">Reference / Cheque No.</label>
-            <input className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={ref} onChange={e => setRef(e.target.value)} placeholder="Transaction / cheque number" />
+            <input className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={ref} onChange={e => setRef(e.target.value)} placeholder="Transaction / cheque number" />
           </div>
           <div>
             <label className="text-xs text-stone-500 mb-1 block">Payment Date *</label>
-            <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" value={date} onChange={e => setDate(e.target.value)} />
+            <input type="date" className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={date} onChange={e => setDate(e.target.value)} />
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
@@ -923,7 +923,7 @@ function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }:
                   <div className="flex items-center gap-2 mt-0.5">
                     <select value={booking.booker_type} disabled={reclassifying}
                       onChange={e => reclassify(e.target.value as PricingTier)}
-                      className="border border-stone-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-[#4a6da7]">
+                      className="border-2 border-stone-800 rounded-lg px-2 py-1 text-sm outline-none focus:border-[#2f5b9c]">
                       {(["PUBLIC", "MEMBER", "CONGREGATION", "HQ"] as PricingTier[]).map(t => <option key={t} value={t}>{TIER_LABELS[t]}</option>)}
                     </select>
                     <span className="text-[11px] text-stone-400">{reclassifying ? "Updating rates…" : "Changing this re-prices the booking"}</span>
@@ -1189,7 +1189,7 @@ function BlockModal({ user, facilities, defaultDate, onClose, onSaved }: {
     onSaved();
   }
 
-  const input = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  const input = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const label = "block text-xs font-semibold text-stone-600 mb-1";
 
   return (

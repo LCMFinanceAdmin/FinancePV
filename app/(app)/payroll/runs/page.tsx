@@ -107,12 +107,12 @@ export default function PayrollRunsPage() {
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Year</label>
               <input type="number" value={newYear} onChange={e => setNewYear(parseInt(e.target.value) || now.getFullYear())}
-                className="w-24 border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+                className="w-24 border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Month</label>
               <select value={newMonth} onChange={e => setNewMonth(parseInt(e.target.value))}
-                className="border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]">
+                className="border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]">
                 {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
                 <option value={13}>13th Month</option>
               </select>

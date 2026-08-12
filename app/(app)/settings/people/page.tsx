@@ -332,7 +332,7 @@ export default function PeopleDirectoryPage() {
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" />
           <input value={query} onChange={e => setQuery(e.target.value)}
             placeholder="Search by name, email, phone, department, company…"
-            className="w-full rounded-xl border border-stone-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#4a6da7]" />
+            className="w-full rounded-xl border-2 border-stone-800 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#2f5b9c]" />
         </div>
         <label className="flex items-center gap-2 text-sm text-stone-500">
           <input type="checkbox" className="accent-[#4a6da7]" checked={showInactive}

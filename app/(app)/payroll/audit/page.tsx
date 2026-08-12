@@ -113,7 +113,7 @@ export default function PayrollAuditPage() {
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, detail or actor…"
-            className="w-full border border-stone-300 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#4a6da7] bg-white" />
+            className="w-full border-2 border-stone-800 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#2f5b9c] bg-white" />
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {FILTER_GROUPS.map(g => (

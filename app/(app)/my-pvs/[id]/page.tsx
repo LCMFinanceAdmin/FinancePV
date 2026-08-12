@@ -107,7 +107,7 @@ function EField({ label, children }: { label: string; children: React.ReactNode 
     </div>
   );
 }
-const ei = "w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white";
+const ei = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] bg-white";
 
 // ── Signature block ────────────────────────────────────────────────────
 function SigBlock({ title, role, approval, pending, onClickSpace, savedSigFallback }: {
@@ -1224,7 +1224,7 @@ export default function PVDetailPage() {
                   value={officeRef}
                   onChange={e => setOfficeRef(e.target.value)}
                   placeholder={pv.pv_no}
-                  className="w-full text-sm border border-stone-200 rounded-lg px-3 py-1.5 outline-none focus:border-[#4a6da7] bg-white text-stone-900 font-medium placeholder:text-stone-300"
+                  className="w-full text-sm border-2 border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:border-[#2f5b9c] bg-white text-stone-900 font-medium placeholder:text-stone-300"
                 />
               </div>
               <div className="flex-1 min-w-[140px]">
@@ -1234,7 +1234,7 @@ export default function PVDetailPage() {
                   value={accountingCode}
                   onChange={e => setAccountingCode(e.target.value)}
                   placeholder="e.g. 6000-1234"
-                  className="w-full text-sm border border-stone-200 rounded-lg px-3 py-1.5 outline-none focus:border-[#4a6da7] bg-white text-stone-900 font-medium placeholder:text-stone-300"
+                  className="w-full text-sm border-2 border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:border-[#2f5b9c] bg-white text-stone-900 font-medium placeholder:text-stone-300"
                 />
               </div>
               <button
@@ -1474,7 +1474,7 @@ export default function PVDetailPage() {
               value={rejectRemarks}
               onChange={e => setRejectRemarks(e.target.value)}
               placeholder="Enter reason for rejection…"
-              className="w-full border border-stone-300 rounded-lg p-3 text-sm outline-none focus:border-red-400 min-h-[96px] resize-none"
+              className="w-full border-2 border-stone-800 rounded-lg p-3 text-sm outline-none focus:border-red-400 min-h-[96px] resize-none"
             />
             <div className="flex gap-2 mt-4">
               <button onClick={async () => {
@@ -1519,18 +1519,18 @@ export default function PVDetailPage() {
               <div>
                 <label className="text-xs font-semibold text-stone-600 block mb-1">Payment Reference</label>
                 <input value={payForm.ref} onChange={e => setPayForm(p => ({ ...p, ref: e.target.value }))}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#4a6da7]"
+                  className="w-full border-2 border-stone-800 rounded-lg p-2.5 text-sm outline-none focus:border-[#2f5b9c]"
                   placeholder="e.g. IBG/TT reference no." />
               </div>
               <div>
                 <label className="text-xs font-semibold text-stone-600 block mb-1">Payment Date</label>
                 <input type="date" value={payForm.date} onChange={e => setPayForm(p => ({ ...p, date: e.target.value }))}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#4a6da7]" />
+                  className="w-full border-2 border-stone-800 rounded-lg p-2.5 text-sm outline-none focus:border-[#2f5b9c]" />
               </div>
               <div>
                 <label className="text-xs font-semibold text-stone-600 block mb-1">Payment Method</label>
                 <select value={payForm.method} onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#4a6da7] bg-white">
+                  className="w-full border-2 border-stone-800 rounded-lg p-2.5 text-sm outline-none focus:border-[#2f5b9c] bg-white">
                   <option>Bank Transfer</option>
                   <option>Cheque</option>
                   <option>Cash</option>
@@ -1545,7 +1545,7 @@ export default function PVDetailPage() {
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png,.webp"
                   onChange={e => setReceiptFile(e.target.files?.[0] ?? null)}
-                  className="w-full border border-stone-300 rounded-lg p-2 text-sm text-stone-600 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#4a6da7] file:text-white hover:file:bg-[#3a5d97] cursor-pointer"
+                  className="w-full border-2 border-stone-800 rounded-lg p-2 text-sm text-stone-600 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#4a6da7] file:text-white hover:file:bg-[#3a5d97] cursor-pointer"
                 />
                 {receiptFile && (
                   <p className="text-xs text-green-700 mt-1">✓ {receiptFile.name}</p>
@@ -1586,7 +1586,7 @@ export default function PVDetailPage() {
               value={cancelRemarks}
               onChange={e => setCancelRemarks(e.target.value)}
               placeholder="e.g. Submitted by mistake, duplicate PV…"
-              className="w-full border border-stone-300 rounded-lg p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none mb-4"
+              className="w-full border-2 border-stone-800 rounded-lg p-3 text-sm outline-none focus:border-red-400 min-h-[80px] resize-none mb-4"
             />
             <div className="flex gap-2">
               <button
@@ -1794,7 +1794,7 @@ export default function PVDetailPage() {
               onChange={e => setCommentText(e.target.value)}
               placeholder="Type your comment here…"
               autoFocus
-              className="w-full border border-stone-300 rounded-xl p-3 text-sm outline-none focus:border-indigo-400 min-h-[100px] resize-none"
+              className="w-full border-2 border-stone-800 rounded-xl p-3 text-sm outline-none focus:border-indigo-400 min-h-[100px] resize-none"
             />
             <div className="flex gap-2 mt-4">
               <button onClick={submitComment} disabled={!commentText.trim() || commentLoading}
@@ -2136,7 +2136,7 @@ export default function PVDetailPage() {
                 <label className="text-xs text-stone-500 block mb-1">
                   Remarks {signAction === "REJECTED" ? <span className="text-red-400">* required</span> : "(optional)"}
                 </label>
-                <textarea className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none h-16"
+                <textarea className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none h-16"
                   placeholder={signAction === "REJECTED" ? "Reason for rejection…" : "Optional remarks…"}
                   value={sigRemarks} onChange={e => setSigRemarks(e.target.value)} />
               </div>
@@ -2147,7 +2147,7 @@ export default function PVDetailPage() {
                   <label className="text-xs font-semibold text-stone-600 flex items-center gap-1.5 mb-1">
                     <ShieldCheck size={12} /> Approval PIN <span className="text-red-400">*</span>
                   </label>
-                  <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-indigo-400 font-mono"
+                  <input className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-xl tracking-[0.5em] text-center outline-none focus:border-indigo-400 font-mono"
                     type="password" maxLength={6} placeholder="••••••" value={sigPin}
                     onChange={e => setSigPin(e.target.value.replace(/\D/g, "").slice(0, 6))} />
                 </div>

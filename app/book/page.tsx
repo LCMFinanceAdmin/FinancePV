@@ -176,7 +176,7 @@ export default function PublicBookingPage() {
     } finally { setSaving(false); }
   }
 
-  const input = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  const input = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const label = "block text-xs font-semibold text-stone-600 mb-1";
 
   if (done) {

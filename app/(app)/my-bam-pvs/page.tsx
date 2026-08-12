@@ -170,7 +170,7 @@ export default function MyBamPVsPage() {
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
         <input
-          className="w-full border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#4a6da7]"
+          className="w-full border-2 border-stone-800 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#2f5b9c]"
           placeholder="Search by PV no., payee, or purpose…"
           value={search}
           onChange={e => setSearch(e.target.value)}

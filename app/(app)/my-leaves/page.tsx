@@ -559,11 +559,11 @@ function MyLeavesInner() {
                       <div className="flex flex-wrap items-center gap-2">
                         <input type="date" value={form.start_date}
                           onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
-                          className="rounded-lg border border-stone-300 px-3 py-2 text-[14px] outline-none focus:border-[#4a6da7]" />
+                          className="rounded-lg border-2 border-stone-800 px-3 py-2 text-[14px] outline-none focus:border-[#2f5b9c]" />
                         <span className="text-stone-400">to</span>
                         <input type="date" value={form.end_date} min={form.start_date}
                           onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))}
-                          className="rounded-lg border border-stone-300 px-3 py-2 text-[14px] outline-none focus:border-[#4a6da7]" />
+                          className="rounded-lg border-2 border-stone-800 px-3 py-2 text-[14px] outline-none focus:border-[#2f5b9c]" />
                         {previewDays > 0 && (
                           <span className="rounded-full bg-[#eaf2ff] px-3 py-1 text-[13px] font-semibold text-[#1d4ed8]">
                             {previewDays} day{previewDays !== 1 ? "s" : ""}
@@ -621,7 +621,7 @@ function MyLeavesInner() {
                   <input type="url" value={form.attachment_url}
                     onChange={e => setForm(f => ({ ...f, attachment_url: e.target.value }))}
                     placeholder="Link to the medical certificate or other document…"
-                    className="mt-2 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#4a6da7]" />
+                    className="mt-2 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#2f5b9c]" />
                 </div>
               )}
 

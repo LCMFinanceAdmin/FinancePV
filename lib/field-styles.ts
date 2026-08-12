@@ -9,7 +9,7 @@
 // which matters most to whoever is filling in forty of them.
 
 export const fieldClass =
-  "w-full rounded-lg border-2 border-stone-700 bg-white px-2.5 py-1.5 text-sm text-stone-800 outline-none transition-colors placeholder:text-stone-400 focus:border-[#2f5b9c] disabled:border-stone-300 disabled:bg-stone-50 disabled:text-stone-500";
+  "w-full rounded-lg border-2 border-stone-800 bg-white px-2.5 py-1.5 text-sm text-stone-800 outline-none transition-colors placeholder:text-stone-400 focus:border-[#2f5b9c] disabled:border-stone-300 disabled:bg-stone-50 disabled:text-stone-500";
 
 /** Sits directly above a field, so it carries its own small gap. */
 export const labelClass = "mb-0.5 block text-[11px] font-medium text-stone-500";

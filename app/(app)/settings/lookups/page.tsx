@@ -217,4 +217,4 @@ function DeptRow({ dept, onChange, onSave, onDelete, saving }: {
   );
 }
 
-const inp = "border border-stone-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-[#4a6da7] bg-white w-full";
+const inp = "border-2 border-stone-800 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-[#2f5b9c] bg-white w-full";

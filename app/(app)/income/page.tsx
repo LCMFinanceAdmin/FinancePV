@@ -128,7 +128,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
             <div>
               <label className="text-xs text-stone-500 mb-1 block">Payer / Received From *</label>
               <input
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                 value={payer}
                 onChange={e => setPayer(e.target.value)}
                 placeholder="Name"
@@ -137,7 +137,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
             <div>
               <label className="text-xs text-stone-500 mb-1 block">Organisation</label>
               <input
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                 value={org}
                 onChange={e => setOrg(e.target.value)}
                 placeholder="Optional"
@@ -149,7 +149,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
           <div>
             <label className="text-xs text-stone-500 mb-1 block">Description *</label>
             <input
-              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+              className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
               value={desc}
               onChange={e => setDesc(e.target.value)}
               placeholder={
@@ -167,7 +167,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
             <div>
               <label className="text-xs text-stone-500 mb-1 block">Period Covered</label>
               <input
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                 value={period}
                 onChange={e => setPeriod(e.target.value)}
                 placeholder="e.g. June 2026"
@@ -183,7 +183,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
                 type="number"
                 min="0"
                 step="0.01"
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="0.00"
@@ -193,7 +193,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
               <label className="text-xs text-stone-500 mb-1 block">Payment Date *</label>
               <input
                 type="date"
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                 value={date}
                 onChange={e => setDate(e.target.value)}
               />
@@ -205,7 +205,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
             <div>
               <label className="text-xs text-stone-500 mb-1 block">Payment Method</label>
               <select
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                 value={method}
                 onChange={e => setMethod(e.target.value)}
               >
@@ -215,7 +215,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
             <div>
               <label className="text-xs text-stone-500 mb-1 block">Reference / Cheque No.</label>
               <input
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+                className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
                 value={ref}
                 onChange={e => setRef(e.target.value)}
                 placeholder="Optional"
@@ -228,7 +228,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
             <label className="text-xs text-stone-500 mb-1 block">Notes</label>
             <textarea
               rows={2}
-              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none"
+              className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] resize-none"
               value={notes}
               onChange={e => setNotes(e.target.value)}
             />

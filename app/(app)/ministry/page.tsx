@@ -301,7 +301,7 @@ export default function ExcoPage() {
                     ) : (
                       <div className="space-y-2 border-t border-stone-100 pt-3">
                         <textarea
-                          className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
+                          className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] resize-none h-16"
                           placeholder="Remarks (required when rejecting)…"
                           value={remarks} onChange={e => setRemarks(e.target.value)} />
 
@@ -431,7 +431,7 @@ export default function ExcoPage() {
                   selected?.id === pv.id ? (
                     <div className="space-y-2 pt-2 border-t border-stone-100">
                       <textarea
-                        className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none h-16"
+                        className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] resize-none h-16"
                         placeholder="Remarks (optional)"
                         value={remarks}
                         onChange={(e) => setRemarks(e.target.value)}

@@ -88,14 +88,14 @@ export default function AdminPage() {
         <div className="relative flex-1 min-w-48">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input
-            className="w-full border border-stone-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-[#4a6da7]"
+            className="w-full border-2 border-stone-800 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-[#2f5b9c]"
             placeholder="Search PVs…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <select
-          className="border border-stone-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7] bg-white"
+          className="border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] bg-white"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as "ALL" | PVStatus)}
         >
@@ -241,4 +241,4 @@ function RejectForm({ pvId, onSubmit, acting, onCancel }: {
   );
 }
 
-const inp = "border border-stone-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-[#4a6da7] w-full";
+const inp = "border-2 border-stone-800 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-[#2f5b9c] w-full";

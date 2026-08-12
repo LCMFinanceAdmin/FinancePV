@@ -40,7 +40,7 @@ const monthLabel = (iso: string) => {
 const yearOf = (iso: string) => new Date(iso + (iso.length === 10 ? "T00:00:00" : "")).getFullYear();
 
 const inputCls =
-  "w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#4a6da7]";
+  "w-full rounded-lg border-2 border-stone-800 bg-white px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
 
 export function PaidArchive({ ministries = [] }: { ministries?: string[] }) {
   const supabase = createClient();
@@ -163,7 +163,7 @@ export function PaidArchive({ ministries = [] }: { ministries?: string[] }) {
               value={text}
               onChange={e => setText(e.target.value)}
               placeholder="Search all paid PVs — voucher no., payee, purpose, project or exact amount…"
-              className="w-full rounded-xl border border-stone-200 bg-white py-2.5 pl-9 pr-9 text-sm outline-none focus:border-[#4a6da7]"
+              className="w-full rounded-xl border-2 border-stone-800 bg-white py-2.5 pl-9 pr-9 text-sm outline-none focus:border-[#2f5b9c]"
             />
             {text && (
               <button onClick={() => setText("")}

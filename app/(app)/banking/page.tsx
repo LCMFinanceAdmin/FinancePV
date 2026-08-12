@@ -1309,7 +1309,7 @@ export default function BankingPage() {
                 <input type="text" value={accForm[key as keyof typeof accForm] as string}
                   onChange={e => setAccForm(f => ({ ...f, [key]: e.target.value }))}
                   placeholder={placeholder}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
             ))}
 
@@ -1317,7 +1317,7 @@ export default function BankingPage() {
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Bank *</label>
                 <select value={accForm.bank_name} onChange={e => setAccForm(f => ({ ...f, bank_name: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   <option value="">— Select —</option>
                   {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
@@ -1325,7 +1325,7 @@ export default function BankingPage() {
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Entity</label>
                 <select value={accForm.entity} onChange={e => setAccForm(f => ({ ...f, entity: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   <option value="LCM">LCM</option>
                   <option value="BAM">BAM</option>
                   <option value="LSC">LSC (Luther Study Centre)</option>
@@ -1343,7 +1343,7 @@ export default function BankingPage() {
                 <input type="number" value={accForm.current_balance} step="0.01" min="0"
                   onChange={e => setAccForm(f => ({ ...f, current_balance: e.target.value }))}
                   placeholder="0.00"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
             )}
 
@@ -1385,7 +1385,7 @@ export default function BankingPage() {
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">FD Account *</label>
               <select value={certForm.account_id} onChange={e => setCertForm(f => ({ ...f, account_id: e.target.value }))}
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                 <option value="">— Select FD Account —</option>
                 {fdAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.bank_name})</option>)}
               </select>
@@ -1402,21 +1402,21 @@ export default function BankingPage() {
                     const md = addMonths(d, parseInt(certForm.term_months) || 12);
                     setCertForm(f => ({ ...f, date_of_issue: d, maturity_date: f.maturity_date || md }));
                   }}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Certificate No. *</label>
                 <input type="text" value={certForm.certificate_no}
                   onChange={e => setCertForm(f => ({ ...f, certificate_no: e.target.value }))}
                   placeholder="e.g. FD-2024-001"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Principal (RM)</label>
                 <input type="number" value={certForm.principal} step="0.01" min="0"
                   onChange={e => setCertForm(f => ({ ...f, principal: e.target.value }))}
                   placeholder="0.00"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Term (months)</label>
@@ -1426,7 +1426,7 @@ export default function BankingPage() {
                     const md = addMonths(certForm.date_of_issue, parseInt(t) || 12);
                     setCertForm(f => ({ ...f, term_months: t, maturity_date: md }));
                   }}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   {TERM_OPTIONS.map(t => <option key={t} value={t}>{t} month{t !== 1 ? "s" : ""}</option>)}
                 </select>
               </div>
@@ -1435,13 +1435,13 @@ export default function BankingPage() {
                 <input type="number" value={certForm.interest_rate} step="0.0001" min="0"
                   onChange={e => setCertForm(f => ({ ...f, interest_rate: e.target.value }))}
                   placeholder="e.g. 3.75"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Maturity Date</label>
                 <input type="date" value={certForm.maturity_date}
                   onChange={e => setCertForm(f => ({ ...f, maturity_date: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
             </div>
 
@@ -1470,21 +1470,21 @@ export default function BankingPage() {
                     <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Reissue</label>
                     <input type="date" value={certForm.reissue_date}
                       onChange={e => setCertForm(f => ({ ...f, reissue_date: e.target.value }))}
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                      className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-stone-600 mb-1">New Certificate No.</label>
                     <input type="text" value={certForm.new_certificate_no}
                       onChange={e => setCertForm(f => ({ ...f, new_certificate_no: e.target.value }))}
                       placeholder="e.g. FD-2025-001"
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                      className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
                   </div>
                   <div className="col-span-2">
                     <label className="block text-xs font-semibold text-stone-600 mb-1">New Principal (RM)</label>
                     <input type="number" value={certForm.new_principal} step="0.01" min="0"
                       onChange={e => setCertForm(f => ({ ...f, new_principal: e.target.value }))}
                       placeholder="Leave blank if same as original principal"
-                      className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                      className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
                   </div>
                 </div>
               </div>
@@ -1494,7 +1494,7 @@ export default function BankingPage() {
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Status</label>
                 <select value={certForm.status} onChange={e => setCertForm(f => ({ ...f, status: e.target.value as FDCertificate["status"] }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   <option value="ACTIVE">Active</option>
                   <option value="MATURED">Matured</option>
                   <option value="WITHDRAWN">Withdrawn</option>
@@ -1505,7 +1505,7 @@ export default function BankingPage() {
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Notes</label>
                 <input type="text" value={certForm.notes} onChange={e => setCertForm(f => ({ ...f, notes: e.target.value }))}
                   placeholder="Optional notes"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
             </div>
 
@@ -1529,20 +1529,20 @@ export default function BankingPage() {
               <label className="block text-xs font-semibold text-stone-600 mb-1">Withdrawal Date *</label>
               <input type="date" value={withdrawalForm.withdrawal_date}
                 onChange={e => setWithdrawalForm(f => ({ ...f, withdrawal_date: e.target.value }))}
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Amount Credited (RM) *</label>
               <input type="number" value={withdrawalForm.amount_credited} step="0.01" min="0"
                 onChange={e => setWithdrawalForm(f => ({ ...f, amount_credited: e.target.value }))}
                 placeholder="Total amount received (principal + interest)"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Credit To (Current Account)</label>
               <select value={withdrawalForm.credit_to_account_id}
                 onChange={e => setWithdrawalForm(f => ({ ...f, credit_to_account_id: e.target.value }))}
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                 <option value="">— Select account —</option>
                 {currentAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.bank_name})</option>)}
               </select>
@@ -1552,7 +1552,7 @@ export default function BankingPage() {
               <input type="text" value={withdrawalForm.notes}
                 onChange={e => setWithdrawalForm(f => ({ ...f, notes: e.target.value }))}
                 placeholder="Optional"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
             </div>
             <button onClick={saveWithdrawal} disabled={savingWithdrawal}
               className="w-full py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
@@ -1577,7 +1577,7 @@ export default function BankingPage() {
               <input autoFocus type="number" value={newBalance} step="0.01" min="0"
                 onChange={e => setNewBalance(e.target.value)}
                 placeholder="Enter current balance from bank statement"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               <p className="text-[11px] text-stone-400 mt-1">
                 Previous: {formatCurrency(balanceModal.current_balance)} — Updated {formatDate(balanceModal.last_updated_at)}
               </p>
@@ -1607,7 +1607,7 @@ export default function BankingPage() {
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Statement Month *</label>
               <input type="month" value={stmtMonth} onChange={e => setStmtMonth(e.target.value)}
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             </div>
 
             <div>
@@ -1634,7 +1634,7 @@ export default function BankingPage() {
               <label className="block text-xs font-semibold text-stone-600 mb-1">Notes (optional)</label>
               <input type="text" value={stmtNotes} onChange={e => setStmtNotes(e.target.value)}
                 placeholder="e.g. Closing balance RM 50,000"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             </div>
 
             <button onClick={uploadStatement} disabled={uploadingStmt || !stmtMonth || !stmtFile}
@@ -1669,21 +1669,21 @@ export default function BankingPage() {
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Renewal / Visit Date *</label>
                 <input type="date" value={renewForm.renewal_date}
                   onChange={e => setRenewForm(f => ({ ...f, renewal_date: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-semibold text-stone-600 mb-1">New Certificate No. (if changed)</label>
                 <input type="text" value={renewForm.new_certificate_no}
                   onChange={e => setRenewForm(f => ({ ...f, new_certificate_no: e.target.value }))}
                   placeholder="Leave blank if same cert number"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">New Principal (RM)</label>
                 <input type="number" value={renewForm.new_principal} step="0.01" min="0"
                   onChange={e => setRenewForm(f => ({ ...f, new_principal: e.target.value }))}
                   placeholder="Principal being renewed"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
                 <p className="text-[10px] text-stone-400 mt-0.5">Pre-filled with previous P+I</p>
               </div>
               <div>
@@ -1694,7 +1694,7 @@ export default function BankingPage() {
                     const newMat = addMonths(renewCert.maturity_date, parseInt(t) || 12);
                     setRenewForm(f => ({ ...f, term_months: t, new_maturity_date: newMat }));
                   }}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   {TERM_OPTIONS.map(t => <option key={t} value={t}>{t} month{t !== 1 ? "s" : ""}</option>)}
                 </select>
               </div>
@@ -1703,13 +1703,13 @@ export default function BankingPage() {
                 <input type="number" value={renewForm.interest_rate} step="0.0001" min="0"
                   onChange={e => setRenewForm(f => ({ ...f, interest_rate: e.target.value }))}
                   placeholder="e.g. 3.75"
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">New Maturity Date *</label>
                 <input type="date" value={renewForm.new_maturity_date}
                   onChange={e => setRenewForm(f => ({ ...f, new_maturity_date: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
                 <p className="text-[10px] text-stone-400 mt-0.5">Auto-calculated from old maturity + term</p>
               </div>
             </div>

@@ -1732,7 +1732,7 @@ export default function RecurringPage() {
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
           <input
-            className="w-full pl-9 pr-8 py-2.5 border border-stone-200 rounded-xl text-sm outline-none focus:border-[#4a6da7] bg-white"
+            className="w-full pl-9 pr-8 py-2.5 border-2 border-stone-800 rounded-xl text-sm outline-none focus:border-[#2f5b9c] bg-white"
             placeholder="Search by name, payee, amount, keyword…"
             value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setActiveFilter(null); }}
           />
@@ -1820,7 +1820,7 @@ export default function RecurringPage() {
                     Which period is this paying for?
                   </label>
                   <select value={raisePeriodKey} onChange={e => setRaisePeriodKey(e.target.value)}
-                    className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]">
+                    className="w-full rounded-xl border-2 border-stone-800 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#2f5b9c]">
                     {periods.map(pd => {
                       const done = runsByPeriod[`${raiseItem.id}|${pd.key}`];
                       return (
@@ -1840,7 +1840,7 @@ export default function RecurringPage() {
                     Purpose of payment
                   </label>
                   <input value={raisePurpose} onChange={e => setRaisePurpose(e.target.value)}
-                    className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm outline-none focus:border-[#4a6da7]"
+                    className="w-full rounded-xl border-2 border-stone-800 px-3 py-2.5 text-sm outline-none focus:border-[#2f5b9c]"
                     placeholder="What this payment is for" />
                   <p className="mt-1 text-[11px] text-stone-400">
                     Printed on the voucher next to &ldquo;Purpose&rdquo;. Particulars below can run
@@ -1883,12 +1883,12 @@ export default function RecurringPage() {
                                 placeholder={i === 0
                                   ? "e.g. A/C NO 220132397203, meter reading, any note"
                                   : "e.g. Arrears from previous month"}
-                                className="w-full resize-y rounded-lg border border-transparent px-2 py-2 text-sm leading-snug outline-none hover:border-stone-200 focus:border-[#4a6da7]" />
+                                className="w-full resize-y rounded-lg border border-transparent px-2 py-2 text-sm leading-snug outline-none hover:border-stone-200 focus:border-[#2f5b9c]" />
                             </td>
                             <td className="p-1.5 align-top">
                               <input type="number" step="0.01" min="0" value={line.amount}
                                 onChange={e => setRaiseLine(i, { amount: e.target.value })}
-                                className="w-full rounded-lg border border-transparent px-2 py-2 text-right text-sm outline-none hover:border-stone-200 focus:border-[#4a6da7]" />
+                                className="w-full rounded-lg border border-transparent px-2 py-2 text-right text-sm outline-none hover:border-stone-200 focus:border-[#2f5b9c]" />
                             </td>
                             <td className="p-1.5 text-center align-top">
                               {raiseLines.length > 1 && (
@@ -2006,7 +2006,7 @@ export default function RecurringPage() {
             )}
             <input autoFocus value={renameInput} onChange={e => setRenameInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && renameInput.trim()) saveRename(); if (e.key === "Escape") setRenameTarget(null); }}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+              className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" />
             <div className="flex flex-col gap-2 pt-1">
               <button onClick={saveRename} disabled={renaming || !renameInput.trim()}
                 className="w-full px-4 py-2.5 text-sm rounded-xl font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] disabled:opacity-50 transition-colors">
@@ -2036,7 +2036,7 @@ export default function RecurringPage() {
             <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && newFolderName.trim()) createEmptyFolder(); if (e.key === "Escape") setNewFolderModal(null); }}
               placeholder={newFolderModal.parent ? "e.g. Clergy allowances" : "e.g. Allowances"}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+              className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" />
             <div className="flex flex-col gap-2 pt-1">
               <button onClick={createEmptyFolder} disabled={!newFolderName.trim()}
                 className="w-full px-4 py-2.5 text-sm rounded-xl font-semibold text-white bg-[#4a6da7] hover:bg-[#3d5d8f] disabled:opacity-50 transition-colors">
@@ -2103,7 +2103,7 @@ export default function RecurringPage() {
                     setPeriodRunSelected(new Set(
                       list.filter(i => !runsByPeriod[`${i.id}|${match.key}`] && !isExpiredItem(i)).map(i => i.id)));
                   }}
-                  className="rounded-lg border border-stone-200 px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]">
+                  className="rounded-lg border-2 border-stone-800 px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c]">
                   {years.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
                 <select
@@ -2116,7 +2116,7 @@ export default function RecurringPage() {
                     setPeriodRunSelected(new Set(
                       list.filter(i => !runsByPeriod[`${i.id}|${opt.key}`] && !isExpiredItem(i)).map(i => i.id)));
                   }}
-                  className="rounded-lg border border-stone-200 px-2.5 py-1.5 text-sm outline-none focus:border-[#4a6da7]">
+                  className="rounded-lg border-2 border-stone-800 px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c]">
                   {periodsForYear(freq, period.year).map(o => (
                     <option key={o.key} value={o.key}>{o.label}</option>
                   ))}
@@ -3906,4 +3906,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const inp = "w-full border border-stone-200 rounded-lg px-3.5 py-2.5 text-[15px] outline-none focus:border-[#4a6da7] bg-white";
+const inp = "w-full border-2 border-stone-800 rounded-lg px-3.5 py-2.5 text-[15px] outline-none focus:border-[#2f5b9c] bg-white";

@@ -621,7 +621,7 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.gross)}</td>
                 <td className="border border-stone-200 px-0.5 py-0.5 text-right">
                   <input type="number" value={pcb[emp.id] || ""} onChange={e => setPcb(p => ({ ...p, [emp.id]: parseFloat(e.target.value) || 0 }))}
-                    className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#4a6da7] outline-none bg-transparent" placeholder="0.00" />
+                    className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
                 </td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.epf.ee)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.epf.er)}</td>
@@ -799,7 +799,7 @@ export default function PayrollRunDetailPage() {
                     onChange={e => setRevertReason(e.target.value)}
                     autoFocus
                     placeholder="e.g. Adeline's allowance was wrong"
-                    className="h-20 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+                    className="h-20 w-full resize-none rounded-xl border-2 border-stone-800 px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" />
                   <p className="mt-1 text-[11px] text-stone-400">Recorded in the audit trail and on each cancelled PV.</p>
                 </div>
               </div>

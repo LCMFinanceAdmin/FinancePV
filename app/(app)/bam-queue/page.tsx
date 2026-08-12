@@ -236,7 +236,7 @@ export default function BamQueuePage() {
           <div className="flex items-center gap-2">
             <input type="email" value={newCommitteeEmail} onChange={e => setNewCommitteeEmail(e.target.value)}
               placeholder="name@lcm.org.my or personal email"
-              className="flex-1 border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#4a6da7]" />
+              className="flex-1 border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" />
             <button onClick={() => assignCommittee("add", newCommitteeEmail.trim())} disabled={assigning || !newCommitteeEmail.trim()}
               className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#3d5c96] disabled:opacity-50 transition-colors">
               <Plus size={14} /> {assigning ? "…" : "Assign"}
@@ -335,7 +335,7 @@ export default function BamQueuePage() {
                   Reason for rejection *
                 </label>
                 <textarea
-                  className="w-full border border-stone-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4a6da7] resize-none"
+                  className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] resize-none"
                   rows={3}
                   placeholder="Enter reason…"
                   value={remarks}

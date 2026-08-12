@@ -85,7 +85,7 @@ export function CommitteePicker({
             <input autoFocus value={q} onChange={e => setQ(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && canAdd) { e.preventDefault(); add(); } if (e.key === "Escape") setOpen(false); }}
               placeholder="Search or type a new one…"
-              className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40" />
+              className="w-full border-2 border-stone-800 rounded-lg px-2 py-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40" />
           </div>
           <div className="max-h-60 overflow-y-auto py-1">
             {canAdd && (
