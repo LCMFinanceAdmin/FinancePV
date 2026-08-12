@@ -185,6 +185,14 @@ export default function PVDetailPage() {
 
   const [pv, setPv] = useState<PV | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
+  /**
+   * May decide this voucher — review, reject, edit, cancel, delete.
+   *
+   * Not the same as reaching the finance pages. The Accounts Executive works on
+   * every voucher here: she codes it, records the payment and issues its
+   * reference. What she does not do is decide whether it goes through.
+   */
+  const canDecide = !!user?.isFinanceAdmin && !user?.isAccountsExec;
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionToast, setActionToast] = useState({ msg: "", ok: true });
@@ -340,6 +348,7 @@ export default function PVDetailPage() {
         full_name: profile?.full_name ?? authUser.email!,
         role, ministries: profile?.ministries ?? [],
         isFinanceAdmin: ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role),
+        isAccountsExec: role === "FINANCE_ADMIN_2",
         isSignatory: ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"].includes(role),
         signatoryRole: role, isMinistryHead: role === "MINISTRY_HEAD",
         isGeneralManager: role === "GENERAL_MANAGER",
@@ -993,7 +1002,10 @@ export default function PVDetailPage() {
       )}
 
       {/* ── Finance Executive Action Panel ─────────────────────────────── */}
-      {user?.isFinanceAdmin && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD", "BAM_COMMITTEE_REVIEW", "BAM_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY"].includes(pv.status) && (
+      {/* The Accounts Executive sees this voucher in full but decides nothing
+          about it: reviewing, rejecting and cancelling belong to the Finance
+          Executive. She records the payment and the accounting code below. */}
+      {canDecide && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD", "BAM_COMMITTEE_REVIEW", "BAM_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -1295,7 +1307,7 @@ export default function PVDetailPage() {
           unbroken. Offered only for CANCELLED — anything approved or paid is a
           financial record, and removing it would destroy evidence of a real
           decision. */}
-      {user?.isFinanceAdmin && pv.status === "CANCELLED" && (
+      {canDecide && pv.status === "CANCELLED" && (
         <div className="print:hidden mx-auto mt-3 max-w-4xl px-4">
           <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
             <div className="min-w-0 flex-1">
@@ -1314,11 +1326,11 @@ export default function PVDetailPage() {
       )}
 
       {/* ── Admin / Submitter actions ─────────────────────────────── */}
-      {(user?.isFinanceAdmin || (user?.email === pv.submitted_by_email && !user?.isSignatory)) &&
+      {(canDecide || (user?.email === pv.submitted_by_email && !user?.isSignatory)) &&
         !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-3 flex items-center gap-2 flex-wrap">
           {/* Edit — Finance Executive only */}
-          {user?.isFinanceAdmin && (
+          {canDecide && (
             <button onClick={() => {
               setEditForm({
                 payee_name: pv.payee_name, payee_bank_name: pv.payee_bank_name,
@@ -1344,10 +1356,10 @@ export default function PVDetailPage() {
           <button onClick={() => { setCancelRemarks(""); setShowCancelModal(true); }}
             className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors">
             <XIcon size={13} />
-            {user?.email === pv.submitted_by_email && !user?.isFinanceAdmin ? "Withdraw PV" : "Cancel PV"}
+            {user?.email === pv.submitted_by_email && !canDecide ? "Withdraw PV" : "Cancel PV"}
           </button>
           {/* Hard Delete — Finance Executive only */}
-          {user?.isFinanceAdmin && (
+          {canDecide && (
             <button onClick={() => setShowHardDeleteModal(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 transition-colors">
               <Trash2 size={13} /> Delete Permanently
@@ -1574,7 +1586,7 @@ export default function PVDetailPage() {
             <div className="flex items-center gap-2 mb-1">
               <Trash2 size={18} className="text-red-500" />
               <h2 className="text-lg font-bold text-stone-800">
-                {user?.email === pv.submitted_by_email && !user?.isFinanceAdmin ? "Withdraw PV" : "Cancel PV"}
+                {user?.email === pv.submitted_by_email && !canDecide ? "Withdraw PV" : "Cancel PV"}
               </h2>
             </div>
             <p className="text-sm text-stone-500 mb-1">{pv.pv_no} — {pv.payee_name}</p>

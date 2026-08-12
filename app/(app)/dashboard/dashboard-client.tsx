@@ -12,7 +12,7 @@ import {
   FilePlus, Clock, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
   FileText, ChevronDown, ChevronUp, X, Inbox, AlertCircle,
   Building2, RefreshCw, Landmark, ArrowRight, TrendingUp, Layers,
-  Activity, PiggyBank, Wallet, Settings,
+  Activity, PiggyBank, Wallet, Settings, CreditCard,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -51,6 +51,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
   const [userMinistries, setUserMinistries] = useState<string[]>([]);
   const [userEmail,      setUserEmail]      = useState("");
   const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(userRole);
+  const isAccountsExec = userRole === "FINANCE_ADMIN_2";
   const isSignatory    = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"].includes(userRole);
   const needsPin       = ["BISHOP", "TREASURER", "SECRETARY"].includes(userRole);
   const isBamRole      = ["BUILDING_MANAGER", "BAM_COMMITTEE"].includes(userRole);
@@ -59,6 +60,12 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
   const [gmClaimCount, setGmClaimCount] = useState(0);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [recurringCount, setRecurringCount] = useState(0);
+  // The Accounts Executive's day is the settlement end of the process: what has
+  // cleared approval and is waiting to be paid, and what she has already paid.
+  // Counting only her own submissions, as the cards below do for everyone else,
+  // would show her almost nothing.
+  const [awaitingPayment, setAwaitingPayment] = useState(0);
+  const [paidThisMonth, setPaidThisMonth] = useState(0);
 
   const [expandedBulk,   setExpandedBulk]   = useState<Set<string>>(new Set());
   const [bulkPVs,        setBulkPVs]        = useState<Record<string, Partial<PV>[]>>({});
@@ -175,6 +182,18 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
         if (bankResult.data) setBankAccounts(bankResult.data);
         if (recurringResult.count !== null) setRecurringCount(recurringResult.count);
         if (isFinAdmin) fetchUnprocessedGmClaimCount(supabase).then(setGmClaimCount).catch(() => {});
+
+        // The settlement counts, for whoever records payments.
+        if (isFinAdmin) {
+          const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+          const [awaiting, paid] = await Promise.all([
+            supabase.from("pvs").select("id", { count: "exact", head: true }).eq("status", "APPROVED"),
+            supabase.from("pvs").select("id", { count: "exact", head: true })
+              .eq("status", "PAID").gte("paid_at", monthStart),
+          ]);
+          if (awaiting.count !== null) setAwaitingPayment(awaiting.count);
+          if (paid.count !== null) setPaidThisMonth(paid.count);
+        }
 
         if (childPvResult.data && runs.length > 0) {
           const pvsByRun: Record<string, Partial<PV>[]> = {};
@@ -405,6 +424,46 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
       </div>
 
       {/* ── Needs attention cards ─────────────────────────────────────── */}
+      {/* The Accounts Executive's four are the settlement end of the process:
+          what has cleared approval and is waiting to be paid, what the GM has
+          sent through, what she has already paid, and what is in the bank. She
+          does not approve, so a queue of things to decide would be noise. */}
+      {isAccountsExec ? (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <AttentionCard
+          icon={<CheckCircle2 size={20} className="text-emerald-500" />}
+          label="Ready to Pay"
+          value={awaitingPayment}
+          sub="fully approved"
+          href="/payments"
+          accent="emerald"
+        />
+        <AttentionCard
+          icon={<Inbox size={20} className="text-blue-500" />}
+          label="GM Claims"
+          value={gmClaimCount}
+          sub="to process"
+          href="/gm-claims"
+          accent="blue"
+        />
+        <AttentionCard
+          icon={<CreditCard size={20} className="text-violet-500" />}
+          label="Paid"
+          value={paidThisMonth}
+          sub="this month"
+          href="/payments?tab=history"
+          accent="violet"
+        />
+        <AttentionCard
+          icon={<Landmark size={20} className="text-amber-500" />}
+          label="In the Bank"
+          value={formatCurrency(totalBalance)}
+          sub={`${bankAccounts.length} account${bankAccounts.length === 1 ? "" : "s"}`}
+          href="/banking"
+          accent="amber"
+        />
+      </div>
+      ) : (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <AttentionCard
           icon={<Clock size={20} className="text-amber-500" />}
@@ -462,6 +521,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
           />
         )}
       </div>
+      )}
 
       {/* ── GM Claim notifications ────────────────────────────────────── */}
       {isFinanceAdmin && gmNotifs.length > 0 && (
@@ -776,7 +836,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function AttentionCard({ icon, label, value, sub, href, accent }: {
-  icon: React.ReactNode; label: string; value: number; sub: string;
+  icon: React.ReactNode; label: string; value: number | string; sub: string;
   href?: string; accent: "amber" | "emerald" | "blue" | "violet" | "stone";
 }) {
   const bg = {

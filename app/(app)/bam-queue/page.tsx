@@ -97,6 +97,9 @@ export default function BamQueuePage() {
 
   const isBuildingManager = userRole === "BUILDING_MANAGER";
   const isBamCommittee = userRole === "BAM_COMMITTEE";
+  // The Accounts Executive follows the building queue but does not review it:
+  // she sees where each voucher has reached, and the buttons are not hers.
+  const isAccountsExec = userRole === "FINANCE_ADMIN_2";
 
   const isPending = (p: BAMPv) =>
     (isBamCommittee && p.status === "BAM_COMMITTEE_REVIEW") ||
@@ -250,7 +253,9 @@ export default function BamQueuePage() {
         <div>
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle size={16} className="text-orange-500" />
-            <h2 className="text-sm font-bold text-stone-700">Awaiting Your Review ({pendingPvs.length})</h2>
+            <h2 className="text-sm font-bold text-stone-700">
+              {isAccountsExec ? "Awaiting Finance Review" : "Awaiting Your Review"} ({pendingPvs.length})
+            </h2>
           </div>
           <div className="space-y-3">
             {pendingPvs.map(pv => (
@@ -270,6 +275,9 @@ export default function BamQueuePage() {
                     </Link>
                     <div className="text-right shrink-0">
                       <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount)}</div>
+                      {isAccountsExec ? (
+                        <div className="mt-2 text-[11px] font-medium text-stone-400">Awaiting Finance review</div>
+                      ) : (
                       <div className="flex gap-2 mt-2">
                         <button
                           onClick={() => openAction(pv, "REJECT")}
@@ -284,6 +292,7 @@ export default function BamQueuePage() {
                           <CheckCircle size={12} /> {isBamCommittee ? "Sign & Approve" : "Approve"}
                         </button>
                       </div>
+                      )}
                     </div>
                   </div>
                 </CardBody>

@@ -37,6 +37,14 @@ export interface UserProfile {
   role: UserRole;
   ministries: string[];
   isFinanceAdmin: boolean;
+  /**
+   * The Accounts Executive (FINANCE_ADMIN_2). She sits inside isFinanceAdmin —
+   * she reaches the same finance pages — but she does not decide vouchers. She
+   * records payments and keeps the reference series, runs payroll, and keeps
+   * the church records. Read this wherever a page offers approve, reject or
+   * verify, and hide those.
+   */
+  isAccountsExec?: boolean;
   isSignatory: boolean;
   signatoryRole: string;
   isMinistryHead: boolean;

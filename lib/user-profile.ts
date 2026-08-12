@@ -44,6 +44,8 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     role,
     ministries,
     isFinanceAdmin: ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role),
+    // Inside isFinanceAdmin, but she decides nothing — see UserProfile.
+    isAccountsExec: role === "FINANCE_ADMIN_2",
     isSignatory,
     signatoryRole: isSignatory ? role : "",
     isMinistryHead: role === "MINISTRY_HEAD" || ministries.length > 0,

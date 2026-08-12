@@ -16,7 +16,7 @@ import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, RefreshCw, Users, Building2,
   Settings, Activity, ClipboardCheck, PiggyBank, FlaskConical, ShoppingCart,
   ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
-  Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle, Handshake,
+  Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle, Handshake, Hash,
 } from "lucide-react";
 
 export interface NavItem {
@@ -46,6 +46,16 @@ export interface NavGroup {
 const canManagePeople = (u: UserProfile) =>
   u.isFinanceAdmin || u.isGeneralManager || u.isSignatory || !!u.isAdministrator;
 
+/**
+ * The Accounts Executive keeps the books; she does not decide vouchers, and
+ * she has no part in the building side beyond the bookings and the income they
+ * bring in. Written once here because it qualifies a dozen entries below, and
+ * a rule spelled out a dozen times is a rule that will disagree with itself.
+ */
+const isAcct = (u: UserProfile) => !!u.isAccountsExec;
+/** Finance, but not the Accounts Executive. */
+const financeNotAcct = (u: UserProfile) => u.isFinanceAdmin && !isAcct(u);
+
 const size = 16;
 
 /** Always visible, never nested — the two things done most often. */
@@ -54,9 +64,12 @@ export const PINNED: NavItem[] = [
     href: "/dashboard", label: "Dashboard", desc: "What needs your attention today",
     icon: <LayoutDashboard size={size} />, show: (u) => !u.isSignatory,
   },
+  // Anyone can be owed money — a volunteer who bought refreshments, a council
+  // member who paid for petrol. Raising a voucher is not an employment
+  // entitlement, so it is offered to every role. (Leave, below, is not.)
   {
     href: "/submit", label: "Submit PV", desc: "Raise a payment voucher",
-    icon: <FilePlus size={size} />, show: (u) => !u.isSignatory && !u.isBuildingManager,
+    icon: <FilePlus size={size} />, show: () => true,
   },
 ];
 
@@ -151,9 +164,11 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: <Hammer size={size} />,
     accent: "#9333ea",
     items: [
+      // The Accounts Executive's part in the building side is the money it
+      // takes in, not the work it does: bookings and income only.
       {
         href: "/submit?type=bam", label: "Submit BAM PV", desc: "Raise a building or event voucher",
-        icon: <Hammer size={size} />, show: (u) => !!u.isBuildingManager || u.isFinanceAdmin,
+        icon: <Hammer size={size} />, show: (u) => !!u.isBuildingManager || financeNotAcct(u),
       },
       {
         href: "/my-bam-pvs", label: "BAM Activity", desc: "Building vouchers you submitted",
@@ -161,11 +176,11 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/recurring?type=bam", label: "BAM Recurring", desc: "Scheduled building expenses",
-        icon: <RefreshCw size={size} />, show: (u) => !!u.isBuildingManager || u.isFinanceAdmin,
+        icon: <RefreshCw size={size} />, show: (u) => !!u.isBuildingManager || financeNotAcct(u),
       },
       {
         href: "/worksheets", label: "Worksheets", desc: "Personnel worksheets and wages",
-        icon: <ClipboardList size={size} />, show: (u) => !!u.isBuildingManager || u.isFinanceAdmin,
+        icon: <ClipboardList size={size} />, show: (u) => !!u.isBuildingManager || financeNotAcct(u),
       },
       {
         href: "/bookings", label: "Facility Bookings", desc: "Hall and room bookings",
@@ -236,9 +251,17 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: <Settings size={size} />,
     accent: "#64748b",
     items: [
+      // Lookups and logins configure how the app itself behaves — that stays
+      // with the Finance Executive. The church records below are shared.
       {
         href: "/settings", label: "Settings", desc: "Lookups, roles, claim policies",
-        icon: <Settings size={size} />, show: (u) => u.isFinanceAdmin,
+        icon: <Settings size={size} />, show: financeNotAcct,
+      },
+      {
+        href: "/settings/payment-refs", label: "Payment References",
+        desc: "Reference series per bank account — prefix, digits, running number",
+        icon: <Hash size={size} />,
+        show: (u) => u.isFinanceAdmin || u.isGeneralManager,
       },
       {
         href: "/settings/directory", label: "Church Directory", desc: "Districts, congregations, Deans",
@@ -260,7 +283,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/settings/signatories", label: "Logins & Roles", desc: "Who can sign in and what they may approve",
-        icon: <Briefcase size={size} />, show: (u) => u.isFinanceAdmin,
+        icon: <Briefcase size={size} />, show: financeNotAcct,
       },
       {
         href: "/switch-role", label: "Switch Role", desc: "Test the app as another role",

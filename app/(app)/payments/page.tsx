@@ -11,11 +11,31 @@ const MINISTRIES = [
   "Sisters and Women Fellowship (SWF)", "Young Adult and Youth (YAY)",
 ];
 const PAYMENT_METHODS = ["Online Transfer", "Cheque", "Cash", "JomPay", "Auto Debit"];
-const BANKS = [
-  "Maybank", "CIMB", "Public Bank", "RHB", "Hong Leong Bank", "AmBank",
-  "Bank Islam", "Bank Rakyat", "OCBC", "Standard Chartered", "Affin Bank",
-  "Alliance Bank", "UOB", "BSN",
-];
+
+interface BankAccount {
+  id: string; name: string; bank_name: string; entity: string; account_no: string | null;
+}
+interface RefSeries {
+  bank_account_id: string; prefix: string; digits: number;
+  year_format: "YY" | "YYYY" | "NONE"; separator: string;
+  reset_yearly: boolean; next_number: number; current_year: number; active: boolean;
+}
+
+/**
+ * What the next reference will look like, without consuming it.
+ *
+ * Mirrors format_payment_ref() in migration 106 — the same shape has to be
+ * shown before the payment and stamped on it afterwards, or the operator
+ * learns not to trust the preview.
+ */
+function previewRef(s: RefSeries): string {
+  const year = new Date().getFullYear();
+  const n = s.reset_yearly && year !== s.current_year ? 1 : s.next_number;
+  const num = String(n).padStart(s.digits, "0");
+  if (s.year_format === "NONE") return `${s.prefix} ${num}`;
+  const y = s.year_format === "YYYY" ? String(year) : String(year % 100).padStart(2, "0");
+  return `${s.prefix} ${y}${s.separator}${num}`;
+}
 
 const inp = "border-2 border-stone-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2f5b9c] bg-white w-full";
 
@@ -31,8 +51,15 @@ export default function PaymentsPage() {
   const [payMethod, setPayMethod] = useState("Online Transfer");
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [payRef, setPayRef] = useState("");
-  const [payBank, setPayBank] = useState("");
   const [paying, setPaying] = useState(false);
+
+  // Which account the money leaves from. The reference series hangs off it, so
+  // choosing the account is what decides the reference — RHB 25/0041 rather
+  // than whatever anyone happens to type.
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [series, setSeries] = useState<RefSeries[]>([]);
+  const [payAccountId, setPayAccountId] = useState("");
+  const [manualRef, setManualRef] = useState(false);
 
   // History state
   const [paid, setPaid] = useState<Partial<PV>[]>([]);
@@ -89,40 +116,91 @@ export default function PaymentsPage() {
   useEffect(() => { loadApproved(); }, [loadApproved]);
   useEffect(() => { if (tab === "history") loadPaid(); }, [tab, loadPaid]);
 
+  // Accounts payments actually go out of, with their series.
+  useEffect(() => {
+    (async () => {
+      const [{ data: acc }, { data: ser }] = await Promise.all([
+        supabase.from("bank_accounts")
+          .select("id,name,bank_name,entity,account_no")
+          .eq("account_type", "CURRENT").eq("is_active", true).order("sort_order"),
+        supabase.from("payment_ref_series").select("*"),
+      ]);
+      setAccounts((acc ?? []) as BankAccount[]);
+      setSeries((ser ?? []) as RefSeries[]);
+    })();
+  }, [supabase]);
+
+  const activeSeries = series.find(s => s.bank_account_id === payAccountId && s.active) ?? null;
+  const autoRef = !!activeSeries && !manualRef;
+
   function toggleOne(id: string) {
     setCheckedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
   const allChecked = approved.length > 0 && approved.every(p => checkedIds.has(p.id!));
 
   async function markPaid() {
-    if (!payRef.trim()) { showToast("Payment reference is required", false); return; }
+    if (!autoRef && !payRef.trim()) { showToast("Payment reference is required", false); return; }
+    const account = accounts.find(a => a.id === payAccountId) ?? null;
     setPaying(true);
     try {
       const session = (await supabase.auth.getSession()).data.session;
       let successCount = 0;
       let lastError = "";
+      const issued: string[] = [];
+
       for (const pvId of [...checkedIds]) {
+        // One reference per voucher, not one for the batch: the bank statement
+        // shows a line per payment, and reconciling needs them to match 1:1.
+        let ref = payRef.trim();
+        if (autoRef) {
+          const pv = approved.find(p => p.id === pvId);
+          const { data, error } = await supabase.rpc("next_payment_ref", {
+            p_account_id: payAccountId,
+            p_pv_id: pvId,
+            p_pv_no: pv?.pv_no ?? null,
+          });
+          if (error || !data) {
+            lastError = error?.message ?? "Could not issue a reference";
+            // Stop rather than carry on: a half-numbered batch is worse than
+            // none, and the numbers already issued are recorded.
+            break;
+          }
+          ref = data as string;
+          issued.push(ref);
+        }
+
         const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
           body: JSON.stringify({
             action: "MARK_PAID",
             pv_id: pvId,
-            payment_ref: payRef,
+            payment_ref: ref,
             payment_date: payDate,
             payment_method: payMethod,
-            paid_payer_bank: payBank,
+            paid_payer_bank: account?.bank_name ?? "",
           }),
         });
         const result = await res.json();
         if (res.ok) successCount++;
         else lastError = result.error ?? "Failed";
       }
+
+      // The series moved, so the preview in the modal is now stale.
+      if (issued.length) {
+        const { data: ser } = await supabase.from("payment_ref_series").select("*");
+        setSeries((ser ?? []) as RefSeries[]);
+      }
+
       setPayModal(false);
-      setPayRef(""); setPayBank("");
+      setPayRef(""); setPayAccountId(""); setManualRef(false);
       setPayDate(new Date().toISOString().slice(0, 10));
       setPayMethod("Online Transfer");
-      if (successCount > 0) showToast(`${successCount} PV${successCount > 1 ? "s" : ""} marked as Paid`);
+      if (successCount > 0) {
+        showToast(issued.length
+          ? `${successCount} PV${successCount > 1 ? "s" : ""} paid — ${issued.length > 1 ? issued[0] + " to " + issued[issued.length - 1] : issued[0]}`
+          : `${successCount} PV${successCount > 1 ? "s" : ""} marked as Paid`);
+      }
       if (lastError) showToast(lastError, false);
       await loadApproved();
     } catch (err: unknown) {
@@ -371,26 +449,64 @@ export default function PaymentsPage() {
                 <label className="text-xs text-stone-500 block mb-1">Payment Date</label>
                 <input type="date" className={inp} value={payDate} onChange={e => setPayDate(e.target.value)} />
               </div>
+              {/* The account decides the reference, so it is asked first. */}
+              <div>
+                <label className="text-xs text-stone-500 block mb-1">Paid from</label>
+                <select className={inp} value={payAccountId} onChange={e => { setPayAccountId(e.target.value); setManualRef(false); }}>
+                  <option value="">Select account…</option>
+                  {accounts.map(a => {
+                    const s = series.find(x => x.bank_account_id === a.id && x.active);
+                    return (
+                      <option key={a.id} value={a.id}>
+                        {a.bank_name} — {a.name}{s ? ` (${s.prefix})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
               <div>
                 <label className="text-xs text-stone-500 block mb-1">
-                  Reference / Cheque No <span className="text-red-400">*</span>
+                  Reference / Cheque No {!autoRef && <span className="text-red-400">*</span>}
                 </label>
-                <input className={inp} placeholder="e.g. TRF-240601-001 or CHQ-00123"
-                  value={payRef} onChange={e => setPayRef(e.target.value)} />
+                {autoRef ? (
+                  <>
+                    <div className="rounded-xl border-2 border-dashed border-green-300 bg-green-50 px-3 py-2.5">
+                      <div className="font-mono text-sm font-bold text-green-800">
+                        {previewRef(activeSeries!)}
+                        {checkedIds.size > 1 && <span className="font-sans font-medium text-green-700"> … +{checkedIds.size - 1} more</span>}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-green-700">
+                        Issued automatically from this account&rsquo;s series — one per voucher, in order.
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => setManualRef(true)}
+                      className="mt-1 text-[11px] font-medium text-stone-400 hover:text-stone-600">
+                      Enter one myself instead
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input className={inp} placeholder="e.g. TRF-240601-001 or CHQ-00123"
+                      value={payRef} onChange={e => setPayRef(e.target.value)} />
+                    {activeSeries ? (
+                      <button type="button" onClick={() => setManualRef(false)}
+                        className="mt-1 text-[11px] font-medium text-[#3a6db0] hover:underline">
+                        Use the {activeSeries.prefix} series instead
+                      </button>
+                    ) : payAccountId ? (
+                      <p className="mt-1 text-[11px] text-amber-600">
+                        No reference series for this account yet — set one up in
+                        Settings → Payment References and it will number itself.
+                      </p>
+                    ) : null}
+                  </>
+                )}
               </div>
-              {(payMethod === "Online Transfer" || payMethod === "Cheque") && (
-                <div>
-                  <label className="text-xs text-stone-500 block mb-1">Paying Bank</label>
-                  <select className={inp} value={payBank} onChange={e => setPayBank(e.target.value)}>
-                    <option value="">Select bank…</option>
-                    {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                </div>
-              )}
             </div>
 
             <div className="flex gap-2 pt-1">
-              <button onClick={markPaid} disabled={paying || !payRef.trim()}
+              <button onClick={markPaid} disabled={paying || (!autoRef && !payRef.trim())}
                 className="flex-1 py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition-colors disabled:opacity-40">
                 {paying ? "Processing…" : `Confirm — Mark ${checkedIds.size} as Paid`}
               </button>
