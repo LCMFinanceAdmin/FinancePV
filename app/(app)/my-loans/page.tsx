@@ -85,12 +85,18 @@ function MyLoansInner() {
     setLoanApps(apps ?? []);
     setUserName(profile?.full_name ?? email);
 
-    // Find payroll employee by email → get their active loans
-    const { data: empData } = await supabase.from("payroll_employees")
-      .select("id").eq("email", email).single();
+    // Which payroll record is mine.
+    //
+    // This used to filter payroll_employees on an `email` column, which that
+    // table has never had — so the query failed on every load and nobody was
+    // ever shown their loan here. The link runs through the directory instead:
+    // login → people.user_email → people.id → payroll_employees.person_id.
+    // It is the same helper the RLS policy uses, so the page and the policy
+    // can't disagree about whose record this is.
+    const { data: myEmployeeId } = await supabase.rpc("my_payroll_employee_id");
 
-    if (empData?.id) {
-      const { data: loans } = await supabase.from("employee_loans").select("*").eq("employee_id", empData.id)
+    if (myEmployeeId) {
+      const { data: loans } = await supabase.from("employee_loans").select("*").eq("employee_id", myEmployeeId)
         .in("status", ["ACTIVE", "SETTLED"]).order("created_at", { ascending: false });
       const loanIds = (loans ?? []).map((loan: EmployeeLoan) => loan.id);
       const { data: reps } = loanIds.length > 0

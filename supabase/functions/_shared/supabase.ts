@@ -57,12 +57,9 @@ export function isSignatoryApprovalFinal(approvals: { role: string; action: stri
     (a) => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
   );
   if (loa.required === 1) return officerApprovals.some((a) => a.role === "TREASURER");
-  // ── TESTING MODE: count total approvals (not distinct roles) ────────
-  // In production, change officerApprovals.length to use distinct roles:
-  // const distinctRoles = new Set(officerApprovals.map(a => a.role)).size;
-  // return distinctRoles >= 2;
+  // Two *different* officers, not two signatures — one person signing twice is
+  // not a second approval.
   return new Set(officerApprovals.map((approval) => approval.role)).size >= 2;
-  // ───────────────────────────────────────────────────────────────────
 }
 
 

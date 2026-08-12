@@ -179,12 +179,12 @@ Deno.serve(async (req) => {
     if (!allowedStatuses.includes(pv.status)) return json({ error: `Cannot act on PV with status ${pv.status}` }, 400);
 
     const approvals = [...(pv.approvals || [])];
-    // ── TESTING MODE: duplicate-signing allowed ──────────────────────
+    // One decision per office. Signing again is refused rather than appended,
+    // so a voucher needing two officers cannot be cleared by one of them twice.
     const alreadySigned = approvals.some((a: { role: string; action: string }) =>
       a.role === profile.role && ["APPROVED", "REJECTED"].includes(a.action)
     );
     if (alreadySigned) return json({ error: "You have already acted on this PV" }, 400);
-    // ────────────────────────────────────────────────────────────────
 
     const entry: Record<string, unknown> = {
       role: profile.role, email: user.email,
