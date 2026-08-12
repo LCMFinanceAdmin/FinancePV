@@ -209,16 +209,16 @@ export default function PayrollRunDetailPage() {
     setShowFinalize(false);
     setBusy(true);
     try {
-      // 0. Clear anything from a previous finalize of this run. Without this a
-      //    run that was reverted and finalized again appended a second set of
-      //    lines and vouchers, doubling every figure on the sheet.
-      await supabase.from("payroll_vouchers").delete().eq("run_id", run.id);
-      await supabase.from("payroll_lines").delete().eq("run_id", run.id);
-      await supabase.from("loan_repayments").delete().eq("payroll_run_id", run.id);
-
-      // 1. Persist lines
+      // The figures are computed here — that is where the rates, the increment
+      // timing and the manual PCB live — but the writing is one call.
+      //
+      // It used to be four: delete the old vouchers, lines and repayments, then
+      // insert each set, with no transaction around them. A closed tab or one
+      // failed insert between the delete and the insert left the month's
+      // payroll existing nowhere. finalize_payroll_run() does the same work
+      // inside a single transaction, so everything lands or nothing does.
       const lineRows = computed.map(({ emp, line }) => ({
-        run_id: run.id, employee_id: emp.id, employee_name: emp.full_name,
+        employee_id: emp.id, employee_name: emp.full_name,
         gross: line.gross, pcb: line.pcb,
         epf_ee: line.epf.ee, epf_er: line.epf.er,
         socso_ee: line.socso.ee, socso_er: line.socso.er,
@@ -226,9 +226,7 @@ export default function PayrollRunDetailPage() {
         epl: line.eplDeduction, net: line.net, total_lcm: line.totalLcmPayment,
         custom_items: line.customItems,
       }));
-      if (lineRows.length) { const { error } = await supabase.from("payroll_lines").insert(lineRows); if (error) throw new Error(error.message); }
 
-      // 2. Vouchers
       const tNet = sumDraft(l => l.net);
       const tEpf = sumDraft(l => l.epf.total);
       const tSocso = sumDraft(l => l.socso.total);
@@ -241,31 +239,30 @@ export default function PayrollRunDetailPage() {
       const voucherRows = ([
         ["SALARY", tNet], ["EPF", tEpf], ["PERKESO", tSocso + tEis], ["PCB", tPcb],
       ] as const).filter(([, amt]) => amt > 0).map(([kind, amt]) => ({
-        run_id: run.id, kind, payee: VOUCHER_PAYEE[kind], total_amount: amt, status: "PENDING",
+        kind, payee: VOUCHER_PAYEE[kind], total_amount: amt,
       }));
-      if (voucherRows.length) { const { error } = await supabase.from("payroll_vouchers").insert(voucherRows); if (error) throw new Error(error.message); }
 
-      // 3. Loan repayments (skip 13th month)
-      if (!is13th) {
-        for (const e of computed.map(c => c.emp)) {
-          for (const ln of loansByEmp[e.id] ?? []) {
-            const row = buildSchedule(ln).find(x => x.year === run.year && x.month === run.month);
-            if (row && row.amount > 0) {
-              await supabase.from("loan_repayments").insert({
-                loan_id: ln.id, payroll_run_id: run.id, year: run.year, month: run.month,
-                amount: row.amount, balance_after: row.balanceAfter,
-              });
-              if (row.balanceAfter <= 0) await supabase.from("employee_loans").update({ status: "SETTLED", updated_at: new Date().toISOString() }).eq("id", ln.id);
-            }
-          }
-        }
-      }
+      // Loan repayments, skipped for the 13th month.
+      const repaymentRows = is13th ? [] : computed.flatMap(({ emp }) =>
+        (loansByEmp[emp.id] ?? []).flatMap(ln => {
+          const row = buildSchedule(ln).find(x => x.year === run.year && x.month === run.month);
+          return row && row.amount > 0
+            ? [{ loan_id: ln.id, year: run.year, month: run.month,
+                 amount: row.amount, balance_after: row.balanceAfter }]
+            : [];
+        }));
 
-      // 4. Run totals + status
-      await supabase.from("payroll_runs").update({
-        status: "FINALIZED", finalized_at: new Date().toISOString(),
-        total_gross: tGross, total_net: tNet, total_employer: tEr, total_lcm: tGross + tEr,
-      }).eq("id", run.id);
+      const { error } = await supabase.rpc("finalize_payroll_run", {
+        p_run_id: run.id,
+        p_lines: lineRows,
+        p_vouchers: voucherRows,
+        p_repayments: repaymentRows,
+        p_totals: {
+          total_gross: tGross, total_net: tNet,
+          total_employer: tEr, total_lcm: tGross + tEr,
+        },
+      });
+      if (error) throw new Error(error.message);
 
       await logPayrollAudit(supabase, {
         action: "RUN_FINALIZED", entity: `${MONTH_LABELS[run.month]} ${run.year}`,

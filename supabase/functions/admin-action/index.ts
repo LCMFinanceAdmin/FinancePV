@@ -311,6 +311,11 @@ Deno.serve(async (req) => {
         ? [...priorApprovals.filter(a => !["BISHOP", "TREASURER", "SECRETARY"].includes(a.role)), auditEntry]
         : [...priorApprovals, auditEntry];
 
+      // Who must sign this, at the amount it now stands at, with the office
+      // being paid taken out — the same plan the signing stage enforces.
+      const editPlan = signatoryPlan(amount, body.payment_type ?? pv.payment_type,
+                                     await beneficiaryRole(db, pv));
+
       await db.from("pvs").update({
         approvals: nextApprovals,
         ...(resign ? { status: "PENDING_SIGNATORY" } : {}),
@@ -332,7 +337,14 @@ Deno.serve(async (req) => {
         cheque_no:            body.cheque_no            ?? pv.cheque_no,
         exco_resolution_ref:  body.exco_resolution_ref  ?? pv.exco_resolution_ref,
         exco_resolution_date: body.exco_resolution_date ?? pv.exco_resolution_date,
-        loa_required:         body.loa_required         ?? pv.loa_required,
+        // Derived, never accepted. It used to be taken from the request, and
+        // although the real gate recomputes the plan at signing time, this
+        // value decides who is *told* to sign — set it to 1 and a voucher
+        // needing two officers waits on people nobody asked.
+        loa_required:         editPlan.required,
+        loa_label:            editPlan.required === 1
+                                ? "Treasurer only (D7 ≤RM30k)"
+                                : `Any 2 officers (${editPlan.roles.join(", ")})`,
         updated_at:           new Date().toISOString(),
       }).eq("id", pv_id);
       return json({ ok: true, action: "EDITED", resign });
