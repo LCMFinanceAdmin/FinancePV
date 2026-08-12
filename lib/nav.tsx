@@ -160,8 +160,10 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: "/budget", label: "Ministry Budget", desc: "Budget vs actual, proposals and approvals",
+        // The Administrator reads it — every ministry, and the papers filed
+        // with each line. She proposes and approves nothing.
         icon: <PiggyBank size={size} />,
-        show: (u) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory,
+        show: (u) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory || isAdmin(u),
       },
     ],
   },

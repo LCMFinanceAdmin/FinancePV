@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import {
   Plus, Pencil, Trash2, X as XIcon, Printer,
-  Clock, CheckCircle, XCircle, AlertCircle,
+  Clock, CheckCircle, XCircle, AlertCircle, Paperclip,
 } from "lucide-react";
 import {
   budgetReportHtml, bucketForMonth, PERIOD_LABELS,
@@ -145,7 +145,11 @@ function BudgetInner() {
   const isSeniorRole = SENIOR_ROLES.includes(userRole);
   const canDirectEdit = isFinanceAdmin;
   const canApproveRequests = CAN_APPROVE_ROLES.includes(userRole);
-  const visibleMinistries = (isFinanceAdmin || isSeniorRole) ? MINISTRIES : userMinistries;
+  // The Administrator sees every ministry's budget and the papers filed with
+  // it. She edits nothing — canDirectEdit and canApproveRequests both exclude
+  // her — so this is sight of the whole picture, which is what oversight is.
+  const isAdministrator = userRole === "ADMINISTRATOR";
+  const visibleMinistries = (isFinanceAdmin || isSeniorRole || isAdministrator) ? MINISTRIES : userMinistries;
   // The Treasurer approves the budget at the EXCO meeting; Finance can act too
   // so a budget is never stuck if the Treasurer is unavailable.
   const canDecideProposal = userRole === "TREASURER" || isFinanceAdmin;
@@ -174,7 +178,8 @@ function BudgetInner() {
       setUserRole(role);
       setUserMinistries(ministries);
 
-      const visible = (FINANCE_ADMIN_ROLES.includes(role) || SENIOR_ROLES.includes(role))
+      const visible = (FINANCE_ADMIN_ROLES.includes(role) || SENIOR_ROLES.includes(role)
+                       || role === "ADMINISTRATOR")
         ? MINISTRIES
         : ministries;
       // Honor ?ministry= query param if it's in the visible list, otherwise pick first
@@ -883,6 +888,15 @@ function BudgetInner() {
                             <div className="font-medium text-stone-800">{item.project_name}</div>
                             {item.description && (
                               <div className="text-xs text-stone-400 mt-0.5 max-w-[180px] truncate">{item.description}</div>
+                            )}
+                            {item.document_url && (
+                              <a href={item.document_url} target="_blank" rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                className="mt-0.5 inline-flex max-w-[180px] items-center gap-1 text-xs font-medium text-[#3a6db0] hover:underline"
+                                title={item.document_name ?? "Attached document"}>
+                                <Paperclip size={11} className="shrink-0" />
+                                <span className="truncate">{item.document_name || "Document"}</span>
+                              </a>
                             )}
                           </td>
                           <td className="px-3 py-3">
