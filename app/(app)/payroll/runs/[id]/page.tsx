@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, FileText, Banknote, Send, X, FileSpreadsheet, Download, RotateCcw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Banknote, Send, X, FileSpreadsheet, Download, RotateCcw, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
@@ -11,6 +11,18 @@ import { generateStatutorySummary } from "@/components/payroll/statutory-summary
 import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
+
+/**
+ * A handful of names in a warning, without becoming a wall of them: three, then
+ * a count. Someone scanning this needs to know who and roughly how many, and
+ * the sheet below has the rest.
+ */
+function listNames(names: string[]): string {
+  if (names.length <= 3) {
+    return names.length <= 1 ? names[0] ?? "" : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  }
+  return `${names.slice(0, 3).join(", ")} and ${names.length - 3} other${names.length - 3 === 1 ? "" : "s"}`;
+}
 
 /** Only the fields the balance needs; the full row lives in the table. */
 interface LoanRepaymentRow { loan_id: string; amount: number; payroll_run_id: string | null }
@@ -205,6 +217,28 @@ export default function PayrollRunDetailPage() {
           customItems: (l.custom_items as CustomPayrollItem[]) ?? [],
         };
       }).filter((x): x is NonNullable<typeof x> => x !== null);
+
+  /**
+   * What is worth a second look before the figures are locked.
+   *
+   * Neither of these blocks the run — the operator knows things the record
+   * does not, and a payroll that cannot be run on the last working day of the
+   * month is a worse problem than either of them. They are stated plainly and
+   * the button still says Finalize.
+   *
+   * Missing date of birth: ageAt() returns 0 for a null dob, and age zero reads
+   * as under-60 — so someone over 60 with no recorded birthday is given the
+   * under-60 EPF rates and has the employee SOCSO share deducted, both wrong,
+   * neither visible.
+   *
+   * Missing PCB: it is keyed by hand, so a blank field and a genuine nil are
+   * the same value. Forgetting it overstates net pay and under-remits to LHDN,
+   * and the first anyone hears of it is the return.
+   */
+  const missingDob = computed.filter(({ emp }) => !emp.dob).map(({ emp }) => emp.full_name);
+  const missingPcb = is13th
+    ? []
+    : computed.filter(({ line }) => !line.pcb).map(({ emp }) => emp.full_name);
 
   // Totals (from computed for draft, persisted lines otherwise).
   const sumDraft = (pick: (l: CalcLine) => number) => computed.reduce((s, r) => s + pick(r.line), 0);
@@ -738,6 +772,28 @@ export default function PayrollRunDetailPage() {
                 <dt className="text-stone-500">Total LCM cost</dt>
                 <dd className="text-right font-mono text-stone-800">{formatCurrency(sumDraft(l => l.totalLcmPayment))}</dd>
               </dl>
+              {(missingDob.length > 0 || missingPcb.length > 0) && (
+                <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  {missingDob.length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+                      <p className="text-xs leading-relaxed text-amber-900">
+                        <strong>No date of birth</strong> for {listNames(missingDob)}. Their EPF and
+                        SOCSO are worked out as if under 60, which is wrong if they are not.
+                      </p>
+                    </div>
+                  )}
+                  {missingPcb.length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+                      <p className="text-xs leading-relaxed text-amber-900">
+                        <strong>No PCB</strong> for {listNames(missingPcb)}. If that is right, carry
+                        on — a nil deduction and a forgotten one look the same here.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] px-4 py-3 text-xs text-stone-600 leading-relaxed">
                 Produces one voucher for staff salaries and one per statutory body — PERKESO covers
                 SOCSO and EIS together, as they are remitted on a single payment. Raise the payment
