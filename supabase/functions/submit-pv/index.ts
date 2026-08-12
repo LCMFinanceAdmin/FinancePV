@@ -4,6 +4,24 @@ import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_
 
 const BAM_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "BUILDING_MANAGER"];
 
+/**
+ * What this voucher is actually for.
+ *
+ * The amount used to arrive as a number in the request, alongside the line
+ * items, with nothing checking that the two agreed. Since the number of
+ * signatures required is decided from the amount and the printed voucher totals
+ * the items, a voucher could print RM 80,000 and need one signature.
+ *
+ * The items are the voucher. Where there are any, they are the amount.
+ */
+function amountFrom(d: Record<string, unknown>): number {
+  const items = Array.isArray(d.line_items) ? d.line_items as { amount?: unknown }[] : [];
+  if (items.length > 0) {
+    return items.reduce((sum, li) => sum + (Number(li?.amount) || 0), 0);
+  }
+  return Number(d.amount) || 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -45,7 +63,7 @@ Deno.serve(async (req) => {
       const pvNo = await nextBamPvNo(db);
       const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const now = new Date().toISOString();
-      const amount = Number(d.amount) || 0;
+      const amount = amountFrom(d);
       const loa = getLOATier(amount, d.payment_type);
       const applicantEmail = (d.applicant_email || user.email || "").toLowerCase().trim();
       // A PV raised from a signed worksheet is always attributed to the BEM
@@ -179,7 +197,7 @@ Deno.serve(async (req) => {
                  : await nextHlePvNo(db);
       const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const now = new Date().toISOString();
-      const amount = Number(d.amount) || 0;
+      const amount = amountFrom(d);
       const loa = getLOATier(amount, d.payment_type);
       const applicantEmail = (d.applicant_email || user.email || "").toLowerCase().trim();
       const ministry = pvType === "LSC" ? "Luther Study Centre"
@@ -260,6 +278,17 @@ Deno.serve(async (req) => {
     }
 
     // ── Standard LCM PV flow ─────────────────────────────────────────────
+    // Raising a voucher directly is Finance's and the GM's; everyone else goes
+    // through a Payment Request, which the ministry's EXCO verifies and the GM
+    // approves before a voucher exists. The form has always worked this way —
+    // this endpoint did not, so the request stage was a convention rather than
+    // a rule and the EXCO's verification could be stepped around.
+    if (!["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "GENERAL_MANAGER"].includes(profile?.role)) {
+      return json({
+        error: "Raise this as a Payment Request — your ministry verifies it and the General Manager approves it, then Finance issues the voucher.",
+      }, 403);
+    }
+
     const pvNo = await nextPvNo(db);
     const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
@@ -277,7 +306,7 @@ Deno.serve(async (req) => {
       : (hasDeptHead && !isApplicantHead ? "PENDING_HEAD" : "PENDING");
 
     const ministry = d.ministry || d.dept || "";
-    const amount = Number(d.amount) || 0;
+    const amount = amountFrom(d);
     const loa = getLOATier(amount, d.payment_type);
 
     // Finance Executive e-signature entry

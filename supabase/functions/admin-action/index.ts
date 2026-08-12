@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getProfileByEmail, beneficiaryRole, signatoryPlan } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
 Deno.serve(async (req) => {
@@ -196,11 +196,14 @@ Deno.serve(async (req) => {
       if (!gmApproved) return json({ error: "General Manager must approve this PV before it can be sent to signatories" }, 400);
       await db.from("pvs").update({ status: "PENDING_SIGNATORY", updated_at: new Date().toISOString() }).eq("id", pv_id);
 
-      // Notify signatories
-      const loa = pv.loa_required ?? 1;
-      const signatoryEmails = loa === 1
+      // Notify the officers who can actually sign it. When the voucher pays one
+      // of the three, that office is out and the other two are asked — so the
+      // people told to sign are the people allowed to.
+      const excludeRole = await beneficiaryRole(db, pv);
+      const plan = signatoryPlan(pv.amount, pv.payment_type, excludeRole);
+      const signatoryEmails = plan.required === 1
         ? await getSignatoryEmails(db, ["TREASURER"])
-        : await getSignatoryEmails(db, ["BISHOP", "SECRETARY", "TREASURER"]);
+        : await getSignatoryEmails(db, plan.roles);
 
       if (signatoryEmails.length) {
         await db.from("notifications").insert(

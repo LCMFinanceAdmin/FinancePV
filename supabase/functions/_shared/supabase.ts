@@ -51,15 +51,74 @@ export function getLOATier(amount: number, paymentType = "GENERAL") {
   return { required: 2, roles: ["BISHOP", "SECRETARY", "TREASURER"] };
 }
 
-export function isSignatoryApprovalFinal(approvals: { role: string; action: string }[], amount: number, paymentType = "GENERAL") {
-  const loa = getLOATier(amount, paymentType);
+const OFFICER_ROLES = ["BISHOP", "TREASURER", "SECRETARY"];
+
+/**
+ * Who must sign, given the amount and who is being paid.
+ *
+ * Normally the amount decides: the Treasurer alone up to RM 30,000, any two
+ * officers above it. But nobody signs their own payment, so when the person
+ * being paid holds one of the three offices, that office is taken out and the
+ * other two must both sign — whatever the amount.
+ *
+ * That is not a new rule so much as the existing one applied honestly: two
+ * independent officers. It just happens that below RM 30,000 the Treasurer is
+ * normally both of them, and when the money is going to the Treasurer he is
+ * neither.
+ */
+export function signatoryPlan(amount: number, paymentType = "GENERAL", excludeRole?: string | null) {
+  const base = getLOATier(amount, paymentType);
+  if (!excludeRole || !OFFICER_ROLES.includes(excludeRole)) return base;
+  return { required: 2, roles: OFFICER_ROLES.filter((r) => r !== excludeRole) };
+}
+
+export function isSignatoryApprovalFinal(
+  approvals: { role: string; action: string }[],
+  amount: number,
+  paymentType = "GENERAL",
+  excludeRole?: string | null,
+) {
+  const plan = signatoryPlan(amount, paymentType, excludeRole);
   const officerApprovals = approvals.filter(
-    (a) => ["BISHOP", "TREASURER", "SECRETARY"].includes(a.role) && a.action === "APPROVED"
+    (a) => plan.roles.includes(a.role) && a.action === "APPROVED"
   );
-  if (loa.required === 1) return officerApprovals.some((a) => a.role === "TREASURER");
+  if (plan.required === 1) return officerApprovals.some((a) => a.role === "TREASURER");
   // Two *different* officers, not two signatures — one person signing twice is
   // not a second approval.
   return new Set(officerApprovals.map((approval) => approval.role)).size >= 2;
+}
+
+/**
+ * The office held by whoever this voucher pays, if any.
+ *
+ * Read from the applicant first and the submitter second: a voucher raised by
+ * Finance on the Treasurer's behalf still pays the Treasurer, and it is the
+ * payee whose signature would be self-approval.
+ */
+export async function beneficiaryRole(
+  db: ReturnType<typeof getServiceClient>,
+  pv: { applicant_email?: string | null; submitted_by_email?: string | null },
+): Promise<string | null> {
+  const emails = [pv.applicant_email, pv.submitted_by_email]
+    .map((e) => (e ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  if (!emails.length) return null;
+  const { data } = await db.from("user_roles").select("email,role").in("email", emails);
+  for (const e of emails) {
+    const hit = (data ?? []).find((r: { email: string; role: string }) => r.email.toLowerCase() === e);
+    if (hit && OFFICER_ROLES.includes(hit.role)) return hit.role;
+  }
+  return null;
+}
+
+/** Whether this caller is the person the voucher pays. */
+export function isBeneficiary(
+  email: string,
+  pv: { applicant_email?: string | null; submitted_by_email?: string | null },
+): boolean {
+  const me = email.trim().toLowerCase();
+  return [pv.applicant_email, pv.submitted_by_email]
+    .some((e) => (e ?? "").trim().toLowerCase() === me);
 }
 
 

@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, isSignatoryApprovalFinal, getProfileByEmail } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, isSignatoryApprovalFinal, getProfileByEmail, beneficiaryRole, isBeneficiary, signatoryPlan } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
 async function hashPin(pin: string): Promise<string> {
@@ -102,6 +102,22 @@ Deno.serve(async (req) => {
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
 
+    // Nobody approves their own payment.
+    //
+    // The stage checked the role, the status, the PIN and whether this office
+    // had already signed — never whether the person signing was the person
+    // being paid. Below RM 30,000 the Treasurer is the only required signature,
+    // so his own claim could be cleared start to finish by him.
+    //
+    // Placed here rather than further down so it covers the BAM branch too,
+    // which returns before the ordinary path. Rejecting your own is left alone:
+    // that is withdrawing, not approving.
+    if (action === "APPROVED" && isBeneficiary(user.email!, pv)) {
+      return json({
+        error: "This voucher pays you, so it needs the other officers' signatures rather than yours.",
+      }, 403);
+    }
+
     // BAM PV GM approval step: GM_REVIEW → PENDING_SIGNATORY
     if (isGM && pv.pv_type === "BAM" && pv.status === "GM_REVIEW") {
       const now = new Date().toISOString();
@@ -178,6 +194,10 @@ Deno.serve(async (req) => {
       : ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"];
     if (!allowedStatuses.includes(pv.status)) return json({ error: `Cannot act on PV with status ${pv.status}` }, 400);
 
+    // The office being paid is taken out of the count, so the remaining two
+    // must both sign — see signatoryPlan().
+    const excludeRole = await beneficiaryRole(db, pv);
+
     const approvals = [...(pv.approvals || [])];
     // One decision per office. Signing again is refused rather than appended,
     // so a voucher needing two officers cannot be cleared by one of them twice.
@@ -215,7 +235,7 @@ Deno.serve(async (req) => {
       // GM approval gates the flow to signatories
       newStatus = "PENDING_SIGNATORY";
     } else {
-      const isFinal = isSignatoryApprovalFinal(approvals, pv.amount, pv.payment_type);
+      const isFinal = isSignatoryApprovalFinal(approvals, pv.amount, pv.payment_type, excludeRole);
       newStatus = isFinal ? "APPROVED" : "PENDING_SIGNATORY";
     }
 
@@ -223,8 +243,8 @@ Deno.serve(async (req) => {
 
     // Notify signatories when GM approves (gates the flow to them)
     if (isGM && action === "APPROVED") {
-      const loa = pv.loa_required ?? 1;
-      const signatoryRolesToNotify = loa === 1 ? ["TREASURER"] : ["BISHOP", "SECRETARY", "TREASURER"];
+      const plan = signatoryPlan(pv.amount, pv.payment_type, excludeRole);
+      const signatoryRolesToNotify = plan.required === 1 ? ["TREASURER"] : plan.roles;
       const { data: sigUsers } = await db.from("user_roles").select("email").in("role", signatoryRolesToNotify);
       if (sigUsers?.length) {
         await db.from("notifications").insert(
