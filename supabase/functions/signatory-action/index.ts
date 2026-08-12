@@ -1,13 +1,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, isSignatoryApprovalFinal, getProfileByEmail, beneficiaryRole, isBeneficiary, signatoryPlan } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
-
-async function hashPin(pin: string): Promise<string> {
-  const salt = Deno.env.get("PIN_SALT") ?? "lcm-finance-pin-salt";
-  const data = new TextEncoder().encode(pin + salt);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
+import { verifyPin } from "../_shared/pin.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -95,8 +89,17 @@ Deno.serve(async (req) => {
       if (!pin) return json({ error: "Approval PIN required" }, 400);
       const userRole = await getProfileByEmail(db, user.email!, "pin_hash,has_pin");
       if (!userRole?.has_pin) return json({ error: "No approval PIN set. Ask Finance Executive to set your PIN." }, 403);
-      const inputHash = await hashPin(pin);
-      if (inputHash !== userRole.pin_hash) return json({ error: "Incorrect PIN" }, 403);
+      const check = await verifyPin(pin, userRole.pin_hash);
+      if (!check.ok) return json({ error: "Incorrect PIN" }, 403);
+      // A PIN still stored under the old scheme is rewritten the moment it is
+      // used correctly, so nobody is asked to re-set one. Failing to write it
+      // back is not worth refusing the approval over — it will upgrade next
+      // time — so this deliberately does not throw.
+      if (check.upgraded) {
+        await db.from("user_security_credentials")
+          .update({ pin_hash: check.upgraded, updated_at: new Date().toISOString() })
+          .eq("email", user.email!);
+      }
     }
 
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();

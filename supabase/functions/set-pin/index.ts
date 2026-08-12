@@ -1,12 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
-
-async function hashPin(pin: string): Promise<string> {
-  const salt = Deno.env.get("PIN_SALT") ?? "lcm-finance-pin-salt";
-  const data = new TextEncoder().encode(pin + salt);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
+import { hashPin } from "../_shared/pin.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
