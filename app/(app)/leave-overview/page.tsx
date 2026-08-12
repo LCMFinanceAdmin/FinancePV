@@ -38,7 +38,7 @@ interface LeaveApp {
   approvals: Approval[] | null;
 }
 interface Person { email: string; full_name: string | null; role: string; is_lcm_staff: boolean | null }
-interface Replacement { employee_email: string; days: number; earned_on: string | null }
+interface Replacement { employee_email: string; days: number; work_date: string }
 
 const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
 
@@ -72,7 +72,7 @@ export default function LeaveOverviewPage() {
       supabase.from("leave_types").select("code,name,days_per_year,is_replacement,sort_order").order("sort_order"),
       supabase.from("leave_applications").select("*").order("applied_at", { ascending: false }),
       supabase.from("user_roles").select("email,full_name,role,is_lcm_staff").order("full_name"),
-      supabase.from("replacement_days_earned").select("employee_email,days,earned_on"),
+      supabase.from("replacement_days_earned").select("employee_email,days,work_date"),
     ]);
     // An empty list with no error would look like a church where nobody takes
     // leave; a refusal should say so.
