@@ -85,7 +85,7 @@ export function Avatar({ name, photoPath, size = 40, onEdit }: {
     <span className="relative inline-block shrink-0" style={{ width: px, height: px }}>
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element -- signed URL, not a known host
-        <img src={url} alt={name}
+        <img src={url} alt="" aria-hidden="true"
           className="h-full w-full rounded-full object-cover ring-1 ring-black/5" />
       ) : (
         <span
@@ -98,7 +98,7 @@ export function Avatar({ name, photoPath, size = 40, onEdit }: {
       )}
       {onEdit && (
         <button type="button" onClick={onEdit}
-          title="Change photo"
+          title="Change photo" aria-label="Change photo"
           className="absolute -bottom-0.5 -right-0.5 grid h-7 w-7 place-items-center rounded-full border-2 border-white bg-[#2f5b9c] text-white shadow-sm transition-colors hover:bg-[#24487c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c] focus-visible:ring-offset-2">
           <Camera size={13} />
         </button>
@@ -120,7 +120,7 @@ export function PersonStatus({ status }: { status: string }) {
   return (
     <span className={`inline-flex items-center gap-1.5 text-[13px] font-medium ${tone.text}`}>
       <span className={`h-2 w-2 rounded-full ${tone.dot}`} aria-hidden="true" />
-      {tone.label}
+      <span className="sr-only">Status: </span>{tone.label}
     </span>
   );
 }

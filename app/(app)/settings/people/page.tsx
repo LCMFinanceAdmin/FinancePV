@@ -12,8 +12,10 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
   Avatar, PersonStatus, RelationshipBadge, CATEGORIES, categoryOf,
@@ -213,6 +215,7 @@ export default function PeopleDirectoryPage() {
             <button
               onClick={() => exportCsv(visible, involvementOf)}
               title="Download the people shown as a spreadsheet"
+              aria-label="Download the people shown as a spreadsheet"
               className="grid h-9 w-9 place-items-center rounded-xl border-2 border-stone-300 text-stone-500 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
               <Download size={15} />
             </button>
@@ -331,10 +334,14 @@ export default function PeopleDirectoryPage() {
                 <li key={p.id}
                   className="border-b border-[#f1f5fa] last:border-0 transition-colors hover:bg-[#f9fcff]">
                   <div
-                    role="button" tabIndex={0}
-                    onClick={() => router.push(`/settings/people/${p.id}`)}
-                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/settings/people/${p.id}`); } }}
-                    className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2f5b9c] lg:grid-cols-[minmax(200px,1.3fr)_150px_minmax(220px,1.6fr)_190px_110px_40px] lg:items-center lg:gap-4">
+                    onClick={e => {
+                      // Clicking the row is a convenience for the mouse; the
+                      // link on the name is the real control. Ignore clicks
+                      // that landed on something interactive of their own.
+                      if ((e.target as HTMLElement).closest("a,button")) return;
+                      router.push(`/settings/people/${p.id}`);
+                    }}
+                    className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 lg:grid-cols-[minmax(200px,1.3fr)_150px_minmax(220px,1.6fr)_190px_110px_40px] lg:items-center lg:gap-4">
 
                     {/* Person. Below lg this is the card's header, so the
                         status and the menu come up here rather than sitting as
@@ -342,9 +349,10 @@ export default function PeopleDirectoryPage() {
                     <div className="flex min-w-0 items-center gap-3">
                       <Avatar name={p.full_name} photoPath={p.photo_path} size={40} />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-stone-800">
-                          {p.full_name || <span className="text-stone-400">Unnamed</span>}
-                        </div>
+                        <Link href={`/settings/people/${p.id}`}
+                          className="block truncate rounded text-sm font-semibold text-stone-800 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+                          {p.full_name || <span className="text-stone-500">Unnamed</span>}
+                        </Link>
                         <div className="truncate text-[12px] text-stone-500">
                           {categoryOf(p.category).one}
                           {p.preferred_name ? ` · ${p.preferred_name}` : ""}
@@ -364,7 +372,7 @@ export default function PeopleDirectoryPage() {
                         <span className="text-[11px] font-medium uppercase tracking-wide text-stone-400 lg:hidden">Role</span>
                         <span className="truncate text-[13px] font-medium text-stone-700">{role.label}</span>
                       </div>
-                      {role.since && <div className="text-[12px] text-stone-400">{role.since}</div>}
+                      {role.since && <div className="text-[12px] text-stone-500">{role.since}</div>}
                     </div>
 
                     {/* Involvement */}
@@ -375,7 +383,7 @@ export default function PeopleDirectoryPage() {
                           +{overflow}
                         </span>
                       )}
-                      {rows.length === 0 && <span className="text-[12px] text-stone-400">No involvement recorded</span>}
+                      {rows.length === 0 && <span className="text-[12px] text-stone-500">No involvement recorded</span>}
                     </div>
 
                     {/* Contact */}
@@ -392,7 +400,7 @@ export default function PeopleDirectoryPage() {
                           <span className="truncate">{p.phone}</span>
                         </div>
                       )}
-                      {!p.email && !p.phone && <span className="text-[12px] text-stone-400">No contact</span>}
+                      {!p.email && !p.phone && <span className="text-[12px] text-stone-500">No contact</span>}
                     </div>
 
                     {/* Status */}
@@ -457,7 +465,8 @@ function RowMenu({ p, canEdit, open, onToggle, router, onStatus }: {
 }) {
   return (
     <div className="relative" onClick={e => e.stopPropagation()}>
-      <button onClick={onToggle} title="More actions" aria-expanded={open}
+      <button onClick={onToggle} aria-haspopup="menu" aria-expanded={open}
+        aria-label={`Actions for ${p.full_name}`}
         className="grid h-8 w-8 place-items-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
         <MoreVertical size={16} />
       </button>
@@ -546,19 +555,15 @@ function AddPersonModal({ onClose, onCreated }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 px-4 py-10 backdrop-blur-[2px]"
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="w-full max-w-md space-y-4 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold text-stone-800">Add a person</h2>
-            <p className="mt-0.5 text-xs text-stone-500">
-              Just enough to identify them — the rest is added on their profile.
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100"><X size={16} /></button>
-        </div>
+    <Modal title="Add a person"
+      description="Just enough to identify them — the rest is added on their profile."
+      onClose={onClose}
+      footer={<>
+        <Button className="flex-1" loading={saving} onClick={save}>
+          <Users size={14} /> Add and open profile
+        </Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+      </>}>
 
         <div>
           <label className={labelClass}>Full name *</label>
@@ -583,15 +588,7 @@ function AddPersonModal({ onClose, onCreated }: {
           </div>
         </div>
 
-        {err && <p className="text-xs font-medium text-red-500">{err}</p>}
-
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" loading={saving} onClick={save}>
-            <Users size={14} /> Add and open profile
-          </Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
-      </div>
-    </div>
+        {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
+    </Modal>
   );
 }

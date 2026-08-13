@@ -14,7 +14,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { ProfileSection, EmptyState, period } from "@/components/people/ui";
-import { Church, Plus, X, LogOut, Trash2, Star } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
+import { Church, Plus, LogOut, Trash2, Star } from "lucide-react";
 
 interface Membership {
   id: string;
@@ -146,7 +147,7 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
                         </span>
                       )}
                     </div>
-                    <p className="text-[12px] text-stone-400">
+                    <p className="text-[12px] text-stone-500">
                       {period(m.start_date, m.end_date) || "No dates recorded"}
                       {m.role_note ? ` · ${m.role_note}` : ""}
                     </p>
@@ -158,11 +159,13 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
                         <>
                           {!m.is_primary && rows.filter(r => !r.end_date).length > 1 && (
                             <button onClick={() => makePrimary(m)} title="Make this their main church"
+                              aria-label={`Make ${nameOf(m.congregation_id)} their main church`}
                               className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-amber-50 hover:text-amber-600">
                               <Star size={14} />
                             </button>
                           )}
                           <button onClick={() => setEnding(m)} title="They have left this church"
+                            aria-label={`End membership of ${nameOf(m.congregation_id)}`}
                             className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800">
                             <LogOut size={13} /> End
                           </button>
@@ -174,6 +177,7 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
                         </button>
                       )}
                       <button onClick={() => remove(m)} title="Delete this record"
+                        aria-label={`Delete the ${nameOf(m.congregation_id)} membership`}
                         className="rounded-lg p-1.5 text-stone-300 transition-colors hover:bg-red-50 hover:text-red-500">
                         <Trash2 size={13} />
                       </button>
@@ -254,19 +258,15 @@ function AddMembershipModal({ personId, congregations, existing, onClose, onAdde
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 px-4 py-10 backdrop-blur-[2px]"
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="w-full max-w-md space-y-3 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold text-stone-800">Add church membership</h2>
-            <p className="mt-0.5 text-xs text-stone-500">
-              A past membership is worth adding too — it is how the history is built.
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100"><X size={16} /></button>
-        </div>
+    <Modal title="Add church membership"
+      description="A past membership is worth adding too — it is how the history is built."
+      onClose={onClose}
+      footer={<>
+        <Button className="flex-1" loading={saving} onClick={save} disabled={clash}>
+          <Plus size={13} /> Add membership
+        </Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+      </>}>
 
         <div>
           <label className={labelClass}>Church *</label>
@@ -312,16 +312,8 @@ function AddMembershipModal({ personId, congregations, existing, onClose, onAdde
           </label>
         )}
 
-        {err && <p className="text-xs font-medium text-red-500">{err}</p>}
-
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" loading={saving} onClick={save} disabled={clash}>
-            <Plus size={13} /> Add membership
-          </Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
-      </div>
-    </div>
+        {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
+    </Modal>
   );
 }
 
@@ -333,15 +325,15 @@ function EndMembershipModal({ name, startDate, onClose, onEnd }: {
   const tooEarly = !!startDate && on < startDate;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 px-4 backdrop-blur-[2px]"
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="w-full max-w-sm space-y-3 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
-        <h2 className="text-base font-bold text-stone-800">End membership of {name}</h2>
-        <p className="text-xs text-stone-500">
-          The membership stays on their record with this as its closing date, so the years they were
-          there are not lost.
-        </p>
+    <Modal title={`End membership of ${name}`} size="sm"
+      description="The membership stays on their record with this as its closing date, so the years they were there are not lost."
+      onClose={onClose}
+      footer={<>
+        <Button className="flex-1" onClick={() => onEnd(on)} disabled={tooEarly}>
+          <LogOut size={13} /> End membership
+        </Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+      </>}>
         <div>
           <label className={labelClass}>Left on</label>
           <input className={fieldClass} type="date" value={on} onChange={e => setOn(e.target.value)} />
@@ -351,13 +343,6 @@ function EndMembershipModal({ name, startDate, onClose, onEnd }: {
             </p>
           )}
         </div>
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" onClick={() => onEnd(on)} disabled={tooEarly}>
-            <LogOut size={13} /> End membership
-          </Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

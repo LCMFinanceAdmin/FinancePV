@@ -15,8 +15,9 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { ProfileSection, EmptyState, period } from "@/components/people/ui";
+import { Modal } from "@/components/ui/modal";
 import {
-  HandHeart, Truck, Plus, X, LogOut, Trash2, Pencil, Save, Building2,
+  HandHeart, Truck, Plus, LogOut, Trash2, Pencil, Save, Building2,
 } from "lucide-react";
 
 export interface Involvement {
@@ -146,7 +147,7 @@ export function InvolvementPanel({
                         </span>
                       )}
                     </div>
-                    <p className="text-[12px] text-stone-400">
+                    <p className="text-[12px] text-stone-500">
                       {period(r.start_date, r.end_date) || "No dates recorded"}
                       {org && ` · ${org.name}`}
                       {r.notes ? ` · ${r.notes}` : ""}
@@ -156,11 +157,13 @@ export function InvolvementPanel({
                   {canEdit && (
                     <div className="flex items-center gap-1">
                       <button onClick={() => setEditing(r)} title="Edit"
+                        aria-label={`Edit ${r.title}`}
                         className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700">
                         <Pencil size={13} />
                       </button>
                       {isOpen ? (
                         <button onClick={() => setEnding(r)} title="This has come to an end"
+                          aria-label={`End ${r.title}`}
                           className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800">
                           <LogOut size={13} /> End
                         </button>
@@ -171,6 +174,7 @@ export function InvolvementPanel({
                         </button>
                       )}
                       <button onClick={() => remove(r)} title="Delete this record"
+                        aria-label={`Delete ${r.title}`}
                         className="rounded-lg p-1.5 text-stone-300 transition-colors hover:bg-red-50 hover:text-red-500">
                         <Trash2 size={13} />
                       </button>
@@ -260,21 +264,16 @@ function InvolvementModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 px-4 py-10 backdrop-blur-[2px]"
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg space-y-3 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold text-stone-800">
-              {row ? `Edit ${row.title}` : isExternal ? "Add a relationship" : "Add involvement"}
-            </h2>
-            <p className="mt-0.5 text-xs text-stone-500">
-              Elected and appointed posts are added in Offices &amp; Elections, not here.
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100"><X size={16} /></button>
-        </div>
+    <Modal size="lg"
+      title={row ? `Edit ${row.title}` : isExternal ? "Add a relationship" : "Add involvement"}
+      description="Elected and appointed posts are added in Offices & Elections, not here."
+      onClose={onClose}
+      footer={<>
+        <Button className="flex-1" loading={saving} onClick={save} disabled={badDates}>
+          <Save size={13} /> {row ? "Save changes" : "Add"}
+        </Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+      </>}>
 
         <div className="grid gap-2 sm:grid-cols-2">
           <div>
@@ -346,16 +345,8 @@ function InvolvementModal({
             placeholder="Anything worth remembering about it" />
         </div>
 
-        {err && <p className="text-xs font-medium text-red-500">{err}</p>}
-
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" loading={saving} onClick={save} disabled={badDates}>
-            <Save size={13} /> {row ? "Save changes" : "Add"}
-          </Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
-      </div>
-    </div>
+        {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
+    </Modal>
   );
 }
 
@@ -367,27 +358,20 @@ function EndModal({ name, startDate, onClose, onEnd }: {
   const tooEarly = !!startDate && on < startDate;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 px-4 backdrop-blur-[2px]"
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="w-full max-w-sm space-y-3 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
-        <h2 className="text-base font-bold text-stone-800">End {name}</h2>
-        <p className="text-xs text-stone-500">
-          It stays on their record with this as its closing date, so the time they spent doing it is
-          not lost.
-        </p>
+    <Modal size="sm" title={`End ${name}`}
+      description="It stays on their record with this as its closing date, so the time they spent doing it is not lost."
+      onClose={onClose}
+      footer={<>
+        <Button className="flex-1" onClick={() => onEnd(on)} disabled={tooEarly}>
+          <LogOut size={13} /> End it
+        </Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+      </>}>
         <div>
           <label className={labelClass}>Ended on</label>
           <input className={fieldClass} type="date" value={on} onChange={e => setOn(e.target.value)} />
           {tooEarly && <p className="mt-1 text-[11px] font-medium text-amber-600">That is before it began.</p>}
         </div>
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" onClick={() => onEnd(on)} disabled={tooEarly}>
-            <LogOut size={13} /> End it
-          </Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

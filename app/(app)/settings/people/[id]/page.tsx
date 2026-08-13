@@ -16,6 +16,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { EmploymentPanel } from "@/components/people/employment-panel";
 import { DocumentsPanel } from "@/components/people/documents-panel";
@@ -259,14 +260,30 @@ export default function PersonProfilePage() {
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
-      <div className="flex gap-1 overflow-x-auto border-b border-[#e4edf9]">
+      <div role="tablist" aria-label="Profile sections"
+        className="flex gap-1 overflow-x-auto border-b border-[#e4edf9]"
+        onKeyDown={e => {
+          // Left and right move between tabs, which is what a screen-reader
+          // user is told to expect the moment the list is announced as tabs.
+          if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+          e.preventDefault();
+          const i = TABS.findIndex(t => t.key === tab);
+          const next = e.key === "ArrowRight"
+            ? TABS[(i + 1) % TABS.length]
+            : TABS[(i - 1 + TABS.length) % TABS.length];
+          setTab(next.key);
+          document.getElementById(`tab-${next.key}`)?.focus();
+        }}>
         {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            aria-current={tab === t.key ? "page" : undefined}
-            className={`shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+          <button key={t.key} id={`tab-${t.key}`} role="tab" type="button"
+            aria-selected={tab === t.key}
+            aria-controls={`panel-${t.key}`}
+            tabIndex={tab === t.key ? 0 : -1}
+            onClick={() => setTab(t.key)}
+            className={`shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2f5b9c] ${
               tab === t.key
                 ? "border-[#2f5b9c] text-[#2f5b9c]"
-                : "border-transparent text-stone-500 hover:text-stone-800"}`}>
+                : "border-transparent text-stone-600 hover:text-stone-900"}`}>
             {t.label}
           </button>
         ))}
@@ -274,7 +291,7 @@ export default function PersonProfilePage() {
 
       {/* ── Overview ───────────────────────────────────────────────────── */}
       {tab === "overview" && (
-        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" className="grid gap-4 lg:grid-cols-[1fr_320px]">
           <div className="space-y-4">
             <ProfileSection title="About">
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px] sm:grid-cols-3">
@@ -350,7 +367,7 @@ export default function PersonProfilePage() {
 
       {/* ── Involvement ────────────────────────────────────────────────── */}
       {tab === "involvement" && (
-        <div className="space-y-4">
+        <div id="panel-involvement" role="tabpanel" aria-labelledby="tab-involvement" className="space-y-4">
           <MembershipPanel personId={person.id} congregations={congregations}
             canEdit={canEdit} onChanged={load} say={say} />
 
@@ -397,7 +414,7 @@ export default function PersonProfilePage() {
 
       {/* ── Employment ─────────────────────────────────────────────────── */}
       {tab === "employment" && (
-        <ProfileSection title="Employment in LCM">
+        <div id="panel-employment" role="tabpanel" aria-labelledby="tab-employment"><ProfileSection title="Employment in LCM">
           <EmploymentPanel
             person={{
               id: person.id, full_name: person.full_name, ic_no: person.ic_no, dob: person.dob,
@@ -406,20 +423,20 @@ export default function PersonProfilePage() {
             }}
             onLinked={(payrollId) => setPerson(p => (p ? { ...p, payroll_employee_id: payrollId, is_employed: true } : p))}
           />
-        </ProfileSection>
+        </ProfileSection></div>
       )}
 
       {/* ── Documents ──────────────────────────────────────────────────── */}
       {tab === "documents" && (
-        <ProfileSection title="Files & documents">
+        <div id="panel-documents" role="tabpanel" aria-labelledby="tab-documents"><ProfileSection title="Files & documents">
           <DocumentsPanel personId={person.id} personName={person.full_name} />
-        </ProfileSection>
+        </ProfileSection></div>
       )}
 
       {/* ── Notes ──────────────────────────────────────────────────────── */}
       {tab === "notes" && (
-        <NotesTab personId={person.id} notes={notes} canEdit={canEdit}
-          onChanged={load} say={say} />
+        <div id="panel-notes" role="tabpanel" aria-labelledby="tab-notes"><NotesTab personId={person.id} notes={notes} canEdit={canEdit}
+          onChanged={load} say={say} /></div>
       )}
 
       {editing && (
@@ -571,20 +588,13 @@ function EditPersonModal({ person, congregations, districts, organisations, onCl
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 px-4 py-10 backdrop-blur-[2px]"
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="w-full max-w-2xl space-y-4 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold text-stone-800">Edit {person.full_name}</h2>
-            <p className="mt-0.5 text-xs text-stone-500">
-              Who they are and how to reach them. Involvement, employment and documents are added
-              from their own sections.
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100"><X size={16} /></button>
-        </div>
+    <Modal size="lg" title={`Edit ${person.full_name}`}
+      description="Who they are and how to reach them. Involvement, employment and documents are added from their own sections."
+      onClose={onClose}
+      footer={<>
+        <Button className="flex-1" loading={saving} onClick={save}><Save size={13} /> Save changes</Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+      </>}>
 
         <div className="grid gap-2 sm:grid-cols-2">
           <div><label className={labelClass}>Full name *</label>
@@ -664,13 +674,7 @@ function EditPersonModal({ person, congregations, districts, organisations, onCl
             placeholder="Leave blank if they have no login" />
         </div>
 
-        {err && <p className="text-xs font-medium text-red-500">{err}</p>}
-
-        <div className="flex gap-2 border-t border-stone-100 pt-3">
-          <Button className="flex-1" loading={saving} onClick={save}><Save size={13} /> Save changes</Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
-      </div>
-    </div>
+        {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
+    </Modal>
   );
 }
