@@ -48,6 +48,14 @@ export interface UserProfile {
   isSignatory: boolean;
   signatoryRole: string;
   isMinistryHead: boolean;
+  /**
+   * Verifies for an EXCO member who asked them to, without holding a portfolio.
+   * Deliberately not folded into isMinistryHead: that flag also *withholds*
+   * things (My PVs is hidden from committee members, who see their vouchers in
+   * the EXCO queue instead), and a delegate is usually ordinary staff who still
+   * submits their own.
+   */
+  isMinistryVerifier?: boolean;
   isGeneralManager: boolean;
   isBuildingManager: boolean;
   isBamCommittee?: boolean;

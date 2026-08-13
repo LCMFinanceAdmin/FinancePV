@@ -265,7 +265,7 @@ Deno.serve(async (req) => {
         sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
           title: `New ${entityLabel} Payment Voucher`,
           body: pvMsg,
-          url: "/control-center",
+          url: "/dashboard",
         }),
         sendPushToRoles(db, ["GENERAL_MANAGER"], {
           title: `New ${entityLabel} Payment Voucher`,
@@ -415,7 +415,7 @@ Deno.serve(async (req) => {
       sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
         title: "New Payment Voucher",
         body: pvMsg,
-        url: "/control-center",
+        url: "/dashboard",
       }),
       sendPushToRoles(db, ["GENERAL_MANAGER"], {
         title: "New Payment Voucher",

@@ -100,7 +100,8 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/ministry", label: "EXCO Queue", desc: "Verify your committee's requests",
-        icon: <Building2 size={size} />, show: (u) => u.isMinistryHead,
+        icon: <Building2 size={size} />,
+        show: (u) => u.isMinistryHead || !!u.isMinistryVerifier,
       },
       {
         href: "/bam-queue", label: "BAM Queue", desc: "Building & event vouchers to review",
@@ -159,7 +160,10 @@ export const NAV_GROUPS: NavGroup[] = [
         // The Administrator reads it — every ministry, and the papers filed
         // with each line. She proposes and approves nothing.
         icon: <PiggyBank size={size} />,
-        show: (u) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory || isAdmin(u),
+        // A delegate reads it too — verifying a budget line means checking what
+        // is left of it.
+        show: (u) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory
+          || !!u.isMinistryVerifier || isAdmin(u),
       },
     ],
   },

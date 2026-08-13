@@ -27,13 +27,17 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   // Where this person serves, and whether they lead a district. Dean is derived
   // from the district record rather than a flag, so it can't contradict the
   // assignment made in Settings.
-  const [{ data: congregation }, { data: deanOf }] = await Promise.all([
+  const [{ data: congregation }, { data: deanOf }, { data: verifierFor }] = await Promise.all([
     profile?.congregation_id
       ? supabase.from("congregations")
           .select("name, districts(name)")
           .eq("id", profile.congregation_id).maybeSingle()
       : Promise.resolve({ data: null }),
     supabase.from("districts").select("name").eq("dean_email", user.email!).maybeSingle(),
+    // Verifying for an EXCO member who has asked you to. It carries no portfolio
+    // and no role — but without it the queue holding that work is missing from
+    // the nav, and the delegation is invisible to the person given it.
+    supabase.rpc("my_verifier_scopes"),
   ]);
   const districtOfCongregation = (congregation as { districts?: { name?: string } } | null)?.districts?.name;
 
@@ -49,6 +53,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     isSignatory,
     signatoryRole: isSignatory ? role : "",
     isMinistryHead: role === "MINISTRY_HEAD" || ministries.length > 0,
+    isMinistryVerifier: ((verifierFor as unknown[] | null)?.length ?? 0) > 0,
     isGeneralManager: role === "GENERAL_MANAGER",
     isBuildingManager: role === "BUILDING_MANAGER",
     isBamCommittee: false,

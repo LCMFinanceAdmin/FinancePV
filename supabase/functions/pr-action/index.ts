@@ -1,7 +1,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
-import { expandMinistries } from "../_shared/ministries.ts";
+import { mayVerifyFor } from "../_shared/verifiers.ts";
 
 // Payment Request state machine.
 //
@@ -49,11 +49,15 @@ Deno.serve(async (req) => {
 
     const now = new Date().toISOString();
     const actorName = profile.full_name || user.email!;
-    // Expanded so a sub-ministry representative may verify on the parent
-    // committee's behalf, e.g. Education Desk covers Education.
-    const ministries: string[] = expandMinistries(profile.ministries ?? []);
+    // The committee itself, or somebody it has named to verify for it. A
+    // delegate is deliberately not required to hold MINISTRY_HEAD — that is the
+    // point of naming one; the right comes from the delegation, which the
+    // portfolio holder made and can withdraw.
+    const right = await mayVerifyFor(
+      db, user.email!, profile.ministries, pr.ministry, pr.project,
+    );
     const isMinistryExco =
-      profile.role === "MINISTRY_HEAD" && ministries.includes(pr.ministry);
+      right.allowed && (right.delegated || profile.role === "MINISTRY_HEAD");
     const isGM = profile.role === "GENERAL_MANAGER";
 
     // Who owns the stage the request is currently sitting at?
@@ -86,7 +90,9 @@ Deno.serve(async (req) => {
     // ── EXCO_VERIFY — the ministry's own standing committee ────────────────
     if (action === "EXCO_VERIFY") {
       if (!isMinistryExco) {
-        return json({ error: `Only an EXCO member of ${pr.ministry} can verify this request` }, 403);
+        return json({
+          error: `Only an EXCO member of ${pr.ministry}, or somebody they have asked to verify for them, can verify this request`,
+        }, 403);
       }
       if (pr.status !== "SUBMITTED") {
         return json({ error: `This request is already ${pr.status}` }, 400);
@@ -113,9 +119,20 @@ Deno.serve(async (req) => {
         }, { onConflict: "email" });
       }
 
+      // How the verification reads to everyone downstream. The GM accepting the
+      // claim should be able to see that the ministry's own member did not sign
+      // it without having to go looking for why.
+      const verifiedAs = right.delegated
+        ? `${pr.ministry} EXCO, verified on its behalf`
+        : `${pr.ministry} EXCO`;
+
       const approvals = [...(pr.approvals || []), {
         role: "MINISTRY_HEAD", email: user.email, name: actorName,
         action: "VERIFIED", timestamp: now, remarks: remarks || "",
+        // A delegate's own name goes on the record, marked for what it is. The
+        // committee's authority is what makes the verification valid; whose
+        // hand signed it is what makes it auditable.
+        ...(right.delegated ? { delegated: true } : {}),
         ...(excoSignature ? { signature_data: excoSignature } : {}),
       }];
 
@@ -126,7 +143,7 @@ Deno.serve(async (req) => {
       const { data: claim, error: claimErr } = await db.from("gm_claims").insert({
         ...claimFromRequest(pr, user.email!, claimNo, actorName, now, excoSignature),
         gm_status: "AWAITING_GM",
-        notes: `Auto-created from Payment Request ${pr.request_no}, verified by ${actorName} (${pr.ministry} EXCO).`,
+        notes: `Auto-created from Payment Request ${pr.request_no}, verified by ${actorName} (${verifiedAs}).`,
       }).select().single();
       if (claimErr) {
         return json({ error: `Could not add this to GM Claims: ${claimErr.message}` }, 500);
@@ -144,7 +161,7 @@ Deno.serve(async (req) => {
         await db.from("notifications").insert(gms.map((g: { email: string }) => ({
           recipient_email: g.email,
           type: "PR_REVIEW", pv_no: pr.request_no, pv_id: pr.id,
-          message: `New claim ${claimNo} — Payment Request ${pr.request_no} verified by ${actorName} (${pr.ministry} EXCO), ${formatRM(Number(pr.estimated_amount || 0))}. Accept it to instruct Finance.`,
+          message: `New claim ${claimNo} — Payment Request ${pr.request_no} verified by ${actorName} (${verifiedAs}), ${formatRM(Number(pr.estimated_amount || 0))}. Accept it to instruct Finance.`,
           read: false, created_at: now,
         })));
       }
@@ -155,7 +172,7 @@ Deno.serve(async (req) => {
         url: "/gm-claims",
       });
       await notify(db, pr.submitted_by_email, "PR_REVIEW", pr,
-        `Your Payment Request ${pr.request_no} was verified by ${pr.ministry} EXCO and is now with the General Manager.`, now);
+        `Your Payment Request ${pr.request_no} was verified by ${verifiedAs} and is now with the General Manager.`, now);
 
       return json({ ok: true, status: "EXCO_VERIFIED", claim_no: claimNo, claim_id: claim.id });
     }
@@ -263,8 +280,8 @@ Deno.serve(async (req) => {
 // `excoName` / `excoSignature` are passed explicitly because at verification
 // time the claim is written before the request row is updated, so those values
 // aren't on `pr` yet.
-// deno-lint-ignore no-explicit-any
 function claimFromRequest(
+  // deno-lint-ignore no-explicit-any
   pr: any, createdByEmail: string, claimNo: string,
   excoName: string, now: string, excoSignature: string | null = null,
 ) {

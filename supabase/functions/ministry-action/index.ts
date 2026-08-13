@@ -1,7 +1,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
-import { expandMinistries } from "../_shared/ministries.ts";
+import { mayVerifyFor } from "../_shared/verifiers.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -14,7 +14,10 @@ Deno.serve(async (req) => {
 
     const db = getServiceClient();
     const profile = await getProfileByEmail(db, user.email!, "role,full_name,ministries");
-    if (!profile?.ministries?.length) return json({ error: "Not a ministry head" }, 403);
+    // No ministries of their own is not a reason to stop here: somebody
+    // verifying on a portfolio holder's behalf has none, and the right they do
+    // hold is established below, against this particular voucher.
+    if (!profile) return json({ error: "User not found in system" }, 403);
 
     const { pv_id, action, remarks } = await req.json();
     if (!["APPROVED", "REJECTED"].includes(action)) return json({ error: "Invalid action" }, 400);
@@ -22,12 +25,12 @@ Deno.serve(async (req) => {
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
     if (pv.status !== "PENDING_HEAD") return json({ error: "PV is not pending ministry head review" }, 400);
-    // Expanded so linked sub-ministries and their parent count as one
-    // committee — otherwise a PV visible in the EXCO queue could be rejected
-    // at the point of verification.
-    if (!expandMinistries(profile.ministries).includes(pv.ministry)) {
-      return json({ error: "Not your ministry" }, 403);
-    }
+    // The portfolio holder, or somebody they have named to act for them —
+    // for the whole ministry or for this budget line in particular.
+    const { allowed, delegated } = await mayVerifyFor(
+      db, user.email!, profile.ministries, pv.ministry, pv.project,
+    );
+    if (!allowed) return json({ error: "Not your ministry" }, 403);
 
     // Nor your own voucher.
     //
@@ -48,10 +51,26 @@ Deno.serve(async (req) => {
 
     const newStatus = action === "APPROVED" ? "PENDING" : "REJECTED_HEAD";
 
+    // Who signed is part of the record. A delegate's name on the voucher is
+    // the whole point of allowing one — "verified by the ministry" without
+    // saying which person would be worse than not delegating at all.
+    const verifierEntry = {
+      role: "MINISTRY_HEAD",
+      email: user.email,
+      name: profile.full_name || user.email,
+      action: action === "APPROVED" ? "VERIFIED" : "REJECTED",
+      timestamp: new Date().toISOString(),
+      remarks: delegated
+        ? `Verified on behalf of ${pv.ministry}${remarks ? ` — ${remarks}` : ""}`
+        : (remarks || ""),
+      ...(delegated ? { delegated: true } : {}),
+    };
+
     await db.from("pvs").update({
       status: newStatus,
       head_verified: action === "APPROVED" ? "YES" : "NO",
       ministry_verified: action === "APPROVED" ? "YES" : "NO",
+      approvals: [...(pv.approvals ?? []), verifierEntry],
       updated_at: new Date().toISOString(),
     }).eq("id", pv_id);
 
@@ -93,7 +112,7 @@ Deno.serve(async (req) => {
         sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
           title: "EXCO Verified",
           body: `PV ${pvLabel} verified by EXCO`,
-          url: "/control-center",
+          url: "/dashboard",
         }),
         sendPushToRoles(db, ["GENERAL_MANAGER"], {
           title: "EXCO Verified",

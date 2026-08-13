@@ -10,6 +10,8 @@ import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import { BudgetImpact } from "@/components/budget/budget-impact";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { expandMinistries } from "@/lib/ministries";
+import { VerifierPanel } from "@/components/ministry/verifier-panel";
+import { loadMyVerifierScopes, coveredByScope, scopedMinistries, type VerifierScope } from "@/lib/verifiers";
 import type { PV, PurchaseRequest } from "@/lib/types";
 import {
   CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
@@ -48,6 +50,12 @@ export default function ExcoPage() {
   const [acting, setActing] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+  // The portfolios this member holds themselves, versus what others have asked
+  // them to cover. Kept apart because only the first can be delegated onwards,
+  // and because a delegated row should say so on its face.
+  const [myMinistries, setMyMinistries] = useState<string[]>([]);
+  const [scopes, setScopes] = useState<VerifierScope[]>([]);
+  const [myEmail, setMyEmail] = useState("");
 
   const toggleDocs = useCallback((pvId: string) => {
     setExpandedDocs(prev => {
@@ -69,19 +77,30 @@ export default function ExcoPage() {
       const user = session?.user;
       if (!user) return;
 
-      const [{ data: profile }, { data: security }] = await Promise.all([
+      setMyEmail(user.email ?? "");
+      const [{ data: profile }, { data: security }, myScopes] = await Promise.all([
         supabase.from("user_roles").select("ministries").eq("email", user.email).single(),
         supabase.rpc("get_my_security_context").single(),
+        loadMyVerifierScopes(supabase),
       ]);
+      setScopes(myScopes);
 
       const sigs = (security as { saved_signatures?: Record<string, string> | null } | null)?.saved_signatures;
       setSavedExcoSig(sigs?.["MINISTRY_HEAD"] ?? "");
       // A sub-ministry representative also acts for its parent committee — the
       // Education Desk member verifies Education's transactions, since that is
       // where the spending is booked.
-      const ministries: string[] = expandMinistries(profile?.ministries ?? []);
+      const own: string[] = expandMinistries(profile?.ministries ?? []);
+      setMyMinistries(profile?.ministries ?? []);
 
-      const PV_COLS = "id,pv_no,status,amount,payee_name,ministry,dept,purpose,submitted_at,submitted_by_email,approvals,attachments";
+      // Widen the query to cover delegated ministries, then drop the rows the
+      // delegation does not reach. A delegation can be a single budget line, so
+      // the ministry filter alone would show far more than was handed over.
+      const ministries: string[] = [...new Set([...own, ...scopedMinistries(myScopes)])];
+      const inScope = (row: { ministry?: string | null; project?: string | null }) =>
+        own.includes(row.ministry ?? "") || coveredByScope(myScopes, row.ministry, row.project);
+
+      const PV_COLS = "id,pv_no,status,amount,payee_name,ministry,dept,project,purpose,submitted_at,submitted_by_email,approvals,attachments";
 
       const [pendingRes, myRes, ministryRes, requestsRes] = await Promise.all([
         ministries.length
@@ -108,10 +127,10 @@ export default function ExcoPage() {
           : Promise.resolve({ data: [] }),
       ]);
 
-      setPendingPvs(pendingRes.data ?? []);
+      setPendingPvs((pendingRes.data ?? []).filter(inScope));
       setMyPvs(myRes.data ?? []);
-      setMinistryPvs(ministryRes.data ?? []);
-      setPendingRequests((requestsRes.data ?? []) as PurchaseRequest[]);
+      setMinistryPvs((ministryRes.data ?? []).filter(inScope));
+      setPendingRequests(((requestsRes.data ?? []) as PurchaseRequest[]).filter(inScope));
     } finally {
       setLoading(false);
     }
@@ -187,17 +206,27 @@ export default function ExcoPage() {
   const pvList = tab === "pending" ? pendingPvs : tab === "my_pvs" ? myPvs : ministryPvs;
   const isActionTab = tab === "pending" || tab === "requests";
 
+  const ownMinistries = expandMinistries(myMinistries);
+  /** True when this is somebody else's ministry that you have been asked to cover. */
+  const onBehalf = (ministry?: string | null) =>
+    !!ministry && !ownMinistries.includes(ministry);
+
   return (
     <div className="cloudlight-page max-w-5xl space-y-5">
       <div className="flex items-start justify-between">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Ministry verification</div>
           <h1 className="text-xl font-bold text-stone-800">EXCO Queue</h1>
-          <p className="text-sm text-stone-400">Ministry PV overview and verification</p>
+          <p className="text-sm text-stone-400">
+            Ministry PV overview and verification
+            {scopes.length > 0 && `, including ${scopes.length === 1 ? "one ministry" : `${scopes.length} ministries`} you verify for`}
+          </p>
         </div>
       </div>
 
       <ApprovalPath currentIndex={1} />
+
+      <VerifierPanel ministries={myMinistries} myEmail={myEmail} />
 
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
@@ -245,6 +274,11 @@ export default function ExcoPage() {
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-xs font-semibold text-stone-500">{pr.request_no}</span>
                           <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium">{pr.ministry}</span>
+                          {onBehalf(pr.ministry) && (
+                            <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                              on their behalf
+                            </span>
+                          )}
                           {pr.is_recurring && (
                             <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
                               {(pr.recurrence_frequency ?? "MONTHLY").toLowerCase()}
@@ -373,6 +407,11 @@ export default function ExcoPage() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
                       <StatusBadge status={computedBadgeStatus(pv)} />
+                      {onBehalf(pv.ministry) && (
+                        <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                          on their behalf
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm font-semibold text-stone-800">{pv.payee_name}</div>
                     <div className="text-xs text-stone-500">{pv.ministry} · {pv.purpose}</div>
@@ -436,6 +475,12 @@ export default function ExcoPage() {
                         value={remarks}
                         onChange={(e) => setRemarks(e.target.value)}
                       />
+                      {onBehalf(pv.ministry) && (
+                        <p className="text-[11px] text-stone-500">
+                          You are verifying for {pv.ministry}. Your name goes on the voucher,
+                          recorded as having signed on their behalf.
+                        </p>
+                      )}
                       <div className="flex gap-2">
                         <Button variant="primary" size="sm" loading={acting} onClick={() => act(pv.id!, "APPROVED")} className="flex-1">
                           <CheckCircle size={14} /> Verify

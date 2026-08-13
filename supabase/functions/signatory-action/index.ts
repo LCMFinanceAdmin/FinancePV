@@ -342,7 +342,7 @@ Deno.serve(async (req) => {
         sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
           title: "GM Approved PV",
           body: `PV ${pvLabel} approved by General Manager`,
-          url: "/control-center",
+          url: "/dashboard",
         }),
         pv.ministry ? sendPushToMinistryHeads(db, pv.ministry, {
           title: "GM Approved PV",
@@ -361,7 +361,7 @@ Deno.serve(async (req) => {
         sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
           title: "PV Fully Approved",
           body: `PV ${pvLabel} has been fully approved`,
-          url: "/control-center",
+          url: "/dashboard",
         }),
         sendPushToRoles(db, ["GENERAL_MANAGER"], {
           title: "PV Fully Approved",
@@ -387,7 +387,7 @@ Deno.serve(async (req) => {
           title: "PV Rejected",
           body: `PV ${pvLabel} was rejected by ${who}`,
           detail: remarks ? [`Reason given: ${remarks}`] : [],
-          url: "/control-center",
+          url: "/dashboard",
         }),
         // The GM approved this before it reached the signatories, so a
         // rejection reverses their decision — they need to know.
@@ -423,7 +423,7 @@ Deno.serve(async (req) => {
           title: "PV Signed — One More Needed",
           body: `PV ${pvLabel} signed by ${who}`,
           detail: ["This voucher needs a second officer before it is fully approved."],
-          url: "/control-center",
+          url: "/dashboard",
         }),
         sendPushToRoles(db, ["GENERAL_MANAGER"], {
           title: "PV Signed — One More Needed",
