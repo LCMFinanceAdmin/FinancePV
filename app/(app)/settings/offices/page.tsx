@@ -11,11 +11,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { roleLabel } from "@/lib/utils";
-import { fieldClass } from "@/lib/field-styles";
+import { roleLabel, SWITCHABLE_ROLES } from "@/lib/utils";
+import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
   Landmark, Users, History, UserPlus, X, CheckCircle2, AlertCircle, ChevronRight, Church, Briefcase,
+  AlertTriangle, Plus,
 } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
 
 interface Office {
   id: string; name: string; kind: "CHURCH" | "EXCO" | "DEAN" | "APPOINTED" | "COMMITTEE";
@@ -44,6 +46,11 @@ export default function OfficesPage() {
   const [offices, setOffices] = useState<Office[]>([]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+  // Every login and its role, so a post that says Vacant while somebody signs
+  // in with its access can be spotted here rather than only from the person's
+  // side. The two used to be able to disagree in silence.
+  const [logins, setLogins] = useState<{ email: string; role: string; full_name: string | null }[]>([]);
+  const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
@@ -61,14 +68,16 @@ export default function OfficesPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: o }, { data: h }, { data: p }] = await Promise.all([
+    const [{ data: o }, { data: h }, { data: p }, { data: lg }] = await Promise.all([
       supabase.from("offices").select("*").eq("active", true).order("sort_order").order("name"),
       supabase.from("office_holdings").select("*").order("term_start", { ascending: false }),
       supabase.from("people").select("id,full_name,user_email,email").eq("status", "ACTIVE").order("full_name"),
+      supabase.from("user_roles").select("email,role,full_name"),
     ]);
     setOffices((o ?? []) as Office[]);
     setHoldings((h ?? []) as Holding[]);
     setPeople((p ?? []) as Person[]);
+    setLogins((lg ?? []) as { email: string; role: string; full_name: string | null }[]);
     setLoading(false);
   }, [supabase]);
 
@@ -204,6 +213,40 @@ export default function OfficesPage() {
   const appointed = offices.filter(o => o.kind === "APPOINTED");
   const committees = offices.filter(o => o.kind === "COMMITTEE");
 
+  /**
+   * People signing in with the role this office grants, who do not hold it.
+   *
+   * Granting a role from the person's Access tab does not create a term here —
+   * they are genuinely different facts — so this is where the two are put
+   * side by side and the gap is offered for closing.
+   */
+  function unrecordedHolders(o: Office) {
+    if (!o.grants_role) return [];
+    const holderIds = new Set(currentAll(o.id).map(h => h.person_id));
+    return logins
+      .filter(l => l.role === o.grants_role)
+      .map(l => {
+        const person = people.find(x =>
+          (x.user_email ?? "").trim().toLowerCase() === l.email.trim().toLowerCase());
+        return person && !holderIds.has(person.id) ? { person, email: l.email } : null;
+      })
+      .filter((x): x is { person: Person; email: string } => x !== null);
+  }
+
+  /** Record the term, from the office's side, for someone who already has the access. */
+  async function recordHolder(o: Office, personId: string) {
+    setSaving(true);
+    const { error } = await supabase.from("office_holdings").insert({
+      office_id: o.id, person_id: personId,
+      term_start: new Date().toISOString().slice(0, 10),
+      note: "Recorded to match their existing access",
+    });
+    setSaving(false);
+    if (error) { say(error.message, false); return; }
+    await load();
+    say(`${nameOf(personId)} recorded as ${o.name}`);
+  }
+
   const section = (title: string, sub: string, icon: React.ReactNode, list: Office[]) => (
     <div className="space-y-2">
       <div>
@@ -217,6 +260,20 @@ export default function OfficesPage() {
         const showing = historyFor === o.id;
         return (
           <div key={o.id} className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white">
+            {unrecordedHolders(o).map(({ person, email }) => (
+              <div key={person.id}
+                className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2">
+                <AlertTriangle size={14} className="shrink-0 text-amber-600" />
+                <p className="min-w-0 flex-1 text-[12.5px] text-amber-900">
+                  <strong>{person.full_name}</strong> signs in as {roleLabel(o.grants_role!)} ({email})
+                  but is not recorded as holding this post.
+                </p>
+                <button onClick={() => recordHolder(o, person.id)} disabled={saving}
+                  className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[12px] font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50">
+                  Record it
+                </button>
+              </div>
+            ))}
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-stone-800">
@@ -293,6 +350,11 @@ export default function OfficesPage() {
 
   return (
     <div className="cloudlight-page max-w-4xl space-y-6">
+      {adding && (
+        <AddOfficeModal onClose={() => setAdding(false)}
+          onAdded={async () => { setAdding(false); await load(); say("Post added"); }} />
+      )}
+
       {toast && (
         <div className={`fixed right-4 top-4 z-50 flex max-w-md items-start gap-2 rounded-xl px-4 py-3 text-sm text-white shadow-lg ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.ok ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" /> : <AlertCircle size={15} className="mt-0.5 shrink-0" />}
@@ -389,5 +451,108 @@ export default function OfficesPage() {
         the office then. The General Manager is a permanent appointment and is listed separately.
       </div>
     </div>
+  );
+}
+
+/**
+ * A new post.
+ *
+ * The register was seeded and had no way to grow, so a Media Desk or an
+ * Assistant Dean meant a migration. Posts are data, not code — what is not
+ * data is the *system role* a post grants, because the access policies name
+ * those roles directly. So a new post picks from the roles that exist, or
+ * grants none at all, which is the common case: most posts are a title and a
+ * term, not a set of permissions.
+ */
+function AddOfficeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const supabase = createClient();
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState("APPOINTED");
+  const [grantsRole, setGrantsRole] = useState("");
+  const [isElected, setIsElected] = useState(false);
+  const [singleHolder, setSingleHolder] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const KINDS = [
+    { key: "EXCO",      label: "EXCO portfolio",  hint: "An elected committee seat on the EXCO" },
+    { key: "APPOINTED", label: "Appointed post",  hint: "Given, not elected — a desk or a manager" },
+    { key: "CHURCH",    label: "Church office",   hint: "A constitutional post like Bishop or Secretary" },
+    { key: "COMMITTEE", label: "Committee",       hint: "Several people may serve at once" },
+    { key: "DEAN",      label: "Dean",            hint: "Leads a district; set the district afterwards" },
+  ];
+
+  async function save() {
+    if (!name.trim()) { setErr("Give the post a name"); return; }
+    setErr(""); setSaving(true);
+    const { error } = await supabase.from("offices").insert({
+      name: name.trim(),
+      kind,
+      grants_role: grantsRole || null,
+      is_elected: isElected,
+      single_holder: kind === "COMMITTEE" ? false : singleHolder,
+      sort_order: 500,
+      active: true,
+    });
+    setSaving(false);
+    if (error) {
+      setErr(error.code === "23505" ? "There is already a post with that name." : error.message);
+      return;
+    }
+    onAdded();
+  }
+
+  return (
+    <Modal title="Add a post"
+      description="Posts are added here as the church grows — a new desk, a new portfolio, a new committee."
+      onClose={onClose}
+      footer={<>
+        <Button className="flex-1" loading={saving} onClick={save}><Plus size={13} /> Add post</Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+      </>}>
+
+      <div>
+        <label className={labelClass}>Name *</label>
+        <input className={fieldClass} value={name} onChange={e => setName(e.target.value)}
+          placeholder="e.g. Media Desk, Assistant Dean" />
+      </div>
+
+      <div>
+        <label className={labelClass}>Kind</label>
+        <select className={fieldClass} value={kind} onChange={e => setKind(e.target.value)}>
+          {KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+        </select>
+        <p className="mt-1 text-[11px] text-stone-500">{KINDS.find(k => k.key === kind)?.hint}</p>
+      </div>
+
+      <div>
+        <label className={labelClass}>Gives access as</label>
+        <select className={fieldClass} value={grantsRole} onChange={e => setGrantsRole(e.target.value)}>
+          <option value="">Nothing — it is a title, not a permission</option>
+          {SWITCHABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+        </select>
+        <p className="mt-1 text-[11px] text-stone-500">
+          Whoever is elected or appointed to it gains this role, and the outgoing holder loses it.
+          Most posts grant nothing — leave it blank unless the post really carries system access.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 text-sm text-stone-700">
+          <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
+            checked={isElected} onChange={e => setIsElected(e.target.checked)} />
+          Elected, rather than appointed
+        </label>
+        {kind !== "COMMITTEE" && (
+          <label className="flex items-center gap-2 text-sm text-stone-700">
+            <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
+              checked={singleHolder} onChange={e => setSingleHolder(e.target.checked)} />
+            One holder at a time
+          </label>
+        )}
+      </div>
+
+      {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
+    </Modal>
   );
 }

@@ -32,7 +32,9 @@ import {
 import {
   ArrowLeft, Pencil, Mail, Phone, MapPin, X, CheckCircle2, Plus, Trash2,
   Landmark, Church, Wallet, FileText, StickyNote, HandHeart, AlertCircle, Save,
+  ShieldCheck,
 } from "lucide-react";
+import { roleLabel } from "@/lib/utils";
 
 interface Person {
   id: string; full_name: string; preferred_name: string | null;
@@ -83,6 +85,9 @@ export default function PersonProfilePage() {
   const [districts, setDistricts] = useState<District[]>([]);
   const [organisations, setOrganisations] = useState<Organisation[]>([]);
   const [ministries, setMinistries] = useState<string[]>([]);
+  // Just enough to answer "can they sign in, and as what" without opening the
+  // tab. Null when they have no account, which is most people.
+  const [account, setAccount] = useState<{ role: string; email: string } | null>(null);
   const [docCount, setDocCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [canEdit, setCanEdit] = useState(false);
@@ -124,6 +129,16 @@ export default function PersonProfilePage() {
     setDocCount(count ?? 0);
     setCanEdit(perm === true);
     setMinistries(excoAssignableMinistries(((mins ?? []) as { name: string }[]).map(m => m.name)));
+
+    // Fetched after the person, because it is keyed on their login address.
+    const login = (p as Person | null)?.user_email;
+    if (login) {
+      const { data: acct } = await supabase.from("user_roles")
+        .select("email,role").eq("email", login).maybeSingle();
+      setAccount((acct ?? null) as { role: string; email: string } | null);
+    } else {
+      setAccount(null);
+    }
     setLoading(false);
   }, [supabase, id]);
 
@@ -348,6 +363,31 @@ export default function PersonProfilePage() {
           {/* The same timeline as the tab, abbreviated — the questions people
               ask on arriving are "what do they do" and "since when". */}
           <div className="space-y-4">
+            {account && (
+              <ProfileSection title="Access & role"
+                action={
+                  <button onClick={() => setTab("access")}
+                    className="flex items-center gap-1 text-[12px] font-medium text-[#3a6db0] hover:underline">
+                    <Pencil size={11} /> Edit
+                  </button>
+                }>
+                <div className="flex items-start gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#eef4fd] text-[#3a6db0]">
+                    <ShieldCheck size={16} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-stone-800">{roleLabel(account.role)}</p>
+                    <p className="truncate text-[12px] text-stone-500">{account.email}</p>
+                    <p className="mt-0.5 text-[11px] text-stone-500">
+                      {account.email.endsWith("@lcm.org.my")
+                        ? "Signs in with their Google account"
+                        : "Signs in by a link sent to that address"}
+                    </p>
+                  </div>
+                </div>
+              </ProfileSection>
+            )}
+
             <ProfileSection title="Involvement timeline">
               {timeline.length === 0 ? (
                 <EmptyState message="No involvement recorded yet." />

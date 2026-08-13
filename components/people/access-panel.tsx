@@ -23,6 +23,7 @@ import { ProfileSection, EmptyState } from "@/components/people/ui";
 import { roleLabel, SWITCHABLE_ROLES } from "@/lib/utils";
 import {
   KeyRound, ShieldCheck, ShieldOff, Unlock, RotateCcw, Trash2, Mail, UserPlus,
+  AlertTriangle,
 } from "lucide-react";
 
 interface Account {
@@ -38,6 +39,7 @@ interface Account {
   reports_to: "BISHOP_ONLY" | "GM_AND_BISHOP";
 }
 interface Congregation { id: string; name: string }
+interface GrantingOffice { id: string; name: string; kind: string; grants_role: string; single_holder: boolean }
 
 const PIN_ROLES = ["BISHOP", "TREASURER", "SECRETARY"];
 
@@ -61,19 +63,31 @@ export function AccessPanel({
   const supabase = createClient();
   const [account, setAccount] = useState<Account | null>(null);
   const [lockedUntil, setLockedUntil] = useState<string | null>(null);
+  // Some roles are granted by holding a post — Administrator, Building
+  // Manager, Treasurer. Setting the role directly leaves the register saying
+  // Vacant while the person signs in with the access, which is exactly the
+  // disagreement this whole change was meant to end.
+  const [grantingOffices, setGrantingOffices] = useState<GrantingOffice[]>([]);
+  const [holdings, setHoldings] = useState<{ office_id: string; person_id: string; term_end: string | null }[]>([]);
+  const [recording, setRecording] = useState(false);
   const [loading, setLoading] = useState(true);
   const [granting, setGranting] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!userEmail) { setAccount(null); setLoading(false); return; }
-    const [{ data }, { data: locks }] = await Promise.all([
+    const [{ data }, { data: locks }, { data: offs }, { data: holds }] = await Promise.all([
       supabase.from("user_roles")
         .select("id,email,role,ministries,has_pin,is_lcm_staff,is_pastor,designation,congregation_id,reports_to")
         .eq("email", userEmail).maybeSingle(),
       supabase.rpc("locked_pins"),
+      supabase.from("offices").select("id,name,kind,grants_role,single_holder")
+        .eq("active", true).not("grants_role", "is", null),
+      supabase.from("office_holdings").select("office_id,person_id,term_end"),
     ]);
     setAccount((data ?? null) as Account | null);
+    setGrantingOffices((offs ?? []) as GrantingOffice[]);
+    setHoldings((holds ?? []) as { office_id: string; person_id: string; term_end: string | null }[]);
     setLockedUntil(((locks ?? []) as { email: string; locked_until: string }[])
       .find(l => l.email.toLowerCase() === userEmail.toLowerCase())?.locked_until ?? null);
     setLoading(false);
@@ -124,6 +138,41 @@ export function AccessPanel({
     if (!res.ok) { say(body.error ?? "That did not work", false); return; }
     await load();
     say(action === "reset" ? "PIN cleared — they set a new one themselves" : "PIN unlocked");
+  }
+
+  /**
+   * The post that grants the role they now have, if they do not already hold
+   * it. When this returns something, the register and the login disagree.
+   */
+  function missingAppointment(role: string): GrantingOffice | null {
+    const office = grantingOffices.find(o => o.grants_role === role);
+    if (!office) return null;
+    const held = holdings.some(h =>
+      h.office_id === office.id && h.person_id === personId && !h.term_end);
+    return held ? null : office;
+  }
+
+  async function recordAppointment(office: GrantingOffice) {
+    setRecording(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    // A single-holder post has to be vacated before it is filled, or the
+    // trigger from migration 104 refuses — say so rather than showing the raw
+    // database error.
+    const { error } = await supabase.from("office_holdings").insert({
+      office_id: office.id, person_id: personId,
+      term_start: new Date().toISOString().slice(0, 10),
+      note: "Recorded from the person's access",
+      created_by: user?.email ?? "",
+    });
+    setRecording(false);
+    if (error) {
+      say(error.message.includes("already has a holder")
+        ? `${office.name} already has a holder. End that term in Offices & Elections first.`
+        : error.message, false);
+      return;
+    }
+    await load(); onChanged();
+    say(`${personName} recorded as ${office.name}`);
   }
 
   if (loading) return null;
@@ -196,6 +245,28 @@ export function AccessPanel({
             </Button>
           )}
         </div>
+
+        {/* The register does not know about this yet. */}
+        {(() => {
+          const gap = missingAppointment(account.role);
+          if (!gap) return null;
+          return (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+              <p className="min-w-0 flex-1 text-[13px] text-amber-900">
+                <strong>{gap.name}</strong> is {gap.kind === "APPOINTED" ? "an appointed post" : "an elected post"}, and
+                Offices &amp; Elections still shows it as vacant. {personName} signs in with the access
+                but does not hold the post on the register.
+              </p>
+              {canEdit && (
+                <Button size="sm" variant="secondary" loading={recording}
+                  onClick={() => recordAppointment(gap)}>
+                  Record the appointment
+                </Button>
+              )}
+            </div>
+          );
+        })()}
 
         <fieldset disabled={!canEdit || saving} className="grid gap-3 sm:grid-cols-2">
           <div>
