@@ -72,7 +72,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT EXISTS (
+  SELECT COALESCE(p_email, '') <> '' AND EXISTS (
     SELECT 1
       FROM ministry_verifiers v
       LEFT JOIN people p        ON p.id = v.person_id
@@ -140,7 +140,7 @@ AS $$
      WHERE ur.email = (auth.jwt() ->> 'email')
        AND (
          ur.role IN ('FINANCE_ADMIN','FINANCE_ADMIN_2','FINANCE_ADMIN_3','GENERAL_MANAGER')
-         OR lower(p_ministry) = ANY (SELECT lower(unnest(ur.ministries)))
+         OR lower(p_ministry) IN (SELECT lower(m) FROM unnest(COALESCE(ur.ministries, '{}')) AS m)
        )
   );
 $$;
