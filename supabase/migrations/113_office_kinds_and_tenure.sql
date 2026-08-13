@@ -35,7 +35,13 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  IF TG_OP = 'INSERT' OR NEW.tenure IS DISTINCT FROM OLD.tenure THEN
+  -- OLD is unassigned on INSERT, and SQL does not promise to short-circuit an
+  -- OR, so the insert case is separated rather than folded into the condition
+  -- below. Written the other way this raises "record old is not assigned yet"
+  -- on every new post.
+  IF TG_OP = 'INSERT' THEN
+    NEW.is_elected := (NEW.tenure = 'ELECTED');
+  ELSIF NEW.tenure IS DISTINCT FROM OLD.tenure THEN
     NEW.is_elected := (NEW.tenure = 'ELECTED');
   ELSIF NEW.is_elected IS DISTINCT FROM OLD.is_elected THEN
     NEW.tenure := CASE WHEN NEW.is_elected THEN 'ELECTED' ELSE 'PERMANENT' END;
