@@ -1,123 +1,71 @@
 "use client";
 // The people directory — everyone LCM deals with, in one place.
 //
-// Until now a person existed in up to three places and nowhere completely: a
-// login row, a payroll record, an email on a congregation. Anyone without a
-// login — a vendor, a volunteer, a council member — did not exist at all.
+// It was a list of accordions: to see whether Andrew was on the BAM Committee
+// you opened his row, read a form, and closed it again. That is an address
+// book with extra steps. What the office actually asks is comparative — who is
+// on staff, who is still a member at PJ, who has left — and the answer has to
+// be visible without opening anything.
 //
-// This is the record. It deliberately does not hold salary: payroll_salary
-// already versions every revision, so a copy here would create a second answer
-// to "what is she paid". Employment figures are read from payroll and linked.
+// So this is a table of people and what they do, and each row leads to the
+// person's own page. Editing lives there; this page is for finding.
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { EmploymentPanel } from "@/components/people/employment-panel";
-import { DocumentsPanel } from "@/components/people/documents-panel";
-import { ServiceRecord } from "@/components/people/service-record";
 import { Button } from "@/components/ui/button";
+import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
-  Plus, Search, ChevronRight, Save, Trash2, X, Users, Church,
-  Briefcase, HandHeart, Truck, UserCog, AlertCircle, CheckCircle2, Handshake,
+  Avatar, PersonStatus, RelationshipBadge, CATEGORIES, categoryOf,
+  type CategoryKey, type TimelineRow, isCurrent, period,
+} from "@/components/people/ui";
+import {
+  Plus, Search, SlidersHorizontal, Mail, Phone, MoreVertical, AlertCircle,
+  CheckCircle2, X, Download, Users,
 } from "lucide-react";
-import Link from "next/link";
-import { fieldClass, labelClass, sectionClass } from "@/lib/field-styles";
-
-// The classifications LCM actually uses. One primary place in the
-// organisation; EXCO is a flag on top, because pastors and lay members alike
-// are elected to it.
-const CATEGORIES = [
-  { key: "PASTOR",        label: "Pastors",        icon: <Church size={15} />,     accent: "#7c3aed" },
-  { key: "PARISH_WORKER", label: "Parish Workers", icon: <HandHeart size={15} />,  accent: "#0891b2" },
-  { key: "HQ_STAFF",      label: "HQ Staff",       icon: <Briefcase size={15} />,  accent: "#2563eb" },
-  { key: "VOLUNTEER",     label: "Volunteers",     icon: <Users size={15} />,      accent: "#16a34a" },
-  { key: "VENDOR",        label: "Vendors",        icon: <Truck size={15} />,      accent: "#ea580c" },
-  { key: "AGENT",         label: "Agents",         icon: <UserCog size={15} />,    accent: "#db2777" },
-  // Someone at a partner body — a companion church, a trust, a foundation.
-  // The body itself is recorded in Partners & Organisations; this is the
-  // person LCM actually speaks to there.
-  { key: "PARTNER",       label: "Partner Contacts", icon: <Handshake size={15} />, accent: "#0d9488" },
-  { key: "OTHER",         label: "Other",          icon: <Users size={15} />,      accent: "#64748b" },
-] as const;
-
-type CategoryKey = typeof CATEGORIES[number]["key"];
-
-const STATUSES = ["ACTIVE", "INACTIVE", "RESIGNED", "RETIRED"] as const;
 
 interface Person {
-  id: string;
-  full_name: string;
-  preferred_name: string | null;
-  category: CategoryKey;
-  status: string;
-  email: string | null;
-  phone: string | null;
-  alt_phone: string | null;
-  address: string | null;
-  ic_no: string | null;
-  passport_no: string | null;
-  dob: string | null;
-  gender: string | null;
-  marital_status: string | null;
-  hq_department: string | null;
-  district_id: string | null;
-  is_exco: boolean;
-  exco_portfolio: string | null;
-  is_employed: boolean;
-  date_joined: string | null;
-  date_left: string | null;
-  company_name: string | null;
-  vendor_service: string | null;
-  // A contact at a partner body: which body, and what they do there.
-  organisation_id: string | null;
-  org_role: string | null;
-  user_email: string | null;
-  payroll_employee_id: string | null;
-  notes: string | null;
+  id: string; full_name: string; preferred_name: string | null;
+  category: CategoryKey; status: string;
+  email: string | null; phone: string | null;
+  hq_department: string | null; district_id: string | null;
+  company_name: string | null; vendor_service: string | null;
+  organisation_id: string | null; org_role: string | null;
+  date_joined: string | null; is_employed: boolean;
+  photo_path: string | null; user_email: string | null;
 }
+interface Congregation { id: string; name: string; district_id: string | null }
+interface District { id: string; name: string }
 
-interface Congregation { id: string; name: string; district_id: string | null; head_pastor_email: string | null }
-interface District { id: string; name: string; dean_email: string | null }
-interface Link { person_id: string; congregation_id: string; is_primary: boolean }
-interface OfficeHolding { person_id: string; office_id: string; term_end: string | null }
-interface Office { id: string; name: string; kind: string }
-interface Organisation { id: string; name: string; short_name: string | null; kind: string }
-
-const inp = fieldClass;
-const lbl = labelClass;
-const sec = sectionClass;
-
-const BLANK: Omit<Person, "id"> = {
-  full_name: "", preferred_name: null, category: "HQ_STAFF", status: "ACTIVE",
-  email: null, phone: null, alt_phone: null, address: null,
-  ic_no: null, passport_no: null, dob: null, gender: null, marital_status: null,
-  hq_department: null, district_id: null, is_exco: false, exco_portfolio: null,
-  is_employed: false, date_joined: null, date_left: null,
-  company_name: null, vendor_service: null,
-  organisation_id: null, org_role: null, user_email: null,
-  payroll_employee_id: null, notes: null,
-};
+/** How many relationships fit on a row before it stops being scannable. */
+const BADGE_LIMIT = 3;
 
 export default function PeopleDirectoryPage() {
   const supabase = createClient();
+  const router = useRouter();
+
   const [people, setPeople] = useState<Person[]>([]);
+  const [timeline, setTimeline] = useState<(TimelineRow & { person_id: string })[]>([]);
   const [congregations, setCongregations] = useState<Congregation[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
-  const [links, setLinks] = useState<Link[]>([]);
-  // Offices are held, not owned: read from the register so this page and
-  // Offices & Elections can never disagree about who is Treasurer.
-  const [offices, setOffices] = useState<Office[]>([]);
-  const [holdings, setHoldings] = useState<OfficeHolding[]>([]);
-  const [organisations, setOrganisations] = useState<Organisation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [denied, setDenied] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState<CategoryKey | "ALL">("ALL");
-  const [showInactive, setShowInactive] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Person | null>(null);
+  const [showPast, setShowPast] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+
+  // Extra filters, kept separate from the category chips so the chips stay a
+  // single obvious axis and everything else is behind one button.
+  const [fCongregation, setFCongregation] = useState("");
+  const [fDistrict, setFDistrict] = useState("");
+  const [fEmployment, setFEmployment] = useState<"" | "EMPLOYED" | "NOT">("");
+  const [fInvolvement, setFInvolvement] = useState<"" | "CURRENT" | "PAST">("");
 
   function say(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -125,151 +73,93 @@ export default function PeopleDirectoryPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: p, error }, { data: c }, { data: d }, { data: l }, { data: off }, { data: hold }, { data: orgs }] = await Promise.all([
+    const [{ data: p, error }, { data: tl }, { data: c }, { data: d }, { data: perm }] = await Promise.all([
+      // select("*") rather than a column list: the list is built from a
+      // concatenated string, which the typed client cannot parse, and the row
+      // count here is a church directory rather than a ledger.
       supabase.from("people").select("*").order("full_name"),
-      supabase.from("congregations").select("id,name,district_id,head_pastor_email").order("name"),
-      supabase.from("districts").select("id,name,dean_email").order("name"),
-      supabase.from("person_congregations").select("person_id,congregation_id,is_primary"),
-      supabase.from("offices").select("id,name,kind"),
-      supabase.from("office_holdings").select("person_id,office_id,term_end"),
-      supabase.from("organisations").select("id,name,short_name,kind").order("name"),
+      supabase.from("person_timeline").select("*"),
+      supabase.from("congregations").select("id,name,district_id").order("name"),
+      supabase.from("districts").select("id,name").order("name"),
+      supabase.rpc("can_manage_people"),
     ]);
     // An empty list with no error usually means RLS refused — say so plainly
     // rather than showing a page that looks like nobody exists.
     if (error) setDenied(true);
     setPeople((p ?? []) as Person[]);
+    setTimeline((tl ?? []) as (TimelineRow & { person_id: string })[]);
     setCongregations((c ?? []) as Congregation[]);
     setDistricts((d ?? []) as District[]);
-    setLinks((l ?? []) as Link[]);
-    setOffices((off ?? []) as Office[]);
-    setHoldings((hold ?? []) as OfficeHolding[]);
-    setOrganisations((orgs ?? []) as Organisation[]);
+    setCanEdit(perm === true);
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { load(); }, [load]);
 
-  const congsOf = useCallback(
-    (personId: string) => links.filter(l => l.person_id === personId)
-      .map(l => congregations.find(c => c.id === l.congregation_id))
-      .filter(Boolean) as Congregation[],
-    [links, congregations]);
+  // Involvement, newest first, so the badges that fit are the ones that matter.
+  const involvementOf = useCallback((personId: string) =>
+    timeline
+      .filter(t => t.person_id === personId)
+      .sort((a, b) => {
+        if (isCurrent(a) !== isCurrent(b)) return isCurrent(a) ? -1 : 1;
+        return (b.start_date ?? "").localeCompare(a.start_date ?? "");
+      }),
+    [timeline]);
 
-  // Dean and head pastor are never stored on the person — they are properties
-  // of the district and congregation, so they can't contradict the assignment.
-  const officesOf = useCallback((p: Person): string[] => {
-    const out: string[] = [];
-    const email = (p.email ?? p.user_email ?? "").trim().toLowerCase();
-    if (email) {
-      if (districts.some(d => d.dean_email?.trim().toLowerCase() === email)) out.push("Dean");
-      const heads = congregations.filter(c => c.head_pastor_email?.trim().toLowerCase() === email);
-      if (heads.length) out.push(`Head Pastor, ${heads.map(h => h.name).join(" & ")}`);
-    }
-    for (const h of holdings) {
-      if (h.person_id !== p.id || h.term_end) continue;
-      const o = offices.find(x => x.id === h.office_id);
-      if (o) out.push(o.kind === "EXCO" ? `EXCO — ${o.name}` : o.name);
-    }
-    return out;
-  }, [districts, congregations, holdings, offices]);
+  const isPast = (p: Person) => p.status !== "ACTIVE";
 
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
     for (const p of people) {
-      if (!showInactive && p.status !== "ACTIVE") continue;
+      if (!showPast && isPast(p)) continue;
       m[p.category] = (m[p.category] ?? 0) + 1;
     }
     return m;
-  }, [people, showInactive]);
+  }, [people, showPast]);
+
+  const totalShown = useMemo(
+    () => people.filter(p => showPast || !isPast(p)).length, [people, showPast]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return people.filter(p => {
-      if (!showInactive && p.status !== "ACTIVE" && p.id !== openId) return false;
+      if (!showPast && isPast(p)) return false;
       if (catFilter !== "ALL" && p.category !== catFilter) return false;
+      if (fDistrict && p.district_id !== fDistrict) return false;
+      if (fEmployment === "EMPLOYED" && !p.is_employed) return false;
+      if (fEmployment === "NOT" && p.is_employed) return false;
+
+      const rows = involvementOf(p.id);
+      if (fCongregation && !rows.some(r => r.source === "CONGREGATION" && r.source_id && r.title ===
+          congregations.find(c => c.id === fCongregation)?.name)) return false;
+      if (fInvolvement === "CURRENT" && !rows.some(isCurrent)) return false;
+      if (fInvolvement === "PAST" && !rows.some(r => !isCurrent(r))) return false;
+
       if (!q) return true;
-      const org = organisations.find(o => o.id === p.organisation_id);
-      return [p.full_name, p.preferred_name, p.email, p.phone, p.hq_department,
-              p.company_name, p.vendor_service, p.exco_portfolio,
-              org?.name, org?.short_name, p.org_role]
-        .some(f => (f ?? "").toLowerCase().includes(q));
+      return [
+        p.full_name, p.preferred_name, p.email, p.phone, p.hq_department,
+        p.company_name, p.vendor_service, p.org_role,
+        ...rows.map(r => r.title),
+      ].some(f => (f ?? "").toLowerCase().includes(q));
     });
-  }, [people, query, catFilter, showInactive, openId, organisations]);
+  }, [people, query, catFilter, showPast, fDistrict, fEmployment, fCongregation,
+      fInvolvement, involvementOf, congregations]);
 
-  function openNew() {
-    const fresh = { ...BLANK, id: `new-${Date.now()}` } as Person;
-    setPeople(ps => [fresh, ...ps]);
-    setDraft(fresh);
-    setOpenId(fresh.id);
+  const activeFilterCount =
+    (fCongregation ? 1 : 0) + (fDistrict ? 1 : 0) + (fEmployment ? 1 : 0) + (fInvolvement ? 1 : 0);
+
+  function clearFilters() {
+    setFCongregation(""); setFDistrict(""); setFEmployment(""); setFInvolvement("");
   }
 
-  function open(p: Person) {
-    setOpenId(id => (id === p.id ? null : p.id));
-    setDraft({ ...p });
-  }
-
-  function set<K extends keyof Person>(k: K, v: Person[K]) {
-    setDraft(d => (d ? { ...d, [k]: v } : d));
-  }
-
-  async function save() {
-    if (!draft) return;
-    if (!draft.full_name.trim()) { say("A name is required", false); return; }
-    setSaving(true);
-
-    const { id, ...fields } = draft;
-    const payload = {
-      ...fields,
-      full_name: draft.full_name.trim(),
-      email: draft.email?.trim().toLowerCase() || null,
-      user_email: draft.user_email?.trim().toLowerCase() || null,
-      updated_at: new Date().toISOString(),
-    };
-
-    const isNew = id.startsWith("new-");
-    const { data, error } = isNew
-      ? await supabase.from("people").insert(payload).select().single()
-      : await supabase.from("people").update(payload).eq("id", id).select().single();
-
-    setSaving(false);
-    if (error) { say(error.message, false); return; }
-
-    const saved = data as Person;
-    setPeople(ps => ps.map(p => (p.id === id ? saved : p)));
-    setOpenId(saved.id);
-    setDraft(saved);
-    say("Saved");
-  }
-
-  async function remove(p: Person) {
-    if (p.id.startsWith("new-")) {
-      setPeople(ps => ps.filter(x => x.id !== p.id));
-      setOpenId(null);
-      return;
-    }
-    if (!confirm(`Remove ${p.full_name} from the directory?\n\nTheir login, payroll record and past vouchers are not affected.`)) return;
-    const { error } = await supabase.from("people").delete().eq("id", p.id);
-    if (error) { say(error.message, false); return; }
-    setPeople(ps => ps.filter(x => x.id !== p.id));
-    setOpenId(null);
-    say("Removed");
-  }
-
-  // A pastor may shepherd several congregations, so this is a set, not a field.
-  async function toggleCongregation(personId: string, congregationId: string) {
-    const existing = links.find(l => l.person_id === personId && l.congregation_id === congregationId);
-    if (existing) {
-      const { error } = await supabase.from("person_congregations")
-        .delete().eq("person_id", personId).eq("congregation_id", congregationId);
-      if (error) { say(error.message, false); return; }
-      setLinks(ls => ls.filter(l => !(l.person_id === personId && l.congregation_id === congregationId)));
-    } else {
-      const isFirst = !links.some(l => l.person_id === personId);
-      const { error } = await supabase.from("person_congregations")
-        .insert({ person_id: personId, congregation_id: congregationId, is_primary: isFirst });
-      if (error) { say(error.message, false); return; }
-      setLinks(ls => [...ls, { person_id: personId, congregation_id: congregationId, is_primary: isFirst }]);
-    }
+  /** What this person mainly is, and since when. */
+  function primaryRole(p: Person): { label: string; since: string } {
+    const cat = categoryOf(p.category);
+    const office = involvementOf(p.id).find(r => r.source === "OFFICE" && isCurrent(r));
+    const since = p.date_joined
+      ? `Since ${new Date(p.date_joined + "T00:00:00").toLocaleDateString("en-GB", { month: "short", year: "numeric" })}`
+      : "";
+    return { label: office?.title ?? cat.one, since };
   }
 
   if (loading) return <div className="p-8 text-center text-sm text-stone-400">Loading…</div>;
@@ -292,384 +182,392 @@ export default function PeopleDirectoryPage() {
   }
 
   return (
-    <div className="cloudlight-page max-w-5xl space-y-5">
+    <div className="cloudlight-page max-w-6xl space-y-5" onClick={() => setMenuFor(null)}>
       {toast && (
         <div className={`fixed right-4 top-4 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm text-white shadow-lg ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.ok ? <CheckCircle2 size={15} /> : <X size={15} />} {toast.msg}
         </div>
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1">
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
-          <h1 className="text-xl font-bold text-stone-800">People Directory</h1>
-          <p className="text-sm text-stone-400">
-            Everyone LCM works with — pastors, staff, volunteers, vendors, agents and partner contacts
+          <h1 className="text-2xl font-bold tracking-tight text-stone-800">People Directory</h1>
+          <p className="mt-0.5 text-sm text-stone-500">
+            View everyone in LCM and their involvement across the organisation.
           </p>
         </div>
-        <Button size="sm" onClick={openNew}><Plus size={13} /> Add Person</Button>
-      </div>
-
-      {/* Categories double as the filter and as the count of each group. */}
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => setCatFilter("ALL")}
-          className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-            catFilter === "ALL" ? "border-[#4a6da7] bg-[#eaf2ff] text-[#1d4ed8]" : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"}`}>
-          Everyone <span className="text-stone-400">{people.filter(p => showInactive || p.status === "ACTIVE").length}</span>
-        </button>
-        {CATEGORIES.map(c => (
-          <button key={c.key} onClick={() => setCatFilter(c.key)}
-            className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-              catFilter === c.key ? "border-[#4a6da7] bg-[#eaf2ff] text-[#1d4ed8]" : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"}`}>
-            <span style={{ color: c.accent }}>{c.icon}</span>
-            {c.label} <span className="text-stone-400">{counts[c.key] ?? 0}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" />
-          <input value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="Search by name, email, phone, department, company…"
-            className="w-full rounded-xl border-2 border-stone-800 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#2f5b9c]" />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-stone-500">
-          <input type="checkbox" className="accent-[#4a6da7]" checked={showInactive}
-            onChange={e => setShowInactive(e.target.checked)} />
-          Show past people
-        </label>
-      </div>
-
-      <div className="space-y-2">
-        {visible.length === 0 && (
-          <p className="py-10 text-center text-sm text-stone-400">
-            {query ? `Nobody matches “${query}”.` : "Nobody in this category yet."}
-          </p>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => setAddOpen(true)}><Plus size={14} /> Add Person</Button>
+            <button
+              onClick={() => exportCsv(visible, involvementOf)}
+              title="Download the people shown as a spreadsheet"
+              className="grid h-9 w-9 place-items-center rounded-xl border-2 border-stone-300 text-stone-500 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+              <Download size={15} />
+            </button>
+          </div>
         )}
+      </div>
 
-        {visible.map(p => {
-          const isOpen = openId === p.id;
-          const cat = CATEGORIES.find(c => c.key === p.category);
-          const offices_ = officesOf(p);
-          const myCongs = congsOf(p.id);
-          const d = isOpen ? draft : null;
-
+      {/* ── Category cards ─────────────────────────────────────────────── */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <CategoryCard label="All" count={totalShown}
+          selected={catFilter === "ALL"} onClick={() => setCatFilter("ALL")} />
+        {CATEGORIES.map(c => {
+          const Icon = c.icon;
           return (
-            <div key={p.id} className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white shadow-[0_2px_10px_rgba(41,87,149,0.04)]">
-              <button type="button" onClick={() => open(p)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#f8fbff]">
-                <ChevronRight size={15} className={`shrink-0 text-stone-300 transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white"
-                  style={{ backgroundColor: cat?.accent ?? "#64748b" }}>
-                  {cat?.icon}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-sm font-semibold text-stone-800">
-                      {p.full_name || <span className="text-stone-400">Unnamed</span>}
-                    </span>
-                    {p.status !== "ACTIVE" && (
-                      <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-500">
-                        {p.status}
-                      </span>
-                    )}
-                    {offices_.map(o => (
-                      <span key={o} className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">{o}</span>
-                    ))}
-                    {p.is_employed && (
-                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Employed</span>
-                    )}
-                  </div>
-                  <p className="truncate text-xs text-stone-400">
-                    {[p.email, p.phone,
-                      myCongs.map(c => c.name).join(" & ") || p.hq_department || p.company_name
-                        || organisations.find(o => o.id === p.organisation_id)?.name]
-                      .filter(Boolean).join(" · ")}
-                  </p>
-                </div>
-                <span className="hidden shrink-0 rounded-full bg-[#eef4fd] px-2.5 py-1 text-[11px] font-semibold text-[#3a6db0] sm:block">
-                  {cat?.label.replace(/s$/, "")}
-                </span>
-              </button>
-
-              {isOpen && d && (
-                <div className="space-y-3.5 border-t border-[#eaf1fb] px-4 py-3.5">
-                  {/* Who they are */}
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div>
-                      <label className={lbl}>Full name *</label>
-                      <input className={inp} value={d.full_name} onChange={e => set("full_name", e.target.value)} />
-                    </div>
-                    <div>
-                      <label className={lbl}>Known as</label>
-                      <input className={inp} value={d.preferred_name ?? ""} onChange={e => set("preferred_name", e.target.value)} placeholder="Optional" />
-                    </div>
-                    <div>
-                      <label className={lbl}>Category</label>
-                      <select className={inp} value={d.category} onChange={e => set("category", e.target.value as CategoryKey)}>
-                        {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label.replace(/s$/, "")}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={lbl}>Status</label>
-                      <select className={inp} value={d.status} onChange={e => set("status", e.target.value)}>
-                        {STATUSES.map(s => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Contact */}
-                  <div>
-                    <p className={sec}>Contact</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div>
-                        <label className={lbl}>Email</label>
-                        <input className={inp} type="email" value={d.email ?? ""} onChange={e => set("email", e.target.value)} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Phone</label>
-                        <input className={inp} value={d.phone ?? ""} onChange={e => set("phone", e.target.value)} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Other phone</label>
-                        <input className={inp} value={d.alt_phone ?? ""} onChange={e => set("alt_phone", e.target.value)} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Address</label>
-                        <textarea className={`${inp} resize-y`} rows={2} value={d.address ?? ""} onChange={e => set("address", e.target.value)} />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Personal — the sensitive part of the record */}
-                  <div>
-                    <p className={sec}>Personal</p>
-                    <div className="grid gap-2 sm:grid-cols-4">
-                      <div>
-                        <label className={lbl}>IC number</label>
-                        <input className={inp} value={d.ic_no ?? ""} onChange={e => set("ic_no", e.target.value)} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Passport</label>
-                        <input className={inp} value={d.passport_no ?? ""} onChange={e => set("passport_no", e.target.value)} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Date of birth</label>
-                        <input className={inp} type="date" value={d.dob ?? ""} onChange={e => set("dob", e.target.value)} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Marital status</label>
-                        <select className={inp} value={d.marital_status ?? ""} onChange={e => set("marital_status", e.target.value)}>
-                          <option value="">—</option>
-                          <option value="SINGLE">Single</option>
-                          <option value="MARRIED">Married</option>
-                          <option value="WIDOWED">Widowed</option>
-                          <option value="OTHER">Other</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Where they serve */}
-                  {["PASTOR", "PARISH_WORKER"].includes(d.category) ? (
-                    <div>
-                      <p className={sec}>
-                        Congregations served
-                      </p>
-                      {!p.id.startsWith("new-") ? (
-                        <>
-                          <div className="flex flex-wrap gap-1.5">
-                            {congregations.map(c => {
-                              const on = links.some(l => l.person_id === p.id && l.congregation_id === c.id);
-                              return (
-                                <button key={c.id} type="button" onClick={() => toggleCongregation(p.id, c.id)}
-                                  className={`rounded-full border px-3 py-1.5 text-[13px] transition-colors ${
-                                    on ? "border-[#4a6da7] bg-[#eaf2ff] font-semibold text-[#1d4ed8]"
-                                       : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"}`}>
-                                  {c.name}
-                                </button>
-                              );
-                            })}
-                            {congregations.length === 0 && (
-                              <p className="text-xs text-stone-400">
-                                No congregations yet — add them in Church Directory first.
-                              </p>
-                            )}
-                          </div>
-                          <p className="mt-1.5 text-[11px] text-stone-400">
-                            Tap each congregation this person shepherds. Several is normal.
-                            {myCongs.length > 1 && ` Currently shepherding ${myCongs.length}.`}
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-stone-400">Save first, then assign congregations.</p>
-                      )}
-                    </div>
-                  ) : ["VENDOR", "AGENT"].includes(d.category) ? (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div>
-                        <label className={lbl}>Company</label>
-                        <input className={inp} value={d.company_name ?? ""} onChange={e => set("company_name", e.target.value)} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Goods or service provided</label>
-                        <input className={inp} value={d.vendor_service ?? ""} onChange={e => set("vendor_service", e.target.value)} />
-                      </div>
-                    </div>
-                  ) : d.category === "PARTNER" ? (
-                    // The body itself is described in Partners & Organisations.
-                    // Here we only say which one, and what this person does there.
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div>
-                        <label className={lbl}>Organisation</label>
-                        <select className={inp} value={d.organisation_id ?? ""}
-                          onChange={e => set("organisation_id", e.target.value || null)}>
-                          <option value="">—</option>
-                          {organisations.map(o => (
-                            <option key={o.id} value={o.id}>
-                              {o.short_name ? `${o.name} (${o.short_name})` : o.name}
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-[11px] text-stone-400">
-                          Not on the list?{" "}
-                          <Link href="/settings/organisations" className="font-medium text-[#3a6db0] hover:underline">
-                            Add it under Partners &amp; Organisations
-                          </Link>.
-                        </p>
-                      </div>
-                      <div>
-                        <label className={lbl}>Their role there</label>
-                        <input className={inp} value={d.org_role ?? ""} onChange={e => set("org_role", e.target.value)}
-                          placeholder="e.g. Asia Desk Director, Treasurer" />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div>
-                        <label className={lbl}>HQ department</label>
-                        <input className={inp} value={d.hq_department ?? ""} onChange={e => set("hq_department", e.target.value)}
-                          placeholder="e.g. Finance, Mission, Property" />
-                      </div>
-                      <div>
-                        <label className={lbl}>District</label>
-                        <select className={inp} value={d.district_id ?? ""} onChange={e => set("district_id", e.target.value || null)}>
-                          <option value="">—</option>
-                          {districts.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Offices held. Dean and head pastor are shown, never set —
-                      they belong to the district and congregation records. */}
-                  {/* Offices are elected posts with terms, so they are set in
-                      Offices & Elections and only shown here. A free-text
-                      portfolio could name a committee somebody else holds. */}
-                  <div className="rounded-xl border border-[#dbe9fb] bg-[#f4f9ff] p-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-stone-500">Offices held</p>
-                    {offices_.length > 0 ? (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {offices_.map(o => (
-                          <span key={o} className="rounded-full bg-violet-100 px-2.5 py-1 text-[12px] font-semibold text-violet-700">{o}</span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-1 text-[13px] text-stone-500">None currently.</p>
-                    )}
-                    <p className="mt-2 text-[11px] text-stone-400">
-                      Elected and appointed posts are recorded in <strong>Offices &amp; Elections</strong>;
-                      Dean and head pastor in <strong>Church Directory</strong>. Shown here so they
-                      cannot disagree.
-                    </p>
-                  </div>
-
-                  {!p.id.startsWith("new-") && <ServiceRecord personId={p.id} />}
-
-                  {/* Employment */}
-                  <div>
-                    <p className={sec}>Employment</p>
-                    <label className="flex items-center gap-2 text-sm text-stone-700">
-                      <input type="checkbox" className="h-4 w-4 accent-[#4a6da7]" checked={d.is_employed}
-                        onChange={e => set("is_employed", e.target.checked)} />
-                      Paid by LCM
-                    </label>
-                    {d.is_employed && (
-                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                        <div>
-                          <label className={lbl}>Date joined</label>
-                          <input className={inp} type="date" value={d.date_joined ?? ""} onChange={e => set("date_joined", e.target.value)} />
-                        </div>
-                        <div>
-                          <label className={lbl}>Date left</label>
-                          <input className={inp} type="date" value={d.date_left ?? ""} onChange={e => set("date_left", e.target.value)} />
-                        </div>
-                        <div>
-                          <label className={lbl}>Login email (for the system)</label>
-                          <input className={inp} value={d.user_email ?? ""} onChange={e => set("user_email", e.target.value)}
-                            placeholder="Leave blank if no login" />
-                        </div>
-                      </div>
-                    )}
-                    {/* Terms and figures come from payroll, which already keeps
-                        every revision — see components/people/employment-panel. */}
-                    {d.is_employed && !p.id.startsWith("new-") && (
-                      <div className="mt-3">
-                        <EmploymentPanel
-                          person={{
-                            id: p.id, full_name: p.full_name, ic_no: p.ic_no, dob: p.dob,
-                            category: p.category, hq_department: p.hq_department,
-                            date_joined: p.date_joined, payroll_employee_id: p.payroll_employee_id,
-                          }}
-                          congregationName={myCongs[0]?.name}
-                          onLinked={(payrollId) => {
-                            setPeople(ps => ps.map(x => x.id === p.id ? { ...x, payroll_employee_id: payrollId, is_employed: true } : x));
-                            setDraft(dr => dr ? { ...dr, payroll_employee_id: payrollId } : dr);
-                          }}
-                        />
-                      </div>
-                    )}
-                    {d.is_employed && p.id.startsWith("new-") && (
-                      <p className="mt-2 text-[12px] text-stone-500">
-                        Save first, then their payroll record can be set up here.
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className={lbl}>Notes</label>
-                    <textarea className={`${inp} resize-y`} rows={3} value={d.notes ?? ""}
-                      onChange={e => set("notes", e.target.value)}
-                      placeholder="Anything worth keeping on the record" />
-                  </div>
-
-                  {/* Letters and correspondence outlive every field above, so
-                      they are kept whether or not the person is employed. */}
-                  {!p.id.startsWith("new-") && (
-                    <DocumentsPanel personId={p.id} personName={p.full_name} />
-                  )}
-
-                  <div className="flex items-center gap-2 border-t border-stone-100 pt-3">
-                    <Button size="sm" variant="secondary" loading={saving} onClick={save}>
-                      <Save size={13} /> Save
-                    </Button>
-                    <Button size="sm" variant="ghost" className="ml-auto" onClick={() => remove(p)}>
-                      <Trash2 size={13} className="text-red-400" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <CategoryCard key={c.key} label={c.label} count={counts[c.key] ?? 0}
+              icon={<Icon size={14} style={{ color: c.accent }} />}
+              selected={catFilter === c.key} onClick={() => setCatFilter(c.key)} />
           );
         })}
       </div>
 
-      <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-        Salary is deliberately not held on this page — payroll already keeps every revision, and a
-        second copy would be a second answer to what someone is paid. What you see under Employment
-        is read from there. Documents are stored privately and opened through links that expire,
-        so an employment letter cannot be reached by guessing an address.
+      {/* ── Search and filters ─────────────────────────────────────────── */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+          <input value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Search by name, email, phone, department, church, company…"
+            className="w-full rounded-xl border-2 border-stone-800 bg-white py-2.5 pl-10 pr-3 text-sm outline-none transition-colors placeholder:text-stone-400 focus:border-[#2f5b9c]" />
+        </div>
+
+        <div className="relative" onClick={e => e.stopPropagation()}>
+          <button onClick={() => setFiltersOpen(o => !o)}
+            className={`flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+              filtersOpen || activeFilterCount
+                ? "border-[#2f5b9c] bg-[#eef4fd] text-[#2f5b9c]"
+                : "border-stone-800 bg-white text-stone-700 hover:bg-stone-50"}`}>
+            <SlidersHorizontal size={15} /> Filters
+            {activeFilterCount > 0 && (
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-[#2f5b9c] text-[11px] font-bold text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {filtersOpen && (
+            <div className="absolute right-0 z-30 mt-2 w-72 space-y-3 rounded-2xl border border-[#dbe9fb] bg-white p-4 shadow-[0_16px_50px_rgba(22,51,94,0.18)]">
+              <div>
+                <label className={labelClass}>Church / congregation</label>
+                <select className={fieldClass} value={fCongregation} onChange={e => setFCongregation(e.target.value)}>
+                  <option value="">Any</option>
+                  {congregations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>District</label>
+                <select className={fieldClass} value={fDistrict} onChange={e => setFDistrict(e.target.value)}>
+                  <option value="">Any</option>
+                  {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Employment</label>
+                <select className={fieldClass} value={fEmployment}
+                  onChange={e => setFEmployment(e.target.value as typeof fEmployment)}>
+                  <option value="">Any</option>
+                  <option value="EMPLOYED">Paid by LCM</option>
+                  <option value="NOT">Not employed</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Involvement</label>
+                <select className={fieldClass} value={fInvolvement}
+                  onChange={e => setFInvolvement(e.target.value as typeof fInvolvement)}>
+                  <option value="">Any</option>
+                  <option value="CURRENT">Has something current</option>
+                  <option value="PAST">Has something past</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 pt-1 text-sm text-stone-600">
+                <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
+                  checked={showPast} onChange={e => setShowPast(e.target.checked)} />
+                Show past people
+              </label>
+              <div className="flex items-center gap-2 border-t border-stone-100 pt-3">
+                <button onClick={clearFilters}
+                  className="text-[12px] font-medium text-stone-400 hover:text-stone-600">Clear all</button>
+                <Button size="sm" variant="secondary" className="ml-auto"
+                  onClick={() => setFiltersOpen(false)}>Done</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── The list ───────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
+        {/* Column headings are desktop-only; below that each person is a card. */}
+        <div className="hidden border-b border-[#eef3fa] bg-[#fafcff] px-5 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.09em] text-stone-400 lg:grid lg:grid-cols-[minmax(200px,1.3fr)_150px_minmax(220px,1.6fr)_190px_110px_40px] lg:gap-4">
+          <span>Person</span><span>Primary role</span><span>Involvement summary</span>
+          <span>Contact</span><span>Status</span><span />
+        </div>
+
+        {visible.length === 0 ? (
+          <p className="px-5 py-14 text-center text-sm text-stone-400">
+            {query || activeFilterCount ? "Nobody matches those filters." : "Nobody in this category yet."}
+          </p>
+        ) : (
+          <ul>
+            {visible.map(p => {
+              const rows = involvementOf(p.id);
+              const shown = rows.slice(0, BADGE_LIMIT);
+              const overflow = rows.length - shown.length;
+              const role = primaryRole(p);
+
+              return (
+                <li key={p.id}
+                  className="border-b border-[#f1f5fa] last:border-0 transition-colors hover:bg-[#f9fcff]">
+                  <div
+                    role="button" tabIndex={0}
+                    onClick={() => router.push(`/settings/people/${p.id}`)}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/settings/people/${p.id}`); } }}
+                    className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2f5b9c] lg:grid-cols-[minmax(200px,1.3fr)_150px_minmax(220px,1.6fr)_190px_110px_40px] lg:items-center lg:gap-4">
+
+                    {/* Person */}
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar name={p.full_name} photoPath={p.photo_path} size={40} />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-stone-800">
+                          {p.full_name || <span className="text-stone-400">Unnamed</span>}
+                        </div>
+                        <div className="truncate text-[12px] text-stone-500">
+                          {categoryOf(p.category).one}
+                          {p.preferred_name ? ` · ${p.preferred_name}` : ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Primary role */}
+                    <div className="min-w-0 lg:block">
+                      <div className="truncate text-[13px] font-medium text-stone-700">{role.label}</div>
+                      {role.since && <div className="text-[12px] text-stone-400">{role.since}</div>}
+                    </div>
+
+                    {/* Involvement */}
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      {shown.map(r => <RelationshipBadge key={r.source + r.source_id} row={r} />)}
+                      {overflow > 0 && (
+                        <span className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] font-medium text-stone-500">
+                          +{overflow}
+                        </span>
+                      )}
+                      {rows.length === 0 && <span className="text-[12px] text-stone-400">No involvement recorded</span>}
+                    </div>
+
+                    {/* Contact */}
+                    <div className="min-w-0 space-y-0.5">
+                      {p.email && (
+                        <div className="flex items-center gap-1.5 text-[12.5px] text-stone-600">
+                          <Mail size={12} className="shrink-0 text-stone-400" />
+                          <span className="truncate">{p.email}</span>
+                        </div>
+                      )}
+                      {p.phone && (
+                        <div className="flex items-center gap-1.5 text-[12.5px] text-stone-600">
+                          <Phone size={12} className="shrink-0 text-stone-400" />
+                          <span className="truncate">{p.phone}</span>
+                        </div>
+                      )}
+                      {!p.email && !p.phone && <span className="text-[12px] text-stone-400">No contact</span>}
+                    </div>
+
+                    {/* Status */}
+                    <div><PersonStatus status={p.status} /></div>
+
+                    {/* Row actions */}
+                    <div className="justify-self-start lg:justify-self-end"
+                      onClick={e => e.stopPropagation()}>
+                      <div className="relative">
+                        <button
+                          onClick={() => setMenuFor(m => (m === p.id ? null : p.id))}
+                          title="More actions"
+                          className="grid h-8 w-8 place-items-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+                          <MoreVertical size={16} />
+                        </button>
+                        {menuFor === p.id && (
+                          <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-[#dbe9fb] bg-white py-1 shadow-[0_16px_50px_rgba(22,51,94,0.18)]">
+                            <MenuItem onClick={() => router.push(`/settings/people/${p.id}`)}>View profile</MenuItem>
+                            {canEdit && <>
+                              <MenuItem onClick={() => router.push(`/settings/people/${p.id}?edit=1`)}>Edit person</MenuItem>
+                              <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=involvement`)}>Add involvement</MenuItem>
+                              <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=employment`)}>Add employment</MenuItem>
+                              <div className="my-1 border-t border-stone-100" />
+                              <MenuItem danger onClick={async () => {
+                                const next = p.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+                                const { error } = await supabase.from("people")
+                                  .update({ status: next, updated_at: new Date().toISOString() }).eq("id", p.id);
+                                if (error) { say(error.message, false); return; }
+                                setPeople(ps => ps.map(x => x.id === p.id ? { ...x, status: next } : x));
+                                say(next === "ACTIVE" ? `${p.full_name} marked active` : `${p.full_name} marked past`);
+                              }}>
+                                {p.status === "ACTIVE" ? "Mark as past" : "Mark as active"}
+                              </MenuItem>
+                            </>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <p className="text-center text-[12px] text-stone-400">
+        Showing {visible.length} of {totalShown} {totalShown === 1 ? "person" : "people"}
+        {!showPast && people.length > totalShown && ` · ${people.length - totalShown} past hidden`}
+      </p>
+
+      {addOpen && (
+        <AddPersonModal
+          onClose={() => setAddOpen(false)}
+          onCreated={(id, name) => { setAddOpen(false); say(`${name} added`); router.push(`/settings/people/${id}`); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Bits ──────────────────────────────────────────────────────────────────
+
+function CategoryCard({ label, count, icon, selected, onClick }: {
+  label: string; count: number; icon?: React.ReactNode; selected: boolean; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick}
+      aria-pressed={selected}
+      className={`flex min-w-[104px] shrink-0 flex-col gap-0.5 rounded-xl border-2 px-3.5 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c] ${
+        selected
+          ? "border-[#2f5b9c] bg-[#eef4fd]"
+          : "border-stone-200 bg-white hover:border-stone-300"}`}>
+      <span className="flex items-center gap-1.5 text-[12px] font-medium text-stone-600">
+        {icon}{label}
+      </span>
+      <span className={`text-lg font-semibold tabular-nums ${selected ? "text-[#2f5b9c]" : "text-stone-800"}`}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function MenuItem({ children, onClick, danger }: {
+  children: React.ReactNode; onClick: () => void; danger?: boolean;
+}) {
+  return (
+    <button onClick={onClick}
+      className={`block w-full px-3.5 py-2 text-left text-[13px] transition-colors hover:bg-[#f4f9ff] ${
+        danger ? "text-red-600 hover:bg-red-50" : "text-stone-700"}`}>
+      {children}
+    </button>
+  );
+}
+
+/** The people shown, as a spreadsheet — the filters are the point of it. */
+function exportCsv(rows: Person[], involvementOf: (id: string) => TimelineRow[]) {
+  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const head = ["Name", "Category", "Status", "Email", "Phone", "Department", "Involvement"];
+  const body = rows.map(p => [
+    p.full_name, categoryOf(p.category).one, p.status, p.email ?? "", p.phone ?? "",
+    p.hq_department ?? "",
+    involvementOf(p.id).map(r => `${r.title}${r.role ? ` (${r.role})` : ""} ${period(r.start_date, r.end_date)}`).join("; "),
+  ].map(esc).join(","));
+  const blob = new Blob([[head.map(esc).join(","), ...body].join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `lcm-people-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/**
+ * Adding someone asks for the few things that identify them, then opens their
+ * profile — where the involvement, employment and documents belong. The old
+ * page dropped a blank row into the list with every field at once, which meant
+ * every new person started as an unnamed row somebody had to find again.
+ */
+function AddPersonModal({ onClose, onCreated }: {
+  onClose: () => void; onCreated: (id: string, name: string) => void;
+}) {
+  const supabase = createClient();
+  const [fullName, setFullName] = useState("");
+  const [category, setCategory] = useState<CategoryKey>("HQ_STAFF");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { nameRef.current?.focus(); }, []);
+
+  async function save() {
+    if (!fullName.trim()) { setErr("A name is required"); return; }
+    setErr(""); setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase.from("people").insert({
+      full_name: fullName.trim(),
+      category,
+      status: "ACTIVE",
+      email: email.trim().toLowerCase() || null,
+      phone: phone.trim() || null,
+      created_by: user?.email ?? "",
+    }).select("id").single();
+    setSaving(false);
+    if (error) { setErr(error.message); return; }
+    onCreated(data.id as string, fullName.trim());
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 px-4 py-10 backdrop-blur-[2px]"
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()}
+        className="w-full max-w-md space-y-4 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-bold text-stone-800">Add a person</h2>
+            <p className="mt-0.5 text-xs text-stone-500">
+              Just enough to identify them — the rest is added on their profile.
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100"><X size={16} /></button>
+        </div>
+
+        <div>
+          <label className={labelClass}>Full name *</label>
+          <input ref={nameRef} className={fieldClass} value={fullName}
+            onChange={e => setFullName(e.target.value)} placeholder="e.g. Andrew Tay" />
+        </div>
+        <div>
+          <label className={labelClass}>Category</label>
+          <select className={fieldClass} value={category}
+            onChange={e => setCategory(e.target.value as CategoryKey)}>
+            {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.one}</option>)}
+          </select>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div>
+            <label className={labelClass}>Email</label>
+            <input className={fieldClass} type="email" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelClass}>Phone</label>
+            <input className={fieldClass} value={phone} onChange={e => setPhone(e.target.value)} />
+          </div>
+        </div>
+
+        {err && <p className="text-xs font-medium text-red-500">{err}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <Button className="flex-1" loading={saving} onClick={save}>
+            <Users size={14} /> Add and open profile
+          </Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
       </div>
     </div>
   );
