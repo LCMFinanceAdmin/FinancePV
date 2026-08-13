@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
-  Avatar, PersonStatus, RelationshipBadge, CATEGORIES, categoryOf,
+  Avatar, PersonStatus, CATEGORIES, categoryOf,
   type CategoryKey, type TimelineRow, isCurrent, period,
 } from "@/components/people/ui";
 import {
@@ -41,7 +41,6 @@ interface Congregation { id: string; name: string; district_id: string | null }
 interface District { id: string; name: string }
 
 /** How many relationships fit on a row before it stops being scannable. */
-const BADGE_LIMIT = 3;
 
 export default function PeopleDirectoryPage() {
   const supabase = createClient();
@@ -111,7 +110,9 @@ export default function PeopleDirectoryPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Involvement, newest first, so the badges that fit are the ones that matter.
+  // Involvement, current first then newest. No longer shown as badges in the
+  // list — it feeds the primary-role label, the involvement filter and the
+  // CSV export, all of which want the most relevant row first.
   const involvementOf = useCallback((personId: string) =>
     timeline
       .filter(t => t.person_id === personId)
@@ -341,10 +342,10 @@ export default function PeopleDirectoryPage() {
       {/* ── The list ───────────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-2xl border-2 border-stone-800 bg-white shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
         {/* Column headings are desktop-only; below that each person is a card. */}
-        <div className="hidden border-b-2 border-stone-800 bg-[#f4f7fb] px-5 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.09em] text-stone-700 lg:grid lg:grid-cols-[minmax(210px,1.3fr)_150px_minmax(220px,1.6fr)_190px_100px_40px] lg:gap-4">
+        <div className="hidden border-b-2 border-stone-800 bg-[#f4f7fb] px-5 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.09em] text-stone-700 lg:grid lg:grid-cols-[minmax(210px,1.6fr)_150px_150px_190px_100px_40px] lg:gap-4">
           <span className="border-r-2 border-stone-800 pr-4">Person</span>
           <span className="border-r-2 border-stone-800 pr-4">Primary role</span>
-          <span className="border-r-2 border-stone-800 pr-4">Involvement summary</span>
+          <span className="border-r-2 border-stone-800 pr-4">Role</span>
           <span className="border-r-2 border-stone-800 pr-4">Contact</span>
           <span className="border-r-2 border-stone-800 pr-4">Status</span>
           <span />
@@ -357,10 +358,8 @@ export default function PeopleDirectoryPage() {
         ) : (
           <ul>
             {visible.map(p => {
-              const rows = involvementOf(p.id);
-              const shown = rows.slice(0, BADGE_LIMIT);
-              const overflow = rows.length - shown.length;
               const role = primaryRole(p);
+              const access = roleOf(p);
 
               return (
                 <li key={p.id}
@@ -373,7 +372,7 @@ export default function PeopleDirectoryPage() {
                       if ((e.target as HTMLElement).closest("a,button")) return;
                       router.push(`/settings/people/${p.id}`);
                     }}
-                    className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 lg:grid-cols-[minmax(210px,1.3fr)_150px_minmax(220px,1.6fr)_190px_100px_40px] lg:items-center lg:gap-4">
+                    className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 lg:grid-cols-[minmax(210px,1.6fr)_150px_150px_190px_100px_40px] lg:items-center lg:gap-4">
 
                     {/* Person. Below lg this is the card's header, so the
                         status and the menu come up here rather than sitting as
@@ -390,12 +389,6 @@ export default function PeopleDirectoryPage() {
                             {categoryOf(p.category).one}
                             {p.preferred_name ? ` · ${p.preferred_name}` : ""}
                           </span>
-                          {roleOf(p) && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[10px] font-semibold text-[#2f5b9c]">
-                              <ShieldCheck size={9} aria-hidden="true" />
-                              {roleLabel(roleOf(p)!)}
-                            </span>
-                          )}
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1 lg:hidden">
@@ -415,15 +408,17 @@ export default function PeopleDirectoryPage() {
                       {role.since && <div className="text-[12px] text-stone-500">{role.since}</div>}
                     </div>
 
-                    {/* Involvement */}
-                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 lg:border-r-2 lg:border-stone-800 lg:pr-4">
-                      {shown.map(r => <RelationshipBadge key={r.source + r.source_id} row={r} />)}
-                      {overflow > 0 && (
-                        <span className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] font-medium text-stone-500">
-                          +{overflow}
+                    {/* Role — what they may do in the app, not what they are called. */}
+                    <div className="flex min-w-0 items-center lg:border-r-2 lg:border-stone-800 lg:pr-4">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-stone-400 lg:hidden">Role&nbsp;</span>
+                      {access ? (
+                        <span className="inline-flex items-center gap-1 truncate rounded-full bg-[#eef4fd] px-2 py-0.5 text-[12px] font-semibold text-[#2f5b9c]">
+                          <ShieldCheck size={10} aria-hidden="true" />
+                          {roleLabel(access)}
                         </span>
+                      ) : (
+                        <span className="text-[12px] text-stone-500">No sign-in</span>
                       )}
-                      {rows.length === 0 && <span className="text-[12px] text-stone-500">No involvement recorded</span>}
                     </div>
 
                     {/* Contact */}
