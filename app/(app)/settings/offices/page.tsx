@@ -54,6 +54,10 @@ export default function OfficesPage() {
   const [logins, setLogins] = useState<{ email: string; role: string; full_name: string | null }[]>([]);
   const [adding, setAdding] = useState(false);
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
+  // Retiring a post hid it and the page only loaded active ones, so there was
+  // no way back — an action with no inverse, which is the same mistake the
+  // congregation ticks made. Retired posts can be shown and reinstated.
+  const [showRetired, setShowRetired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
@@ -72,7 +76,7 @@ export default function OfficesPage() {
 
   const load = useCallback(async () => {
     const [{ data: o }, { data: h }, { data: p }, { data: lg }] = await Promise.all([
-      supabase.from("offices").select("*").eq("active", true).order("sort_order").order("name"),
+      supabase.from("offices").select("*").order("sort_order").order("name"),
       supabase.from("office_holdings").select("*").order("term_start", { ascending: false }),
       supabase.from("people").select("id,full_name,user_email,email").eq("status", "ACTIVE").order("full_name"),
       supabase.from("user_roles").select("email,role,full_name"),
@@ -210,14 +214,16 @@ export default function OfficesPage() {
 
   if (loading) return <div className="p-8 text-center text-sm text-stone-400">Loading…</div>;
 
-  const church    = offices.filter(o => o.kind === "CHURCH");
-  const deans     = offices.filter(o => o.kind === "DEAN");
-  const exco      = offices.filter(o => o.kind === "EXCO");
-  const appointed = offices.filter(o => o.kind === "APPOINTED");
-  const committees = offices.filter(o => o.kind === "COMMITTEE");
+  const visible   = offices.filter(o => showRetired || o.active);
+  const retiredCount = offices.filter(o => !o.active).length;
+  const church    = visible.filter(o => o.kind === "CHURCH");
+  const deans     = visible.filter(o => o.kind === "DEAN");
+  const exco      = visible.filter(o => o.kind === "EXCO");
+  const appointed = visible.filter(o => o.kind === "APPOINTED");
+  const committees = visible.filter(o => o.kind === "COMMITTEE");
   // Project and supporting committees carry no EXCO seat, so listing them with
   // the portfolios overstated what their members were elected to.
-  const projects   = offices.filter(o => o.kind === "PROJECT");
+  const projects   = visible.filter(o => o.kind === "PROJECT");
 
   /**
    * People signing in with the role this office grants, who do not hold it.
@@ -265,7 +271,8 @@ export default function OfficesPage() {
         const past = pastOf(o.id);
         const showing = historyFor === o.id;
         return (
-          <div key={o.id} className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white">
+          <div key={o.id} className={`overflow-hidden rounded-2xl border bg-white ${
+            o.active ? "border-[#e4edf9]" : "border-dashed border-stone-300 opacity-70"}`}>
             {unrecordedHolders(o).map(({ person, email }) => (
               <div key={person.id}
                 className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2">
@@ -293,6 +300,11 @@ export default function OfficesPage() {
                   {o.grants_role && (
                     <span className="rounded-full bg-[#eef4fd] px-2 py-0.5 text-[10px] font-semibold text-[#2f5b9c]">
                       {roleLabel(o.grants_role)}
+                    </span>
+                  )}
+                  {!o.active && (
+                    <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-600">
+                      Retired
                     </span>
                   )}
                   {!o.single_holder && members.length > 0 && (
