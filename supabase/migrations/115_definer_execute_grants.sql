@@ -5,6 +5,14 @@
 -- callable by anyone, including `anon`. And `anon` is not hypothetical: the
 -- anon key ships in the browser bundle, so it is public knowledge by design.
 --
+-- Revoking from PUBLIC alone is not enough here. Supabase's default privileges
+-- also grant EXECUTE to `anon` *explicitly*, so the ACL on a new function reads
+--
+--   =X/postgres | postgres=X | anon=X | authenticated=X | service_role=X
+--
+-- and dropping the first entry leaves the third doing exactly the same job.
+-- Both have to go. service_role keeps its grant: the edge functions run as it.
+--
 -- Migration 074 established the fix (REVOKE ALL ... FROM PUBLIC, then grant to
 -- the role that should have it) but only applied it to five functions. Twenty
 -- more have been added since without it, including three of my own in 114.
@@ -57,7 +65,7 @@ BEGIN
          'fn_fd_maturity_reminders'
        )
   LOOP
-    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', fn.sig);
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon', fn.sig);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated', fn.sig);
   END LOOP;
 END $$;
