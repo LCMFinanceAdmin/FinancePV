@@ -151,11 +151,24 @@ export function isBeneficiary(
  * expects to see. Marking it reissued in the same step is what stops it being
  * handed to two vouchers — the check-then-use is deliberately narrow.
  */
-async function takeReclaimedNo(db: ReturnType<typeof getServiceClient>, prefix: string): Promise<string | null> {
+/**
+ * Take a cancelled voucher's number back out of the pool, if one is waiting.
+ *
+ * `seriesPrefix` is year-qualified — "LCM-2026-", not "LCM". That matters: the
+ * pool's own `prefix` column holds only the base, so filtering on it alone
+ * would hand a number left over from a closed year to the first voucher
+ * submitted in the next one. With the pool ordered oldest-first, that is not
+ * an unlucky edge case but the guaranteed outcome every 1 January. A number
+ * from a closed year now simply expires unused, which is the right trade: a
+ * gap in last year's sequence is a normal thing that reconciles, and a 2026
+ * number on a 2027 voucher is not.
+ */
+async function takeReclaimedNo(db: ReturnType<typeof getServiceClient>, seriesPrefix: string): Promise<string | null> {
   const { data: free } = await db
     .from("pv_number_pool")
     .select("id,pv_no")
-    .eq("prefix", prefix)
+    .eq("prefix", seriesPrefix.split("-")[0])
+    .like("pv_no", `${seriesPrefix}%`)
     .is("reissued_at", null)
     .order("pv_no", { ascending: true })
     .limit(1);
@@ -193,7 +206,7 @@ export async function nextPrNo(db: ReturnType<typeof getServiceClient>): Promise
 export async function nextPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `LCM-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  const reclaimed = await takeReclaimedNo(db, prefix);
   if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
@@ -211,7 +224,7 @@ export async function nextPvNo(db: ReturnType<typeof getServiceClient>): Promise
 export async function nextBamPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `BAM-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  const reclaimed = await takeReclaimedNo(db, prefix);
   if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
@@ -229,7 +242,7 @@ export async function nextBamPvNo(db: ReturnType<typeof getServiceClient>): Prom
 export async function nextLscPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `LSC-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  const reclaimed = await takeReclaimedNo(db, prefix);
   if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
@@ -247,7 +260,7 @@ export async function nextLscPvNo(db: ReturnType<typeof getServiceClient>): Prom
 export async function nextLgbPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `LGB-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  const reclaimed = await takeReclaimedNo(db, prefix);
   if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
@@ -264,7 +277,7 @@ export async function nextLgbPvNo(db: ReturnType<typeof getServiceClient>): Prom
 export async function nextHlePvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `HLE-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix.split("-")[0]);
+  const reclaimed = await takeReclaimedNo(db, prefix);
   if (reclaimed) return reclaimed;
   const { data } = await db
     .from("pvs")
@@ -276,4 +289,41 @@ export async function nextHlePvNo(db: ReturnType<typeof getServiceClient>): Prom
     ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
     : 0;
   return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`;
+}
+
+
+/**
+ * Insert a voucher, re-drawing its number if that one was just taken.
+ *
+ * pvs.pv_no is the primary key, so two submissions racing cannot both land —
+ * which is the good news, since it means a race can never produce two vouchers
+ * sharing a number. The bad news was the loser's experience: the number is
+ * read and written in separate statements, so the second insert failed on the
+ * unique violation and the submitter saw a raw database error with nothing to
+ * do about it but try again by hand.
+ *
+ * Retrying is safe precisely because the key rejects the duplicate: we are not
+ * papering over a lost update, we are asking for the next free number now that
+ * we know the one we held is gone.
+ */
+export async function insertPvWithNumber(
+  db: ReturnType<typeof getServiceClient>,
+  pvRow: Record<string, unknown>,
+  nextNo: (db: ReturnType<typeof getServiceClient>) => Promise<string>,
+): Promise<{ id: string | null; pvNo: string }> {
+  // Three attempts: enough for a genuine collision, few enough that a real
+  // fault surfaces as itself rather than as a timeout.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await db.from("pvs").insert(pvRow).select("id").single();
+    if (!error) return { id: data?.id ?? null, pvNo: String(pvRow.pv_no) };
+
+    const collided = error.code === "23505"
+      && /pv_no|pvs_pkey/i.test(`${error.message} ${error.details ?? ""}`);
+    if (!collided) throw new Error(error.message);
+
+    pvRow.pv_no = await nextNo(db);
+  }
+  throw new Error(
+    "Could not allocate a voucher number — three attempts were taken by other submissions. Please try again.",
+  );
 }

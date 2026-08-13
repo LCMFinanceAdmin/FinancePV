@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, nextLscPvNo, nextHlePvNo, nextLgbPvNo, getProfileByEmail } from "../_shared/supabase.ts";
+import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, nextLscPvNo, nextHlePvNo, nextLgbPvNo, getProfileByEmail, insertPvWithNumber } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
 const BAM_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "BUILDING_MANAGER"];
@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
         return json({ error: "Only Finance Executive or Building Manager can submit BAM PVs" }, 403);
       }
 
-      const pvNo = await nextBamPvNo(db);
+      let pvNo = await nextBamPvNo(db);
       const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const now = new Date().toISOString();
       const amount = amountFrom(d);
@@ -143,9 +143,9 @@ Deno.serve(async (req) => {
         pv_label:                 "BAM",
       };
 
-      const { data: bamPvData, error: insertErr } = await db.from("pvs").insert(pvRow).select("id").single();
-      if (insertErr) throw new Error(insertErr.message);
-      const bamPvId = bamPvData?.id ?? null;
+      const bamInsert = await insertPvWithNumber(db, pvRow, nextBamPvNo);
+      pvNo = bamInsert.pvNo;
+      const bamPvId = bamInsert.id;
 
       // Notify the next reviewer
       if (initialStatus === "BAM_REVIEW") {
@@ -192,9 +192,10 @@ Deno.serve(async (req) => {
       if (!["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(profile?.role)) {
         return json({ error: "Finance Executive only" }, 403);
       }
-      const pvNo = pvType === "LSC" ? await nextLscPvNo(db)
-                 : pvType === "LGB" ? await nextLgbPvNo(db)
-                 : await nextHlePvNo(db);
+      const drawNo = pvType === "LSC" ? nextLscPvNo
+                   : pvType === "LGB" ? nextLgbPvNo
+                   : nextHlePvNo;
+      let pvNo = await drawNo(db);
       const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const now = new Date().toISOString();
       const amount = amountFrom(d);
@@ -256,8 +257,8 @@ Deno.serve(async (req) => {
         exco_resolution_date:     "",
       };
 
-      const { data: pvData, error: insertErr } = await db.from("pvs").insert(pvRow).select("id").single();
-      if (insertErr) throw new Error(insertErr.message);
+      const orgInsert = await insertPvWithNumber(db, pvRow, drawNo);
+      pvNo = orgInsert.pvNo;
 
       const entityLabel = pvType === "LSC" ? "LSC" : "Highlands Lakeview";
       const pvMsg = `${pvNo} · ${d.applicant_name} · ${formatRM(amount)} (${entityLabel})`;
@@ -274,7 +275,7 @@ Deno.serve(async (req) => {
         }),
       ]);
 
-      return json({ ok: true, pv_no: pvNo, pv_id: pvData?.id ?? null, status: "PENDING" });
+      return json({ ok: true, pv_no: pvNo, pv_id: orgInsert.id, status: "PENDING" });
     }
 
     // ── Standard LCM PV flow ─────────────────────────────────────────────
@@ -289,7 +290,7 @@ Deno.serve(async (req) => {
       }, 403);
     }
 
-    const pvNo = await nextPvNo(db);
+    let pvNo = await nextPvNo(db);
     const trackingToken = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
     // Determine initial status based on ministry head assignment
@@ -387,9 +388,9 @@ Deno.serve(async (req) => {
       recurring_id:          d.recurring_id || null,
     };
 
-    const { data: lcmPvData, error: insertErr } = await db.from("pvs").insert(pvRow).select("id").single();
-    if (insertErr) throw new Error(insertErr.message);
-    const lcmPvId = lcmPvData?.id ?? null;
+    const lcmInsert = await insertPvWithNumber(db, pvRow, nextPvNo);
+    pvNo = lcmInsert.pvNo;
+    const lcmPvId = lcmInsert.id;
 
     // Notify ministry heads if applicable
     if (ministry && initialStatus === "PENDING_HEAD") {
