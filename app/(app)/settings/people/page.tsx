@@ -148,6 +148,15 @@ export default function PeopleDirectoryPage() {
   const activeFilterCount =
     (fCongregation ? 1 : 0) + (fDistrict ? 1 : 0) + (fEmployment ? 1 : 0) + (fInvolvement ? 1 : 0);
 
+  async function toggleStatus(p: Person) {
+    const next = p.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    const { error } = await supabase.from("people")
+      .update({ status: next, updated_at: new Date().toISOString() }).eq("id", p.id);
+    if (error) { say(error.message, false); return; }
+    setPeople(ps => ps.map(x => (x.id === p.id ? { ...x, status: next } : x)));
+    say(next === "ACTIVE" ? `${p.full_name} marked active` : `${p.full_name} marked past`);
+  }
+
   function clearFilters() {
     setFCongregation(""); setFDistrict(""); setFEmployment(""); setFInvolvement("");
   }
@@ -327,10 +336,12 @@ export default function PeopleDirectoryPage() {
                     onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/settings/people/${p.id}`); } }}
                     className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2f5b9c] lg:grid-cols-[minmax(200px,1.3fr)_150px_minmax(220px,1.6fr)_190px_110px_40px] lg:items-center lg:gap-4">
 
-                    {/* Person */}
+                    {/* Person. Below lg this is the card's header, so the
+                        status and the menu come up here rather than sitting as
+                        two orphan rows at the bottom of a stack. */}
                     <div className="flex min-w-0 items-center gap-3">
                       <Avatar name={p.full_name} photoPath={p.photo_path} size={40} />
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold text-stone-800">
                           {p.full_name || <span className="text-stone-400">Unnamed</span>}
                         </div>
@@ -339,11 +350,20 @@ export default function PeopleDirectoryPage() {
                           {p.preferred_name ? ` · ${p.preferred_name}` : ""}
                         </div>
                       </div>
+                      <div className="flex shrink-0 items-center gap-1 lg:hidden">
+                        <PersonStatus status={p.status} />
+                        <RowMenu p={p} canEdit={canEdit} open={menuFor === p.id}
+                          onToggle={() => setMenuFor(m => (m === p.id ? null : p.id))}
+                          router={router} onStatus={toggleStatus} />
+                      </div>
                     </div>
 
                     {/* Primary role */}
-                    <div className="min-w-0 lg:block">
-                      <div className="truncate text-[13px] font-medium text-stone-700">{role.label}</div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-baseline gap-x-1.5">
+                        <span className="text-[11px] font-medium uppercase tracking-wide text-stone-400 lg:hidden">Role</span>
+                        <span className="truncate text-[13px] font-medium text-stone-700">{role.label}</span>
+                      </div>
                       {role.since && <div className="text-[12px] text-stone-400">{role.since}</div>}
                     </div>
 
@@ -359,7 +379,7 @@ export default function PeopleDirectoryPage() {
                     </div>
 
                     {/* Contact */}
-                    <div className="min-w-0 space-y-0.5">
+                    <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-0.5 lg:block lg:space-y-0.5">
                       {p.email && (
                         <div className="flex items-center gap-1.5 text-[12.5px] text-stone-600">
                           <Mail size={12} className="shrink-0 text-stone-400" />
@@ -376,40 +396,14 @@ export default function PeopleDirectoryPage() {
                     </div>
 
                     {/* Status */}
-                    <div><PersonStatus status={p.status} /></div>
+                    <div className="hidden lg:block"><PersonStatus status={p.status} /></div>
 
                     {/* Row actions */}
-                    <div className="justify-self-start lg:justify-self-end"
+                    <div className="hidden justify-self-end lg:block"
                       onClick={e => e.stopPropagation()}>
-                      <div className="relative">
-                        <button
-                          onClick={() => setMenuFor(m => (m === p.id ? null : p.id))}
-                          title="More actions"
-                          className="grid h-8 w-8 place-items-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
-                          <MoreVertical size={16} />
-                        </button>
-                        {menuFor === p.id && (
-                          <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-[#dbe9fb] bg-white py-1 shadow-[0_16px_50px_rgba(22,51,94,0.18)]">
-                            <MenuItem onClick={() => router.push(`/settings/people/${p.id}`)}>View profile</MenuItem>
-                            {canEdit && <>
-                              <MenuItem onClick={() => router.push(`/settings/people/${p.id}?edit=1`)}>Edit person</MenuItem>
-                              <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=involvement`)}>Add involvement</MenuItem>
-                              <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=employment`)}>Add employment</MenuItem>
-                              <div className="my-1 border-t border-stone-100" />
-                              <MenuItem danger onClick={async () => {
-                                const next = p.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
-                                const { error } = await supabase.from("people")
-                                  .update({ status: next, updated_at: new Date().toISOString() }).eq("id", p.id);
-                                if (error) { say(error.message, false); return; }
-                                setPeople(ps => ps.map(x => x.id === p.id ? { ...x, status: next } : x));
-                                say(next === "ACTIVE" ? `${p.full_name} marked active` : `${p.full_name} marked past`);
-                              }}>
-                                {p.status === "ACTIVE" ? "Mark as past" : "Mark as active"}
-                              </MenuItem>
-                            </>}
-                          </div>
-                        )}
-                      </div>
+                      <RowMenu p={p} canEdit={canEdit} open={menuFor === p.id}
+                        onToggle={() => setMenuFor(m => (m === p.id ? null : p.id))}
+                        router={router} onStatus={toggleStatus} />
                     </div>
                   </div>
                 </li>
@@ -453,6 +447,35 @@ function CategoryCard({ label, count, icon, selected, onClick }: {
         {count}
       </span>
     </button>
+  );
+}
+
+function RowMenu({ p, canEdit, open, onToggle, router, onStatus }: {
+  p: Person; canEdit: boolean; open: boolean; onToggle: () => void;
+  router: ReturnType<typeof useRouter>;
+  onStatus: (p: Person) => void;
+}) {
+  return (
+    <div className="relative" onClick={e => e.stopPropagation()}>
+      <button onClick={onToggle} title="More actions" aria-expanded={open}
+        className="grid h-8 w-8 place-items-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+        <MoreVertical size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-[#dbe9fb] bg-white py-1 shadow-[0_16px_50px_rgba(22,51,94,0.18)]">
+          <MenuItem onClick={() => router.push(`/settings/people/${p.id}`)}>View profile</MenuItem>
+          {canEdit && <>
+            <MenuItem onClick={() => router.push(`/settings/people/${p.id}?edit=1`)}>Edit person</MenuItem>
+            <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=involvement`)}>Add involvement</MenuItem>
+            <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=employment`)}>Add employment</MenuItem>
+            <div className="my-1 border-t border-stone-100" />
+            <MenuItem danger onClick={() => onStatus(p)}>
+              {p.status === "ACTIVE" ? "Mark as past" : "Mark as active"}
+            </MenuItem>
+          </>}
+        </div>
+      )}
+    </div>
   );
 }
 

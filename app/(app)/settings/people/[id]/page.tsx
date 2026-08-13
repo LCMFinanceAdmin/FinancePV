@@ -20,6 +20,7 @@ import { fieldClass, labelClass } from "@/lib/field-styles";
 import { EmploymentPanel } from "@/components/people/employment-panel";
 import { DocumentsPanel } from "@/components/people/documents-panel";
 import { MembershipPanel } from "@/components/people/membership-panel";
+import { InvolvementPanel, SERVICE_KINDS, EXTERNAL_KINDS } from "@/components/people/involvement-panel";
 import {
   Avatar, PersonStatus, CATEGORIES, categoryOf, type CategoryKey,
   type TimelineRow, isCurrent, period, SummaryCard, ProfileSection,
@@ -85,7 +86,6 @@ export default function PersonProfilePage() {
     return (TABS.some(x => x.key === t) ? t : "overview") as TabKey;
   });
   const [editing, setEditing] = useState(params.get("edit") === "1");
-  const [addingInvolvement, setAddingInvolvement] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
 
@@ -125,8 +125,7 @@ export default function PersonProfilePage() {
   const current = useMemo(() => timeline.filter(isCurrent), [timeline]);
   const past = useMemo(() => timeline.filter(r => !isCurrent(r)), [timeline]);
   const employment = useMemo(() => timeline.filter(r => r.source === "EMPLOYMENT"), [timeline]);
-  const vendorish = useMemo(
-    () => timeline.filter(r => ["VENDOR", "AGENT", "PARTNER"].includes(r.kind)), [timeline]);
+  const offices = useMemo(() => timeline.filter(r => r.source === "OFFICE"), [timeline]);
 
   /**
    * A photo goes into the same private bucket as the person's documents, keyed
@@ -355,55 +354,44 @@ export default function PersonProfilePage() {
           <MembershipPanel personId={person.id} congregations={congregations}
             canEdit={canEdit} onChanged={load} say={say} />
 
-          <ProfileSection title="Current"
-            action={canEdit && (
-              <Button size="sm" variant="secondary" onClick={() => setAddingInvolvement(true)}>
-                <Plus size={13} /> Add involvement
-              </Button>
-            )}>
-            {current.length === 0
-              ? <EmptyState message="Nothing current." />
-              : <ul>{current.map((r, i) => (
-                  <TimelineItem key={r.source + r.source_id} row={r} last={i === current.length - 1}
-                    onManage={r.source === "OFFICE"
-                      ? { label: "Manage in Offices & Elections", href: "/settings/offices" }
-                      : r.source === "EMPLOYMENT"
-                        ? { label: "Manage in Payroll", href: "/payroll" }
-                        : undefined} />
+          <InvolvementPanel personId={person.id} kinds={SERVICE_KINDS}
+            title="Ministries, teams & service"
+            emptyMessage="No ministry or team recorded."
+            congregations={congregations} organisations={organisations}
+            canEdit={canEdit} onChanged={load} say={say} />
+
+          <InvolvementPanel personId={person.id} kinds={EXTERNAL_KINDS}
+            title="Vendor, agent & partner relationships"
+            emptyMessage="No vendor or partner relationship recorded."
+            congregations={congregations} organisations={organisations}
+            canEdit={canEdit} onChanged={load} say={say} />
+
+          {/* Offices and employment are read here and changed where they are
+              kept — showing an Edit button that led nowhere would be worse
+              than showing none. */}
+          <ProfileSection title="Offices held"
+            action={<Link href="/settings/offices"
+              className="text-[12px] font-medium text-[#3a6db0] hover:underline">
+              Manage in Offices &amp; Elections →
+            </Link>}>
+            {offices.length === 0
+              ? <EmptyState icon={<Landmark size={18} />} message="No office held." />
+              : <ul>{offices.map((r, i) => (
+                  <TimelineItem key={r.source + r.source_id} row={r} last={i === offices.length - 1} />
                 ))}</ul>}
           </ProfileSection>
 
-          <ProfileSection title="Previously">
-            {past.length === 0
-              ? <EmptyState message="No past involvement recorded." />
-              : <ul>{past.map((r, i) => (
-                  <TimelineItem key={r.source + r.source_id} row={r} last={i === past.length - 1} />
+          <ProfileSection title="Employment"
+            action={<button onClick={() => setTab("employment")}
+              className="text-[12px] font-medium text-[#3a6db0] hover:underline">
+              Open the employment tab →
+            </button>}>
+            {employment.length === 0
+              ? <EmptyState icon={<Wallet size={18} />} message="Never on LCM's payroll." />
+              : <ul>{employment.map((r, i) => (
+                  <TimelineItem key={r.source + r.source_id} row={r} last={i === employment.length - 1} />
                 ))}</ul>}
           </ProfileSection>
-
-          <ProfileSection title="Vendor, agent & partner history">
-            {vendorish.length === 0 ? (
-              <EmptyState message="No vendor or partner relationship recorded."
-                action={canEdit && (
-                  <Button size="sm" variant="ghost" onClick={() => setAddingInvolvement(true)}>
-                    Add one
-                  </Button>
-                )} />
-            ) : (
-              <ul>{vendorish.map((r, i) => (
-                <TimelineItem key={r.source + r.source_id} row={r} last={i === vendorish.length - 1}
-                  onManage={r.organisation_id
-                    ? { label: "Open in Partners & Organisations", href: "/settings/organisations" }
-                    : undefined} />
-              ))}</ul>
-            )}
-          </ProfileSection>
-
-          <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-            Elected and appointed posts are kept in <strong>Offices &amp; Elections</strong> and employment in
-            <strong> Payroll</strong>; they are shown here but changed there, so the two can never disagree.
-            Ministries, teams and outside relationships are added here.
-          </div>
         </div>
       )}
 
@@ -441,12 +429,6 @@ export default function PersonProfilePage() {
           onSaved={(p) => { setPerson(p); setEditing(false); say("Saved"); }} />
       )}
 
-      {addingInvolvement && (
-        <AddInvolvementModal personId={person.id} organisations={organisations}
-          congregations={congregations}
-          onClose={() => setAddingInvolvement(false)}
-          onAdded={() => { setAddingInvolvement(false); load(); say("Involvement added"); }} />
-      )}
     </div>
   );
 }
@@ -556,139 +538,6 @@ function NotesTab({ personId, notes, canEdit, onChanged, say }: {
         </ul>
       )}
     </ProfileSection>
-  );
-}
-
-// ── Add involvement ───────────────────────────────────────────────────────
-const INVOLVEMENT_KINDS = [
-  { key: "MINISTRY",  label: "Ministry" },
-  { key: "TEAM",      label: "Team" },
-  { key: "VOLUNTEER", label: "Volunteer role" },
-  { key: "VENDOR",    label: "Vendor relationship" },
-  { key: "AGENT",     label: "Agent relationship" },
-  { key: "PARTNER",   label: "Partner contact" },
-  { key: "OTHER",     label: "Other" },
-] as const;
-
-function AddInvolvementModal({ personId, organisations, congregations, onClose, onAdded }: {
-  personId: string;
-  organisations: Organisation[];
-  congregations: Congregation[];
-  onClose: () => void; onAdded: () => void;
-}) {
-  const supabase = createClient();
-  const [kind, setKind] = useState("MINISTRY");
-  const [title, setTitle] = useState("");
-  const [role, setRole] = useState("");
-  const [orgId, setOrgId] = useState("");
-  const [congId, setCongId] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-
-  const isExternal = ["VENDOR", "AGENT", "PARTNER"].includes(kind);
-
-  async function save() {
-    const name = isExternal
-      ? (organisations.find(o => o.id === orgId)?.name ?? title.trim())
-      : title.trim();
-    if (!name) { setErr("Give it a name"); return; }
-    setErr(""); setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("person_involvements").insert({
-      person_id: personId, kind, title: name, role: role.trim() || null,
-      organisation_id: isExternal && orgId ? orgId : null,
-      congregation_id: congId || null,
-      start_date: start || null, end_date: end || null,
-      created_by: user?.email ?? "",
-    });
-    setSaving(false);
-    if (error) { setErr(error.message); return; }
-    onAdded();
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 px-4 py-10 backdrop-blur-[2px]"
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg space-y-3 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)]">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold text-stone-800">Add involvement</h2>
-            <p className="mt-0.5 text-xs text-stone-500">
-              Ministries, teams and outside relationships. Elected and appointed posts are added in
-              Offices &amp; Elections.
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100"><X size={16} /></button>
-        </div>
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div>
-            <label className={labelClass}>Kind</label>
-            <select className={fieldClass} value={kind} onChange={e => setKind(e.target.value)}>
-              {INVOLVEMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Their role</label>
-            <input className={fieldClass} value={role} onChange={e => setRole(e.target.value)}
-              placeholder="Volunteer, Coordinator, Contact…" />
-          </div>
-        </div>
-
-        {isExternal ? (
-          <div>
-            <label className={labelClass}>Organisation</label>
-            <select className={fieldClass} value={orgId} onChange={e => setOrgId(e.target.value)}>
-              <option value="">— choose, or type a name below —</option>
-              {organisations.map(o => (
-                <option key={o.id} value={o.id}>{o.short_name ? `${o.name} (${o.short_name})` : o.name}</option>
-              ))}
-            </select>
-            {!orgId && (
-              <input className={`${fieldClass} mt-2`} value={title} onChange={e => setTitle(e.target.value)}
-                placeholder="Company name, if it isn't on the list yet" />
-            )}
-          </div>
-        ) : (
-          <>
-            <div>
-              <label className={labelClass}>Name *</label>
-              <input className={fieldClass} value={title} onChange={e => setTitle(e.target.value)}
-                placeholder="e.g. Worship Team" />
-            </div>
-            <div>
-              <label className={labelClass}>Church, if it belongs to one</label>
-              <select className={fieldClass} value={congId} onChange={e => setCongId(e.target.value)}>
-                <option value="">— none —</option>
-                {congregations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-          </>
-        )}
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div>
-            <label className={labelClass}>Started</label>
-            <input className={fieldClass} type="date" value={start} onChange={e => setStart(e.target.value)} />
-          </div>
-          <div>
-            <label className={labelClass}>Ended</label>
-            <input className={fieldClass} type="date" value={end} onChange={e => setEnd(e.target.value)} />
-            <p className="mt-0.5 text-[11px] text-stone-400">Leave blank if it is still current.</p>
-          </div>
-        </div>
-
-        {err && <p className="text-xs font-medium text-red-500">{err}</p>}
-
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" loading={saving} onClick={save}><Plus size={13} /> Add</Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
-      </div>
-    </div>
   );
 }
 
