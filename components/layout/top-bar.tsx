@@ -12,7 +12,6 @@ const PATH_LABELS: Record<string, string> = {
   "/submit":             "Submit PV",
   "/my-pvs":             "My PVs",
   "/my-bam-pvs":         "BAM Activity",
-  "/control-center":     "Control Center",
   "/recurring":          "Recurring Expenses",
   "/signatory-activity": "Finance Activity",
   "/hod-activity":       "Finance Activity",

@@ -101,15 +101,6 @@ export const PAGE_GUIDES: Record<string, PageGuide> = {
       "Raise the payment voucher from there — the details are carried over for you.",
     ],
   },
-  "/control-center": {
-    title: "Control Center",
-    what: "Everything Finance needs to move along: vouchers waiting to be checked, approved or paid.",
-    steps: [
-      "Work down the list — each voucher shows which stage it is at.",
-      "Open one to check the details and attachments before passing it on.",
-      "Use Review to send it forward, or Reject with a reason to send it back.",
-    ],
-  },
   "/signatory-activity": {
     title: "Finance Activity",
     what: "Every payment voucher in the system, grouped by what stage it has reached.",

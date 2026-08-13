@@ -389,7 +389,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
 
   // ── Quick shortcuts by role ────────────────────────────────────────────
   const shortcuts = isFinanceAdmin ? [
-    { href: "/control-center", icon: <Layers size={18} />, label: "Control Center",    desc: "Review pending PVs",       color: "from-blue-500 to-blue-700" },
+    { href: "/payments",       icon: <CreditCard size={18} />, label: "Payments",     desc: "Mark vouchers paid",       color: "from-blue-500 to-blue-700" },
     { href: "/recurring",      icon: <RefreshCw size={18} />, label: "Recurring",       desc: "Manage scheduled expenses", color: "from-violet-500 to-violet-700" },
     { href: "/gm-claims",      icon: <Inbox size={18} />,     label: "GM Claims",       desc: "Review GM instructions",   color: "from-amber-500 to-amber-600", badge: gmClaimCount },
     { href: "/banking",        icon: <Landmark size={18} />,  label: "Banking",         desc: "Accounts & balances",      color: "from-emerald-500 to-emerald-700" },
