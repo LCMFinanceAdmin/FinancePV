@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { EmploymentPanel } from "@/components/people/employment-panel";
 import { DocumentsPanel } from "@/components/people/documents-panel";
+import { MembershipPanel } from "@/components/people/membership-panel";
 import {
   Avatar, PersonStatus, CATEGORIES, categoryOf, type CategoryKey,
   type TimelineRow, isCurrent, period, SummaryCard, ProfileSection,
@@ -351,6 +352,9 @@ export default function PersonProfilePage() {
       {/* ── Involvement ────────────────────────────────────────────────── */}
       {tab === "involvement" && (
         <div className="space-y-4">
+          <MembershipPanel personId={person.id} congregations={congregations}
+            canEdit={canEdit} onChanged={load} say={say} />
+
           <ProfileSection title="Current"
             action={canEdit && (
               <Button size="sm" variant="secondary" onClick={() => setAddingInvolvement(true)}>
@@ -375,6 +379,24 @@ export default function PersonProfilePage() {
               : <ul>{past.map((r, i) => (
                   <TimelineItem key={r.source + r.source_id} row={r} last={i === past.length - 1} />
                 ))}</ul>}
+          </ProfileSection>
+
+          <ProfileSection title="Vendor, agent & partner history">
+            {vendorish.length === 0 ? (
+              <EmptyState message="No vendor or partner relationship recorded."
+                action={canEdit && (
+                  <Button size="sm" variant="ghost" onClick={() => setAddingInvolvement(true)}>
+                    Add one
+                  </Button>
+                )} />
+            ) : (
+              <ul>{vendorish.map((r, i) => (
+                <TimelineItem key={r.source + r.source_id} row={r} last={i === vendorish.length - 1}
+                  onManage={r.organisation_id
+                    ? { label: "Open in Partners & Organisations", href: "/settings/organisations" }
+                    : undefined} />
+              ))}</ul>
+            )}
           </ProfileSection>
 
           <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
