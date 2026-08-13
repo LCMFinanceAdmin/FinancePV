@@ -18,9 +18,11 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
+import { excoAssignableMinistries } from "@/lib/ministries";
 import { EmploymentPanel } from "@/components/people/employment-panel";
 import { DocumentsPanel } from "@/components/people/documents-panel";
 import { MembershipPanel } from "@/components/people/membership-panel";
+import { AccessPanel } from "@/components/people/access-panel";
 import { InvolvementPanel, SERVICE_KINDS, EXTERNAL_KINDS } from "@/components/people/involvement-panel";
 import {
   Avatar, PersonStatus, CATEGORIES, categoryOf, type CategoryKey,
@@ -58,6 +60,7 @@ const TABS = [
   { key: "involvement", label: "Involvement" },
   { key: "employment",  label: "Employment" },
   { key: "documents",   label: "Documents" },
+  { key: "access",      label: "Access & Role" },
   { key: "notes",       label: "Notes & Remarks" },
 ] as const;
 type TabKey = typeof TABS[number]["key"];
@@ -79,6 +82,7 @@ export default function PersonProfilePage() {
   const [congregations, setCongregations] = useState<Congregation[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
   const [organisations, setOrganisations] = useState<Organisation[]>([]);
+  const [ministries, setMinistries] = useState<string[]>([]);
   const [docCount, setDocCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [canEdit, setCanEdit] = useState(false);
@@ -96,7 +100,7 @@ export default function PersonProfilePage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: p }, { data: tl }, { data: n }, { data: c }, { data: d }, { data: o }, { count }, { data: perm }] =
+    const [{ data: p }, { data: tl }, { data: n }, { data: c }, { data: d }, { data: o }, { count }, { data: perm }, { data: mins }] =
       await Promise.all([
         supabase.from("people").select("*").eq("id", id).maybeSingle(),
         supabase.from("person_timeline").select("*").eq("person_id", id),
@@ -106,6 +110,7 @@ export default function PersonProfilePage() {
         supabase.from("organisations").select("id,name,short_name").order("name"),
         supabase.from("person_documents").select("id", { count: "exact", head: true }).eq("person_id", id),
         supabase.rpc("can_manage_people"),
+        supabase.from("ministries").select("name").order("name"),
       ]);
     setPerson((p ?? null) as Person | null);
     setTimeline(((tl ?? []) as TimelineRow[]).sort((a, b) => {
@@ -118,6 +123,7 @@ export default function PersonProfilePage() {
     setOrganisations((o ?? []) as Organisation[]);
     setDocCount(count ?? 0);
     setCanEdit(perm === true);
+    setMinistries(excoAssignableMinistries(((mins ?? []) as { name: string }[]).map(m => m.name)));
     setLoading(false);
   }, [supabase, id]);
 
@@ -434,6 +440,22 @@ export default function PersonProfilePage() {
       )}
 
       {/* ── Notes ──────────────────────────────────────────────────────── */}
+      {tab === "access" && (
+        <div id="panel-access" role="tabpanel" aria-labelledby="tab-access">
+          <AccessPanel
+            personId={person.id}
+            personName={person.full_name}
+            personEmail={person.email}
+            userEmail={person.user_email}
+            designation={person.hq_department}
+            congregations={congregations}
+            ministries={ministries}
+            canEdit={canEdit}
+            onChanged={load}
+            say={say} />
+        </div>
+      )}
+
       {tab === "notes" && (
         <div id="panel-notes" role="tabpanel" aria-labelledby="tab-notes"><NotesTab personId={person.id} notes={notes} canEdit={canEdit}
           onChanged={load} say={say} /></div>

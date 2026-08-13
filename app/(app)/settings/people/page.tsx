@@ -11,7 +11,7 @@
 // person's own page. Editing lives there; this page is for finding.
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,9 @@ import {
 } from "@/components/people/ui";
 import {
   Plus, Search, SlidersHorizontal, Mail, Phone, MoreVertical, AlertCircle,
-  CheckCircle2, X, Download, Users,
+  CheckCircle2, X, Download, Users, ShieldCheck,
 } from "lucide-react";
+import { roleLabel } from "@/lib/utils";
 
 interface Person {
   id: string; full_name: string; preferred_name: string | null;
@@ -45,11 +46,15 @@ const BADGE_LIMIT = 3;
 export default function PeopleDirectoryPage() {
   const supabase = createClient();
   const router = useRouter();
+  const params = useSearchParams();
 
   const [people, setPeople] = useState<Person[]>([]);
   const [timeline, setTimeline] = useState<(TimelineRow & { person_id: string })[]>([]);
   const [congregations, setCongregations] = useState<Congregation[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
+  // email → system role, for the access column. One query for the list rather
+  // than a join, since the directory holds the login address already.
+  const [accounts, setAccounts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
@@ -68,6 +73,10 @@ export default function PeopleDirectoryPage() {
   const [fDistrict, setFDistrict] = useState("");
   const [fEmployment, setFEmployment] = useState<"" | "EMPLOYED" | "NOT">("");
   const [fInvolvement, setFInvolvement] = useState<"" | "CURRENT" | "PAST">("");
+  // ?access=1 is how "Access & Roles" in the sidebar arrives here: the same
+  // directory, showing only the people who can sign in.
+  const [fAccess, setFAccess] = useState<"" | "HAS" | "NONE">(
+    params.get("access") === "1" ? "HAS" : "");
 
   function say(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -75,7 +84,7 @@ export default function PeopleDirectoryPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: p, error }, { data: tl }, { data: c }, { data: d }, { data: perm }] = await Promise.all([
+    const [{ data: p, error }, { data: tl }, { data: c }, { data: d }, { data: perm }, { data: accts }] = await Promise.all([
       // select("*") rather than a column list: the list is built from a
       // concatenated string, which the typed client cannot parse, and the row
       // count here is a church directory rather than a ledger.
@@ -84,6 +93,7 @@ export default function PeopleDirectoryPage() {
       supabase.from("congregations").select("id,name,district_id").order("name"),
       supabase.from("districts").select("id,name").order("name"),
       supabase.rpc("can_manage_people"),
+      supabase.from("user_roles").select("email,role"),
     ]);
     // An empty list with no error usually means RLS refused — say so plainly
     // rather than showing a page that looks like nobody exists.
@@ -93,6 +103,9 @@ export default function PeopleDirectoryPage() {
     setCongregations((c ?? []) as Congregation[]);
     setDistricts((d ?? []) as District[]);
     setCanEdit(perm === true);
+    setAccounts(Object.fromEntries(
+      ((accts ?? []) as { email: string; role: string }[])
+        .map(a => [a.email.trim().toLowerCase(), a.role])));
     setLoading(false);
   }, [supabase]);
 
@@ -109,6 +122,7 @@ export default function PeopleDirectoryPage() {
     [timeline]);
 
   const isPast = (p: Person) => p.status !== "ACTIVE";
+  const roleOf = (p: Person) => accounts[(p.user_email ?? "").trim().toLowerCase()] ?? null;
 
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
@@ -134,6 +148,8 @@ export default function PeopleDirectoryPage() {
       const rows = involvementOf(p.id);
       if (fCongregation && !rows.some(r => r.source === "CONGREGATION" && r.source_id && r.title ===
           congregations.find(c => c.id === fCongregation)?.name)) return false;
+      if (fAccess === "HAS" && !roleOf(p)) return false;
+      if (fAccess === "NONE" && roleOf(p)) return false;
       if (fInvolvement === "CURRENT" && !rows.some(isCurrent)) return false;
       if (fInvolvement === "PAST" && !rows.some(r => !isCurrent(r))) return false;
 
@@ -145,10 +161,11 @@ export default function PeopleDirectoryPage() {
       ].some(f => (f ?? "").toLowerCase().includes(q));
     });
   }, [people, query, catFilter, showPast, fDistrict, fEmployment, fCongregation,
-      fInvolvement, involvementOf, congregations]);
+      fInvolvement, fAccess, involvementOf, congregations, accounts]);
 
   const activeFilterCount =
-    (fCongregation ? 1 : 0) + (fDistrict ? 1 : 0) + (fEmployment ? 1 : 0) + (fInvolvement ? 1 : 0);
+    (fCongregation ? 1 : 0) + (fDistrict ? 1 : 0) + (fEmployment ? 1 : 0)
+    + (fInvolvement ? 1 : 0) + (fAccess ? 1 : 0);
 
   async function toggleStatus(p: Person) {
     const next = p.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
@@ -160,7 +177,7 @@ export default function PeopleDirectoryPage() {
   }
 
   function clearFilters() {
-    setFCongregation(""); setFDistrict(""); setFEmployment(""); setFInvolvement("");
+    setFCongregation(""); setFDistrict(""); setFEmployment(""); setFInvolvement(""); setFAccess("");
   }
 
   /** What this person mainly is, and since when. */
@@ -206,7 +223,9 @@ export default function PeopleDirectoryPage() {
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
           <h1 className="text-2xl font-bold tracking-tight text-stone-800">People Directory</h1>
           <p className="mt-0.5 text-sm text-stone-500">
-            View everyone in LCM and their involvement across the organisation.
+            {fAccess === "HAS"
+              ? "Everyone who can sign in, and what they may do. Open a person to change their role or give someone access."
+              : "View everyone in LCM and their involvement across the organisation."}
           </p>
         </div>
         {canEdit && (
@@ -286,6 +305,15 @@ export default function PeopleDirectoryPage() {
                 </select>
               </div>
               <div>
+                <label className={labelClass}>System access</label>
+                <select className={fieldClass} value={fAccess}
+                  onChange={e => setFAccess(e.target.value as typeof fAccess)}>
+                  <option value="">Any</option>
+                  <option value="HAS">Can sign in</option>
+                  <option value="NONE">No account</option>
+                </select>
+              </div>
+              <div>
                 <label className={labelClass}>Involvement</label>
                 <select className={fieldClass} value={fInvolvement}
                   onChange={e => setFInvolvement(e.target.value as typeof fInvolvement)}>
@@ -353,9 +381,17 @@ export default function PeopleDirectoryPage() {
                           className="block truncate rounded text-sm font-semibold text-stone-800 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
                           {p.full_name || <span className="text-stone-500">Unnamed</span>}
                         </Link>
-                        <div className="truncate text-[12px] text-stone-500">
-                          {categoryOf(p.category).one}
-                          {p.preferred_name ? ` · ${p.preferred_name}` : ""}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-stone-500">
+                          <span className="truncate">
+                            {categoryOf(p.category).one}
+                            {p.preferred_name ? ` · ${p.preferred_name}` : ""}
+                          </span>
+                          {roleOf(p) && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[10px] font-semibold text-[#2f5b9c]">
+                              <ShieldCheck size={9} aria-hidden="true" />
+                              {roleLabel(roleOf(p)!)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1 lg:hidden">
@@ -477,6 +513,7 @@ function RowMenu({ p, canEdit, open, onToggle, router, onStatus }: {
             <MenuItem onClick={() => router.push(`/settings/people/${p.id}?edit=1`)}>Edit person</MenuItem>
             <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=involvement`)}>Add involvement</MenuItem>
             <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=employment`)}>Add employment</MenuItem>
+            <MenuItem onClick={() => router.push(`/settings/people/${p.id}?tab=access`)}>Access &amp; role</MenuItem>
             <div className="my-1 border-t border-stone-100" />
             <MenuItem danger onClick={() => onStatus(p)}>
               {p.status === "ACTIVE" ? "Mark as past" : "Mark as active"}

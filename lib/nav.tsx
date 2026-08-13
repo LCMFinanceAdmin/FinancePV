@@ -122,10 +122,6 @@ export const NAV_GROUPS: NavGroup[] = [
     accent: "#2563eb",
     items: [
       {
-        href: "/control-center", label: "Control Center", desc: "Review and move pending PVs",
-        icon: <LayoutGrid size={size} />, show: (u) => u.isFinanceAdmin,
-      },
-      {
         href: "/signatory-activity", label: "Finance Activity", desc: "Every voucher, by stage",
         icon: <Activity size={size} />, show: (u) => u.isFinanceAdmin,
       },
@@ -292,8 +288,12 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: <Handshake size={size} />, show: (u) => isStaffMember(u),
       },
       {
-        href: "/settings/signatories", label: "Logins & Roles", desc: "Who can sign in and what they may approve",
-        icon: <Briefcase size={size} />, show: financeNotAcct,
+        href: "/settings/people?access=1", label: "Access & Roles",
+        desc: "Who can sign in, and what they may approve",
+        // The directory filtered to people with an account. Roles are set on
+        // the person, because a login belongs to a human being — keeping the
+        // two apart is what let them disagree.
+        icon: <Briefcase size={size} />, show: canManagePeople,
       },
       {
         href: "/leave-overview", label: "Leave Overview",

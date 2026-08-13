@@ -4,7 +4,7 @@ import { Building2, Users, Settings2, FileText, Church } from "lucide-react";
 
 const SECTIONS = [
   { href: "/settings/lookups",     icon: <Building2 size={20} />,  label: "Lookups",              desc: "Manage departments, ministries & projects" },
-  { href: "/settings/signatories", icon: <Users size={20} />,      label: "Signatories & Roles",  desc: "Add users, assign roles, manage approval PINs" },
+  { href: "/settings/people?access=1", icon: <Users size={20} />, label: "Access & Roles",       desc: "Who can sign in, their role and approval PINs" },
   { href: "/settings/directory",   icon: <Church size={20} />,     label: "Church Directory",     desc: "Districts, Deans, congregations & head pastors" },
   { href: "/settings/claims",      icon: <Settings2 size={20} />,  label: "Claim Settings",       desc: "Mileage rate, loan limits, allowance caps" },
   { href: "/settings/policies",    icon: <FileText size={20} />,   label: "Claim Policies",       desc: "Policy text shown on the submission form" },

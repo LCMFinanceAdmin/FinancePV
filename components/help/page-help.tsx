@@ -149,7 +149,7 @@ export const PAGE_GUIDES: Record<string, PageGuide> = {
       "If something is wrong after confirming, you can revert the run. Any vouchers already sent for approval are retracted.",
     ],
   },
-  "/settings/signatories": {
+  "/settings/people": {
     title: "People & Roles",
     what: "Everyone who can use the system, what they may do, and who approves their leave.",
     steps: [
