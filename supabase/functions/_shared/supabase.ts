@@ -34,13 +34,17 @@ export async function getProfileByEmail(
   // there if they are not present yet. Without that, the gap between deploying
   // and migrating is a gap in which no signatory can approve anything — the
   // failed select returns no credentials at all, and every PIN reads as unset.
-  let { data: credentials } = await db
+  let { data: credentials, error: credError } = await db
     .from("user_security_credentials")
     .select("pin_hash,has_pin,saved_signatures,pin_failed_attempts,pin_last_failed_at,pin_locked_until")
     .eq("email", email)
     .maybeSingle();
 
-  if (!credentials) {
+  // Only retry when the *query* failed — which, before migration 111 landed,
+  // meant the lockout columns were not there yet. Most people have no
+  // credentials row at all (no PIN, no saved signature), and retrying for them
+  // would be a second round trip on every action for nothing.
+  if (credError) {
     const fallback = await db
       .from("user_security_credentials")
       .select("pin_hash,has_pin,saved_signatures")
