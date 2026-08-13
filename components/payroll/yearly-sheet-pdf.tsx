@@ -96,7 +96,7 @@ const s = StyleSheet.create({
 });
 
 // Fixed column widths (pt). A4 landscape usable ≈ 796pt; these sum to 590 leaving ~206pt for custom cols.
-const C = { mo:44, gr:54, pcb:42, ee:46, er:46, se:38, sr:38, ie:34, ir:34, epl:42, net:58, lcm:58, cu:46 };
+const C = { mo:44, gr:54, pcb:42, ee:46, er:46, se:38, sr:38, sk:36, ie:34, ir:34, epl:42, net:58, lcm:58, cu:46 };
 
 export interface YearlySheetPDFProps {
   emp: PayrollEmployee;
@@ -190,6 +190,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             <Text style={[s.th,{width:C.er}]}>EPF ER</Text>
             <Text style={[s.th,{width:C.se}]}>SOCSO EE</Text>
             <Text style={[s.th,{width:C.sr}]}>SOCSO ER</Text>
+            <Text style={[s.th,{width:C.sk}]}>SKBBK</Text>
             <Text style={[s.th,{width:C.ie}]}>EIS EE</Text>
             <Text style={[s.th,{width:C.ir}]}>EIS ER</Text>
             {hasEpl && <Text style={[s.thR,{width:C.epl}]}>EPL</Text>}
@@ -210,6 +211,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
                 <Text style={[s.td,{width:C.er}]}>{n(l.epf.er)}</Text>
                 <Text style={[s.td,{width:C.se}]}>{n(l.socso.ee)}</Text>
                 <Text style={[s.td,{width:C.sr}]}>{n(l.socso.er)}</Text>
+                <Text style={[s.td,{width:C.sk}]}>{n(l.skbbk)}</Text>
                 <Text style={[s.td,{width:C.ie}]}>{n(l.eis.ee)}</Text>
                 <Text style={[s.td,{width:C.ir}]}>{n(l.eis.er)}</Text>
                 {hasEpl && <Text style={[s.tdEpl,{width:C.epl}]}>{l.eplDeduction>0?n(l.eplDeduction):"—"}</Text>}
@@ -229,6 +231,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             <Text style={[s.tdSub,{width:C.er}]}>{n(monthLines.reduce((s,l)=>s+l.epf.er,0))}</Text>
             <Text style={[s.tdSub,{width:C.se}]}>{n(monthLines.reduce((s,l)=>s+l.socso.ee,0))}</Text>
             <Text style={[s.tdSub,{width:C.sr}]}>{n(monthLines.reduce((s,l)=>s+l.socso.er,0))}</Text>
+            <Text style={[s.tdSub,{width:C.sk}]}>{n(monthLines.reduce((s,l)=>s+l.skbbk,0))}</Text>
             <Text style={[s.tdSub,{width:C.ie}]}>{n(monthLines.reduce((s,l)=>s+l.eis.ee,0))}</Text>
             <Text style={[s.tdSub,{width:C.ir}]}>{n(monthLines.reduce((s,l)=>s+l.eis.er,0))}</Text>
             {hasEpl && <Text style={[s.tdSubEpl,{width:C.epl}]}>{n(monthLines.reduce((s,l)=>s+l.eplDeduction,0))}</Text>}
@@ -247,6 +250,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
               <Text style={[s.td,{width:C.er}]}>{n(thirteenth.epf.er)}</Text>
               <Text style={[s.tdDim,{width:C.se}]}>{n(thirteenth.socso.ee)}</Text>
               <Text style={[s.tdDim,{width:C.sr}]}>{n(thirteenth.socso.er)}</Text>
+              <Text style={[s.tdDim,{width:C.sk}]}>{n(thirteenth.skbbk)}</Text>
               <Text style={[s.tdDim,{width:C.ie}]}>{n(thirteenth.eis.ee)}</Text>
               <Text style={[s.tdDim,{width:C.ir}]}>{n(thirteenth.eis.er)}</Text>
               {hasEpl && <Text style={[s.tdEpl,{width:C.epl}]}>{thirteenth.eplDeduction>0?n(thirteenth.eplDeduction):"—"}</Text>}
@@ -267,6 +271,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             <Text style={[s.tdAnn,{width:C.er}]}>{n(sum(l=>l.epf.er))}</Text>
             <Text style={[s.tdAnn,{width:C.se}]}>{n(sum(l=>l.socso.ee))}</Text>
             <Text style={[s.tdAnn,{width:C.sr}]}>{n(sum(l=>l.socso.er))}</Text>
+            <Text style={[s.tdAnn,{width:C.sk}]}>{n(sum(l=>l.skbbk))}</Text>
             <Text style={[s.tdAnn,{width:C.ie}]}>{n(sum(l=>l.eis.ee))}</Text>
             <Text style={[s.tdAnn,{width:C.ir}]}>{n(sum(l=>l.eis.er))}</Text>
             {hasEpl && <Text style={[s.tdAnnEpl,{width:C.epl}]}>{n(sum(l=>l.eplDeduction))}</Text>}

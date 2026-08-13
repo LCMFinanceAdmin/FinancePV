@@ -36,7 +36,7 @@ interface ComputedRow { emp: PayrollEmployee; line: CalcLine; }
 // SOCSO and EIS are both remitted to PERKESO on one payment, so they form a
 // single voucher rather than two — matching how the money actually leaves.
 const VOUCHER_PAYEE: Record<string, string> = {
-  SALARY: "Staff Salaries", EPF: "KWSP (EPF)", PERKESO: "PERKESO (SOCSO + EIS)", PCB: "LHDN (PCB)",
+  SALARY: "Staff Salaries", EPF: "KWSP (EPF)", PERKESO: "PERKESO (SOCSO + EIS + SKBBK)", PCB: "LHDN (PCB)",
   // Legacy kinds, kept so runs finalized before the merge still render.
   SOCSO: "PERKESO (SOCSO)", EIS: "PERKESO (EIS)",
 };
@@ -171,6 +171,7 @@ export default function PayrollRunDetailPage() {
       const line = calcLine({
         gross, age: ageAt(e.dob, run.year, ageMonth), employmentType: e.employment_type,
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
+        skbbkOptedOut: e.skbbk_opted_out,
         manualPcb: pcb[e.id] || 0, eplDeduction: epl, is13thMonth: is13th, rates,
         customItems: empCustomItems[e.id] ?? [],
       });
@@ -200,7 +201,7 @@ export default function PayrollRunDetailPage() {
         gross: line.gross, pcbVal: pcb[emp.id] || 0,
         epfEe: line.epf.ee, epfEr: line.epf.er,
         socsoEe: line.socso.ee, socsoEr: line.socso.er,
-        eisEe: line.eis.ee, eisEr: line.eis.er,
+        eisEe: line.eis.ee, eisEr: line.eis.er, skbbk: line.skbbk,
         eplDeduction: line.eplDeduction, net: line.net,
         customItems: (line.customItems as CustomPayrollItem[]),
       }))
@@ -212,7 +213,7 @@ export default function PayrollRunDetailPage() {
           gross: Number(l.gross), pcbVal: Number(l.pcb),
           epfEe: Number(l.epf_ee), epfEr: Number(l.epf_er),
           socsoEe: Number(l.socso_ee), socsoEr: Number(l.socso_er),
-          eisEe: Number(l.eis_ee), eisEr: Number(l.eis_er),
+          eisEe: Number(l.eis_ee), eisEr: Number(l.eis_er), skbbk: Number(l.skbbk ?? 0),
           eplDeduction: Number(l.epl), net: Number(l.net),
           customItems: (l.custom_items as CustomPayrollItem[]) ?? [],
         };
@@ -262,6 +263,7 @@ export default function PayrollRunDetailPage() {
         gross: line.gross, pcb: line.pcb,
         epf_ee: line.epf.ee, epf_er: line.epf.er,
         socso_ee: line.socso.ee, socso_er: line.socso.er,
+        skbbk: line.skbbk,
         eis_ee: line.eis.ee, eis_er: line.eis.er,
         epl: line.eplDeduction, net: line.net, total_lcm: line.totalLcmPayment,
         custom_items: line.customItems,
@@ -271,13 +273,17 @@ export default function PayrollRunDetailPage() {
       const tEpf = sumDraft(l => l.epf.total);
       const tSocso = sumDraft(l => l.socso.total);
       const tEis = sumDraft(l => l.eis.total);
+      // SKBBK is remitted to PERKESO with the rest, so it belongs in that
+      // voucher. Left out, the payment to PERKESO is short by exactly what was
+      // deducted from the employees for it.
+      const tSkbbk = sumDraft(l => l.skbbk);
       const tPcb = sumDraft(l => l.pcb);
       const tEr = sumDraft(l => l.totalContrib.er);
       const tGross = sumDraft(l => l.gross);
       // SOCSO and EIS go to PERKESO on a single remittance, so they are one
       // voucher — the summary attached to it breaks the two apart.
       const voucherRows = ([
-        ["SALARY", tNet], ["EPF", tEpf], ["PERKESO", tSocso + tEis], ["PCB", tPcb],
+        ["SALARY", tNet], ["EPF", tEpf], ["PERKESO", tSocso + tEis + tSkbbk], ["PCB", tPcb],
       ] as const).filter(([, amt]) => amt > 0).map(([kind, amt]) => ({
         kind, payee: VOUCHER_PAYEE[kind], total_amount: amt,
       }));
@@ -374,7 +380,7 @@ export default function PayrollRunDetailPage() {
             emp={row.emp} monthLabel={MONTH_LABELS[run.month]} year={run.year}
             salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
             epfEe={row.epfEe} epfEr={row.epfEr}
-            socsoEe={row.socsoEe} socsoEr={row.socsoEr}
+            socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk}
             eisEe={row.eisEe} eisEr={row.eisEr}
             eplDeduction={row.eplDeduction} net={row.net}
             customItems={row.customItems}
@@ -611,8 +617,8 @@ export default function PayrollRunDetailPage() {
             ["Employees", String(rowCount), ""],
             ["Gross", num(isDraft ? sumDraft(l => l.gross) : sumLines(l => l.gross)), "RM"],
             ["Deductions", num(isDraft
-              ? sumDraft(l => l.pcb + l.epf.ee + l.socso.ee + l.eis.ee + l.eplDeduction)
-              : sumLines(l => Number(l.pcb) + Number(l.epf_ee) + Number(l.socso_ee) + Number(l.eis_ee) + Number(l.epl))), "RM"],
+              ? sumDraft(l => l.pcb + l.epf.ee + l.socso.ee + l.skbbk + l.eis.ee + l.eplDeduction)
+              : sumLines(l => Number(l.pcb) + Number(l.epf_ee) + Number(l.socso_ee) + Number(l.skbbk ?? 0) + Number(l.eis_ee) + Number(l.epl))), "RM"],
             ["Net pay", num(isDraft ? sumDraft(l => l.net) : sumLines(l => l.net)), "RM"],
             ["Total LCM cost", num(isDraft ? sumDraft(l => l.totalLcmPayment) : sumLines(l => l.total_lcm)), "RM"],
           ] as const).map(([label, value, prefix]) => (
@@ -638,6 +644,7 @@ export default function PayrollRunDetailPage() {
               <th className="border border-stone-200 px-1.5 py-1 text-right">EPF ER</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">SOCSO EE</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">SOCSO ER</th>
+              <th className="border border-stone-200 px-1.5 py-1 text-right" title="SKBBK (Lindung 24) — employee only">SKBBK</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">EIS EE</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">EIS ER</th>
               <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
@@ -664,6 +671,7 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.epf.er)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.socso.ee)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.socso.er)}</td>
+                <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.skbbk)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.eis.ee)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.eis.er)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-500">{num(line.eplDeduction)}</td>
@@ -693,6 +701,7 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.epf_er))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.socso_ee))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.socso_er))}</td>
+                <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.skbbk ?? 0))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.eis_ee))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.eis_er))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-500">{num(Number(l.epl))}</td>
@@ -719,6 +728,7 @@ export default function PayrollRunDetailPage() {
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.epf.er) : sumLines(l => l.epf_er))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.socso.ee) : sumLines(l => l.socso_ee))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.socso.er) : sumLines(l => l.socso_er))}</td>
+              <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.skbbk) : sumLines(l => l.skbbk ?? 0))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eis.ee) : sumLines(l => l.eis_ee))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eis.er) : sumLines(l => l.eis_er))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eplDeduction) : sumLines(l => l.epl))}</td>
@@ -992,6 +1002,7 @@ interface PayslipRow {
   gross: number; pcbVal: number;
   epfEe: number; epfEr: number;
   socsoEe: number; socsoEr: number;
+  skbbk?: number;
   eisEe: number; eisEr: number;
   eplDeduction: number; net: number;
   customItems: CustomPayrollItem[];
@@ -1046,7 +1057,7 @@ function SendPayslipModal({ run, rows, onClose }: {
           emp={row.emp} monthLabel={monthLabel} year={run.year}
           salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
           epfEe={row.epfEe} epfEr={row.epfEr}
-          socsoEe={row.socsoEe} socsoEr={row.socsoEr}
+          socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk}
           eisEe={row.eisEe} eisEr={row.eisEr}
           eplDeduction={row.eplDeduction} net={row.net}
           customItems={row.customItems}
@@ -1118,7 +1129,7 @@ function SendPayslipModal({ run, rows, onClose }: {
         const blob = await pdf(
           <PayslipPDF emp={row.emp} monthLabel={monthLabel} year={run.year}
             salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
-            epfEe={row.epfEe} epfEr={row.epfEr} socsoEe={row.socsoEe} socsoEr={row.socsoEr}
+            epfEe={row.epfEe} epfEr={row.epfEr} socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk}
             eisEe={row.eisEe} eisEr={row.eisEr} eplDeduction={row.eplDeduction} net={row.net}
             customItems={row.customItems} />
         ).toBlob();

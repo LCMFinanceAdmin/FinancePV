@@ -146,6 +146,7 @@ export default function PayrollEmployeePage() {
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
     voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
+    skbbkOptedOut: emp.skbbk_opted_out,
     manualPcb: pcb[i] || 0,
     eplDeduction: eplForMonth(i + 1),
     is13thMonth: false,
@@ -159,6 +160,7 @@ export default function PayrollEmployeePage() {
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
     voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
+    skbbkOptedOut: emp.skbbk_opted_out,
     manualPcb: pcb[12] || 0,
     eplDeduction: 0,
     is13thMonth: true,
@@ -189,13 +191,13 @@ export default function PayrollEmployeePage() {
 
   function exportCsv() {
     const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
-    const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SOCSO ER", "EIS EE", "EIS ER", "EPL", ...customHead, "Net", "Total LCM"];
+    const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SOCSO ER", "SKBBK", "EIS EE", "EIS ER", "EPL", ...customHead, "Net", "Total LCM"];
     const mkRow = (label: string, l: CalcLine, monthNum: number) =>
-      [label, l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
+      [label, l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.socso.er, l.skbbk, l.eis.ee, l.eis.er, l.eplDeduction,
        ...customCols.map(c => customAmt(monthNum, c)), l.net, l.totalLcmPayment];
     const rows: (string | number)[][] = monthLines.map((l, i) => mkRow(MONTHS[i], l, i + 1));
     if (thirteenth) rows.push(mkRow("13th MTH", thirteenth, 13));
-    rows.push(["ANNUAL", sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
+    rows.push(["ANNUAL", sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.socso.er), sum(l => l.skbbk), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
     const csv = [head, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -222,6 +224,7 @@ export default function PayrollEmployeePage() {
             {emp.is_staff && <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-medium">Staff</span>}
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${emp.employment_type === "CONTRACT" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{emp.employment_type === "CONTRACT" ? "Contract" : "Permanent"}</span>
             {emp.is_orang_asli && <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">Orang Asli</span>}
+            {emp.skbbk_opted_out && <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-200 text-stone-600 font-medium">SKBBK opted out</span>}
             {emp.status === "RESIGNED" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Resigned {fmtDate(emp.resigned_date)}</span>}
           </div>
         </div>
@@ -281,6 +284,7 @@ export default function PayrollEmployeePage() {
               <Field label="Children (<18 / college)" value={`${emp.children_under_18} / ${emp.children_in_college}`} />
               <Field label="EPF No." value={emp.epf_no || "—"} />
               <Field label="Voluntary EPF" value={emp.epf_voluntary_ee_amount ? formatCurrency(emp.epf_voluntary_ee_amount) : "—"} />
+              <Field label="SKBBK (Lindung 24)" value={emp.skbbk_opted_out ? "Opted out" : "In the scheme"} />
               <Field label="TIN (Tax)" value={emp.tin || "—"} />
               <Field label="Employer Tax Ref" value={emp.employer_tax_ref || "—"} />
               <Field label="Bank" value={emp.bank_name ? `${emp.bank_name} · ${emp.bank_acct}` : "—"} />
@@ -341,6 +345,7 @@ export default function PayrollEmployeePage() {
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EPF ER</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">SOCSO EE</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">SOCSO ER</th>
+                    <th className="border border-stone-200 px-1.5 py-1 text-right" title="SKBBK (Lindung 24) — employee only">SKBBK</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EIS EE</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EIS ER</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
@@ -371,6 +376,7 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.epf.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.socso.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.socso.er)}</td>
+                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.skbbk)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.eis.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.eis.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
@@ -412,6 +418,7 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.er, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.ee, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
+                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.skbbk, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
@@ -436,6 +443,7 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.epf.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.socso.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.socso.er)}</td>
+                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.skbbk)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.eis.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.eis.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
@@ -475,6 +483,7 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.epf.er))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.socso.ee))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.socso.er))}</td>
+                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.skbbk))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
@@ -961,6 +970,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EPF ER</th>
                 <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">SOCSO EE</th>
                 <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">SOCSO ER</th>
+                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">SKBBK</th>
                 <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EIS EE</th>
                 <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EIS ER</th>
                 {hasEpl && <th className="border border-[#3d5c8f] px-2 py-1.5 text-right bg-red-800">EPL</th>}
@@ -986,6 +996,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.epf.er)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.socso.ee)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.socso.er)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.skbbk)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.eis.ee)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.eis.er)}</td>
                     {hasEpl && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{l.eplDeduction > 0 ? num(l.eplDeduction) : <span className="text-stone-200">—</span>}</td>}
@@ -1013,6 +1024,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.er, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.ee, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.skbbk, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                 {hasEpl && <td className="border border-stone-300 px-2 py-1 text-right font-mono bg-red-50 text-red-700">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>}
@@ -1033,6 +1045,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(thirteenth.epf.er)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.socso.ee)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.socso.er)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.skbbk)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.eis.ee)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.eis.er)}</td>
                   {hasEpl && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{thirteenth.eplDeduction > 0 ? num(thirteenth.eplDeduction) : <span className="text-stone-200">—</span>}</td>}
@@ -1061,6 +1074,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.epf.er))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.socso.ee))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.socso.er))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.skbbk))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                 {hasEpl && <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono bg-red-700">{num(sum(l => l.eplDeduction))}</td>}
@@ -1259,7 +1273,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
   function n2(n: number) { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function rm(n: number) { return `RM ${n2(n)}`; }
 
-  const totalDeductions = line.epf.ee + line.socso.ee + line.eis.ee + pcbVal + line.eplDeduction + line.customDeductions;
+  const totalDeductions = line.epf.ee + line.socso.ee + line.skbbk + line.eis.ee + pcbVal + line.eplDeduction + line.customDeductions;
   const dept = emp.posting_type === "CHURCH"
     ? `${emp.designation || "PASTOR"} - ${(emp.church_name || "").toUpperCase()}`
     : emp.department || emp.designation || "—";
@@ -1289,7 +1303,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
     `Employee: ${emp.full_name} (${emp.emp_no})`,
     ``,
     `Gross Pay: ${rm(line.gross)}`,
-    `EPF: ${rm(line.epf.ee)} | SOCSO: ${rm(line.socso.ee)} | EIS: ${rm(line.eis.ee)} | PCB: ${rm(pcbVal)}`,
+    `EPF: ${rm(line.epf.ee)} | SOCSO: ${rm(line.socso.ee)}${line.skbbk > 0 ? ` | SKBBK: ${rm(line.skbbk)}` : ""} | EIS: ${rm(line.eis.ee)} | PCB: ${rm(pcbVal)}`,
     `Total Deductions: ${rm(totalDeductions)}`,
     `*Net Pay: ${rm(line.net)}*`,
   ].join("\n");
@@ -1314,6 +1328,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
     `DEDUCTION`,
     `  Employee EPF                 ${n2(line.epf.ee)}`,
     `  Employee SOCSO               ${n2(line.socso.ee)}`,
+    ...(line.skbbk > 0 ? [`  SKBBK (Lindung 24)           ${n2(line.skbbk)}`] : []),
     `  Employee EIS                 ${n2(line.eis.ee)}`,
     line.eplDeduction > 0 ? `  EPL Loan Deduction           ${n2(line.eplDeduction)}` : null,
     `  ${"".padEnd(28, "─")}`,
@@ -1398,6 +1413,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                 const deductions = [
                   { label: "Employee EPF", amount: line.epf.ee },
                   { label: "Employee SOCSO", amount: line.socso.ee },
+                  ...(line.skbbk > 0 ? [{ label: "SKBBK (Lindung 24)", amount: line.skbbk }] : []),
                   { label: "Employee EIS", amount: line.eis.ee },
                   ...(pcbVal > 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
                   ...(line.eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: line.eplDeduction }] : []),
@@ -1457,6 +1473,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                         <td className="pr-1 w-20"></td>
                         <td className="text-center font-semibold px-1">E.P.F</td>
                         <td className="text-center font-semibold px-1">SOCSO</td>
+                        {line.skbbk > 0 && <td className="text-center font-semibold px-1">SKBBK</td>}
                         <td className="text-center font-semibold px-1">E.I.S</td>
                         <td className="text-center font-semibold px-1">Tax</td>
                       </tr>
@@ -1466,6 +1483,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                         <td className="pr-1 font-semibold">EMPLOYEE :</td>
                         <td className="text-right font-mono px-1">{n2(line.epf.ee)}</td>
                         <td className="text-right font-mono px-1">{n2(line.socso.ee)}</td>
+                        {line.skbbk > 0 && <td className="text-right font-mono px-1">{n2(line.skbbk)}</td>}
                         <td className="text-right font-mono px-1">{n2(line.eis.ee)}</td>
                         <td className="text-right font-mono px-1">{n2(pcbVal)}</td>
                       </tr>
@@ -1473,6 +1491,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                         <td className="pr-1 font-semibold">EMPLOYER :</td>
                         <td className="text-right font-mono px-1">{n2(line.epf.er)}</td>
                         <td className="text-right font-mono px-1">{n2(line.socso.er)}</td>
+                        {line.skbbk > 0 && <td className="px-1"></td>}
                         <td className="text-right font-mono px-1">{n2(line.eis.er)}</td>
                         <td className="px-1"></td>
                       </tr>
@@ -1480,6 +1499,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                         <td className="pr-1 font-semibold">TOTAL :</td>
                         <td className="text-right font-mono px-1">{n2(line.epf.ee + line.epf.er)}</td>
                         <td className="text-right font-mono px-1">{n2(line.socso.ee + line.socso.er)}</td>
+                        {line.skbbk > 0 && <td className="text-right font-mono px-1">{n2(line.skbbk)}</td>}
                         <td className="text-right font-mono px-1">{n2(line.eis.ee + line.eis.er)}</td>
                         <td className="px-1"></td>
                       </tr>

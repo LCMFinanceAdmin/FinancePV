@@ -106,6 +106,7 @@ export interface PayslipPDFProps {
   epfEe: number; epfEr: number;
   socsoEe: number; socsoEr: number;
   eisEe: number; eisEr: number;
+  skbbk?: number;
   eplDeduction: number;
   net: number;
   customItems: { label: string; type: "allowance" | "deduction"; amount: number }[];
@@ -113,7 +114,7 @@ export interface PayslipPDFProps {
 
 export function PayslipPDF({
   emp, monthLabel, year, salary,
-  gross, pcbVal, epfEe, epfEr, socsoEe, socsoEr, eisEe, eisEr,
+  gross, pcbVal, epfEe, epfEr, socsoEe, socsoEr, eisEe, eisEr, skbbk = 0,
   eplDeduction, net, customItems,
 }: PayslipPDFProps) {
   const dept = emp.posting_type === "CHURCH"
@@ -138,13 +139,14 @@ export function PayslipPDF({
   const deds: { label: string; amount: number }[] = [
     { label: "Employee EPF", amount: epfEe },
     { label: "Employee SOCSO", amount: socsoEe },
+    ...(skbbk > 0 ? [{ label: "SKBBK (Lindung 24)", amount: skbbk }] : []),
     { label: "Employee EIS", amount: eisEe },
     ...(pcbVal > 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
     ...(eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: eplDeduction }] : []),
     ...customItems.filter(i => i.type === "deduction").map(i => ({ label: i.label, amount: i.amount })),
   ];
 
-  const totalDeductions = epfEe + socsoEe + eisEe + pcbVal + eplDeduction +
+  const totalDeductions = epfEe + socsoEe + skbbk + eisEe + pcbVal + eplDeduction +
     customItems.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0);
 
   const maxRows = Math.max(earns.length, deds.length);
@@ -256,6 +258,7 @@ export function PayslipPDF({
               <Text style={s.p1Lbl}> </Text>
               <Text style={s.p1ColH}>E.P.F</Text>
               <Text style={s.p1ColH}>SOCSO</Text>
+              {skbbk > 0 && <Text style={s.p1ColH}>SKBBK</Text>}
               <Text style={s.p1ColH}>E.I.S</Text>
               <Text style={s.p1ColH}>Tax</Text>
             </View>
@@ -263,6 +266,7 @@ export function PayslipPDF({
               <Text style={s.p1Lbl}>EMPLOYEE :</Text>
               <Text style={s.p1Col}>{n(epfEe)}</Text>
               <Text style={s.p1Col}>{n(socsoEe)}</Text>
+              {skbbk > 0 && <Text style={s.p1Col}>{n(skbbk)}</Text>}
               <Text style={s.p1Col}>{n(eisEe)}</Text>
               <Text style={s.p1Col}>{n(pcbVal)}</Text>
             </View>
@@ -270,6 +274,7 @@ export function PayslipPDF({
               <Text style={s.p1Lbl}>EMPLOYER :</Text>
               <Text style={s.p1Col}>{n(epfEr)}</Text>
               <Text style={s.p1Col}>{n(socsoEr)}</Text>
+              {skbbk > 0 && <Text style={s.p1Col}> </Text>}
               <Text style={s.p1Col}>{n(eisEr)}</Text>
               <Text style={s.p1Col}> </Text>
             </View>
@@ -278,6 +283,7 @@ export function PayslipPDF({
               <Text style={s.p1Lbl}>TOTAL :</Text>
               <Text style={s.p1Col}>{n(epfEe + epfEr)}</Text>
               <Text style={s.p1Col}>{n(socsoEe + socsoEr)}</Text>
+              {skbbk > 0 && <Text style={s.p1Col}>{n(skbbk)}</Text>}
               <Text style={s.p1Col}>{n(eisEe + eisEr)}</Text>
               <Text style={s.p1Col}> </Text>
             </View>

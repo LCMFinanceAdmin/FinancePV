@@ -15,7 +15,7 @@ export type StatutoryBody = "EPF" | "PERKESO" | "PCB";
 
 const BODY_TITLE: Record<StatutoryBody, string> = {
   EPF: "KWSP (EPF) Contribution Summary",
-  PERKESO: "PERKESO (SOCSO + EIS) Contribution Summary",
+  PERKESO: "PERKESO (SOCSO + EIS + SKBBK) Contribution Summary",
   PCB: "LHDN (PCB) Deduction Summary",
 };
 
@@ -44,6 +44,10 @@ function columnsFor(body: StatutoryBody): { header: string; width: number }[] {
         { header: "SOCSO ER (RM)", width: 15 },
         { header: "EIS EE (RM)", width: 14 },
         { header: "EIS ER (RM)", width: 14 },
+        // Employee-only, so there is no ER twin. Its own column rather than
+        // folded into SOCSO EE: PERKESO's own statement itemises it, and a
+        // summary that cannot be lined up against theirs defeats the point.
+        { header: "SKBBK (RM)", width: 14 },
         { header: "Total (RM)", width: 14 }];
     case "PCB":
       return [...base,
@@ -61,7 +65,8 @@ function rowFor(body: StatutoryBody, idx: number, line: PayrollLine, emp?: Payro
       return [...base, emp?.epf_no ?? "", n(line.gross), n(line.epf_ee), n(line.epf_er), n(line.epf_ee) + n(line.epf_er)];
     case "PERKESO":
       return [...base, n(line.gross), n(line.socso_ee), n(line.socso_er), n(line.eis_ee), n(line.eis_er),
-        n(line.socso_ee) + n(line.socso_er) + n(line.eis_ee) + n(line.eis_er)];
+        n(line.skbbk),
+        n(line.socso_ee) + n(line.socso_er) + n(line.eis_ee) + n(line.eis_er) + n(line.skbbk)];
     case "PCB":
       return [...base, emp?.tin ?? "", n(line.gross), n(line.pcb)];
   }
@@ -72,7 +77,7 @@ function contributes(body: StatutoryBody, line: PayrollLine): boolean {
   const n = (v: unknown) => Number(v ?? 0);
   switch (body) {
     case "EPF":     return n(line.epf_ee) + n(line.epf_er) > 0;
-    case "PERKESO": return n(line.socso_ee) + n(line.socso_er) + n(line.eis_ee) + n(line.eis_er) > 0;
+    case "PERKESO": return n(line.socso_ee) + n(line.socso_er) + n(line.eis_ee) + n(line.eis_er) + n(line.skbbk) > 0;
     case "PCB":     return n(line.pcb) > 0;
   }
 }

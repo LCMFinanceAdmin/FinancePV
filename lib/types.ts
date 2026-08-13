@@ -415,6 +415,8 @@ export interface PayrollEmployee {
   children_under_18: number;
   children_in_college: number;
   epf_voluntary_ee_amount: number;
+  /** Opted out of SKBBK (Lindung 24). False — in the scheme — is the default. */
+  skbbk_opted_out: boolean;
   epf_no: string;
   tin: string;
   revised_note: string;
@@ -437,6 +439,8 @@ export interface PayrollStatutoryRates {
   epf_ee_orang_asli: number; epf_er_orang_asli: number;
   socso_ee: number; socso_er: number; socso_er_over60: number; socso_ceiling: number;
   eis_rate: number; eis_ceiling: number;
+  // SKBBK (Lindung 24) — employee side only, so no employer rate.
+  skbbk_ee: number; skbbk_ceiling: number;
   updated_by: string;
   updated_at: string;
 }
@@ -510,6 +514,7 @@ export interface PayrollLine {
   gross: number;
   pcb: number;
   epf_ee: number; epf_er: number;
+  skbbk: number;
   socso_ee: number; socso_er: number;
   eis_ee: number; eis_er: number;
   epl: number;

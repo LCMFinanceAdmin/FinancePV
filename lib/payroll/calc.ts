@@ -19,6 +19,8 @@ export interface RateConfig {
   epf_ee_orang_asli: number; epf_er_orang_asli: number;
   socso_ee: number; socso_er: number; socso_er_over60: number; socso_ceiling: number;
   eis_rate: number; eis_ceiling: number;
+  // SKBBK (Lindung 24) — employee side only, so there is no employer twin here.
+  skbbk_ee: number; skbbk_ceiling: number;
 }
 
 // Current LCM defaults — used when no year row is loaded.
@@ -28,6 +30,10 @@ export const DEFAULT_RATES: RateConfig = {
   epf_ee_orang_asli: 0.11, epf_er_orang_asli: 0.13,
   socso_ee: 0.005, socso_er: 0.0175, socso_er_over60: 0.0125, socso_ceiling: 6000,
   eis_rate: 0.002, eis_ceiling: 6000,
+  // Zero until Finance enters the PERKESO figure. A blank deducts nothing and
+  // is visibly unset; a guessed rate would quietly take the wrong amount from
+  // every salary, which is the worse failure by far.
+  skbbk_ee: 0, skbbk_ceiling: 6000,
 };
 
 export interface StatPortion {
@@ -45,6 +51,7 @@ export interface CalcInput {
   manualPcb: number;           // keyed by Finance
   eplDeduction: number;        // monthly loan installment
   is13thMonth: boolean;        // 13th month: EPF + PCB only, no SOCSO/EIS
+  skbbkOptedOut?: boolean;     // opted out of SKBBK (Lindung 24) — then nothing is deducted
   rates?: RateConfig;          // editable statutory config; defaults to current rates
   customItems?: Array<{ label?: string; type: "allowance" | "deduction"; amount: number }>;
 }
@@ -55,9 +62,18 @@ export interface CalcLine {
   epf: StatPortion;
   eis: StatPortion;
   socso: StatPortion;
+  /**
+   * SKBBK (Lindung 24), the employee's alone.
+   *
+   * Kept out of totalContrib on purpose. That figure means "EPF + EIS + SOCSO"
+   * everywhere it is displayed and filed, and folding a fourth scheme into it
+   * would overstate SOCSO in the year-end returns. It is subtracted from net
+   * in its own right instead.
+   */
+  skbbk: number;
   totalContrib: StatPortion;   // EPF + EIS + SOCSO, per side
   eplDeduction: number;
-  net: number;                 // gross − pcb − employee contributions − EPL ± custom items
+  net: number;                 // gross − pcb − employee contributions − SKBBK − EPL ± custom items
   totalLcmPayment: number;     // gross + employer contributions + custom allowances
   customAllowances: number;
   customDeductions: number;
@@ -128,9 +144,10 @@ export function calcLine(input: CalcInput): CalcLine {
   const epfEr = epfContribution(gross, epfRates.er);
   const epf: StatPortion = { ee: round2(epfEe), er: round2(epfEr), total: round2(epfEe + epfEr) };
 
-  // SOCSO + EIS — skipped entirely for the 13th month
+  // SOCSO + EIS + SKBBK — skipped entirely for the 13th month
   let socso: StatPortion = { ee: 0, er: 0, total: 0 };
   let eis: StatPortion = { ee: 0, er: 0, total: 0 };
+  let skbbk = 0;
   if (!is13thMonth) {
     const socsoBase = Math.min(gross, rates.socso_ceiling);
     const over60 = input.age >= 60;
@@ -144,6 +161,14 @@ export function calcLine(input: CalcInput): CalcLine {
       const eisAmt = eisBase * rates.eis_rate;
       eis = { ee: round2(eisAmt), er: round2(eisAmt), total: round2(eisAmt * 2) };
     }
+
+    // SKBBK tops up the employee's SOCSO contribution, so it follows the same
+    // two gates: nothing on the 13th month, and nothing at 60+, where the
+    // employee has no SOCSO share to supplement. Anyone who has left the
+    // scheme pays nothing regardless.
+    if (!over60 && !input.skbbkOptedOut) {
+      skbbk = round2(Math.min(gross, rates.skbbk_ceiling) * rates.skbbk_ee);
+    }
   }
 
   const totalContrib: StatPortion = {
@@ -155,13 +180,13 @@ export function calcLine(input: CalcInput): CalcLine {
   const customRaw = input.customItems ?? [];
   const customAllowances = round2(customRaw.filter(i => i.type === "allowance").reduce((s, i) => s + i.amount, 0));
   const customDeductions = round2(customRaw.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0));
-  const net = round2(gross - (manualPcb || 0) - totalContrib.ee - (eplDeduction || 0) - customDeductions + customAllowances);
+  const net = round2(gross - (manualPcb || 0) - totalContrib.ee - skbbk - (eplDeduction || 0) - customDeductions + customAllowances);
   const totalLcmPayment = round2(gross + totalContrib.er + customAllowances);
 
   return {
     gross: round2(gross),
     pcb: round2(manualPcb || 0),
-    epf, eis, socso, totalContrib,
+    epf, eis, socso, skbbk, totalContrib,
     eplDeduction: round2(eplDeduction || 0),
     net,
     totalLcmPayment,

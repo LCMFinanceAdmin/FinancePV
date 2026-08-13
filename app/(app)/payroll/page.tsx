@@ -81,6 +81,10 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [isStaff, setIsStaff] = useState(existing?.is_staff ?? false);
   const [priorExp, setPriorExp] = useState(String(existing?.prior_experience_years ?? 0));
   const [isOrangAsli, setIsOrangAsli] = useState(existing?.is_orang_asli ?? false);
+  // Everyone is in SKBBK unless they have left it, so a new employee starts
+  // enrolled. Phrased as opting out in the data and as "in the scheme" on the
+  // form, because that is the question Finance is actually answering.
+  const [inSkbbk, setInSkbbk] = useState(!(existing?.skbbk_opted_out ?? false));
   const [dateCommenced, setDateCommenced] = useState(existing?.date_commenced ?? "");
   const [incrementOverride, setIncrementOverride] = useState(existing?.increment_month_override != null ? String(existing.increment_month_override) : "");
   const [postingType, setPostingType] = useState<PostingType>(existing?.posting_type ?? "OFFICE");
@@ -230,6 +234,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         is_staff: isStaff,
         prior_experience_years: parseInt(priorExp) || 0,
         is_orang_asli: isOrangAsli,
+        skbbk_opted_out: !inSkbbk,
         date_commenced: dateCommenced || null,
         increment_month_override: incrementOverride ? parseInt(incrementOverride) : null,
         posting_type: postingType,
@@ -360,6 +365,10 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
               <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isPastor} onChange={e => setIsPastor(e.target.checked)} /> Pastor</label>
               <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isStaff} onChange={e => setIsStaff(e.target.checked)} /> Staff</label>
               <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isOrangAsli} onChange={e => setIsOrangAsli(e.target.checked)} /> Orang Asli</label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                title="SKBBK (Lindung 24) tops up the employee's SOCSO contribution. Untick only for someone who has opted out of the scheme.">
+                <input type="checkbox" checked={inSkbbk} onChange={e => setInSkbbk(e.target.checked)} /> In SKBBK (Lindung 24)
+              </label>
             </div>
             {isPastor && (
               <div><label className={labelCls}>Prior Experience (years)</label><input type="number" className={inputCls} value={priorExp} onChange={e => setPriorExp(e.target.value)} /></div>
@@ -874,6 +883,7 @@ export default function PayrollPage() {
                     {e.is_pastor && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">Pastor</span>}
                     {e.employment_type === "CONTRACT" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Contract</span>}
                     {e.is_orang_asli && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">Orang Asli</span>}
+                    {e.skbbk_opted_out && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-200 text-stone-600 font-medium">No SKBBK</span>}
                     {e.status === "RESIGNED" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-medium flex items-center gap-0.5"><UserX size={9} /> Resigned</span>}
                   </div>
                   <div className="text-xs text-stone-400 mt-0.5 truncate">{e.designation || "—"} · {postingLabel(e)}</div>

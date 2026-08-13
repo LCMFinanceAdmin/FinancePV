@@ -18,10 +18,14 @@ const PCT_FIELDS: { key: keyof PayrollStatutoryRates; label: string; group: stri
   { key: "socso_er", label: "SOCSO Employer", group: "SOCSO" },
   { key: "socso_er_over60", label: "SOCSO Employer — 60+ (injury only)", group: "SOCSO" },
   { key: "eis_rate", label: "EIS — each side", group: "EIS" },
+  // Employee only: SKBBK tops up their SOCSO contribution and the employer
+  // pays no part of it, so there is no second field to fill in here.
+  { key: "skbbk_ee", label: "SKBBK (Lindung 24) — employee", group: "SKBBK" },
 ];
 const CEIL_FIELDS: { key: keyof PayrollStatutoryRates; label: string }[] = [
   { key: "socso_ceiling", label: "SOCSO wage ceiling (RM)" },
   { key: "eis_ceiling", label: "EIS wage ceiling (RM)" },
+  { key: "skbbk_ceiling", label: "SKBBK wage ceiling (RM)" },
 ];
 
 type ExtractedRates = Record<string, number | string | null>;
@@ -297,9 +301,19 @@ export default function PayrollRatesPage() {
           )}
 
           <div className="bg-white border border-stone-200 rounded-2xl p-5 space-y-5">
-            {["EPF", "SOCSO", "EIS"].map(group => (
+            {["EPF", "SOCSO", "EIS", "SKBBK"].map(group => (
               <div key={group}>
                 <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">{group}</p>
+                {/* A rate left at zero deducts nothing. For EPF or SOCSO that
+                    would be obvious from the payslips; SKBBK is new and easy to
+                    leave unset without anyone noticing for a month or two. */}
+                {group === "SKBBK" && Number(row.skbbk_ee) === 0 && (
+                  <p className="mb-2 rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Not set, so nothing is being deducted for SKBBK (Lindung 24). Enter the rate
+                    from the PERKESO contribution schedule. Employees who have left the scheme are
+                    excluded individually, on their own record — this rate applies to everyone else.
+                  </p>
+                )}
                 <div className="space-y-1.5">
                   {PCT_FIELDS.filter(f => f.group === group).map(f => (
                     <div key={f.key} className="flex items-center justify-between gap-3">
