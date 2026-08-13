@@ -9,6 +9,7 @@
 // so the new Treasurer can approve and the old one cannot.
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { roleLabel, SWITCHABLE_ROLES } from "@/lib/utils";
@@ -70,6 +71,11 @@ export default function OfficesPage() {
   // the access it carries are given in one action rather than two pages.
   const [newLogin, setNewLogin] = useState("");
   const [saving, setSaving] = useState(false);
+  // Changing an address somebody already signs in with, as opposed to giving
+  // one to somebody who has none.
+  const [changingLogin, setChangingLogin] = useState(false);
+  const [replacementLogin, setReplacementLogin] = useState("");
+  const [renaming, setRenaming] = useState(false);
 
   function say(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -101,6 +107,7 @@ export default function OfficesPage() {
 
   function openElection(o: Office) {
     setElecting(o);
+    setChangingLogin(false); setReplacementLogin("");
     setPersonId("");
     setNewLogin("");
     setElectedOn(new Date().toISOString().slice(0, 10));
@@ -113,6 +120,49 @@ export default function OfficesPage() {
     const email = (person?.user_email ?? "").trim().toLowerCase();
     if (!email) return null;
     return logins.some(l => l.email.trim().toLowerCase() === email) ? email : null;
+  }
+
+  /**
+   * Move somebody's sign-in address.
+   *
+   * The address is the identity — it is joined by text from around fifty
+   * columns, so this is never a one-field edit. rename_user_login moves the
+   * lot in one transaction; it is asked first what *would* move, because a
+   * number in the confirmation is what makes this safe to press.
+   */
+  async function changeLogin(currentLogin: string) {
+    const next = replacementLogin.trim().toLowerCase();
+    if (!next || next === currentLogin) { setChangingLogin(false); return; }
+    setRenaming(true);
+    try {
+      const { data: preview, error: dryErr } = await supabase.rpc("rename_user_login", {
+        p_old: currentLogin, p_new: next, p_apply: false,
+      });
+      if (dryErr) throw new Error(dryErr.message);
+      const p = preview as { rows: number; columns: number };
+      const ok = confirm(
+        [
+          `Change the sign-in address from ${currentLogin} to ${next}?`,
+          `${p.rows} record${p.rows === 1 ? "" : "s"} across ${p.columns} table${p.columns === 1 ? "" : "s"} will move with it` +
+            " — vouchers, approvals, notifications, their signature and PIN.",
+          `They must sign in as ${next} from now on. Their personal contact email is not affected.`,
+        ].join("\n\n"),
+      );
+      if (!ok) return;
+
+      const { data: done, error } = await supabase.rpc("rename_user_login", {
+        p_old: currentLogin, p_new: next, p_apply: true,
+      });
+      if (error) throw new Error(error.message);
+      const d = done as { rows: number };
+      setChangingLogin(false); setReplacementLogin("");
+      await load();
+      say(`Signs in as ${next} now — ${d.rows} records moved`);
+    } catch (err: unknown) {
+      say(err instanceof Error ? err.message : "Could not change the address", false);
+    } finally {
+      setRenaming(false);
+    }
   }
 
   /**
@@ -305,7 +355,10 @@ export default function OfficesPage() {
                   <ul className="text-[13px] text-stone-600">
                     {members.map(m => (
                       <li key={m.id} className="flex flex-wrap items-baseline gap-x-1.5">
-                        <span>{nameOf(m.person_id)}</span>
+                        <Link href={`/settings/people/${m.person_id}`}
+                          className="rounded font-medium text-stone-700 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+                          {nameOf(m.person_id)}
+                        </Link>
                         <span className="text-stone-400">since {fmt(m.term_start)}</span>
                         {!o.single_holder && (
                           <button onClick={() => endTerm(m, o)}
@@ -452,6 +505,33 @@ export default function OfficesPage() {
                       Signs in as <strong className="text-stone-800">{loginOf(personId)}</strong> —
                       {" "}{roleLabel(electing.grants_role)} access moves to them when this is recorded.
                     </p>
+                    {!changingLogin ? (
+                      <button type="button" onClick={() => { setChangingLogin(true); setReplacementLogin(loginOf(personId) ?? ""); }}
+                        className="mt-1.5 text-[11px] font-semibold text-[#2f5b9c] underline-offset-2 hover:underline">
+                        Change this address
+                      </button>
+                    ) : (
+                      <div className="mt-2 space-y-1.5">
+                        <input className={inp} type="email" value={replacementLogin}
+                          onChange={e => setReplacementLogin(e.target.value)}
+                          placeholder="name@lcm.org.my" />
+                        <p className="text-[11px] text-stone-500">
+                          Everything recorded against the old address moves with it — vouchers, approvals,
+                          their signature and PIN. You will see how much before it happens. Their personal
+                          contact email is separate and is left alone.
+                        </p>
+                        <div className="flex gap-2">
+                          <Button size="sm" loading={renaming}
+                            onClick={() => changeLogin(loginOf(personId)!)}>
+                            Change address
+                          </Button>
+                          <Button size="sm" variant="ghost"
+                            onClick={() => { setChangingLogin(false); setReplacementLogin(""); }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div>
