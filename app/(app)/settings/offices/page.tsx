@@ -48,9 +48,8 @@ export default function OfficesPage() {
   const [offices, setOffices] = useState<Office[]>([]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
-  // Every login and its role, so a post that says Vacant while somebody signs
-  // in with its access can be spotted here rather than only from the person's
-  // side. The two used to be able to disagree in silence.
+  // Every login, so the election form can show whether the person being seated
+  // can actually sign in — and offer to give them access if not.
   const [logins, setLogins] = useState<{ email: string; role: string; full_name: string | null }[]>([]);
   const [adding, setAdding] = useState(false);
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
@@ -67,6 +66,9 @@ export default function OfficesPage() {
   const [personId, setPersonId] = useState("");
   const [electedOn, setElectedOn] = useState(new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState("");
+  // Typed here when the person being seated has no account yet, so a post and
+  // the access it carries are given in one action rather than two pages.
+  const [newLogin, setNewLogin] = useState("");
   const [saving, setSaving] = useState(false);
 
   function say(msg: string, ok = true) {
@@ -100,8 +102,17 @@ export default function OfficesPage() {
   function openElection(o: Office) {
     setElecting(o);
     setPersonId("");
+    setNewLogin("");
     setElectedOn(new Date().toISOString().slice(0, 10));
     setNote("");
+  }
+
+  /** The sign-in address on file for whoever is being seated, if any. */
+  function loginOf(id: string): string | null {
+    const person = people.find(p => p.id === id);
+    const email = (person?.user_email ?? "").trim().toLowerCase();
+    if (!email) return null;
+    return logins.some(l => l.email.trim().toLowerCase() === email) ? email : null;
   }
 
   /**
@@ -148,7 +159,32 @@ export default function OfficesPage() {
       let roleMsg = "";
       if (electing.grants_role) {
         const incoming = people.find(p => p.id === personId);
-        const login = incoming?.user_email || incoming?.email;
+
+        // No account, but an address was typed: create the login here, so
+        // seating somebody and letting them in is one action.
+        const typed = newLogin.trim().toLowerCase();
+        if (typed && !loginOf(personId)) {
+          const { error: acctErr } = await supabase.from("user_roles").insert({
+            email: typed,
+            full_name: incoming?.full_name ?? "",
+            role: electing.grants_role,
+            is_lcm_staff: true,
+            reports_to: "GM_AND_BISHOP",
+            ...(electing.kind === "EXCO" ? { ministries: [electing.name] } : {}),
+          });
+          if (acctErr) {
+            say(acctErr.code === "23505"
+              ? "Somebody already signs in with that address — link it on their profile instead."
+              : acctErr.message, false);
+            setSaving(false);
+            return;
+          }
+          await supabase.from("people").update({ user_email: typed }).eq("id", personId);
+          await load();
+          say(`${incoming?.full_name ?? "They"} can now sign in as ${roleLabel(electing.grants_role)}`);
+        }
+
+        const login = typed || incoming?.user_email || incoming?.email;
         if (login) {
           const patch: Record<string, unknown> = { role: electing.grants_role };
           if (electing.kind === "EXCO") patch.ministries = [electing.name];
@@ -225,40 +261,6 @@ export default function OfficesPage() {
   // the portfolios overstated what their members were elected to.
   const projects   = visible.filter(o => o.kind === "PROJECT");
 
-  /**
-   * People signing in with the role this office grants, who do not hold it.
-   *
-   * Granting a role from the person's Access tab does not create a term here —
-   * they are genuinely different facts — so this is where the two are put
-   * side by side and the gap is offered for closing.
-   */
-  function unrecordedHolders(o: Office) {
-    if (!o.grants_role) return [];
-    const holderIds = new Set(currentAll(o.id).map(h => h.person_id));
-    return logins
-      .filter(l => l.role === o.grants_role)
-      .map(l => {
-        const person = people.find(x =>
-          (x.user_email ?? "").trim().toLowerCase() === l.email.trim().toLowerCase());
-        return person && !holderIds.has(person.id) ? { person, email: l.email } : null;
-      })
-      .filter((x): x is { person: Person; email: string } => x !== null);
-  }
-
-  /** Record the term, from the office's side, for someone who already has the access. */
-  async function recordHolder(o: Office, personId: string) {
-    setSaving(true);
-    const { error } = await supabase.from("office_holdings").insert({
-      office_id: o.id, person_id: personId,
-      term_start: new Date().toISOString().slice(0, 10),
-      note: "Recorded to match their existing access",
-    });
-    setSaving(false);
-    if (error) { say(error.message, false); return; }
-    await load();
-    say(`${nameOf(personId)} recorded as ${o.name}`);
-  }
-
   const section = (title: string, sub: string, icon: React.ReactNode, list: Office[]) => (
     <div className="space-y-2">
       <div>
@@ -273,20 +275,6 @@ export default function OfficesPage() {
         return (
           <div key={o.id} className={`overflow-hidden rounded-2xl border bg-white ${
             o.active ? "border-[#e4edf9]" : "border-dashed border-stone-300 opacity-70"}`}>
-            {unrecordedHolders(o).map(({ person, email }) => (
-              <div key={person.id}
-                className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2">
-                <AlertTriangle size={14} className="shrink-0 text-amber-600" />
-                <p className="min-w-0 flex-1 text-[12.5px] text-amber-900">
-                  <strong>{person.full_name}</strong> signs in as {roleLabel(o.grants_role!)} ({email})
-                  but is not recorded as holding this post.
-                </p>
-                <button onClick={() => recordHolder(o, person.id)} disabled={saving}
-                  className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[12px] font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50">
-                  Record it
-                </button>
-              </div>
-            ))}
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-stone-800">
@@ -450,10 +438,37 @@ export default function OfficesPage() {
                   <option value="">— choose a person —</option>
                   {people.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
                 </select>
-                <p className="mt-1 text-[11px] text-stone-400">
+                <p className="mt-1 text-[11px] text-stone-500">
                   Anyone in the People Directory. Add them there first if they&apos;re not listed.
                 </p>
               </div>
+
+              {/* The post carries system access, so the address that access
+                  belongs to is asked for here rather than on another page. */}
+              {personId && electing.grants_role && (
+                loginOf(personId) ? (
+                  <div className="rounded-xl border border-[#dbe9fb] bg-[#f8fbff] px-3 py-2.5">
+                    <p className="text-[12px] text-stone-600">
+                      Signs in as <strong className="text-stone-800">{loginOf(personId)}</strong> —
+                      {" "}{roleLabel(electing.grants_role)} access moves to them when this is recorded.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-[11px] font-medium text-stone-500">
+                      Sign-in address <span className="text-stone-400">— they have no account yet</span>
+                    </label>
+                    <input className={inp} type="email" value={newLogin}
+                      onChange={e => setNewLogin(e.target.value)}
+                      placeholder="name@lcm.org.my" />
+                    <p className="mt-1 text-[11px] text-stone-500">
+                      Filling this in gives them {roleLabel(electing.grants_role)} access as well as the
+                      post. Leave it blank to record the post only — the access can be given later from
+                      their profile.
+                    </p>
+                  </div>
+                )
+              )}
               <div>
                 <label className="text-[11px] font-medium text-stone-500">
                   {!electing.single_holder ? "Date they join"
