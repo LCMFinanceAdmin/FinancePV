@@ -339,11 +339,15 @@ export default function PeopleDirectoryPage() {
       </div>
 
       {/* ── The list ───────────────────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
+      <div className="overflow-hidden rounded-2xl border-2 border-stone-800 bg-white shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
         {/* Column headings are desktop-only; below that each person is a card. */}
-        <div className="hidden border-b border-[#eef3fa] bg-[#fafcff] px-5 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.09em] text-stone-400 lg:grid lg:grid-cols-[minmax(200px,1.3fr)_150px_minmax(220px,1.6fr)_190px_110px_40px] lg:gap-4">
-          <span>Person</span><span>Primary role</span><span>Involvement summary</span>
-          <span>Contact</span><span>Status</span><span />
+        <div className="hidden border-b-2 border-stone-800 bg-[#f4f7fb] px-5 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.09em] text-stone-700 lg:grid lg:grid-cols-[minmax(210px,1.3fr)_150px_minmax(220px,1.6fr)_190px_100px_40px] lg:gap-4">
+          <span className="border-r-2 border-stone-800 pr-4">Person</span>
+          <span className="border-r-2 border-stone-800 pr-4">Primary role</span>
+          <span className="border-r-2 border-stone-800 pr-4">Involvement summary</span>
+          <span className="border-r-2 border-stone-800 pr-4">Contact</span>
+          <span className="border-r-2 border-stone-800 pr-4">Status</span>
+          <span />
         </div>
 
         {visible.length === 0 ? (
@@ -360,7 +364,7 @@ export default function PeopleDirectoryPage() {
 
               return (
                 <li key={p.id}
-                  className="border-b border-[#f1f5fa] last:border-0 transition-colors hover:bg-[#f9fcff]">
+                  className="border-b-2 border-stone-800 last:border-0 transition-colors hover:bg-[#f9fcff]">
                   <div
                     onClick={e => {
                       // Clicking the row is a convenience for the mouse; the
@@ -369,12 +373,12 @@ export default function PeopleDirectoryPage() {
                       if ((e.target as HTMLElement).closest("a,button")) return;
                       router.push(`/settings/people/${p.id}`);
                     }}
-                    className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 lg:grid-cols-[minmax(200px,1.3fr)_150px_minmax(220px,1.6fr)_190px_110px_40px] lg:items-center lg:gap-4">
+                    className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 lg:grid-cols-[minmax(210px,1.3fr)_150px_minmax(220px,1.6fr)_190px_100px_40px] lg:items-center lg:gap-4">
 
                     {/* Person. Below lg this is the card's header, so the
                         status and the menu come up here rather than sitting as
                         two orphan rows at the bottom of a stack. */}
-                    <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3 lg:border-r-2 lg:border-stone-800 lg:pr-4">
                       <Avatar name={p.full_name} photoPath={p.photo_path} size={40} />
                       <div className="min-w-0 flex-1">
                         <Link href={`/settings/people/${p.id}`}
@@ -403,7 +407,7 @@ export default function PeopleDirectoryPage() {
                     </div>
 
                     {/* Primary role */}
-                    <div className="min-w-0">
+                    <div className="min-w-0 lg:border-r-2 lg:border-stone-800 lg:pr-4">
                       <div className="flex flex-wrap items-baseline gap-x-1.5">
                         <span className="text-[11px] font-medium uppercase tracking-wide text-stone-400 lg:hidden">Role</span>
                         <span className="truncate text-[13px] font-medium text-stone-700">{role.label}</span>
@@ -412,7 +416,7 @@ export default function PeopleDirectoryPage() {
                     </div>
 
                     {/* Involvement */}
-                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 lg:border-r-2 lg:border-stone-800 lg:pr-4">
                       {shown.map(r => <RelationshipBadge key={r.source + r.source_id} row={r} />)}
                       {overflow > 0 && (
                         <span className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] font-medium text-stone-500">
@@ -423,7 +427,7 @@ export default function PeopleDirectoryPage() {
                     </div>
 
                     {/* Contact */}
-                    <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-0.5 lg:block lg:space-y-0.5">
+                    <div className={`flex min-w-0 flex-wrap gap-x-4 gap-y-0.5 lg:block lg:space-y-0.5 lg:border-r-2 lg:border-stone-800 lg:pr-4`}>
                       {p.email && (
                         <div className="flex items-center gap-1.5 text-[12.5px] text-stone-600">
                           <Mail size={12} className="shrink-0 text-stone-400" />
@@ -440,7 +444,7 @@ export default function PeopleDirectoryPage() {
                     </div>
 
                     {/* Status */}
-                    <div className="hidden lg:block"><PersonStatus status={p.status} /></div>
+                    <div className={`hidden lg:block lg:border-r-2 lg:border-stone-800 lg:pr-4`}><PersonStatus status={p.status} /></div>
 
                     {/* Row actions */}
                     <div className="hidden justify-self-end lg:block"

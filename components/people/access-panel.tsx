@@ -99,11 +99,72 @@ export function AccessPanel({
     if (!account) return;
     setSaving(true);
     const { error } = await supabase.from("user_roles").update(fields).eq("id", account.id);
-    setSaving(false);
-    if (error) { say(error.message, false); return; }
+    if (error) { setSaving(false); say(error.message, false); return; }
+    const previousRole = account.role;
     setAccount(a => (a ? { ...a, ...fields } : a));
+
+    // A role change is also a change of post, when a post grants that role.
+    let note = "";
+    if (fields.role && fields.role !== previousRole) {
+      note = await syncRegister(previousRole, fields.role);
+    }
+    setSaving(false);
+    await load();
     onChanged();
-    say("Access updated");
+    say(note ? `Access updated — ${note}` : "Access updated");
+  }
+
+  /**
+   * Keep Offices & Elections in step with the role just given.
+   *
+   * Giving somebody the Administrator role and leaving the register saying
+   * Vacant is two records disagreeing about the same fact, so the register is
+   * written here rather than left for someone to notice. Two limits, both
+   * deliberate:
+   *
+   *  · a post already held by someone else is not taken from them silently —
+   *    that is a replacement, and the amber prompt below asks for it;
+   *  · the post they are leaving is closed, not deleted, because the register
+   *    is a history and last year's holder still held it.
+   *
+   * Returns a phrase for the toast, or "" when nothing needed doing.
+   */
+  async function syncRegister(fromRole: string, toRole: string): Promise<string> {
+    const done: string[] = [];
+
+    // Close the term for the post they no longer have the role for.
+    const leaving = grantingOffices.find(o => o.grants_role === fromRole);
+    if (leaving) {
+      const open = holdings.find(h =>
+        h.office_id === leaving.id && h.person_id === personId && !h.term_end);
+      if (open) {
+        const { error } = await supabase.from("office_holdings")
+          .update({ term_end: new Date().toISOString().slice(0, 10) })
+          .eq("office_id", leaving.id).eq("person_id", personId).is("term_end", null);
+        if (!error) done.push(`${leaving.name} ended`);
+      }
+    }
+
+    // Open one for the post they now do.
+    const joining = grantingOffices.find(o => o.grants_role === toRole);
+    if (joining) {
+      const alreadyHeld = holdings.some(h =>
+        h.office_id === joining.id && h.person_id === personId && !h.term_end);
+      const takenByAnother = joining.single_holder && holdings.some(h =>
+        h.office_id === joining.id && h.person_id !== personId && !h.term_end);
+      if (!alreadyHeld && !takenByAnother) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { error } = await supabase.from("office_holdings").insert({
+          office_id: joining.id, person_id: personId,
+          term_start: new Date().toISOString().slice(0, 10),
+          note: "Recorded when the role was assigned",
+          created_by: user?.email ?? "",
+        });
+        if (!error) done.push(`recorded as ${joining.name}`);
+      }
+    }
+
+    return done.join(" and ");
   }
 
   async function revoke() {
@@ -155,9 +216,17 @@ export function AccessPanel({
   async function recordAppointment(office: GrantingOffice) {
     setRecording(true);
     const { data: { user } } = await supabase.auth.getUser();
-    // A single-holder post has to be vacated before it is filled, or the
-    // trigger from migration 104 refuses — say so rather than showing the raw
-    // database error.
+
+    // This path only runs when somebody else holds it, so filling it means
+    // ending their term first — the trigger from migration 104 refuses two
+    // open terms, and the outgoing holder's years are kept, not deleted.
+    if (office.single_holder) {
+      const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+      await supabase.from("office_holdings")
+        .update({ term_end: yesterday })
+        .eq("office_id", office.id).is("term_end", null).neq("person_id", personId);
+    }
+
     const { error } = await supabase.from("office_holdings").insert({
       office_id: office.id, person_id: personId,
       term_start: new Date().toISOString().slice(0, 10),
@@ -254,9 +323,8 @@ export function AccessPanel({
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
               <AlertTriangle size={16} className="shrink-0 text-amber-600" />
               <p className="min-w-0 flex-1 text-[13px] text-amber-900">
-                <strong>{gap.name}</strong> is {gap.kind === "APPOINTED" ? "an appointed post" : "an elected post"}, and
-                Offices &amp; Elections still shows it as vacant. {personName} signs in with the access
-                but does not hold the post on the register.
+                <strong>{gap.name}</strong> is already held by somebody else, so {personName} has the
+                access but not the post. Recording it here ends the current holder&rsquo;s term.
               </p>
               {canEdit && (
                 <Button size="sm" variant="secondary" loading={recording}

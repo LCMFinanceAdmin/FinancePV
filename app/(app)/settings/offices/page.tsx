@@ -17,14 +17,16 @@ import {
   Landmark, Users, History, UserPlus, X, CheckCircle2, AlertCircle, ChevronRight, Church, Briefcase,
   AlertTriangle, Plus,
 } from "lucide-react";
-import { Modal } from "@/components/ui/modal";
+import { OfficeModal } from "@/components/offices/office-modal";
 
 interface Office {
-  id: string; name: string; kind: "CHURCH" | "EXCO" | "DEAN" | "APPOINTED" | "COMMITTEE";
+  id: string; name: string; kind: "CHURCH" | "EXCO" | "DEAN" | "APPOINTED" | "COMMITTEE" | "PROJECT";
   grants_role: string | null; sort_order: number; active: boolean;
   district_id: string | null;
   /** Elected posts have terms and elections; an appointment has a holder. */
   is_elected: boolean;
+  /** How long the post is held for — see migration 113. */
+  tenure: "ELECTED" | "PERMANENT" | "TEMPORARY";
   /** A committee seats several people at once; an office seats one. */
   single_holder: boolean;
 }
@@ -51,6 +53,7 @@ export default function OfficesPage() {
   // side. The two used to be able to disagree in silence.
   const [logins, setLogins] = useState<{ email: string; role: string; full_name: string | null }[]>([]);
   const [adding, setAdding] = useState(false);
+  const [editingOffice, setEditingOffice] = useState<Office | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
@@ -212,6 +215,9 @@ export default function OfficesPage() {
   const exco      = offices.filter(o => o.kind === "EXCO");
   const appointed = offices.filter(o => o.kind === "APPOINTED");
   const committees = offices.filter(o => o.kind === "COMMITTEE");
+  // Project and supporting committees carry no EXCO seat, so listing them with
+  // the portfolios overstated what their members were elected to.
+  const projects   = offices.filter(o => o.kind === "PROJECT");
 
   /**
    * People signing in with the role this office grants, who do not hold it.
@@ -276,8 +282,19 @@ export default function OfficesPage() {
             ))}
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-bold text-stone-800">
+                <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-stone-800">
                   {o.name}
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    o.tenure === "ELECTED" ? "bg-violet-100 text-violet-700"
+                      : o.tenure === "TEMPORARY" ? "bg-amber-100 text-amber-700"
+                      : "bg-stone-100 text-stone-600"}`}>
+                    {o.tenure === "ELECTED" ? "Elected" : o.tenure === "TEMPORARY" ? "Temporary" : "Permanent"}
+                  </span>
+                  {o.grants_role && (
+                    <span className="rounded-full bg-[#eef4fd] px-2 py-0.5 text-[10px] font-semibold text-[#2f5b9c]">
+                      {roleLabel(o.grants_role)}
+                    </span>
+                  )}
                   {!o.single_holder && members.length > 0 && (
                     <span className="ml-1.5 text-[12px] font-medium text-stone-400">
                       {members.length} member{members.length === 1 ? "" : "s"}
@@ -313,6 +330,11 @@ export default function OfficesPage() {
                   <ChevronRight size={12} className={showing ? "rotate-90" : ""} />
                 </button>
               )}
+              <button onClick={() => setEditingOffice(o)}
+                aria-label={`Edit the ${o.name} post`}
+                className="text-[12px] font-medium text-stone-500 transition-colors hover:text-[#2f5b9c]">
+                Edit post
+              </button>
               {cur && o.single_holder && (
                 <button onClick={() => endTerm(cur, o)}
                   className="text-[12px] font-medium text-stone-400 hover:text-red-500">
@@ -351,8 +373,15 @@ export default function OfficesPage() {
   return (
     <div className="cloudlight-page max-w-4xl space-y-6">
       {adding && (
-        <AddOfficeModal onClose={() => setAdding(false)}
-          onAdded={async () => { setAdding(false); await load(); say("Post added"); }} />
+        <OfficeModal office={null} onClose={() => setAdding(false)}
+          onSaved={async (msg) => { setAdding(false); await load(); say(msg); }} say={say} />
+      )}
+
+      {editingOffice && (
+        <OfficeModal office={editingOffice}
+          holdingCount={holdings.filter(h => h.office_id === editingOffice.id).length}
+          onClose={() => setEditingOffice(null)}
+          onSaved={async (msg) => { setEditingOffice(null); await load(); say(msg); }} say={say} />
       )}
 
       {toast && (
@@ -378,6 +407,9 @@ export default function OfficesPage() {
         <Briefcase size={16} className="text-[#4a6da7]" />, appointed)}
       {committees.length > 0 && section("Committees", "Several members may serve at once — not EXCO posts",
         <Users size={16} className="text-[#4a6da7]" />, committees)}
+      {projects.length > 0 && section("Project & Supporting Committees",
+        "Set up for a purpose or a period — they carry no EXCO seat",
+        <Briefcase size={16} className="text-[#4a6da7]" />, projects)}
 
       {electing && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
@@ -451,108 +483,5 @@ export default function OfficesPage() {
         the office then. The General Manager is a permanent appointment and is listed separately.
       </div>
     </div>
-  );
-}
-
-/**
- * A new post.
- *
- * The register was seeded and had no way to grow, so a Media Desk or an
- * Assistant Dean meant a migration. Posts are data, not code — what is not
- * data is the *system role* a post grants, because the access policies name
- * those roles directly. So a new post picks from the roles that exist, or
- * grants none at all, which is the common case: most posts are a title and a
- * term, not a set of permissions.
- */
-function AddOfficeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
-  const supabase = createClient();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState("APPOINTED");
-  const [grantsRole, setGrantsRole] = useState("");
-  const [isElected, setIsElected] = useState(false);
-  const [singleHolder, setSingleHolder] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-
-  const KINDS = [
-    { key: "EXCO",      label: "EXCO portfolio",  hint: "An elected committee seat on the EXCO" },
-    { key: "APPOINTED", label: "Appointed post",  hint: "Given, not elected — a desk or a manager" },
-    { key: "CHURCH",    label: "Church office",   hint: "A constitutional post like Bishop or Secretary" },
-    { key: "COMMITTEE", label: "Committee",       hint: "Several people may serve at once" },
-    { key: "DEAN",      label: "Dean",            hint: "Leads a district; set the district afterwards" },
-  ];
-
-  async function save() {
-    if (!name.trim()) { setErr("Give the post a name"); return; }
-    setErr(""); setSaving(true);
-    const { error } = await supabase.from("offices").insert({
-      name: name.trim(),
-      kind,
-      grants_role: grantsRole || null,
-      is_elected: isElected,
-      single_holder: kind === "COMMITTEE" ? false : singleHolder,
-      sort_order: 500,
-      active: true,
-    });
-    setSaving(false);
-    if (error) {
-      setErr(error.code === "23505" ? "There is already a post with that name." : error.message);
-      return;
-    }
-    onAdded();
-  }
-
-  return (
-    <Modal title="Add a post"
-      description="Posts are added here as the church grows — a new desk, a new portfolio, a new committee."
-      onClose={onClose}
-      footer={<>
-        <Button className="flex-1" loading={saving} onClick={save}><Plus size={13} /> Add post</Button>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-      </>}>
-
-      <div>
-        <label className={labelClass}>Name *</label>
-        <input className={fieldClass} value={name} onChange={e => setName(e.target.value)}
-          placeholder="e.g. Media Desk, Assistant Dean" />
-      </div>
-
-      <div>
-        <label className={labelClass}>Kind</label>
-        <select className={fieldClass} value={kind} onChange={e => setKind(e.target.value)}>
-          {KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
-        </select>
-        <p className="mt-1 text-[11px] text-stone-500">{KINDS.find(k => k.key === kind)?.hint}</p>
-      </div>
-
-      <div>
-        <label className={labelClass}>Gives access as</label>
-        <select className={fieldClass} value={grantsRole} onChange={e => setGrantsRole(e.target.value)}>
-          <option value="">Nothing — it is a title, not a permission</option>
-          {SWITCHABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-        </select>
-        <p className="mt-1 text-[11px] text-stone-500">
-          Whoever is elected or appointed to it gains this role, and the outgoing holder loses it.
-          Most posts grant nothing — leave it blank unless the post really carries system access.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-2 text-sm text-stone-700">
-          <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
-            checked={isElected} onChange={e => setIsElected(e.target.checked)} />
-          Elected, rather than appointed
-        </label>
-        {kind !== "COMMITTEE" && (
-          <label className="flex items-center gap-2 text-sm text-stone-700">
-            <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
-              checked={singleHolder} onChange={e => setSingleHolder(e.target.checked)} />
-            One holder at a time
-          </label>
-        )}
-      </div>
-
-      {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
-    </Modal>
   );
 }
