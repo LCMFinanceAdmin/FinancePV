@@ -2,6 +2,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
 import { mayVerifyFor } from "../_shared/verifiers.ts";
+import { expandMinistries } from "../_shared/ministries.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -31,6 +32,32 @@ Deno.serve(async (req) => {
       db, user.email!, profile.ministries, pv.ministry, pv.project,
     );
     if (!allowed) return json({ error: "Not your ministry" }, 403);
+
+    // What this body may commit on its own.
+    //
+    // Over its limit the voucher is not refused, it belongs to the body above:
+    // a committee with RM 5,000 of authority needing RM 8,000 goes to the
+    // portfolio it sits under. Rejecting stays open at any amount — a body can
+    // always decline to spend, and making them escalate to say no would be an
+    // odd rule.
+    if (action === "APPROVED") {
+      const { data: gate } = await db.rpc("ministry_approval_gate", {
+        p_ministry: pv.ministry, p_amount: pv.amount,
+      });
+      const g = Array.isArray(gate) ? gate[0] : gate;
+      if (g?.over_limit) {
+        const escalation = g.escalates_to
+          ? `It has to be verified by ${g.escalates_to}, which ${pv.ministry} sits under.`
+          : `${pv.ministry} sits under nothing, so this needs Finance to route it.`;
+        const holdsParent = g.escalates_to
+          && expandMinistries(profile.ministries ?? []).includes(g.escalates_to);
+        if (!holdsParent) {
+          return json({
+            error: `${pv.ministry} may verify up to RM ${Number(g.limit_amount).toFixed(2)} and this voucher is RM ${Number(pv.amount).toFixed(2)}. ${escalation}`,
+          }, 403);
+        }
+      }
+    }
 
     // Nor your own voucher.
     //

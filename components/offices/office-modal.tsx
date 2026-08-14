@@ -27,6 +27,7 @@ export interface OfficeRow {
   active: boolean;
   tenure: "ELECTED" | "PERMANENT" | "TEMPORARY";
   parent_office_id: string | null;
+  approval_limit: number | null;
 }
 
 export interface OfficeCategory {
@@ -58,6 +59,7 @@ export function OfficeModal({
   const [name, setName] = useState(office?.name ?? "");
   const [kind, setKind] = useState(office?.kind ?? categories[0]?.key ?? "APPOINTED");
   const [parentId, setParentId] = useState(office?.parent_office_id ?? "");
+  const [limit, setLimit] = useState(office?.approval_limit != null ? String(office.approval_limit) : "");
   const [tenure, setTenure] = useState<OfficeRow["tenure"]>(office?.tenure ?? "PERMANENT");
   const [grantsRole, setGrantsRole] = useState(office?.grants_role ?? "");
   const [singleHolder, setSingleHolder] = useState(office?.single_holder ?? true);
@@ -91,6 +93,10 @@ export function OfficeModal({
 
   async function save() {
     if (!name.trim()) { setErr("Give the post a name"); return; }
+    if (limit.trim() !== "" && (!Number.isFinite(Number(limit)) || Number(limit) < 0)) {
+      setErr("The approval limit has to be a number, or blank for no limit");
+      return;
+    }
     setErr(""); setSaving(true);
     const payload = {
       name: name.trim(),
@@ -100,6 +106,7 @@ export function OfficeModal({
       single_holder: seatsMany ? false : singleHolder,
       active,
       parent_office_id: parentId || null,
+      approval_limit: limit.trim() === "" ? null : Number(limit),
     };
     const { error } = office
       ? await supabase.from("offices").update(payload).eq("id", office.id)
@@ -196,6 +203,18 @@ export function OfficeModal({
         <p className="mt-1 text-[11px] text-stone-500">
           For a body that answers to another — BAM sits under the Property portfolio.
           The register groups it beneath its parent.
+        </p>
+      </div>
+
+      <div>
+        <label className={labelClass}>May approve up to (RM)</label>
+        <input type="number" min="0" step="100" className={fieldClass} value={limit}
+          onChange={e => setLimit(e.target.value)} placeholder="No limit" />
+        <p className="mt-1 text-[11px] text-stone-500">
+          The most this body may verify on one voucher, against its budget items. Above it the
+          voucher goes to {parentId
+            ? allOffices.find(o => o.id === parentId)?.name ?? "the post it sits under"
+            : "the post it sits under"} rather than being refused. Blank means no limit of its own.
         </p>
       </div>
 

@@ -34,6 +34,8 @@ interface Office {
   single_holder: boolean;
   /** The post this one answers to — BAM under Property. See migration 121. */
   parent_office_id: string | null;
+  /** The most it may verify on one voucher; null means no limit of its own. */
+  approval_limit: number | null;
 }
 interface Holding {
   id: string; office_id: string; person_id: string;
@@ -342,6 +344,11 @@ export default function OfficesPage() {
                   {o.parent_office_id && (
                     <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-600">
                       under {offices.find(x => x.id === o.parent_office_id)?.name ?? "—"}
+                    </span>
+                  )}
+                  {o.approval_limit != null && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                      up to RM {Number(o.approval_limit).toLocaleString("en-MY")}
                     </span>
                   )}
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
