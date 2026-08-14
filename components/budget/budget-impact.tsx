@@ -17,6 +17,11 @@ interface Props {
   amount: number;
   /** The PV under review, so its own in-flight amount isn't counted twice. */
   excludePvId?: string | null;
+  /**
+   * The transaction's own date, so it is measured against the budget of the
+   * year it belongs to rather than the year it happens to be reviewed in.
+   */
+  date?: string | null;
   /** "panel" = full breakdown; "chip" = one-line summary for dense lists. */
   variant?: "panel" | "chip";
   className?: string;
@@ -44,7 +49,7 @@ const VERDICT = {
 } as const;
 
 export function BudgetImpact({
-  ministry, projectName, amount, excludePvId, variant = "panel", className = "",
+  ministry, projectName, amount, excludePvId, date, variant = "panel", className = "",
 }: Props) {
   const supabase = createClient();
   const [data, setData] = useState<BudgetImpactResult | null>(null);
@@ -56,12 +61,13 @@ export function BudgetImpact({
       setLoading(true);
       const result = await getBudgetImpact(supabase, {
         ministry: ministry ?? "", projectName, amount, excludePvId,
+        year: date ? new Date(date).getFullYear() : undefined,
       });
       if (!cancelled) { setData(result); setLoading(false); }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ministry, projectName, amount, excludePvId]);
+  }, [ministry, projectName, amount, excludePvId, date]);
 
   if (loading || !data) {
     return variant === "chip"

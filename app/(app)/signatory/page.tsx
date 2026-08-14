@@ -553,6 +553,7 @@ export default function SignatoryPage() {
                 projectName={(pv as PVWithBulk & { project?: string }).project ?? null}
                 amount={pv.amount ?? 0}
                 excludePvId={pv.id}
+                date={(pv as PVWithBulk & { date?: string }).date ?? null}
               />
             </div>
           )}

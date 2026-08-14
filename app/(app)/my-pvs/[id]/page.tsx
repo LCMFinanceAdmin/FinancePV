@@ -1120,6 +1120,7 @@ export default function PVDetailPage() {
               projectName={pv.project}
               amount={pv.amount ?? 0}
               excludePvId={pv.id}
+              date={pv.date}
             />
             <div className="flex gap-2 flex-wrap items-center">
               <button
@@ -1168,6 +1169,7 @@ export default function PVDetailPage() {
               projectName={pv.project}
               amount={pv.amount ?? 0}
               excludePvId={pv.id}
+              date={pv.date}
             />
             <div className="flex gap-2 flex-wrap items-center">
               <button

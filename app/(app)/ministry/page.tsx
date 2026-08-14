@@ -448,7 +448,7 @@ export default function ExcoPage() {
 
                 {isActionTab && (
                   <BudgetImpact ministry={pv.ministry} projectName={pv.project}
-                    amount={pv.amount ?? 0} excludePvId={pv.id} variant="chip" />
+                    amount={pv.amount ?? 0} excludePvId={pv.id} date={pv.date} variant="chip" />
                 )}
 
                 <div className="flex items-center gap-2">

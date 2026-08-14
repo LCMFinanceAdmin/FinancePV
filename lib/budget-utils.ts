@@ -132,9 +132,20 @@ export interface BudgetImpactResult extends BudgetTotals {
  */
 export async function getBudgetImpact(
   supabase: SupabaseClient,
-  opts: { ministry: string; projectName?: string | null; amount: number; excludePvId?: string | null },
+  opts: {
+    ministry: string; projectName?: string | null; amount: number; excludePvId?: string | null;
+    /**
+     * The year the transaction belongs to — its own date, not today's.
+     *
+     * A December voucher reviewed in January is measured against December's
+     * budget. Defaults to the current year, which is what raising a payment
+     * today means, and what every caller meant before this existed.
+     */
+    year?: number;
+  },
 ): Promise<BudgetImpactResult> {
   const { ministry, projectName, amount, excludePvId } = opts;
+  const year = opts.year ?? new Date().getFullYear();
   const zero: BudgetTotals = { budget: 0, spent: 0, committed: 0, remaining: 0 };
   const empty: BudgetImpactResult = {
     verdict: "UNBUDGETED", projectName: projectName ?? null,
@@ -154,16 +165,25 @@ export async function getBudgetImpact(
       .from("budget_items")
       .select("project_name, estimated_income, estimated_expenses")
       .eq("ministry", ministry)
-      .eq("year", new Date().getFullYear())
+      .eq("year", year)
       .is("proposal_id", null),
+    // Spend has to be scoped to the same year as the budget. Tallying every
+    // year against one year's line would make a ministry look exhausted after
+    // its second season, and the escalation would then fire on everything.
     supabase
       .from("pvs")
-      .select("id, amount, status, project")
+      .select("id, amount, status, project, date, submitted_at")
       .eq("ministry", ministry),
   ]);
 
   const rows = (items ?? []) as { project_name: string; estimated_income: number; estimated_expenses: number }[];
-  const pvRows = (pvs ?? []) as { id: string; amount: number; status: string; project: string | null }[];
+  const pvRows = ((pvs ?? []) as {
+    id: string; amount: number; status: string; project: string | null;
+    date: string | null; submitted_at: string | null;
+  }[]).filter(pv => {
+    const d = pv.date ?? pv.submitted_at;
+    return d ? new Date(d).getFullYear() === year : true;
+  });
 
   const tally = (predicate: (project: string | null) => boolean): { spent: number; committed: number } => {
     let spent = 0, committed = 0;

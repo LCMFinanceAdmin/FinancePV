@@ -50,6 +50,9 @@ Deno.serve(async (req) => {
         db.rpc("budget_project_gate", {
           p_ministry: pv.ministry, p_project: pv.project ?? null,
           p_amount: pv.amount, p_exclude_pv_id: pv.id,
+          // The voucher's own year, not today's. A December payment verified in
+          // January belongs to December's budget.
+          p_year: new Date(pv.date ?? pv.submitted_at).getFullYear(),
         }),
         db.rpc("ministry_approval_gate", { p_ministry: pv.ministry, p_amount: pv.amount }),
       ]);
