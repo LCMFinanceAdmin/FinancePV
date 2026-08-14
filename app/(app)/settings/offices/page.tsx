@@ -18,7 +18,8 @@ import {
   Landmark, Users, History, UserPlus, X, CheckCircle2, AlertCircle, ChevronRight, Church, Briefcase,
   AlertTriangle, Plus,
 } from "lucide-react";
-import { OfficeModal } from "@/components/offices/office-modal";
+import { OfficeModal, type OfficeCategory } from "@/components/offices/office-modal";
+import { CategoryModal } from "@/components/offices/category-modal";
 import { HoldingModal, type HoldingRow } from "@/components/offices/holding-modal";
 
 interface Office {
@@ -31,6 +32,8 @@ interface Office {
   tenure: "ELECTED" | "PERMANENT" | "TEMPORARY";
   /** A committee seats several people at once; an office seats one. */
   single_holder: boolean;
+  /** The post this one answers to — BAM under Property. See migration 121. */
+  parent_office_id: string | null;
 }
 interface Holding {
   id: string; office_id: string; person_id: string;
@@ -48,12 +51,15 @@ function fmt(d?: string | null) {
 export default function OfficesPage() {
   const supabase = createClient();
   const [offices, setOffices] = useState<Office[]>([]);
+  // Categories are rows now, not a constant — the church can add its own.
+  const [categories, setCategories] = useState<OfficeCategory[]>([]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   // Every login, so the election form can show whether the person being seated
   // can actually sign in — and offer to give them access if not.
   const [logins, setLogins] = useState<{ email: string; role: string; full_name: string | null }[]>([]);
   const [adding, setAdding] = useState(false);
+  const [managingKinds, setManagingKinds] = useState(false);
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
   // Retiring a post hid it and the page only loaded active ones, so there was
   // no way back — an action with no inverse, which is the same mistake the
@@ -87,16 +93,18 @@ export default function OfficesPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: o }, { data: h }, { data: p }, { data: lg }] = await Promise.all([
+    const [{ data: o }, { data: h }, { data: p }, { data: lg }, { data: cats }] = await Promise.all([
       supabase.from("offices").select("*").order("sort_order").order("name"),
       supabase.from("office_holdings").select("*").order("term_start", { ascending: false }),
       supabase.from("people").select("id,full_name,user_email,email").eq("status", "ACTIVE").order("full_name"),
       supabase.from("user_roles").select("email,role,full_name"),
+      supabase.from("office_categories").select("*").eq("active", true).order("sort_order"),
     ]);
     setOffices((o ?? []) as Office[]);
     setHoldings((h ?? []) as Holding[]);
     setPeople((p ?? []) as Person[]);
     setLogins((lg ?? []) as { email: string; role: string; full_name: string | null }[]);
+    setCategories((cats ?? []) as OfficeCategory[]);
     setLoading(false);
   }, [supabase]);
 
@@ -309,14 +317,6 @@ export default function OfficesPage() {
 
   const visible   = offices.filter(o => showRetired || o.active);
   const retiredCount = offices.filter(o => !o.active).length;
-  const church    = visible.filter(o => o.kind === "CHURCH");
-  const deans     = visible.filter(o => o.kind === "DEAN");
-  const exco      = visible.filter(o => o.kind === "EXCO");
-  const appointed = visible.filter(o => o.kind === "APPOINTED");
-  const committees = visible.filter(o => o.kind === "COMMITTEE");
-  // Project and supporting committees carry no EXCO seat, so listing them with
-  // the portfolios overstated what their members were elected to.
-  const projects   = visible.filter(o => o.kind === "PROJECT");
 
   const section = (title: string, sub: string, icon: React.ReactNode, list: Office[]) => (
     <div className="space-y-2">
@@ -336,6 +336,14 @@ export default function OfficesPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-stone-800">
                   {o.name}
+                  {/* What it answers to. Shown on the child rather than nesting
+                      the list, because a body can sit under a portfolio in a
+                      different section and indentation could not show that. */}
+                  {o.parent_office_id && (
+                    <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-600">
+                      under {offices.find(x => x.id === o.parent_office_id)?.name ?? "—"}
+                    </span>
+                  )}
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                     o.tenure === "ELECTED" ? "bg-violet-100 text-violet-700"
                       : o.tenure === "TEMPORARY" ? "bg-amber-100 text-amber-700"
@@ -444,8 +452,20 @@ export default function OfficesPage() {
 
   return (
     <div className="cloudlight-page max-w-4xl space-y-6">
+      {managingKinds && (
+        <CategoryModal
+          categories={categories}
+          officeCounts={offices.reduce<Record<string, number>>((acc, o) => {
+            acc[o.kind] = (acc[o.kind] ?? 0) + 1; return acc;
+          }, {})}
+          onClose={() => setManagingKinds(false)}
+          onSaved={async (msg) => { await load(); say(msg); }}
+          say={say} />
+      )}
+
       {adding && (
-        <OfficeModal office={null} onClose={() => setAdding(false)}
+        <OfficeModal office={null} categories={categories} allOffices={offices}
+          onClose={() => setAdding(false)}
           onSaved={async (msg) => { setAdding(false); await load(); say(msg); }} say={say} />
       )}
 
@@ -465,7 +485,7 @@ export default function OfficesPage() {
       )}
 
       {editingOffice && (
-        <OfficeModal office={editingOffice}
+        <OfficeModal office={editingOffice} categories={categories} allOffices={offices}
           holdingCount={holdings.filter(h => h.office_id === editingOffice.id).length}
           onClose={() => setEditingOffice(null)}
           onSaved={async (msg) => { setEditingOffice(null); await load(); say(msg); }} say={say} />
@@ -478,25 +498,45 @@ export default function OfficesPage() {
         </div>
       )}
 
-      <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
-        <h1 className="text-xl font-bold text-stone-800">Offices &amp; Elections</h1>
-        <p className="text-sm text-stone-400">
-          Who holds each post, and who held it before. One person per office at a time.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
+          <h1 className="text-xl font-bold text-stone-800">Offices &amp; Elections</h1>
+          <p className="text-sm text-stone-400">
+            Who holds each post, and who held it before. One person per office at a time.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {retiredCount > 0 && (
+            <button onClick={() => setShowRetired(v => !v)}
+              className="rounded-lg border-2 border-stone-800 px-2.5 py-1.5 text-[12px] font-medium text-stone-600 hover:bg-stone-50">
+              {showRetired ? "Hide retired" : `Show ${retiredCount} retired`}
+            </button>
+          )}
+          <Button size="sm" variant="secondary" onClick={() => setManagingKinds(true)}>
+            Kinds of post
+          </Button>
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus size={13} /> Add a post
+          </Button>
+        </div>
       </div>
 
-      {section("Church Offices", "Elected constitutional posts", <Landmark size={16} className="text-[#4a6da7]" />, church)}
-      {deans.length > 0 && section("Deans", "One elected Dean per district — leave routing follows this",
-        <Church size={16} className="text-[#4a6da7]" />, deans)}
-      {section("EXCO Portfolios", "One elected member per committee", <Users size={16} className="text-[#4a6da7]" />, exco)}
-      {appointed.length > 0 && section("Appointed Posts", "Permanent appointments, not up for election",
-        <Briefcase size={16} className="text-[#4a6da7]" />, appointed)}
-      {committees.length > 0 && section("Committees", "Several members may serve at once — not EXCO posts",
-        <Users size={16} className="text-[#4a6da7]" />, committees)}
-      {projects.length > 0 && section("Project & Supporting Committees",
-        "Set up for a purpose or a period — they carry no EXCO seat",
-        <Briefcase size={16} className="text-[#4a6da7]" />, projects)}
+      {categories.map(cat => {
+        const list = visible.filter(o => o.kind === cat.key);
+        // Church Offices and EXCO Portfolios always show, empty or not — a
+        // vacant constitutional post is information. The rest appear once they
+        // have something in them.
+        const alwaysShow = cat.key === "CHURCH" || cat.key === "EXCO";
+        if (list.length === 0 && !alwaysShow) return null;
+        const Icon = cat.key === "CHURCH" ? Landmark : cat.key === "DEAN" ? Church
+          : cat.seats_many ? Briefcase : Users;
+        return (
+          <div key={cat.key}>
+            {section(cat.label, cat.description, <Icon size={16} className="text-[#4a6da7]" />, list)}
+          </div>
+        );
+      })}
 
       {electing && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">

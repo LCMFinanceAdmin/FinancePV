@@ -26,16 +26,13 @@ export interface OfficeRow {
   single_holder: boolean;
   active: boolean;
   tenure: "ELECTED" | "PERMANENT" | "TEMPORARY";
+  parent_office_id: string | null;
 }
 
-const KINDS = [
-  { key: "EXCO",      label: "EXCO portfolio",                  hint: "An elected seat on the EXCO" },
-  { key: "PROJECT",   label: "Project or supporting committee", hint: "Set up for a purpose or a period; carries no EXCO seat" },
-  { key: "COMMITTEE", label: "Standing committee",              hint: "Several people may serve at once" },
-  { key: "APPOINTED", label: "Appointed post",                  hint: "Given rather than elected — a desk or a manager" },
-  { key: "CHURCH",    label: "Church office",                   hint: "A constitutional post like Bishop or Secretary" },
-  { key: "DEAN",      label: "Dean",                            hint: "Leads a district; set the district afterwards" },
-];
+export interface OfficeCategory {
+  key: string; label: string; description: string;
+  seats_many: boolean; is_exco: boolean; sort_order: number; active: boolean;
+}
 
 const TENURES = [
   { key: "ELECTED",   label: "Elected",   hint: "Stands for a term and is filled by an election" },
@@ -43,11 +40,14 @@ const TENURES = [
   { key: "TEMPORARY", label: "Temporary", hint: "A project or relief post that is expected to end" },
 ];
 
-/** Committees seat several people, so the one-holder question does not apply. */
-const MULTI_KINDS = ["COMMITTEE", "PROJECT"];
-
-export function OfficeModal({ office, holdingCount = 0, onClose, onSaved, say }: {
+export function OfficeModal({
+  office, categories, allOffices, holdingCount = 0, onClose, onSaved, say,
+}: {
   office: OfficeRow | null;
+  categories: OfficeCategory[];
+  /** Every post, so one can be chosen as the parent — and so this one's own
+      descendants can be kept out of that list. */
+  allOffices: OfficeRow[];
   /** How many terms have been served in it — decides retire versus delete. */
   holdingCount?: number;
   onClose: () => void;
@@ -56,13 +56,38 @@ export function OfficeModal({ office, holdingCount = 0, onClose, onSaved, say }:
 }) {
   const supabase = createClient();
   const [name, setName] = useState(office?.name ?? "");
-  const [kind, setKind] = useState(office?.kind ?? "APPOINTED");
+  const [kind, setKind] = useState(office?.kind ?? categories[0]?.key ?? "APPOINTED");
+  const [parentId, setParentId] = useState(office?.parent_office_id ?? "");
   const [tenure, setTenure] = useState<OfficeRow["tenure"]>(office?.tenure ?? "PERMANENT");
   const [grantsRole, setGrantsRole] = useState(office?.grants_role ?? "");
   const [singleHolder, setSingleHolder] = useState(office?.single_holder ?? true);
   const [active, setActive] = useState(office?.active ?? true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+
+  const category = categories.find(c => c.key === kind);
+  const seatsMany = category?.seats_many ?? false;
+
+  /**
+   * Posts that may be this one's parent.
+   *
+   * Its own descendants are excluded, because making a post a child of its own
+   * child produces a cycle the page would then recurse through forever. The
+   * database can only refuse a post being its own direct parent — a CHECK sees
+   * one row.
+   */
+  const descendants = (() => {
+    const out = new Set<string>();
+    if (!office) return out;
+    const walk = (id: string) => {
+      for (const o of allOffices) {
+        if (o.parent_office_id === id && !out.has(o.id)) { out.add(o.id); walk(o.id); }
+      }
+    };
+    out.add(office.id); walk(office.id);
+    return out;
+  })();
+  const parentOptions = allOffices.filter(o => !descendants.has(o.id));
 
   async function save() {
     if (!name.trim()) { setErr("Give the post a name"); return; }
@@ -72,8 +97,9 @@ export function OfficeModal({ office, holdingCount = 0, onClose, onSaved, say }:
       kind,
       tenure,
       grants_role: grantsRole || null,
-      single_holder: MULTI_KINDS.includes(kind) ? false : singleHolder,
+      single_holder: seatsMany ? false : singleHolder,
       active,
+      parent_office_id: parentId || null,
     };
     const { error } = office
       ? await supabase.from("offices").update(payload).eq("id", office.id)
@@ -145,9 +171,9 @@ export function OfficeModal({ office, holdingCount = 0, onClose, onSaved, say }:
         <div>
           <label className={labelClass}>Kind</label>
           <select className={fieldClass} value={kind} onChange={e => setKind(e.target.value)}>
-            {KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+            {categories.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
           </select>
-          <p className="mt-1 text-[11px] text-stone-500">{KINDS.find(k => k.key === kind)?.hint}</p>
+          <p className="mt-1 text-[11px] text-stone-500">{category?.description}</p>
         </div>
         <div>
           <label className={labelClass}>Held for</label>
@@ -157,6 +183,20 @@ export function OfficeModal({ office, holdingCount = 0, onClose, onSaved, say }:
           </select>
           <p className="mt-1 text-[11px] text-stone-500">{TENURES.find(t => t.key === tenure)?.hint}</p>
         </div>
+      </div>
+
+      <div>
+        <label className={labelClass}>Sits under</label>
+        <select className={fieldClass} value={parentId} onChange={e => setParentId(e.target.value)}>
+          <option value="">Nothing — it stands on its own</option>
+          {parentOptions.map(o => (
+            <option key={o.id} value={o.id}>{o.name}{o.active ? "" : " (retired)"}</option>
+          ))}
+        </select>
+        <p className="mt-1 text-[11px] text-stone-500">
+          For a body that answers to another — BAM sits under the Property portfolio.
+          The register groups it beneath its parent.
+        </p>
       </div>
 
       <div>
@@ -172,7 +212,7 @@ export function OfficeModal({ office, holdingCount = 0, onClose, onSaved, say }:
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
-        {!MULTI_KINDS.includes(kind) && (
+        {!seatsMany && (
           <label className="flex items-center gap-2 text-sm text-stone-700">
             <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
               checked={singleHolder} onChange={e => setSingleHolder(e.target.checked)} />
