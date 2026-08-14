@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import {
-  Plus, Pencil, Trash2, X as XIcon, Printer,
+  Plus, Pencil, Trash2, X as XIcon, Printer, Copy,
   Clock, CheckCircle, XCircle, AlertCircle, Paperclip,
 } from "lucide-react";
 import {
@@ -137,6 +137,10 @@ function BudgetInner() {
   const [proposal, setProposal] = useState<BudgetProposal | null>(null);
   const [pendingProposals, setPendingProposals] = useState<BudgetProposal[]>([]);
   const [proposalBusy, setProposalBusy] = useState(false);
+  const [copying, setCopying] = useState(false);
+  // Adjusting one figure without opening the whole form — the common edit by
+  // far when a budget is being worked through line by line.
+  const [quickEdit, setQuickEdit] = useState<{ id: string; value: string } | null>(null);
   const [decisionModal, setDecisionModal] = useState<"APPROVE" | "REJECT" | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
 
@@ -291,6 +295,72 @@ function BudgetInner() {
     } finally {
       setUploadingDoc(false);
     }
+  }
+
+  /**
+   * Bring last year's lines forward.
+   *
+   * Budgets are mostly the same shape year to year — the same projects with
+   * different numbers — and retyping a dozen lines is where mistakes and blank
+   * years come from. The amounts come across too, as a starting point to edit
+   * rather than a figure to accept: a copied budget nobody revised is at least
+   * visible, whereas a missing one silently reads as unbudgeted.
+   *
+   * Lines whose project name already exists are skipped, so this can be run
+   * twice without doubling the budget.
+   */
+  async function copyFromPreviousYear() {
+    const from = selectedYear - 1;
+    setCopying(true);
+    try {
+      const { data: source, error } = await supabase
+        .from("budget_items")
+        .select("project_name, project_type, description, estimated_income, estimated_expenses, special_notes")
+        .eq("ministry", selectedMinistry).eq("year", from).is("proposal_id", null);
+      if (error) { showToast("Couldn't read " + from + ": " + error.message, false); return; }
+
+      const existing = new Set(budgetItems.map(i => (i.project_name || "").trim().toLowerCase()));
+      const fresh = (source ?? []).filter(r =>
+        !existing.has((r.project_name || "").trim().toLowerCase()));
+      if (fresh.length === 0) {
+        showToast(source?.length
+          ? `Every ${from} line is already here`
+          : `${selectedMinistry} had no budget in ${from}`, false);
+        return;
+      }
+
+      const draftId = await ensureDraftProposal();
+      const { error: insErr } = await supabase.from("budget_items").insert(
+        fresh.map(r => ({
+          ...r, ministry: selectedMinistry, year: selectedYear,
+          proposal_id: draftId, created_by: userEmail,
+        })),
+      );
+      if (insErr) { showToast("Error: " + insErr.message, false); return; }
+      await loadBudgetData(selectedMinistry);
+      showToast(`${fresh.length} line${fresh.length === 1 ? "" : "s"} copied from ${from} — adjust the amounts`);
+    } finally {
+      setCopying(false);
+    }
+  }
+
+  /** Save one amount from the table, without opening the form. */
+  async function saveQuickAmount(item: BudgetItem, raw: string) {
+    const value = Number(raw);
+    setQuickEdit(null);
+    if (!Number.isFinite(value) || value < 0) { showToast("That is not an amount", false); return; }
+    const current = (item.estimated_income || 0) + (item.estimated_expenses || 0);
+    if (value === current) return;
+    const patch = item.project_type === "income"
+      ? { estimated_income: value, estimated_expenses: 0 }
+      : { estimated_expenses: value, estimated_income: 0 };
+    const { error } = await supabase.from("budget_items")
+      .update({ ...patch, updated_at: new Date().toISOString() }).eq("id", item.id);
+    if (error) { showToast("Error: " + error.message, false); return; }
+    await loadBudgetData(selectedMinistry);
+    showToast(value === 0
+      ? `${item.project_name} set to zero — nothing can be approved against it`
+      : `${item.project_name} updated`);
   }
 
   async function saveItem() {
@@ -820,21 +890,48 @@ function BudgetInner() {
                 <h2 className="font-bold text-stone-800">{selectedMinistry}</h2>
                 <p className="text-xs text-stone-400 mt-0.5">{budgetItems.length} project{budgetItems.length !== 1 ? "s" : ""}</p>
               </div>
-              <button
-                onClick={openAddModal}
-                disabled={proposalLocked}
-                title={proposalLocked ? "Locked while the Treasurer reviews this budget" : undefined}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors disabled:opacity-40 disabled:hover:bg-[#4a6da7]"
-              >
-                <Plus size={14} />
-                {canDirectEdit ? "Add Project" : "Request New Project"}
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Most of a budget is last year's budget with different
+                    numbers, so starting from it beats retyping it. */}
+                {canDirectEdit && (
+                  <button
+                    onClick={copyFromPreviousYear}
+                    disabled={proposalLocked || copying}
+                    title={proposalLocked
+                      ? "Locked while the Treasurer reviews this budget"
+                      : `Bring ${selectedMinistry}'s ${selectedYear - 1} lines across to adjust`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border-2 border-stone-800 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-50 disabled:opacity-40"
+                  >
+                    <Copy size={13} />
+                    {copying ? "Copying…" : `Copy ${selectedYear - 1}`}
+                  </button>
+                )}
+                <button
+                  onClick={openAddModal}
+                  disabled={proposalLocked}
+                  title={proposalLocked ? "Locked while the Treasurer reviews this budget" : undefined}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors disabled:opacity-40 disabled:hover:bg-[#4a6da7]"
+                >
+                  <Plus size={14} />
+                  {canDirectEdit ? "Add Project" : "Request New Project"}
+                </button>
+              </div>
             </div>
 
             {budgetItems.length === 0 ? (
-              <div className="py-14 text-center text-stone-400 text-sm">
-                No budget items yet.{" "}
-                {canDirectEdit ? 'Click "Add Project" to get started.' : "Submit a request to add a new project."}
+              <div className="space-y-2 py-14 text-center text-sm text-stone-400">
+                <p>
+                  No budget for {selectedYear} yet.{" "}
+                  {canDirectEdit
+                    ? `Copy ${selectedYear - 1} and adjust it, or add projects one at a time.`
+                    : "Submit a request to add a new project."}
+                </p>
+                {/* Worth saying plainly: no budget is not a blocker. It is the
+                    zero-value line that stops payments, which is the opposite
+                    of what most people assume. */}
+                <p className="text-xs text-stone-400">
+                  Until there is one, spending here counts as unbudgeted rather than being refused.
+                </p>
               </div>
             ) : (
               <>
@@ -909,7 +1006,35 @@ function BudgetInner() {
                             </span>
                           </td>
                           <td className="text-right px-3 py-3 text-stone-600">
-                            {formatCurrency((item.estimated_income || 0) + (item.estimated_expenses || 0))}
+                            {quickEdit?.id === item.id ? (
+                              <input
+                                autoFocus type="number" min="0" step="100"
+                                className="w-28 rounded-lg border-2 border-[#2f5b9c] px-2 py-1 text-right text-sm outline-none"
+                                value={quickEdit.value}
+                                onChange={e => setQuickEdit({ id: item.id, value: e.target.value })}
+                                onBlur={() => saveQuickAmount(item, quickEdit.value)}
+                                onKeyDown={e => {
+                                  if (e.key === "Enter") saveQuickAmount(item, quickEdit.value);
+                                  if (e.key === "Escape") setQuickEdit(null);
+                                }} />
+                            ) : (
+                              <button
+                                disabled={!canDirectEdit}
+                                onClick={() => setQuickEdit({
+                                  id: item.id,
+                                  value: String((item.estimated_income || 0) + (item.estimated_expenses || 0)),
+                                })}
+                                className={`rounded px-1 ${canDirectEdit
+                                  ? "hover:bg-[#eef4fd] hover:text-[#2f5b9c]" : "cursor-default"}`}
+                                title={canDirectEdit ? "Click to adjust" : undefined}>
+                                {formatCurrency((item.estimated_income || 0) + (item.estimated_expenses || 0))}
+                              </button>
+                            )}
+                            {((item.estimated_income || 0) + (item.estimated_expenses || 0)) === 0 && (
+                              <div className="mt-0.5 text-[10px] font-semibold text-amber-700">
+                                nothing can be approved
+                              </div>
+                            )}
                           </td>
                           <td className="text-right px-3 py-3 text-orange-600">
                             {formatCurrency(item.spent || 0)}
@@ -1253,6 +1378,20 @@ function BudgetInner() {
                   {formatCurrency(itemForm.project_type === "expense" ? (itemForm.estimated_expenses || 0) : (itemForm.estimated_income || 0))}
                 </div>
               </div>
+
+              {/* A budget of nothing is not the same as no budget, and the
+                  difference runs the wrong way round from what people expect:
+                  with no line at all a payment counts as unbudgeted and goes
+                  through, while a line set to zero refuses every one. Said here
+                  because this is the moment somebody creates one by leaving the
+                  amount blank. */}
+              {itemForm.project_type === "expense" && !(itemForm.estimated_expenses || 0) && (
+                <p className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <strong>Zero budget.</strong> Every payment against this project will be refused and
+                  sent up to the body above. If you mean &ldquo;not decided yet&rdquo;, leave the
+                  project out until it is — spending then counts as unbudgeted rather than blocked.
+                </p>
+              )}
 
               {/* Special notes */}
               <div>
