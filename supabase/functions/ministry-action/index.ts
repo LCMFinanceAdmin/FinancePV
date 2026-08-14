@@ -57,10 +57,18 @@ Deno.serve(async (req) => {
       const g = Array.isArray(limitGate) ? limitGate[0] : limitGate;
       const parent = g?.escalates_to as string | null | undefined;
 
+      // Ordered by how specific the breach is. The project line is what an
+      // approver is looking at, so it is named first when both are blown; the
+      // ministry total catches what the line check cannot, namely spend on
+      // projects with no budget line at all.
       let breach: string | null = null;
       if (b?.over_budget) {
         breach = `${pv.project || pv.ministry} has ${rm(b.remaining)} left of its ${rm(b.budget)} budget`
           + ` and this voucher is ${rm(pv.amount)}.`;
+      } else if (b?.over_ministry) {
+        breach = `${pv.ministry} has ${rm(b.ministry_remaining)} left of its ${rm(b.ministry_budget)} budget`
+          + ` for the year and this voucher is ${rm(pv.amount)}`
+          + `${pv.project ? ", even though its own line has room" : ""}.`;
       } else if (g?.over_limit) {
         breach = `${pv.ministry} may verify up to ${rm(g.limit_amount)} on one voucher`
           + ` and this is ${rm(pv.amount)}.`;
