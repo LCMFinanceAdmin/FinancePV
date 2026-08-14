@@ -446,6 +446,11 @@ export default function ExcoPage() {
                   <div className="text-base font-bold text-stone-800">{formatCurrency(pv.amount!)}</div>
                 </div>
 
+                {isActionTab && (
+                  <BudgetImpact ministry={pv.ministry} projectName={pv.project}
+                    amount={pv.amount ?? 0} excludePvId={pv.id} variant="chip" />
+                )}
+
                 <div className="flex items-center gap-2">
                   {hasAttach && (
                     <button
@@ -507,13 +512,17 @@ export default function ExcoPage() {
                           recorded as having signed on their behalf.
                         </p>
                       )}
+                      {/* What will actually stop this, said before the button
+                          is pressed. The budget line is checked server-side on
+                          the same figures BudgetImpact shows above, so the two
+                          cannot disagree. */}
                       {(() => {
                         const over = overLimit(pv.ministry, pv.amount);
                         if (!over) return null;
                         return (
                           <p className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                            {pv.ministry} may verify up to {formatCurrency(over.limit)} and this is{" "}
-                            {formatCurrency(pv.amount!)}.{" "}
+                            {pv.ministry} may verify up to {formatCurrency(over.limit)} on one voucher
+                            and this is {formatCurrency(pv.amount!)}.{" "}
                             {over.parent
                               ? `It has to go to ${over.parent}, which ${pv.ministry} sits under.`
                               : "It needs Finance to route it."}{" "}

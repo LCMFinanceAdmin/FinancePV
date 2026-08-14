@@ -33,33 +33,52 @@ Deno.serve(async (req) => {
     );
     if (!allowed) return json({ error: "Not your ministry" }, 403);
 
-    // What this body may commit on its own.
+    // What this body may commit.
     //
-    // Over its limit the voucher is not refused, it belongs to the body above:
-    // a committee with RM 5,000 of authority needing RM 8,000 goes to the
-    // portfolio it sits under. Rejecting stays open at any amount — a body can
-    // always decline to spend, and making them escalate to say no would be an
-    // odd rule.
+    // Two gates, and the budget line is the one that matters. A flat ceiling
+    // per voucher stops one large payment and nothing else — three RM 4,000
+    // vouchers against a RM 5,000 project never touch it while the line runs
+    // RM 7,000 over. So the project item's remaining balance is checked first,
+    // and the optional per-voucher ceiling on top of it.
+    //
+    // Neither refuses the spend outright: over either, the voucher belongs to
+    // the body above. Rejecting stays open at any amount — a body can always
+    // decline to spend, and making them escalate to say no would be an odd
+    // rule.
     if (action === "APPROVED") {
-      const { data: gate } = await db.rpc("ministry_approval_gate", {
-        p_ministry: pv.ministry, p_amount: pv.amount,
-      });
-      const g = Array.isArray(gate) ? gate[0] : gate;
-      if (g?.over_limit) {
-        const escalation = g.escalates_to
-          ? `It has to be verified by ${g.escalates_to}, which ${pv.ministry} sits under.`
-          : `${pv.ministry} sits under nothing, so this needs Finance to route it.`;
-        const holdsParent = g.escalates_to
-          && expandMinistries(profile.ministries ?? []).includes(g.escalates_to);
+      const [{ data: budgetGate }, { data: limitGate }] = await Promise.all([
+        db.rpc("budget_project_gate", {
+          p_ministry: pv.ministry, p_project: pv.project ?? null,
+          p_amount: pv.amount, p_exclude_pv_id: pv.id,
+        }),
+        db.rpc("ministry_approval_gate", { p_ministry: pv.ministry, p_amount: pv.amount }),
+      ]);
+      const b = Array.isArray(budgetGate) ? budgetGate[0] : budgetGate;
+      const g = Array.isArray(limitGate) ? limitGate[0] : limitGate;
+      const parent = g?.escalates_to as string | null | undefined;
+
+      let breach: string | null = null;
+      if (b?.over_budget) {
+        breach = `${pv.project || pv.ministry} has ${rm(b.remaining)} left of its ${rm(b.budget)} budget`
+          + ` and this voucher is ${rm(pv.amount)}.`;
+      } else if (g?.over_limit) {
+        breach = `${pv.ministry} may verify up to ${rm(g.limit_amount)} on one voucher`
+          + ` and this is ${rm(pv.amount)}.`;
+      }
+
+      if (breach) {
+        const holdsParent = parent && expandMinistries(profile.ministries ?? []).includes(parent);
         if (!holdsParent) {
           return json({
-            error: `${pv.ministry} may verify up to RM ${Number(g.limit_amount).toFixed(2)} and this voucher is RM ${Number(pv.amount).toFixed(2)}. ${escalation}`,
+            error: `${breach} ${parent
+              ? `It has to be verified by ${parent}, which ${pv.ministry} sits under.`
+              : `${pv.ministry} sits under nothing, so Finance has to route it.`}`,
           }, 403);
         }
       }
     }
 
-    // Nor your own voucher.
+    // Nor your own voucher.    // Nor your own voucher.
     //
     // submit-pv already routes past this stage when the applicant is the
     // department head — but that check compares against departments.head_email
@@ -172,6 +191,9 @@ function json(data: unknown, status = 200) {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
+
+/** Short alias — the gate messages read badly with the long name inline. */
+const rm = (n: number) => formatRM(n);
 
 function formatRM(n: number) {
   return `RM ${(n ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
