@@ -224,7 +224,7 @@ export default function OfficesPage() {
             role: electing.grants_role,
             is_lcm_staff: true,
             reports_to: "GM_AND_BISHOP",
-            ...(electing.kind === "EXCO" ? { ministries: [electing.name] } : {}),
+            ...(electing.grants_role === "MINISTRY_HEAD" ? { ministries: [electing.name] } : {}),
           });
           if (acctErr) {
             say(acctErr.code === "23505"
@@ -241,7 +241,10 @@ export default function OfficesPage() {
         const login = typed || incoming?.user_email || incoming?.email;
         if (login) {
           const patch: Record<string, unknown> = { role: electing.grants_role };
-          if (electing.kind === "EXCO") patch.ministries = [electing.name];
+          // Whatever grants MINISTRY_HEAD also has to say which ministry, or
+          // the holder gets the role over an empty queue and cannot verify the
+          // post they were just elected to.
+          if (electing.grants_role === "MINISTRY_HEAD") patch.ministries = [electing.name];
           const { error } = await supabase.from("user_roles").update(patch).eq("email", login);
           roleMsg = error
             ? ` — but their login could not be updated: ${error.message}`
