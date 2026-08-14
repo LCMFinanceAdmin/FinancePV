@@ -405,7 +405,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
     { href: "/signatory",      icon: <ShieldCheck size={18} />,  label: "Signatory Queue", desc: "PVs awaiting your sign", color: "from-blue-500 to-blue-700" },
     { href: "/gm-claims",      icon: <Inbox size={18} />,        label: "GM Claims",       desc: "Review instructions",    color: "from-amber-500 to-amber-600" },
     { href: "/budget",         icon: <TrendingUp size={18} />,   label: "Budget",          desc: "Ministry overview",      color: "from-emerald-500 to-emerald-700" },
-    { href: "/hod-activity",   icon: <FileText size={18} />,     label: "Finance Activity",desc: "Recent transactions",    color: "from-violet-500 to-violet-700" },
+    { href: "/hod-activity",   icon: <FileText size={18} />,     label: "My Approvals",    desc: "Vouchers you've acted on", color: "from-violet-500 to-violet-700" },
   ] : [
     { href: "/submit",         icon: <FilePlus size={18} />,    label: "New Request",     desc: "Request a payment",      color: "from-blue-500 to-blue-700" },
     { href: "/my-pvs",         icon: <FileText size={18} />,    label: "My PVs",          desc: "Track your submissions", color: "from-violet-500 to-violet-700" },

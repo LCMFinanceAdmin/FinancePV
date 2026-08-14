@@ -127,7 +127,7 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: <Activity size={size} />, show: (u) => u.isFinanceAdmin,
       },
       {
-        href: "/hod-activity", label: "Finance Activity", desc: "Vouchers you've acted on",
+        href: "/hod-activity", label: "My Approvals", desc: "Vouchers you've acted on",
         icon: <ClipboardCheck size={size} />, show: (u) => u.isSignatory,
       },
       {

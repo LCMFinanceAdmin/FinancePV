@@ -187,109 +187,70 @@ async function takeReclaimedNo(db: ReturnType<typeof getServiceClient>, seriesPr
   return claimed?.[0]?.pv_no ?? null;
 }
 
-export async function nextPrNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `PR-${year}-`;
-  const { data } = await db
-    .from("purchase_requests")
-    .select("request_no")
-    .like("request_no", `${prefix}%`)
-    .order("request_no", { ascending: false })
-    .limit(1);
-  const lastSeq = data?.[0]?.request_no
-    ? parseInt(data[0].request_no.replace(prefix, ""), 10)
-    : 0;
-  const seq = String(lastSeq + 1).padStart(3, "0");
-  return `${prefix}${seq}`;
-}
+/**
+ * The next number in a series.
+ *
+ * Six copies of this existed — one per prefix — differing only in the string
+ * and the table. That is why the cross-year reclaim bug in 230955f had to be
+ * fixed six times, and why one of the six had drifted into a slightly
+ * different shape than its siblings. One function now; the prefix and the
+ * column are arguments.
+ *
+ * Text-sorted with three digits, so a series is capped at 999 a year: at 1000
+ * the string "999" still sorts highest and the counter sticks. Left as it is
+ * because the busiest series here has reached 24, and widening it would
+ * renumber every voucher on file — but it is a wall, not a slope.
+ */
+async function nextInSeries(
+  db: ReturnType<typeof getServiceClient>,
+  opts: { table: string; column: string; prefix: string; reclaim?: boolean },
+): Promise<string> {
+  const { table, column, prefix, reclaim = true } = opts;
 
-export async function nextPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `LCM-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix);
-  if (reclaimed) return reclaimed;
-  const { data } = await db
-    .from("pvs")
-    .select("pv_no")
-    .like("pv_no", `${prefix}%`)
-    .order("pv_no", { ascending: false })
-    .limit(1);
-  const lastSeq = data?.[0]?.pv_no
-    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
-    : 0;
-  const seq = String(lastSeq + 1).padStart(3, "0");
-  return `${prefix}${seq}`;
-}
+  // A cancelled voucher's number goes back in the pool and is handed out again
+  // before a fresh one is drawn, so the series has no gaps.
+  if (reclaim) {
+    const reclaimed = await takeReclaimedNo(db, prefix);
+    if (reclaimed) return reclaimed;
+  }
 
-export async function nextBamPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `BAM-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix);
-  if (reclaimed) return reclaimed;
   const { data } = await db
-    .from("pvs")
-    .select("pv_no")
-    .like("pv_no", `${prefix}%`)
-    .order("pv_no", { ascending: false })
+    .from(table)
+    .select(column)
+    .like(column, `${prefix}%`)
+    .order(column, { ascending: false })
     .limit(1);
-  const lastSeq = data?.[0]?.pv_no
-    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
-    : 0;
-  const seq = String(lastSeq + 1).padStart(3, "0");
-  return `${prefix}${seq}`;
-}
 
-export async function nextLscPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `LSC-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix);
-  if (reclaimed) return reclaimed;
-  const { data } = await db
-    .from("pvs")
-    .select("pv_no")
-    .like("pv_no", `${prefix}%`)
-    .order("pv_no", { ascending: false })
-    .limit(1);
-  const lastSeq = data?.[0]?.pv_no
-    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
-    : 0;
+  const last = (data?.[0] as Record<string, string> | undefined)?.[column];
+  const lastSeq = last ? parseInt(last.replace(prefix, ""), 10) : 0;
   return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`;
 }
+
+/** The year a new number belongs to — always the current one. */
+const thisYear = () => new Date().getFullYear();
+
+/**
+ * Payment requests. No reclaim pool: a withdrawn request keeps its number and
+ * the gap is part of the record, unlike a cancelled voucher.
+ */
+export const nextPrNo = (db: ReturnType<typeof getServiceClient>) =>
+  nextInSeries(db, { table: "purchase_requests", column: "request_no", prefix: `PR-${thisYear()}-`, reclaim: false });
+
+export const nextPvNo = (db: ReturnType<typeof getServiceClient>) =>
+  nextInSeries(db, { table: "pvs", column: "pv_no", prefix: `LCM-${thisYear()}-` });
+
+export const nextBamPvNo = (db: ReturnType<typeof getServiceClient>) =>
+  nextInSeries(db, { table: "pvs", column: "pv_no", prefix: `BAM-${thisYear()}-` });
+
+export const nextLscPvNo = (db: ReturnType<typeof getServiceClient>) =>
+  nextInSeries(db, { table: "pvs", column: "pv_no", prefix: `LSC-${thisYear()}-` });
 
 /** Lutheran Garden Berhad — its own series, paid from Hong Leong. */
-export async function nextLgbPvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `LGB-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix);
-  if (reclaimed) return reclaimed;
-  const { data } = await db
-    .from("pvs")
-    .select("pv_no")
-    .like("pv_no", `${prefix}%`)
-    .order("pv_no", { ascending: false })
-    .limit(1);
-  const lastSeq = data?.[0]?.pv_no
-    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
-    : 0;
-  return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`;
-}
+export const nextLgbPvNo = (db: ReturnType<typeof getServiceClient>) =>
+  nextInSeries(db, { table: "pvs", column: "pv_no", prefix: `LGB-${thisYear()}-` });
 
-export async function nextHlePvNo(db: ReturnType<typeof getServiceClient>): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `HLE-${year}-`;
-  const reclaimed = await takeReclaimedNo(db, prefix);
-  if (reclaimed) return reclaimed;
-  const { data } = await db
-    .from("pvs")
-    .select("pv_no")
-    .like("pv_no", `${prefix}%`)
-    .order("pv_no", { ascending: false })
-    .limit(1);
-  const lastSeq = data?.[0]?.pv_no
-    ? parseInt(data[0].pv_no.replace(prefix, ""), 10)
-    : 0;
-  return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`;
-}
+export const nextHlePvNo = (db: ReturnType<typeof getServiceClient>) =>
+  nextInSeries(db, { table: "pvs", column: "pv_no", prefix: `HLE-${thisYear()}-` });
 
 
 /**
