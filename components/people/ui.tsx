@@ -161,6 +161,31 @@ export function period(start?: string | null, end?: string | null): string {
   return `${f(start)} – ${end ? f(end) : "Present"}`;
 }
 
+/**
+ * How long a term ran, in the way a service record reads it: "1 yr 4 mos".
+ *
+ * Rounded to whole months on purpose. Nobody asks how many days somebody was
+ * Treasurer, and a figure to the day invites an argument about whether the term
+ * started at the election or at the handover.
+ */
+export function duration(start?: string | null, end?: string | null): string {
+  if (!start) return "";
+  const from = new Date(start + "T00:00:00");
+  const to = end ? new Date(end + "T00:00:00") : new Date();
+  if (Number.isNaN(from.getTime()) || to < from) return "";
+
+  let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+  if (to.getDate() < from.getDate()) months -= 1;
+  if (months < 1) return "under a month";
+
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const parts: string[] = [];
+  if (years) parts.push(`${years} yr${years === 1 ? "" : "s"}`);
+  if (rest) parts.push(`${rest} mo${rest === 1 ? "" : "s"}`);
+  return parts.join(" ");
+}
+
 export function RelationshipBadge({ row, showPeriod = false }: { row: TimelineRow; showPeriod?: boolean }) {
   const key = row.source === "INVOLVEMENT" ? row.kind : row.source;
   const Icon = SOURCE_ICON[key] ?? Users;
@@ -234,10 +259,12 @@ export function EmptyState({ icon, message, action }: {
 }
 
 // ── Timeline ──────────────────────────────────────────────────────────────
-export function TimelineItem({ row, last, onManage }: {
+export function TimelineItem({ row, last, onManage, trailing }: {
   row: TimelineRow; last?: boolean;
   /** Offered when the row belongs to another module and is edited there. */
   onManage?: { label: string; href: string };
+  /** Sits on the heading line — a duration, an edit control, whatever the caller owns. */
+  trailing?: React.ReactNode;
 }) {
   const key = row.source === "INVOLVEMENT" ? row.kind : row.source;
   const Icon = SOURCE_ICON[key] ?? Users;
@@ -255,6 +282,7 @@ export function TimelineItem({ row, last, onManage }: {
         <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="text-sm font-semibold text-stone-800">{row.title}</span>
           {row.role && <span className="text-[13px] text-stone-500">{row.role}</span>}
+          {trailing}
           {current && (
             <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
               Current

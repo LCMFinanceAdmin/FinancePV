@@ -19,6 +19,7 @@ import {
   AlertTriangle, Plus,
 } from "lucide-react";
 import { OfficeModal } from "@/components/offices/office-modal";
+import { HoldingModal, type HoldingRow } from "@/components/offices/holding-modal";
 
 interface Office {
   id: string; name: string; kind: "CHURCH" | "EXCO" | "DEAN" | "APPOINTED" | "COMMITTEE" | "PROJECT";
@@ -76,6 +77,9 @@ export default function OfficesPage() {
   const [changingLogin, setChangingLogin] = useState(false);
   const [replacementLogin, setReplacementLogin] = useState("");
   const [renaming, setRenaming] = useState(false);
+  // A term being corrected or entered by hand, as opposed to elected.
+  const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
+  const [addingTermFor, setAddingTermFor] = useState<Office | null>(null);
 
   function say(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -360,6 +364,10 @@ export default function OfficesPage() {
                           {nameOf(m.person_id)}
                         </Link>
                         <span className="text-stone-400">since {fmt(m.term_start)}</span>
+                        <button onClick={() => setEditingHolding(m)}
+                          className="text-[11px] text-stone-400 hover:text-[#2f5b9c]">
+                          edit
+                        </button>
                         {!o.single_holder && (
                           <button onClick={() => endTerm(m, o)}
                             className="text-[11px] text-stone-400 hover:text-red-500">
@@ -387,6 +395,14 @@ export default function OfficesPage() {
                 aria-label={`Edit the ${o.name} post`}
                 className="text-[12px] font-medium text-stone-500 transition-colors hover:text-[#2f5b9c]">
                 Edit post
+              </button>
+              {/* A term that has already finished. The election flow assumes it
+                  is happening now, which is no use for filling in the years
+                  before this register existed. */}
+              <button onClick={() => setAddingTermFor(o)}
+                aria-label={`Record a past term of ${o.name}`}
+                className="text-[12px] font-medium text-stone-500 transition-colors hover:text-[#2f5b9c]">
+                Add past term
               </button>
               {cur && o.single_holder && (
                 <button onClick={() => endTerm(cur, o)}
@@ -428,6 +444,21 @@ export default function OfficesPage() {
       {adding && (
         <OfficeModal office={null} onClose={() => setAdding(false)}
           onSaved={async (msg) => { setAdding(false); await load(); say(msg); }} say={say} />
+      )}
+
+      {(editingHolding || addingTermFor) && (
+        <HoldingModal
+          holding={(editingHolding as HoldingRow | null) ?? null}
+          offices={offices}
+          people={people}
+          existing={holdings as HoldingRow[]}
+          fixedOfficeId={addingTermFor?.id ?? editingHolding?.office_id}
+          onClose={() => { setEditingHolding(null); setAddingTermFor(null); }}
+          onSaved={async (msg) => {
+            setEditingHolding(null); setAddingTermFor(null);
+            await load(); say(msg);
+          }}
+          say={say} />
       )}
 
       {editingOffice && (

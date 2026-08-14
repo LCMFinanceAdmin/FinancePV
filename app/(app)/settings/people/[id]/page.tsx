@@ -24,10 +24,11 @@ import { DocumentsPanel } from "@/components/people/documents-panel";
 import { MembershipPanel } from "@/components/people/membership-panel";
 import { AccessPanel } from "@/components/people/access-panel";
 import { InvolvementPanel, SERVICE_KINDS, EXTERNAL_KINDS } from "@/components/people/involvement-panel";
+import { HoldingModal, type HoldingRow, type OfficeOption } from "@/components/offices/holding-modal";
 import {
   Avatar, PersonStatus, CATEGORIES, categoryOf, type CategoryKey,
   type TimelineRow, isCurrent, period, SummaryCard, ProfileSection,
-  EmptyState, TimelineItem,
+  EmptyState, TimelineItem, duration,
 } from "@/components/people/ui";
 import {
   ArrowLeft, Pencil, Mail, Phone, MapPin, X, CheckCircle2, Plus, Trash2,
@@ -96,6 +97,13 @@ export default function PersonProfilePage() {
     return (TABS.some(x => x.key === t) ? t : "overview") as TabKey;
   });
   const [editing, setEditing] = useState(params.get("edit") === "1");
+  // Writing the service record: a term being corrected (by holding id), or a
+  // new one being entered. Offices and every holding are loaded alongside,
+  // since the form needs the list of posts and has to spot a clash.
+  const [addingTerm, setAddingTerm] = useState(false);
+  const [editingHolding, setEditingHolding] = useState<string | null>(null);
+  const [officeList, setOfficeList] = useState<OfficeOption[]>([]);
+  const [allHoldings, setAllHoldings] = useState<HoldingRow[]>([]);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
 
@@ -105,7 +113,7 @@ export default function PersonProfilePage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: p }, { data: tl }, { data: n }, { data: c }, { data: d }, { data: o }, { count }, { data: perm }, { data: mins }] =
+    const [{ data: p }, { data: tl }, { data: n }, { data: c }, { data: d }, { data: o }, { count }, { data: perm }, { data: mins }, { data: offs }, { data: hlds }] =
       await Promise.all([
         supabase.from("people").select("*").eq("id", id).maybeSingle(),
         supabase.from("person_timeline").select("*").eq("person_id", id),
@@ -116,6 +124,10 @@ export default function PersonProfilePage() {
         supabase.from("person_documents").select("id", { count: "exact", head: true }).eq("person_id", id),
         supabase.rpc("can_manage_people"),
         supabase.from("ministries").select("name").order("name"),
+        // The posts to choose from, and every term on file so the form can
+        // catch a second current holder of a single-holder post.
+        supabase.from("offices").select("id,name,kind,single_holder,active").order("sort_order").order("name"),
+        supabase.from("office_holdings").select("*"),
       ]);
     setPerson((p ?? null) as Person | null);
     setTimeline(((tl ?? []) as TimelineRow[]).sort((a, b) => {
@@ -126,6 +138,8 @@ export default function PersonProfilePage() {
     setCongregations((c ?? []) as Congregation[]);
     setDistricts((d ?? []) as District[]);
     setOrganisations((o ?? []) as Organisation[]);
+    setOfficeList((offs ?? []) as OfficeOption[]);
+    setAllHoldings((hlds ?? []) as HoldingRow[]);
     setDocCount(count ?? 0);
     setCanEdit(perm === true);
     setMinistries(excoAssignableMinistries(((mins ?? []) as { name: string }[]).map(m => m.name)));
@@ -429,18 +443,46 @@ export default function PersonProfilePage() {
             congregations={congregations} organisations={organisations}
             canEdit={canEdit} onChanged={load} say={say} />
 
-          {/* Offices and employment are read here and changed where they are
-              kept — showing an Edit button that led nowhere would be worse
-              than showing none. */}
-          <ProfileSection title="Offices held"
-            action={<Link href="/settings/offices"
-              className="text-[12px] font-medium text-[#3a6db0] hover:underline">
-              Manage in Offices &amp; Elections →
-            </Link>}>
+          {/* The service record. Read-only until now, on the reasoning that
+              offices are changed where they are kept — which is right for an
+              election, and wrong for the years before this system existed.
+              Somebody has to be able to write down that they were Treasurer
+              from 2019 to 2023, and a person's own page is where you would go
+              to do it. Elections still happen on the register; this records
+              what was, rather than deciding what is. */}
+          <ProfileSection title="Service record"
+            action={canEdit ? (
+              <button onClick={() => { setEditingHolding(null); setAddingTerm(true); }}
+                className="text-[12px] font-medium text-[#3a6db0] hover:underline">
+                + Record a term
+              </button>
+            ) : (
+              <Link href="/settings/offices"
+                className="text-[12px] font-medium text-[#3a6db0] hover:underline">
+                Manage in Offices &amp; Elections →
+              </Link>
+            )}>
             {offices.length === 0
-              ? <EmptyState icon={<Landmark size={18} />} message="No office held." />
+              ? <EmptyState icon={<Landmark size={18} />}
+                  message="No office held. Past terms can be recorded here." />
               : <ul>{offices.map((r, i) => (
-                  <TimelineItem key={r.source + r.source_id} row={r} last={i === offices.length - 1} />
+                  <TimelineItem key={r.source + r.source_id} row={r} last={i === offices.length - 1}
+                    trailing={
+                      <>
+                        {duration(r.start_date, r.end_date) && (
+                          <span className="text-[12px] text-stone-400">
+                            {duration(r.start_date, r.end_date)}
+                          </span>
+                        )}
+                        {canEdit && (
+                          <button
+                            onClick={() => { setAddingTerm(false); setEditingHolding(r.source_id); }}
+                            className="text-[11px] font-medium text-stone-400 hover:text-[#2f5b9c]">
+                            edit
+                          </button>
+                        )}
+                      </>
+                    } />
                 ))}</ul>}
           </ProfileSection>
 
@@ -506,6 +548,21 @@ export default function PersonProfilePage() {
           organisations={organisations}
           onClose={() => setEditing(false)}
           onSaved={(p) => { setPerson(p); setEditing(false); say("Saved"); }} />
+      )}
+
+      {(addingTerm || editingHolding) && (
+        <HoldingModal
+          holding={editingHolding ? allHoldings.find(h => h.id === editingHolding) ?? null : null}
+          offices={officeList}
+          people={[{ id: person.id, full_name: person.full_name }]}
+          existing={allHoldings}
+          fixedPersonId={person.id}
+          onClose={() => { setAddingTerm(false); setEditingHolding(null); }}
+          onSaved={async (msg) => {
+            setAddingTerm(false); setEditingHolding(null);
+            await load(); say(msg);
+          }}
+          say={say} />
       )}
 
     </div>
