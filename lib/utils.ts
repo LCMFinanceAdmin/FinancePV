@@ -77,9 +77,23 @@ export const ROLE_LABELS: Record<string, string> = {
   STAFF:           "Staff",
 };
 
+/**
+ * Names the church has given these roles, loaded from app_roles at runtime.
+ *
+ * Kept as a mutable overlay rather than replacing ROLE_LABELS so roleLabel can
+ * stay synchronous — it is called from dozens of components that render before
+ * any fetch could return, and making it async would mean threading a promise
+ * through all of them to rename a word.
+ */
+let ROLE_LABEL_OVERRIDES: Record<string, string> = {};
+
+export function setRoleLabelOverrides(map: Record<string, string>) {
+  ROLE_LABEL_OVERRIDES = map;
+}
+
 export function roleLabel(role?: string | null): string {
   if (!role) return "";
-  return ROLE_LABELS[role] ?? role.replace(/_/g, " ");
+  return ROLE_LABEL_OVERRIDES[role] ?? ROLE_LABELS[role] ?? role.replace(/_/g, " ");
 }
 
 /**

@@ -10,12 +10,13 @@
 // that exist, or grants none, which is the ordinary case: most posts are a
 // title and a term, not a set of permissions.
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
-import { roleLabel, SWITCHABLE_ROLES } from "@/lib/utils";
+import { roleLabel } from "@/lib/utils";
+import { loadRoles, assignableRoles, type AppRole } from "@/lib/roles";
 import { Plus } from "lucide-react";
 
 export interface OfficeRow {
@@ -66,6 +67,8 @@ export function OfficeModal({
   const [active, setActive] = useState(office?.active ?? true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [roles, setRoles] = useState<AppRole[]>([]);
+  useEffect(() => { loadRoles(supabase).then(setRoles); }, [supabase]);
 
   const category = categories.find(c => c.key === kind);
   const seatsMany = category?.seats_many ?? false;
@@ -222,7 +225,9 @@ export function OfficeModal({
         <label className={labelClass}>Gives access as</label>
         <select className={fieldClass} value={grantsRole} onChange={e => setGrantsRole(e.target.value)}>
           <option value="">Nothing — it is a title, not a permission</option>
-          {SWITCHABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+          {assignableRoles(roles, grantsRole).map(r => (
+            <option key={r.key} value={r.key}>{r.label}</option>
+          ))}
         </select>
         <p className="mt-1 text-[11px] text-stone-500">
           Whoever holds it gains this role and the outgoing holder loses it. Most posts grant

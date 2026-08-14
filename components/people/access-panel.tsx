@@ -20,7 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { ProfileSection, EmptyState } from "@/components/people/ui";
-import { roleLabel, SWITCHABLE_ROLES } from "@/lib/utils";
+import { roleLabel } from "@/lib/utils";
+import { loadRoles, assignableRoles, type AppRole } from "@/lib/roles";
 import {
   KeyRound, ShieldCheck, ShieldOff, Unlock, RotateCcw, Trash2, Mail, UserPlus,
   AlertTriangle,
@@ -62,6 +63,7 @@ export function AccessPanel({
 }) {
   const supabase = createClient();
   const [account, setAccount] = useState<Account | null>(null);
+  const [appRoles, setAppRoles] = useState<AppRole[]>([]);
   const [lockedUntil, setLockedUntil] = useState<string | null>(null);
   // Some roles are granted by holding a post — Administrator, Building
   // Manager, Treasurer. Setting the role directly leaves the register saying
@@ -94,6 +96,7 @@ export function AccessPanel({
   }, [supabase, userEmail]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadRoles(supabase).then(setAppRoles); }, [supabase]);
 
   async function patch(fields: Partial<Account>) {
     if (!account) return;
@@ -341,7 +344,7 @@ export function AccessPanel({
             <label className={labelClass}>Role</label>
             <select className={fieldClass} value={account.role}
               onChange={e => patch({ role: e.target.value })}>
-              {SWITCHABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+              {assignableRoles(appRoles, account.role).map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
             </select>
             <p className="mt-1 text-[11px] text-stone-500">
               What they may do in the system. An elected post changes this by itself when the
@@ -472,6 +475,8 @@ function GrantAccessModal({
   const supabase = createClient();
   const [email, setEmail] = useState(suggestedEmail);
   const [role, setRole] = useState("STAFF");
+  const [appRoles, setAppRoles] = useState<AppRole[]>([]);
+  useEffect(() => { loadRoles(supabase).then(setAppRoles); }, [supabase]);
   const [isStaff, setIsStaff] = useState(true);
   const [isPastor, setIsPastor] = useState(false);
   const [congregationId, setCongregationId] = useState("");
@@ -541,7 +546,7 @@ function GrantAccessModal({
       <div>
         <label className={labelClass}>Role</label>
         <select className={fieldClass} value={role} onChange={e => setRole(e.target.value)}>
-          {SWITCHABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+          {assignableRoles(appRoles, role).map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
         <p className="mt-1 text-[11px] text-stone-500">
           Elected posts set this by themselves when the election is recorded in Offices &amp;

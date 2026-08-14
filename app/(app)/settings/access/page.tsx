@@ -19,7 +19,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { fieldClass, labelClass } from "@/lib/field-styles";
-import { roleLabel, SWITCHABLE_ROLES } from "@/lib/utils";
+import { roleLabel } from "@/lib/utils";
+import { loadRoles, assignableRoles, type AppRole } from "@/lib/roles";
+import { RolesModal } from "@/components/people/roles-modal";
 import { ShieldCheck, Search, AlertCircle, Users, KeyRound, Landmark } from "lucide-react";
 
 interface Account {
@@ -44,6 +46,8 @@ export default function AccessRolesPage() {
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast] = useState({ msg: "", ok: true });
+  const [roles, setRoles] = useState<AppRole[]>([]);
+  const [managingRoles, setManagingRoles] = useState(false);
 
   function say(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -51,17 +55,19 @@ export default function AccessRolesPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: acc }, { data: ppl }, { data: perm }, { data: offs }, { data: holds }] = await Promise.all([
+    const [{ data: acc }, { data: ppl }, { data: perm }, { data: offs }, { data: holds }, roleRows] = await Promise.all([
       supabase.from("user_roles").select("id,email,full_name,role,ministries,is_lcm_staff,designation").order("full_name"),
       supabase.from("people").select("id,full_name,user_email").eq("status", "ACTIVE"),
       supabase.rpc("can_manage_people"),
       supabase.from("offices").select("id,name,grants_role").eq("active", true),
       supabase.from("office_holdings").select("office_id,person_id").is("term_end", null),
+      loadRoles(supabase, true),
     ]);
     const peopleRows = (ppl ?? []) as PersonLite[];
     setAccounts((acc ?? []) as Account[]);
     setPeople(peopleRows);
     setCanEdit(perm === true);
+    setRoles(roleRows);
 
     // Which access came from holding a post, so changing it here can say so.
     const byId = Object.fromEntries(peopleRows.map(p => [p.id, p]));
@@ -145,6 +151,15 @@ export default function AccessRolesPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[12px] text-stone-500">
+          {accounts.length} {accounts.length === 1 ? "account" : "accounts"}
+        </p>
+        <Button size="sm" variant="secondary" onClick={() => setManagingRoles(true)}>
+          Roles &amp; what they mean
+        </Button>
+      </div>
+
       <div className="relative">
         <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
         <input className={`${fieldClass} pl-9`} placeholder="Search by name, address or role…"
@@ -209,14 +224,12 @@ export default function AccessRolesPage() {
                     <select className={fieldClass} value={a.role} disabled={saving === a.id}
                       aria-label={`Role for ${a.full_name || a.email}`}
                       onChange={e => setRole(a, e.target.value)}>
-                      {SWITCHABLE_ROLES.map(r => (
-                        <option key={r} value={r}>{roleLabel(r)}</option>
+                      {/* assignableRoles keeps whatever they already hold in
+                          the list even if it has been retired, so the dropdown
+                          cannot silently misreport their access. */}
+                      {assignableRoles(roles, a.role).map(r => (
+                        <option key={r.key} value={r.key}>{r.label}</option>
                       ))}
-                      {/* A role the app no longer offers still has to show, or
-                          the dropdown would silently misreport what they have. */}
-                      {!SWITCHABLE_ROLES.includes(a.role as typeof SWITCHABLE_ROLES[number]) && (
-                        <option value={a.role}>{roleLabel(a.role)}</option>
-                      )}
                     </select>
                   </div>
                 </li>
@@ -253,6 +266,13 @@ export default function AccessRolesPage() {
           </>
         )}
       </div>
+
+      {managingRoles && (
+        <RolesModal
+          onClose={() => setManagingRoles(false)}
+          onSaved={load}
+          say={say} />
+      )}
 
       <p className="flex items-center gap-1.5 text-[12px] text-stone-500">
         <ShieldCheck size={13} className="shrink-0 text-stone-400" />
