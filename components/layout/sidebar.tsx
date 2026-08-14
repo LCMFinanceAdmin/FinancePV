@@ -8,6 +8,7 @@ import { LogOut, ChevronRight, ChevronDown, FlaskConical } from "lucide-react";
 import { cn, switchableRoleOptions } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 import { visibleGroups, visiblePinned, groupForPath, activeHref } from "@/lib/nav";
+import { PushToggle } from "@/components/layout/push-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -298,6 +299,8 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
           </>
         )}
         {/* ─────────────────────────────────────────────────────── */}
+
+        <PushToggle />
 
         <button
           onClick={signOut}
