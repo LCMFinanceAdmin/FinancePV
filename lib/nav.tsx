@@ -264,7 +264,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // Lookups and logins configure how the app itself behaves — that stays
       // with the Finance Executive. The church records below are shared.
       {
-        href: "/settings", label: "Settings", desc: "Lookups, roles, claim policies",
+        href: "/settings/lookups", label: "Lookups", desc: "Departments, ministries and projects",
         icon: <Settings size={size} />, show: financeNotAcct,
       },
       {
@@ -292,7 +292,7 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: <Handshake size={size} />, show: (u) => isStaffMember(u),
       },
       {
-        href: "/settings/people?access=1", label: "Access & Roles",
+        href: "/settings/access", label: "Access & Roles",
         desc: "Who can sign in, and what they may approve",
         // The directory filtered to people with an account. Roles are set on
         // the person, because a login belongs to a human being — keeping the

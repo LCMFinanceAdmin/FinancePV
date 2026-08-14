@@ -81,7 +81,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     { href: "/dashboard",          label: "Home",       icon: <LayoutDashboard size={21} />, show: !user.isSignatory && !user.isBuildingManager },
     { href: "/submit",             label: "Submit",     icon: <FilePlus size={21} />,        show: !user.isSignatory && !user.isBuildingManager },
     { href: "/my-pvs",             label: "My PVs",     icon: <FileText size={21} />,        show: !user.isSignatory && !user.isFinanceAdmin && !user.isBuildingManager },
-    { href: "/settings",           label: "Admin",      icon: <LayoutGrid size={21} />,      show: user.isFinanceAdmin },
+    { href: "/settings/access",    label: "Access",     icon: <LayoutGrid size={21} />,      show: user.isFinanceAdmin },
     { href: "/signatory-activity", label: "Activity",   icon: <Activity size={21} />,        show: user.isFinanceAdmin },
     { href: "/ministry",           label: "EXCO",       icon: <Building2 size={21} />,       show: (!!user.isMinistryHead || !!user.isMinistryVerifier) && !user.isSignatory },
     { href: "/signatory",          label: "Queue",      icon: <Users size={21} />,           show: user.isSignatory },

@@ -12,5 +12,5 @@
 import { redirect } from "next/navigation";
 
 export default function SignatoriesRedirect() {
-  redirect("/settings/people?access=1");
+  redirect("/settings/access");
 }

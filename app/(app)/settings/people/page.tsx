@@ -181,14 +181,25 @@ export default function PeopleDirectoryPage() {
     setFCongregation(""); setFDistrict(""); setFEmployment(""); setFInvolvement(""); setFAccess("");
   }
 
-  /** What this person mainly is, and since when. */
-  function primaryRole(p: Person): { label: string; since: string } {
+  /**
+   * What this person mainly is, and when they took it on.
+   *
+   * Two different dates, and the distinction matters: `appointed` is when the
+   * term in this post began, `since` falls back to when they joined LCM for
+   * somebody holding no post. Showing the join date under a post title would
+   * claim they had held it since they arrived.
+   */
+  function primaryRole(p: Person): { label: string; since: string; appointed: string | null } {
     const cat = categoryOf(p.category);
     const office = involvementOf(p.id).find(r => r.source === "OFFICE" && isCurrent(r));
     const since = p.date_joined
       ? `Since ${new Date(p.date_joined + "T00:00:00").toLocaleDateString("en-GB", { month: "short", year: "numeric" })}`
       : "";
-    return { label: office?.title ?? cat.one, since };
+    return {
+      label: office?.title ?? cat.one,
+      since,
+      appointed: office?.start_date ?? (office ? null : p.date_joined ?? null),
+    };
   }
 
   if (loading) return <div className="p-8 text-center text-sm text-stone-400">Loading…</div>;
@@ -345,7 +356,7 @@ export default function PeopleDirectoryPage() {
         <div className="hidden border-b-2 border-stone-800 bg-[#f4f7fb] px-5 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.09em] text-stone-700 lg:grid lg:grid-cols-[minmax(210px,1.6fr)_150px_150px_190px_100px_40px] lg:gap-4">
           <span className="border-r-2 border-stone-800 pr-4">Person</span>
           <span className="border-r-2 border-stone-800 pr-4">Primary role</span>
-          <span className="border-r-2 border-stone-800 pr-4">Role</span>
+          <span className="border-r-2 border-stone-800 pr-4">Appointed</span>
           <span className="border-r-2 border-stone-800 pr-4">Contact</span>
           <span className="border-r-2 border-stone-800 pr-4">Status</span>
           <span />
@@ -359,7 +370,6 @@ export default function PeopleDirectoryPage() {
           <ul>
             {visible.map(p => {
               const role = primaryRole(p);
-              const access = roleOf(p);
 
               return (
                 <li key={p.id}
@@ -389,6 +399,12 @@ export default function PeopleDirectoryPage() {
                             {categoryOf(p.category).one}
                             {p.preferred_name ? ` · ${p.preferred_name}` : ""}
                           </span>
+                          {roleOf(p) && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[10px] font-semibold text-[#2f5b9c]">
+                              <ShieldCheck size={9} aria-hidden="true" />
+                              {roleLabel(roleOf(p)!)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1 lg:hidden">
@@ -408,16 +424,18 @@ export default function PeopleDirectoryPage() {
                       {role.since && <div className="text-[12px] text-stone-500">{role.since}</div>}
                     </div>
 
-                    {/* Role — what they may do in the app, not what they are called. */}
+                    {/* When they took the post. The access role sits beside the
+                        name, once — it had a column of its own as well, which
+                        said the same thing twice and left the date nowhere. */}
                     <div className="flex min-w-0 items-center lg:border-r-2 lg:border-stone-800 lg:pr-4">
-                      <span className="text-[11px] font-medium uppercase tracking-wide text-stone-400 lg:hidden">Role&nbsp;</span>
-                      {access ? (
-                        <span className="inline-flex items-center gap-1 truncate rounded-full bg-[#eef4fd] px-2 py-0.5 text-[12px] font-semibold text-[#2f5b9c]">
-                          <ShieldCheck size={10} aria-hidden="true" />
-                          {roleLabel(access)}
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-stone-400 lg:hidden">Appointed&nbsp;</span>
+                      {role.appointed ? (
+                        <span className="text-[13px] text-stone-700">
+                          {new Date(role.appointed + "T00:00:00").toLocaleDateString("en-GB",
+                            { day: "numeric", month: "short", year: "numeric" })}
                         </span>
                       ) : (
-                        <span className="text-[12px] text-stone-500">No sign-in</span>
+                        <span className="text-[12px] text-stone-400">—</span>
                       )}
                     </div>
 

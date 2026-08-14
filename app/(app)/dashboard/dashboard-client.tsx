@@ -12,7 +12,7 @@ import {
   FilePlus, Clock, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
   FileText, ChevronDown, ChevronUp, X, Inbox, AlertCircle,
   Building2, RefreshCw, Landmark, ArrowRight, TrendingUp, Layers,
-  Activity, PiggyBank, Wallet, Settings, CreditCard,
+  Activity, PiggyBank, Wallet, CreditCard,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -396,7 +396,6 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
     { href: "/signatory-activity", icon: <Activity size={18} />, label: "Finance Activity", desc: "Submissions by stage",  color: "from-sky-500 to-sky-700" },
     { href: "/budget",         icon: <PiggyBank size={18} />, label: "Budget",          desc: "Budget vs actual",         color: "from-teal-500 to-teal-700" },
     { href: "/payroll/runs",   icon: <Wallet size={18} />,    label: "Payroll",         desc: "Runs & salary PVs",        color: "from-cyan-600 to-cyan-800" },
-    { href: "/settings",       icon: <Settings size={18} />,  label: "Settings",        desc: "People, lookups, policies", color: "from-slate-500 to-slate-700" },
   ] : isBamRole ? [
     { href: "/bam-queue",          icon: <Building2 size={18} />, label: "BAM Queue",    desc: "PVs awaiting action",   color: "from-blue-500 to-blue-700" },
     { href: "/submit?type=bam",    icon: <FilePlus size={18} />,  label: "Submit BAM PV",desc: "New payment voucher",    color: "from-violet-500 to-violet-700" },
