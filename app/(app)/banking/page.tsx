@@ -1827,6 +1827,9 @@ export default function BankingPage() {
                 {certs.some(c => c.status === "WITHDRAWN") && (
                   <div className="mt-8">
                     <div className="text-xs font-bold uppercase tracking-wide text-red-700 mb-2">Withdrawn Certificates</div>
+                    {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                        table otherwise wraps every cell to one word per line. */}
+                    <div className="overflow-x-auto">
                     <table className="w-full text-[12px] border-collapse">
                       <thead>
                         <tr className="bg-red-50 text-center font-bold text-[11px] uppercase">
@@ -1864,6 +1867,7 @@ export default function BankingPage() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
 
@@ -1928,6 +1932,9 @@ export default function BankingPage() {
                       <span className="font-bold text-stone-800">{acc.name}</span>
                       <span className="text-stone-400 text-xs">— {acc.bank_name}{acc.account_no ? ` (${acc.account_no})` : ""}</span>
                     </div>
+                    {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                        table otherwise wraps every cell to one word per line. */}
+                    <div className="overflow-x-auto">
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr className="bg-stone-100">
@@ -1985,11 +1992,15 @@ export default function BankingPage() {
                         </tr>
                       </tbody>
                     </table>
+                    </div>
 
                     {/* Withdrawals for this bank */}
                     {certs.some(c => (c.withdrawals ?? []).length > 0) && (
                       <div className="mt-3">
                         <div className="text-xs font-bold text-red-700 mb-1">Withdrawals</div>
+                        {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                            table otherwise wraps every cell to one word per line. */}
+                        <div className="overflow-x-auto">
                         <table className="w-full text-xs border-collapse">
                           <thead>
                             <tr className="bg-red-50">
@@ -2028,6 +2039,7 @@ export default function BankingPage() {
                             )}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2037,6 +2049,9 @@ export default function BankingPage() {
               {/* Interest earned summary */}
               <div>
                 <div className="font-bold text-stone-800 mb-3 border-b border-stone-200 pb-2">Interest Earned / Reinvested Summary</div>
+                {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                    table otherwise wraps every cell to one word per line. */}
+                <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-stone-100">
@@ -2060,6 +2075,7 @@ export default function BankingPage() {
                     </tr>
                   </tbody>
                 </table>
+                </div>
               </div>
 
               <div className="text-center text-xs text-stone-400 border-t border-stone-200 pt-4">

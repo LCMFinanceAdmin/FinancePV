@@ -218,18 +218,20 @@ export default function PersonProfilePage() {
       )}
 
       {/* ── Breadcrumb + actions ───────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <nav className="min-w-0 flex-1 text-[13px] text-stone-500">
           <Link href="/settings/people" className="hover:text-[#3a6db0] hover:underline">People Directory</Link>
           <span className="mx-1.5 text-stone-300">›</span>
           <span className="font-medium text-stone-700">{person.full_name}</span>
         </nav>
-        <Button size="sm" variant="ghost" onClick={() => router.push("/settings/people")}>
-          <ArrowLeft size={14} /> Back to list
-        </Button>
-        {canEdit && (
-          <Button size="sm" onClick={() => setEditing(true)}><Pencil size={13} /> Edit Profile</Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => router.push("/settings/people")}>
+            <ArrowLeft size={14} /> Back to list
+          </Button>
+          {canEdit && (
+            <Button size="sm" onClick={() => setEditing(true)}><Pencil size={13} /> Edit Profile</Button>
+          )}
+        </div>
       </div>
 
       {/* ── Identity ───────────────────────────────────────────────────── */}

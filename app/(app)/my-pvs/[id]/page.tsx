@@ -2265,6 +2265,9 @@ export default function PVDetailPage() {
             </div>
 
             {/* ══ ROWS 9–13: Field rows ══ */}
+            {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                table otherwise wraps every cell to one word per line. */}
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px] mt-3" style={{ tableLayout: "fixed" }}>
               <colgroup>
                 <col style={{ width: "22%" }} />
@@ -2360,6 +2363,7 @@ export default function PVDetailPage() {
                 )}
               </tbody>
             </table>
+            </div>
 
             {/* ══ ROW 15: Section note ══ */}
             <div className="font-bold text-[12px] mt-3 mb-0">

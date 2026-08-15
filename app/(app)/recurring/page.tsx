@@ -1862,6 +1862,9 @@ export default function RecurringPage() {
                   </div>
 
                   <div className="overflow-hidden rounded-xl border border-stone-200">
+                    {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                        table otherwise wraps every cell to one word per line. */}
+                    <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-stone-50 text-[11px] uppercase tracking-wide text-stone-500">
@@ -1911,6 +1914,7 @@ export default function RecurringPage() {
                         </tr>
                       </tbody>
                     </table>
+                    </div>
                   </div>
 
                   {changed && (

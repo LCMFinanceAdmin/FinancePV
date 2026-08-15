@@ -1278,6 +1278,9 @@ export default function WorksheetsPage() {
 
             {/* Spreadsheet grid */}
             <div className="flex-1 overflow-y-auto">
+              {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                  table otherwise wraps every cell to one word per line. */}
+              <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead className="bg-stone-50 sticky top-0 z-10 border-b border-stone-200">
                   <tr>
@@ -1336,6 +1339,7 @@ export default function WorksheetsPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
 
             {/* Modal footer */}

@@ -286,7 +286,8 @@ export function AccessPanel({
   return (
     <ProfileSection title="Access">
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#dbe9fb] bg-[#f8fbff] px-4 py-3">
+        <div className="flex flex-col gap-3 rounded-xl border border-[#dbe9fb] bg-[#f8fbff] px-4 py-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-[#3a6db0] ring-1 ring-[#dbe9fb]">
             <ShieldCheck size={16} />
           </span>
@@ -311,8 +312,9 @@ export function AccessPanel({
                 : " by a link sent to that address"}
             </p>
           </div>
+          </div>
           {canEdit && (
-            <Button size="sm" variant="ghost" onClick={revoke}>
+            <Button size="sm" variant="ghost" className="sm:shrink-0" onClick={revoke}>
               <Trash2 size={13} className="text-red-400" /> Remove access
             </Button>
           )}
@@ -323,12 +325,14 @@ export function AccessPanel({
           const gap = missingAppointment(account.role);
           if (!gap) return null;
           return (
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+            <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
               <p className="min-w-0 flex-1 text-[13px] text-amber-900">
                 <strong>{gap.name}</strong> is already held by somebody else, so {personName} has the
                 access but not the post. Recording it here ends the current holder&rsquo;s term.
               </p>
+              </div>
               {canEdit && (
                 <Button size="sm" variant="secondary" loading={recording}
                   onClick={() => recordAppointment(gap)}>
@@ -426,7 +430,8 @@ export function AccessPanel({
 
         {/* The PIN is only meaningful for the three who sign with one. */}
         {needsPin && (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
+          <div className="flex flex-col gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-stone-50 text-stone-500">
               <KeyRound size={16} />
             </span>
@@ -442,8 +447,9 @@ export function AccessPanel({
                     : "They set one from their own approval page the first time they sign a voucher."}
               </p>
             </div>
+            </div>
             {canEdit && (
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 {isLocked && (
                   <Button size="sm" variant="secondary" loading={saving} onClick={() => pinAction("unlock")}>
                     <Unlock size={13} /> Unlock

@@ -173,7 +173,8 @@ export default function PaymentRefsPage() {
 
           return (
             <div key={a.id} className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white shadow-[0_2px_10px_rgba(41,87,149,0.04)]">
-              <div className="flex flex-wrap items-center gap-3 border-b border-[#eaf1fb] px-4 py-3">
+              <div className="flex flex-col gap-3 border-b border-[#eaf1fb] px-4 py-3 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#eef4fd] text-[#3a6db0]">
                   <Landmark size={16} />
                 </span>
@@ -183,8 +184,9 @@ export default function PaymentRefsPage() {
                     {[a.name, ENTITY_LABEL[a.entity] ?? a.entity, a.account_no].filter(Boolean).join(" · ")}
                   </div>
                 </div>
+                </div>
                 {d ? (
-                  <div className="text-right">
+                  <div className="sm:text-right">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">Next</div>
                     <div className="font-mono text-sm font-bold text-stone-800">{nextOf(d)}</div>
                   </div>

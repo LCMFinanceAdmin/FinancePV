@@ -500,6 +500,9 @@ function MyLeavesInner() {
               )}
 
               {/* ── Submitted by ─────────────────────────────────────── */}
+              {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                  table otherwise wraps every cell to one word per line. */}
+              <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[14px]">
                 <tbody>
                   <tr>
@@ -575,6 +578,7 @@ function MyLeavesInner() {
                   </tr>
                 </tbody>
               </table>
+              </div>
 
               {/* ── Leave type, as the form's tick grid ──────────────── */}
               <p className="mb-1.5 mt-4 text-[13px] font-semibold text-stone-600">

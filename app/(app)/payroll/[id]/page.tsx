@@ -1461,12 +1461,18 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
           </table>
 
           {/* Bottom section: current month summary | deductions | church chop */}
+          {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+              table otherwise wraps every cell to one word per line. */}
+          <div className="overflow-x-auto">
           <table className="w-full border border-stone-400 border-t-0 text-[11px]" style={{ borderCollapse: "collapse" }}>
             <tbody>
               <tr>
                 {/* Current month EE/ER/Total */}
                 <td className="border border-stone-400 px-2 py-1 align-top" style={{ width: "40%" }}>
                   <div className="text-center font-semibold text-[10px] mb-1">{"<"}———————— CURRENT MONTH ————————{">"}</div>
+                  {/* Scrolls sideways rather than crushing its columns: on a phone a wide
+                      table otherwise wraps every cell to one word per line. */}
+                  <div className="overflow-x-auto">
                   <table className="w-full text-[11px]" style={{ borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
@@ -1505,6 +1511,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                       </tr>
                     </tbody>
                   </table>
+                  </div>
                 </td>
 
                 {/* EPL deduction */}
@@ -1543,6 +1550,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
               </tr>
             </tbody>
           </table>
+          </div>
 
         </div>{/* /payslip body */}
       </div>
