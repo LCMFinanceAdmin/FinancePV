@@ -91,6 +91,23 @@ export function setRoleLabelOverrides(map: Record<string, string>) {
   ROLE_LABEL_OVERRIDES = map;
 }
 
+/**
+ * A role with the portfolio it applies to — "EXCO — Mission".
+ *
+ * Every portfolio holder shares one role key, because authority already comes
+ * from the ministries attached to their account rather than from the role
+ * name; Mission's holder cannot touch Education's vouchers. What the shared
+ * label could not say was *which* portfolio, which is what made "EXCO Member"
+ * on eight different people confusing. Minting a role per portfolio would fix
+ * the label by making every permission check eight-way and freezing the
+ * portfolio list into code — see migration 127.
+ */
+export function roleWithScope(role?: string | null, ministries?: string[] | null): string {
+  const base = roleLabel(role);
+  if (role !== "MINISTRY_HEAD" || !ministries?.length) return base;
+  return `${base} — ${ministries.join(", ")}`;
+}
+
 export function roleLabel(role?: string | null): string {
   if (!role) return "";
   return ROLE_LABEL_OVERRIDES[role] ?? ROLE_LABELS[role] ?? role.replace(/_/g, " ");

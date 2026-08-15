@@ -19,7 +19,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { fieldClass, labelClass } from "@/lib/field-styles";
-import { roleLabel } from "@/lib/utils";
+import { roleLabel, roleWithScope } from "@/lib/utils";
 import { loadRoles, assignableRoles, type AppRole } from "@/lib/roles";
 import { RolesModal } from "@/components/people/roles-modal";
 import { ShieldCheck, Search, AlertCircle, Users, KeyRound, Landmark } from "lucide-react";
@@ -214,8 +214,15 @@ export default function AccessRolesPage() {
                   <div className="min-w-0 text-[13px] text-stone-600 lg:border-r-2 lg:border-stone-800 lg:pr-4">
                     <span className="truncate">{a.email}</span>
                     {a.role === "MINISTRY_HEAD" && (
+                      <div className={`text-[11px] ${a.ministries?.length ? "text-stone-400" : "text-amber-700"}`}>
+                        {a.ministries?.length
+                          ? a.ministries.join(", ")
+                          : "no portfolio attached — their queue will be empty"}
+                      </div>
+                    )}
+                    {a.role === "MINISTRY_SUPPORT" && (
                       <div className="text-[11px] text-stone-400">
-                        {a.ministries?.length ? a.ministries.join(", ") : "no ministry attached"}
+                        verifies only what an EXCO member has delegated
                       </div>
                     )}
                   </div>

@@ -56,6 +56,14 @@ export interface UserProfile {
    * submits their own.
    */
   isMinistryVerifier?: boolean;
+  /**
+   * A Ministry Desk — appointed by an EXCO member to run a desk.
+   *
+   * Deliberately NOT folded into isMinistryHead: a desk holds no portfolio and
+   * ranks below the EXCO who appointed it. What it may verify comes entirely
+   * from ministry_verifiers, which is what isMinistryVerifier reflects.
+   */
+  isMinistrySupport?: boolean;
   isGeneralManager: boolean;
   isBuildingManager: boolean;
   isBamCommittee?: boolean;

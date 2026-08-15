@@ -54,6 +54,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     signatoryRole: isSignatory ? role : "",
     isMinistryHead: role === "MINISTRY_HEAD" || ministries.length > 0,
     isMinistryVerifier: ((verifierFor as unknown[] | null)?.length ?? 0) > 0,
+    isMinistrySupport: role === "MINISTRY_SUPPORT",
     isGeneralManager: role === "GENERAL_MANAGER",
     isBuildingManager: role === "BUILDING_MANAGER",
     isBamCommittee: false,

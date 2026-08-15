@@ -25,7 +25,7 @@ import {
   Plus, Search, SlidersHorizontal, Mail, Phone, MoreVertical, AlertCircle,
   CheckCircle2, X, Download, Users, ShieldCheck,
 } from "lucide-react";
-import { roleLabel } from "@/lib/utils";
+import { roleLabel, roleWithScope } from "@/lib/utils";
 
 interface Person {
   id: string; full_name: string; preferred_name: string | null;
@@ -54,6 +54,8 @@ export default function PeopleDirectoryPage() {
   // email → system role, for the access column. One query for the list rather
   // than a join, since the directory holds the login address already.
   const [accounts, setAccounts] = useState<Record<string, string>>({});
+  // The portfolio behind an EXCO role, so the chip can say which one.
+  const [accountMinistries, setAccountMinistries] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
@@ -92,7 +94,7 @@ export default function PeopleDirectoryPage() {
       supabase.from("congregations").select("id,name,district_id").order("name"),
       supabase.from("districts").select("id,name").order("name"),
       supabase.rpc("can_manage_people"),
-      supabase.from("user_roles").select("email,role"),
+      supabase.from("user_roles").select("email,role,ministries"),
     ]);
     // An empty list with no error usually means RLS refused — say so plainly
     // rather than showing a page that looks like nobody exists.
@@ -105,6 +107,9 @@ export default function PeopleDirectoryPage() {
     setAccounts(Object.fromEntries(
       ((accts ?? []) as { email: string; role: string }[])
         .map(a => [a.email.trim().toLowerCase(), a.role])));
+    setAccountMinistries(Object.fromEntries(
+      ((accts ?? []) as { email: string; ministries?: string[] | null }[])
+        .map(a => [a.email.trim().toLowerCase(), a.ministries ?? []])));
     setLoading(false);
   }, [supabase]);
 
@@ -124,6 +129,7 @@ export default function PeopleDirectoryPage() {
 
   const isPast = (p: Person) => p.status !== "ACTIVE";
   const roleOf = (p: Person) => accounts[(p.user_email ?? "").trim().toLowerCase()] ?? null;
+  const ministriesOf = (p: Person) => accountMinistries[(p.user_email ?? "").trim().toLowerCase()] ?? [];
 
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
@@ -402,7 +408,7 @@ export default function PeopleDirectoryPage() {
                           {roleOf(p) && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[10px] font-semibold text-[#2f5b9c]">
                               <ShieldCheck size={9} aria-hidden="true" />
-                              {roleLabel(roleOf(p)!)}
+                              {roleWithScope(roleOf(p), ministriesOf(p))}
                             </span>
                           )}
                         </div>
