@@ -381,7 +381,7 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
           {/* Booker contact details */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Booker Information</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-stone-500 mb-1 block">Full Name *</label>
                 <input className="w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" value={bookerName} onChange={e => setBookerName(e.target.value)} placeholder="Contact person name" />
@@ -405,7 +405,7 @@ function BookingFormModal({ user, facilities, bookings, blocks, initial, onClose
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Event Details</h3>
             <p className="text-xs text-stone-400 mb-3">Dates and times are picked per facility above — each venue can run on its own dates and hour block.</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="text-xs text-stone-500 mb-1 block">Type of Event *</label>
                 <div className="flex flex-wrap gap-2">
@@ -911,7 +911,7 @@ function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }:
         {expanded && (
           <div className="border-t border-stone-100 px-4 py-3 space-y-3">
             {/* Booker */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
               <div><span className="text-stone-400 text-xs">Booker</span><div className="font-medium">{booking.booker_name}</div></div>
               {booking.booker_org && <div><span className="text-stone-400 text-xs">Organisation</span><div>{booking.booker_org}</div></div>}
               {booking.booker_email && <div><span className="text-stone-400 text-xs">Email</span><div>{booking.booker_email}</div></div>}
@@ -990,7 +990,7 @@ function BookingCard({ booking, user, facilities, bookings, blocks, onRefresh }:
 
             {/* Payment info (if paid) */}
             {booking.status === "PAID" && (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
                 <div><span className="text-stone-400 text-xs">Receipt No.</span><div className="font-medium">{booking.receipt_no}</div></div>
                 <div><span className="text-stone-400 text-xs">Payment Date</span><div>{fmtDate(booking.payment_date)}</div></div>
                 <div><span className="text-stone-400 text-xs">Method</span><div>{booking.payment_method}</div></div>
@@ -1208,7 +1208,7 @@ function BlockModal({ user, facilities, defaultDate, onClose, onSaved }: {
               {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className={label}>Start date</label><input type="date" className={input} value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
             <div><label className={label}>End date</label><input type="date" className={input} value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
           </div>

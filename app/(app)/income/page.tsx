@@ -124,7 +124,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
           </div>
 
           {/* Payer */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-stone-500 mb-1 block">Payer / Received From *</label>
               <input
@@ -176,7 +176,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
           )}
 
           {/* Amount + date */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-stone-500 mb-1 block">Amount (RM) *</label>
               <input
@@ -201,7 +201,7 @@ function AddIncomeModal({ user, onClose, onSaved }: AddModalProps) {
           </div>
 
           {/* Payment method + ref */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-stone-500 mb-1 block">Payment Method</label>
               <select
@@ -364,7 +364,7 @@ export default function IncomePage() {
 
       {/* Summary cards */}
       {records.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {(["ELECTRICITY", "DONATION", "OTHER"] as IncomeType[]).map(t => {
             const typeRecords = records.filter(r => r.income_type === t);
             const typeTotal = typeRecords.reduce((s, r) => s + Number(r.amount), 0);

@@ -1045,7 +1045,7 @@ export default function GMClaimsPage() {
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             { label: "Total",       value: total,      color: "text-stone-700" },
             { label: "Needs PV",    value: unprepared, color: "text-amber-600" },
@@ -1968,7 +1968,7 @@ export default function GMClaimsPage() {
             </div>
 
             {/* Claimant */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Claimant Name *</label>
                 <input type="text" value={form.claimant_name}
@@ -2011,7 +2011,7 @@ export default function GMClaimsPage() {
             </div>
 
             {/* Bank details */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Bank</label>
                 <select value={form.payee_bank} onChange={e => setF("payee_bank", e.target.value)}

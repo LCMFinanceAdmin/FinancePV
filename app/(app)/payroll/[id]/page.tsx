@@ -1627,7 +1627,7 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
         <div className="p-5 space-y-3">
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
           <p className="text-[11px] text-stone-400">Creates a new salary version (keeps full history). Prefilled from the current values.</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className={labelCls}>Effective From</label><input type="date" className={inputCls} value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)} /></div>
             <div><label className={labelCls}>Reason</label><input className={inputCls} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Annual increment 2026" /></div>
             {fields.map(f => (

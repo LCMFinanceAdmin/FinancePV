@@ -184,7 +184,7 @@ export function PaidArchive({ ministries = [] }: { ministries?: string[] }) {
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#dbe9fb] bg-[#f8fbff] p-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl border border-[#dbe9fb] bg-[#f8fbff] p-3 sm:grid-cols-3">
             <div>
               <label className="text-[11px] text-stone-400">Ministry</label>
               <select className={inputCls} value={ministry} onChange={e => setMinistry(e.target.value)}>

@@ -2345,7 +2345,7 @@ export default function RecurringPage() {
             {/* ── Section 1: Template Setup ── */}
             <div className="px-5 py-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-3">Template Setup</p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                 <Field label="Template Name *">
                   <input className={inp} list={form.pv_type === "BAM" ? "bam-name-suggestions" : undefined}
                     value={form.name} onChange={e => setField("name", e.target.value)} placeholder="e.g. Office Rental" />
@@ -2469,7 +2469,7 @@ export default function RecurringPage() {
             {/* ── Section 2: Payee Details ── */}
             <div className="px-5 py-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-3">Payee Details</p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                 <Field label="Payee Name *">
                   <input className={inp} value={form.payee_name} onChange={e => setField("payee_name", e.target.value)} placeholder="e.g. Sdn Bhd Company" />
                 </Field>
@@ -2521,7 +2521,7 @@ export default function RecurringPage() {
             {/* ── Section 3: Classification ── */}
             <div className="px-5 py-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-3">Classification</p>
-              <div className="grid grid-cols-3 gap-x-4 gap-y-3">
+              <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-3">
                 {form.pv_type === "BAM" ? (
                   <div>
                     <label className="block text-xs font-medium text-stone-500 mb-1">Ministry</label>

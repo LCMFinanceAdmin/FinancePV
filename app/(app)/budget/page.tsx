@@ -1270,7 +1270,7 @@ function BudgetInner() {
               {/* Project Type */}
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-2 uppercase tracking-wide">Type of Project</label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     onClick={() => setItemForm(f => ({ ...f, project_type: "expense" }))}
                     className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${
@@ -1346,7 +1346,7 @@ function BudgetInner() {
                       className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-stone-700 mb-1">Contributions Received (RM)</label>
                       <input

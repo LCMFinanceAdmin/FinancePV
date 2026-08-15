@@ -1169,7 +1169,7 @@ export default function BankingPage() {
                 <div className="text-xs font-bold uppercase tracking-wide text-stone-400 mb-3">
                   Interest Earned / Reinvested
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {interestSummary.map(({ year, earned, reinvested }) => (
                     <div key={year} className="text-center p-3 bg-stone-50 rounded-xl">
                       <div className="text-sm font-bold text-stone-600 mb-2">{year}</div>
@@ -1319,7 +1319,7 @@ export default function BankingPage() {
               </div>
             ))}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Bank *</label>
                 <select value={accForm.bank_name} onChange={e => setAccForm(f => ({ ...f, bank_name: e.target.value }))}
@@ -1401,7 +1401,7 @@ export default function BankingPage() {
 
             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide border-t border-stone-100 pt-3">Original Certificate</div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Issue *</label>
                 <input type="date" value={certForm.date_of_issue}
@@ -1473,7 +1473,7 @@ export default function BankingPage() {
             {certForm.is_reissued && (
               <div className="space-y-3">
                 <div className="text-xs font-bold text-blue-600 uppercase tracking-wide">Reissue Details</div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-stone-600 mb-1">Date of Reissue</label>
                     <input type="date" value={certForm.reissue_date}
@@ -1498,7 +1498,7 @@ export default function BankingPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Status</label>
                 <select value={certForm.status} onChange={e => setCertForm(f => ({ ...f, status: e.target.value as FDCertificate["status"] }))}
@@ -1672,7 +1672,7 @@ export default function BankingPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="block text-xs font-semibold text-stone-600 mb-1">Renewal / Visit Date *</label>
                 <input type="date" value={renewForm.renewal_date}
@@ -1906,7 +1906,7 @@ export default function BankingPage() {
               </div>
 
               {/* Summary */}
-              <div className="grid grid-cols-4 gap-4 text-center">
+              <div className="grid grid-cols-2 gap-4 text-center sm:grid-cols-4">
                 {[
                   { label: "Total Active Certs", value: String(fdCerts.filter(c => c.status === "ACTIVE").length) },
                   { label: "Total Matured", value: String(fdCerts.filter(c => c.status === "MATURED").length) },

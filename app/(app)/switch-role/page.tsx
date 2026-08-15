@@ -202,7 +202,7 @@ export default function SwitchRolePage() {
         <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 space-y-3">
           <div className="text-xs font-semibold uppercase tracking-wider text-[#3566a8]">EXCO Portfolio</div>
           {/* One portfolio at a time — an EXCO Member heads a single committee. */}
-          <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4">
             {ministries.map(m => (
               <label key={m} className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
                 <input type="radio" name="exco-portfolio-page" className="accent-[#4a6da7] w-4 h-4"

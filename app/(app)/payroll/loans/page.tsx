@@ -132,7 +132,7 @@ function LoanModal({ user, employees, onClose, onSaved }: {
               {employees.map(e => <option key={e.id} value={e.id}>{e.full_name} ({e.emp_no})</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className={labelCls}>Principal (RM) *</label><input type="number" className={inputCls} value={principal} onChange={e => setPrincipal(e.target.value)} placeholder="10000" /></div>
             <div><label className={labelCls}>Monthly Installment (RM) *</label><input type="number" className={inputCls} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="280" /></div>
             <div><label className={labelCls}>Term (months) *</label><input type="number" className={inputCls} value={term} onChange={e => setTerm(e.target.value)} placeholder="36" /></div>

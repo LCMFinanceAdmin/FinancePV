@@ -207,7 +207,7 @@ function DeptRow({ dept, onChange, onSave, onDelete, saving }: {
         <Button size="sm" variant="secondary" loading={saving} onClick={onSave}><Save size={13} /></Button>
         <Button size="sm" variant="ghost" onClick={onDelete}><Trash2 size={13} className="text-red-400" /></Button>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <input className={inp} value={dept.head_name} placeholder="Head name"
           onChange={(e) => onChange({ ...dept, head_name: e.target.value })} />
         <input className={inp} value={dept.head_email} placeholder="Head email"

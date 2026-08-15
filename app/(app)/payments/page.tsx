@@ -347,7 +347,7 @@ export default function PaymentsPage() {
             <div className="flex items-center gap-2 text-sm font-medium text-stone-700">
               <Filter size={14} /> Filters
             </div>
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:grid-cols-4">
               <select className={inp} value={filterMinistry} onChange={e => setFilterMinistry(e.target.value)}>
                 <option value="">All ministries</option>
                 {MINISTRIES.map(m => <option key={m} value={m}>{m}</option>)}

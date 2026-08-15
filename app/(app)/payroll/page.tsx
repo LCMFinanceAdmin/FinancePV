@@ -340,7 +340,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         <div className="p-5 space-y-4">
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="col-span-2"><label className={labelCls}>Full Name *</label><input className={inputCls} value={fullName} onChange={e => setFullName(e.target.value)} /></div>
             <div><label className={labelCls}>I/C No</label><input className={inputCls} value={icNo} onChange={e => setIcNo(e.target.value)} /></div>
             <div><label className={labelCls}>Date of Birth</label><input type="date" className={inputCls} value={dob ?? ""} onChange={e => setDob(e.target.value)} /></div>
@@ -378,7 +378,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           {/* Posting */}
           <div className="border-t border-stone-100 pt-3">
             <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Posting</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Posting Type</label>
                 <select className={inputCls} value={postingType} onChange={e => setPostingType(e.target.value as PostingType)}>
@@ -401,7 +401,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           {/* LHDN */}
           <div className="border-t border-stone-100 pt-3">
             <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Tax / LHDN</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Marital Status</label>
                 <select className={inputCls} value={maritalValue} onChange={e => setMaritalValue(e.target.value)}>
@@ -418,7 +418,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           {/* EPF / bank */}
           <div className="border-t border-stone-100 pt-3">
             <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">EPF, Tax & Payout</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className={labelCls}>EPF No.</label><input className={inputCls} value={epfNo} onChange={e => setEpfNo(e.target.value)} /></div>
               <div><label className={labelCls}>Voluntary EPF (RM, fixed)</label><input type="number" className={inputCls} value={voluntaryEpf} onChange={e => setVoluntaryEpf(e.target.value)} /></div>
               <div><label className={labelCls}>TIN (Tax)</label><input className={inputCls} value={tin} onChange={e => setTin(e.target.value)} placeholder="Tax identification no." /></div>
@@ -438,7 +438,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           {isEdit && (
             <div className="border-t border-stone-100 pt-3">
               <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Employment Status</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>Status</label>
                   <select className={inputCls} value={status} onChange={e => setStatus(e.target.value as "ACTIVE" | "RESIGNED")}>
@@ -462,7 +462,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                 ? "Changes to salary will create a new revision effective today."
                 : "Base = original salary at commencement. Increments accumulate on top; gross = base + increments + experience + family + STM."}
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div><label className={labelCls}>Base Salary <span className="font-normal text-stone-400">(at commencement)</span></label><input type="number" className={inputCls} value={baseSalary} onChange={e => setBaseSalary(e.target.value)} /></div>
               <div><label className={labelCls}>Increment (carried, since commencement)</label><input type="number" className={inputCls} value={incrementCarried} onChange={e => setIncrementCarried(e.target.value)} /></div>
               <div><label className={labelCls}>Increment (current year)</label><input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} /></div>

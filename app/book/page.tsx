@@ -291,7 +291,7 @@ export default function PublicBookingPage() {
           {/* Applicant */}
           <section>
             <h2 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Your Details</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className={label}>Category</label>
                 <div className="flex flex-wrap gap-2">
@@ -314,7 +314,7 @@ export default function PublicBookingPage() {
           {/* Event */}
           <section>
             <h2 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">Event</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className={label}>Type of Event *</label>
                 <div className="flex flex-wrap gap-2">

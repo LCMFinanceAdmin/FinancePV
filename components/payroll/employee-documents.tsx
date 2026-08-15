@@ -379,7 +379,7 @@ function DocumentModal({ employeeId, existing, defaultFolder, onClose, onSaved }
               {FOLDERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={lbl}>Valid from</label>
               <input type="date" className={inp} value={validFrom} onChange={e => setValidFrom(e.target.value)} />
