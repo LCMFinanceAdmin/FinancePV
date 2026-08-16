@@ -42,8 +42,19 @@ Deno.serve(async (req) => {
     }
 
     const assignee = (task.assigned_to ?? "").trim().toLowerCase();
-    // Nothing to say: unassigned, or somebody writing themselves a note.
-    if (!assignee || assignee === me) return json({ ok: true, notified: false });
+    // Everyone else who should know. Deduplicated, and with the author and the
+    // assignee removed — the assignee is told separately and in different
+    // words, and nobody needs telling about their own task.
+    const shared = [...new Set(
+      ((task.shared_with ?? []) as string[])
+        .map(e => (e ?? "").trim().toLowerCase())
+        .filter(e => e && e !== me && e !== assignee),
+    )];
+
+    // Nothing to say: unassigned, unshared, or somebody writing themselves a note.
+    if ((!assignee || assignee === me) && shared.length === 0) {
+      return json({ ok: true, notified: 0 });
+    }
 
     const { data: author } = await db.from("user_roles")
       .select("full_name").eq("email", user.email!).maybeSingle();
@@ -53,25 +64,53 @@ Deno.serve(async (req) => {
       ? ` — due ${new Date(task.due_date + "T00:00:00").toLocaleDateString("en-GB",
           { weekday: "short", day: "numeric", month: "short" })}`
       : "";
-    const message = `${from} put a task on your list: ${task.description}${due}`;
 
-    // In-app first. It is the record, it survives a phone that was off, and it
-    // must not depend on push having been switched on for this device.
-    await db.from("notifications").insert({
-      recipient_email: task.assigned_to,
-      type: "TASK_ASSIGNED",
-      message,
-      read: false,
-      created_at: new Date().toISOString(),
-    });
+    // Being given a task and being shown one are different things, and the
+    // wording is the only place that distinction survives — both land in the
+    // same list otherwise.
+    const notifications: { email: string; type: string; message: string; title: string }[] = [];
+    if (assignee && assignee !== me) {
+      notifications.push({
+        email: task.assigned_to,
+        type: "TASK_ASSIGNED",
+        message: `${from} put a task on your list: ${task.description}${due}`,
+        title: "New task",
+      });
+    }
+    for (const email of shared) {
+      notifications.push({
+        email,
+        type: "TASK_SHARED",
+        message: `${from} shared a task with you: ${task.description}${due}`,
+        title: "Task shared with you",
+      });
+    }
 
-    await sendPushToEmails(db, [task.assigned_to], {
-      title: "New task",
-      body: `${task.description}${due}`,
-      url: "/dashboard",
-    });
+    // In-app first, and for everyone at once. It is the record, it survives a
+    // phone that was off, and it must not depend on push having been switched
+    // on for that device.
+    const now = new Date().toISOString();
+    await db.from("notifications").insert(
+      notifications.map(n => ({
+        recipient_email: n.email,
+        type: n.type,
+        message: n.message,
+        read: false,
+        created_at: now,
+      })),
+    );
 
-    return json({ ok: true, notified: true });
+    // Push is per-wording, so the assignee is not told somebody "shared" what
+    // they have actually been asked to do.
+    await Promise.all(notifications.map(n =>
+      sendPushToEmails(db, [n.email], {
+        title: n.title,
+        body: `${task.description}${due}`,
+        url: "/dashboard",
+      })
+    ));
+
+    return json({ ok: true, notified: notifications.length });
   } catch (err) {
     return json({ error: err.message }, 500);
   }

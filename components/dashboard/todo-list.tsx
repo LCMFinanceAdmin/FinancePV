@@ -213,11 +213,12 @@ function AddTask({ accounts, userEmail, onClose, onSaved }: {
     setSaving(false);
     if (error) { setErr(error.message); return; }
 
-    // Tell them it has landed. Deliberately after the insert and deliberately
-    // not awaited into the failure path: the task is saved either way, and a
-    // notification that could not be sent is not a reason to tell somebody
-    // their task did not save.
-    if (assignedTo && created?.id) {
+    // Tell whoever should know — the assignee, and anyone it was shared with.
+    // Deliberately after the insert and deliberately not awaited into the
+    // failure path: the task is saved either way, and a notification that could
+    // not be sent is not a reason to tell somebody their task did not save.
+    const tellsSomeone = assignedTo || sharedWith.some(e => e !== assignedTo);
+    if (tellsSomeone && created?.id) {
       supabase.functions.invoke("task-assigned", { body: { task_id: created.id } })
         .catch(() => {});
     }
@@ -270,6 +271,9 @@ function AddTask({ accounts, userEmail, onClose, onSaved }: {
 
       <div>
         <label className={labelClass}>Also visible to</label>
+        <p className="mb-1 text-[11px] text-stone-500">
+          They see it on their dashboard and are told once, now. They can tick it off; only you can delete it.
+        </p>
         <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border-2 border-stone-800 p-2">
           {others.length === 0 ? (
             <p className="text-[11px] text-stone-400">Nobody else has an account yet.</p>
