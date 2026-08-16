@@ -8,6 +8,7 @@ import type { PV, UserProfile } from "@/lib/types";
 import { FeatureDirectory } from "@/components/layout/feature-directory";
 import { InstallApp } from "@/components/install-app";
 import { NotificationsOptIn } from "@/components/notifications-optin";
+import { TodoList } from "@/components/dashboard/todo-list";
 import {
   FilePlus, Clock, CheckCircle2, XCircle, RotateCcw, ShieldCheck,
   FileText, ChevronDown, ChevronUp, X, Inbox, AlertCircle,
@@ -414,11 +415,11 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
   ];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 sm:p-5 max-w-5xl mx-auto space-y-5">
 
       {/* ── Greeting ──────────────────────────────────────────────────── */}
       <div>
-        <h1 className="text-2xl font-bold text-stone-800">{greeting(firstName)}</h1>
+        <h1 className="text-xl font-bold text-stone-800">{greeting(firstName)}</h1>
         <p className="text-sm text-stone-400 mt-0.5">Here&apos;s what needs your attention today</p>
       </div>
 
@@ -561,28 +562,32 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
       <NotificationsOptIn />
 
       {/* ── Quick shortcuts ───────────────────────────────────────────── */}
-      <div>
+      <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
+        <div>
         <div className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Quick Actions</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {shortcuts.map(s => {
             const badge = "badge" in s ? (s.badge as number) : 0;
             return (
               <Link key={s.href} href={s.href}
-                className={`relative bg-gradient-to-br ${s.color} rounded-xl p-4 text-white group hover:shadow-lg hover:scale-[1.02] transition-all`}>
+                className={`relative bg-gradient-to-br ${s.color} rounded-xl p-3 text-white group hover:shadow-lg hover:scale-[1.02] transition-all`}>
                 {badge > 0 && (
-                  <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-white text-red-600 text-[11px] font-bold grid place-items-center leading-none shadow-sm">
+                  <span className="absolute top-1.5 right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-white text-red-600 text-[10px] font-bold grid place-items-center leading-none shadow-sm">
                     {badge}
                   </span>
                 )}
-                <div className="mb-2 opacity-90">{s.icon}</div>
-                <div className="text-[13px] font-bold leading-tight">{s.label}</div>
-                <div className="text-[11px] text-white/65 mt-0.5">
+                <div className="mb-1 opacity-90">{s.icon}</div>
+                <div className="text-[12px] font-bold leading-tight">{s.label}</div>
+                <div className="text-[10px] text-white/65 mt-0.5">
                   {badge > 0 && s.href === "/gm-claims" ? `${badge} to process` : s.desc}
                 </div>
               </Link>
             );
           })}
         </div>
+        </div>
+
+        {profile && <TodoList userEmail={profile.email} />}
       </div>
 
       {/* ── Everything this person can reach ──────────────────────────
@@ -847,9 +852,9 @@ function AttentionCard({ icon, label, value, sub, href, accent }: {
   }[accent];
 
   const inner = (
-    <div className={`rounded-2xl border p-4 ${bg} ${href ? "cursor-pointer hover:shadow-sm transition-shadow" : ""}`}>
-      <div className="mb-2">{icon}</div>
-      <div className="text-2xl font-bold text-stone-800">{value}</div>
+    <div className={`rounded-xl border p-3 ${bg} ${href ? "cursor-pointer hover:shadow-sm transition-shadow" : ""}`}>
+      <div className="mb-1">{icon}</div>
+      <div className="text-xl font-bold leading-tight text-stone-800">{value}</div>
       <div className="text-[11px] font-semibold text-stone-600 mt-0.5">{label}</div>
       <div className="text-[10px] text-stone-400">{sub}</div>
     </div>
