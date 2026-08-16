@@ -200,7 +200,7 @@ function AddTask({ accounts, userEmail, onClose, onSaved }: {
     if (!description.trim()) { setErr("What needs doing?"); return; }
     if (dueDate && dueDate < taskDate) { setErr("The deadline is before the task's own date"); return; }
     setErr(""); setSaving(true);
-    const { error } = await supabase.from("tasks").insert({
+    const { data: created, error } = await supabase.from("tasks").insert({
       description: description.trim(),
       task_date: taskDate,
       due_date: dueDate || null,
@@ -209,9 +209,18 @@ function AddTask({ accounts, userEmail, onClose, onSaved }: {
       // same person twice on the task.
       shared_with: sharedWith.filter(e => e !== assignedTo),
       created_by: userEmail,
-    });
+    }).select("id").single();
     setSaving(false);
     if (error) { setErr(error.message); return; }
+
+    // Tell them it has landed. Deliberately after the insert and deliberately
+    // not awaited into the failure path: the task is saved either way, and a
+    // notification that could not be sent is not a reason to tell somebody
+    // their task did not save.
+    if (assignedTo && created?.id) {
+      supabase.functions.invoke("task-assigned", { body: { task_id: created.id } })
+        .catch(() => {});
+    }
     onSaved();
   }
 

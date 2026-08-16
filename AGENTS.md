@@ -54,6 +54,7 @@ public/             — static assets (logo, icons)
 | `subscribe-push` | Web push notification subscription |
 | `payroll-reminder` | Payroll 18th-of-month reminder. **Not currently scheduled** — nothing invokes it and `cron.job` holds only `fd-maturity-check`. |
 | `gm-claim-notify` | Notifies GM on new claim submissions |
+| `task-assigned` | Tells somebody a dashboard task has been put on their list |
 
 **Shared helpers** live in `supabase/functions/_shared/` — `supabase.ts` (DB client, `nextPvNo()`, `nextBulkRunNo()`), `cors.ts`, `push.ts`.
 
