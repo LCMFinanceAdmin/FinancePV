@@ -90,25 +90,25 @@ export function NotificationsOptIn() {
   }
 
   return (
-    <div className="rounded-2xl border border-[#dbe9fb] bg-[linear-gradient(135deg,#f4f9ff,#f8f5ff)] p-4">
-      <div className="flex items-start gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#1d4ed8] text-white">
-          <Bell size={20} />
+    // One line on a phone. Measured at 372px it was taking 263px — more than
+    // the four stat cards together — and pushing the to-do list, which is the
+    // thing people come here to act on, almost entirely below the fold. A
+    // one-time prompt should not outrank the daily working surface.
+    <div className="rounded-xl border border-[#dbe9fb] bg-[linear-gradient(135deg,#f4f9ff,#f8f5ff)] px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#1d4ed8] text-white">
+          <Bell size={14} />
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-bold text-stone-800">Get told when something needs you</p>
-          <p className="mt-0.5 text-[13px] leading-relaxed text-stone-500">
-            An alert on this device the moment a voucher reaches you for approval — so nothing
-            waits because nobody knew about it.
-          </p>
-          <button onClick={enable} disabled={busy}
-            className="mt-3 rounded-xl bg-[#1d4ed8] px-5 py-2.5 text-[15px] font-bold text-white disabled:opacity-50">
-            {busy ? "Just a moment…" : "Turn on notifications"}
-          </button>
-        </div>
+        <p className="min-w-0 flex-1 text-[12px] font-semibold text-stone-700">
+          Get told the moment something needs you
+        </p>
+        <button onClick={enable} disabled={busy}
+          className="shrink-0 rounded-lg bg-[#1d4ed8] px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50">
+          {busy ? "…" : "Turn on"}
+        </button>
         <button onClick={hide} aria-label="Not now"
-          className="shrink-0 rounded-full p-1 text-stone-400 hover:bg-white hover:text-stone-600">
-          <X size={16} />
+          className="shrink-0 rounded-full p-0.5 text-stone-400 hover:bg-white hover:text-stone-600">
+          <X size={14} />
         </button>
       </div>
     </div>
