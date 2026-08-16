@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { Modal } from "@/components/ui/modal";
 import { Plus, Trash2, Users, CalendarClock, ListChecks } from "lucide-react";
+import { PersonPicker, PeoplePicker } from "@/components/ui/person-picker";
 
 interface Task {
   id: string;
@@ -260,10 +261,8 @@ function AddTask({ accounts, userEmail, onClose, onSaved }: {
 
       <div>
         <label className={labelClass}>Who</label>
-        <select className={fieldClass} value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
-          <option value="">Me</option>
-          {others.map(a => <option key={a.email} value={a.email}>{a.full_name || a.email}</option>)}
-        </select>
+        <PersonPicker people={others} value={assignedTo} onChange={setAssignedTo}
+          emptyLabel="Me" placeholder="Type a name or address…" />
         <p className="mt-1 text-[11px] text-stone-500">
           It appears on their dashboard, and either of you can tick it off.
         </p>
@@ -274,19 +273,8 @@ function AddTask({ accounts, userEmail, onClose, onSaved }: {
         <p className="mb-1 text-[11px] text-stone-500">
           They see it on their dashboard and are told once, now. They can tick it off; only you can delete it.
         </p>
-        <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border-2 border-stone-800 p-2">
-          {others.length === 0 ? (
-            <p className="text-[11px] text-stone-400">Nobody else has an account yet.</p>
-          ) : others.map(a => (
-            <label key={a.email} className="flex items-center gap-2 text-[12px] text-stone-700">
-              <input type="checkbox" className="h-3.5 w-3.5 accent-[#2f5b9c]"
-                checked={sharedWith.includes(a.email)}
-                onChange={e => setSharedWith(prev =>
-                  e.target.checked ? [...prev, a.email] : prev.filter(x => x !== a.email))} />
-              {a.full_name || a.email}
-            </label>
-          ))}
-        </div>
+        <PeoplePicker people={others} value={sharedWith} onChange={setSharedWith}
+          placeholder="Type a name or address…" />
       </div>
 
       {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
