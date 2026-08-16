@@ -94,19 +94,19 @@ export function TodoList({ userEmail }: { userEmail: string }) {
   const shown = showDone ? [...open, ...done] : open;
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+    <div className="rounded-2xl border-2 border-[#2f5b9c] bg-white p-4 shadow-[0_2px_12px_rgba(47,91,156,0.10)]">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <ListChecks size={15} className="text-[#4a6da7]" />
-          <h2 className="text-[13px] font-bold text-stone-800">To do</h2>
+          <ListChecks size={17} className="text-[#2f5b9c]" />
+          <h2 className="text-[15px] font-bold text-stone-800">To do</h2>
           {open.length > 0 && (
-            <span className="rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-600">
+            <span className="rounded-full bg-[#2f5b9c] px-1.5 py-0.5 text-[10px] font-bold text-white">
               {open.length}
             </span>
           )}
         </div>
         <button onClick={() => setAdding(true)}
-          className="flex items-center gap-1 text-[11px] font-semibold text-[#2f5b9c] hover:underline">
+          className="flex items-center gap-1 rounded-lg bg-[#2f5b9c] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-[#254a80]">
           <Plus size={12} /> Add
         </button>
       </div>
@@ -132,7 +132,7 @@ export function TodoList({ userEmail }: { userEmail: string }) {
                   aria-label={`Mark “${t.description}” ${t.done ? "not done" : "done"}`}
                   className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#2f5b9c]" />
                 <div className="min-w-0 flex-1">
-                  <p className={`text-[12px] leading-snug ${
+                  <p className={`text-[13px] leading-snug ${
                     t.done ? "text-stone-400 line-through" : "text-stone-800"}`}>
                     {t.description}
                   </p>

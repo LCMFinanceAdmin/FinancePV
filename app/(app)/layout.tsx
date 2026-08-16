@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { PushSetup } from "@/components/push-setup";
-import { PageHelp } from "@/components/help/page-help";
 import { getUserProfile } from "@/lib/user-profile";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -23,9 +22,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {children}
       </main>
       <MobileNav user={user} ministryList={ministryList} />
-      {/* Plain-English explanation of whatever page is open. Opens itself the
-          first time someone sees a page, then waits behind the Help button. */}
-      <PageHelp />
     </div>
   );
 }
