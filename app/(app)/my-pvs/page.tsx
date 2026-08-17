@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
-import type { PV } from "@/lib/types";
+import type { PV, PVStatus } from "@/lib/types";
 import {
   Search, Layers, FileText, Trash2,
   CheckCircle2, XCircle, RotateCcw, ShieldCheck,
@@ -47,6 +47,11 @@ type ListItem =
 export default function MyPVsPage() {
   const supabase = createClient();
   const [pvs,      setPvs]      = useState<Partial<PV>[]>([]);
+  // Requisitions this person raised. A payment request is the other way a
+  // person asks for money, and "everything I submitted" that quietly omits
+  // half of it is worse than not offering the page.
+  const [requests, setRequests] = useState<{ id: string; request_no: string; title: string;
+    status: string; estimated_amount: number; ministry: string; submitted_at: string }[]>([]);
   const [bulkRuns, setBulkRuns] = useState<BulkRun[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [filter,   setFilter]   = useState<FilterStatus>("ALL");
@@ -90,7 +95,7 @@ export default function MyPVsPage() {
         const user = session?.user;
         if (!user) return;
 
-        const [pvResult, bulkResult, profileResult] = await Promise.all([
+        const [pvResult, bulkResult, profileResult, reqResult] = await Promise.all([
           (() => {
             let q = supabase
               .from("pvs")
@@ -102,9 +107,14 @@ export default function MyPVsPage() {
           })(),
           supabase.from("bulk_pv_runs").select("id,group_name,run_by,run_date,pv_count,total_amount,ministry,pv_ids,is_master,child_group_names").eq("run_by", user.email).order("run_date", { ascending: false }),
           supabase.from("user_roles").select("role,ministries").eq("email", user.email).single(),
+          supabase.from("purchase_requests")
+            .select("id,request_no,title,status,estimated_amount,ministry,submitted_at")
+            .eq("submitted_by_email", user.email)
+            .order("submitted_at", { ascending: false }),
         ]);
 
         setPvs(pvResult.data ?? []);
+        setRequests(reqResult.data ?? []);
         const runs: BulkRun[] = bulkResult.data ?? [];
         setBulkRuns(runs);
         const role = profileResult.data?.role ?? "";
@@ -340,9 +350,49 @@ export default function MyPVsPage() {
   return (
     <div className="p-5 max-w-3xl mx-auto space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-stone-800">My Payment Vouchers</h1>
-        <p className="text-sm text-stone-400">Track the status of all your submitted PVs</p>
+        <h1 className="text-xl font-bold text-stone-800">My Submissions</h1>
+        <p className="text-sm text-stone-400">
+          Every voucher and requisition raised from this account, and where each one has got to
+        </p>
       </div>
+
+      {/* Requisitions first: they are the earlier stage, so anything still
+          sitting here has not become a voucher yet — which is exactly the thing
+          somebody checking their own submissions is looking for. */}
+      {requests.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+          <div className="flex items-center justify-between border-b border-stone-100 px-4 py-2.5">
+            <h2 className="text-[13px] font-bold text-stone-700">
+              Payment Requests <span className="font-normal text-stone-400">({requests.length})</span>
+            </h2>
+            <Link href="/payment-requests" className="text-[12px] font-medium text-[#4a6da7] hover:underline">
+              Open requests →
+            </Link>
+          </div>
+          <ul className="divide-y divide-stone-100">
+            {requests.slice(0, 5).map(r => (
+              <li key={r.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-semibold text-stone-500">{r.request_no}</span>
+                    <StatusBadge status={r.status as PVStatus} />
+                    {r.ministry && (
+                      <span className="rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[10px] font-medium text-[#2f5b9c]">
+                        {r.ministry}
+                      </span>
+                    )}
+                  </div>
+                  <div className="truncate text-[13px] text-stone-800">{r.title}</div>
+                  <div className="text-[11px] text-stone-400">{formatDate(r.submitted_at)}</div>
+                </div>
+                <div className="shrink-0 text-[13px] font-bold text-stone-800">
+                  {formatCurrency(r.estimated_amount ?? 0)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">

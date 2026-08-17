@@ -236,9 +236,12 @@ export const NAV_GROUPS: NavGroup[] = [
     accent: "#e11d48",
     items: [
       {
-        href: "/my-pvs", label: "My PVs", desc: "Vouchers you submitted",
+        href: "/my-pvs", label: "My Submissions", desc: "Vouchers and requests you raised",
         icon: <FileText size={size} />,
-        show: (u) => !u.isSignatory && !u.isMinistryHead && !u.isBuildingManager && !u.isFinanceAdmin,
+        // Shown to everyone. It used to be hidden from signatories, EXCO
+        // members, the building manager and Finance — which is to say from the
+        // people who raise the most, leaving them no way to their own list.
+        show: () => true,
       },
       // Leave and staff loans are employment entitlements, so they are for LCM
       // staff only — a volunteer EXCO member has an @lcm.org.my address but no

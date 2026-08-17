@@ -100,6 +100,17 @@ export default function PersonProfilePage() {
   // Writing the service record: a term being corrected (by holding id), or a
   // new one being entered. Offices and every holding are loaded alongside,
   // since the form needs the list of posts and has to spot a clash.
+  /**
+   * Where this profile was opened from, so Back returns there.
+   *
+   * Access & Roles and the People Directory both lead here, and sending
+   * somebody back to the directory when they came from Access & Roles loses
+   * their place — including the search they had typed to find this person.
+   */
+  const cameFromAccess = params.get("from") === "access";
+  const backHref  = cameFromAccess ? "/settings/access" : "/settings/people";
+  const backLabel = cameFromAccess ? "Access & Roles" : "People Directory";
+
   const [addingTerm, setAddingTerm] = useState(false);
   const [editingHolding, setEditingHolding] = useState<string | null>(null);
   const [officeList, setOfficeList] = useState<OfficeOption[]>([]);
@@ -220,13 +231,13 @@ export default function PersonProfilePage() {
       {/* ── Breadcrumb + actions ───────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <nav className="min-w-0 flex-1 text-[13px] text-stone-500">
-          <Link href="/settings/people" className="hover:text-[#3a6db0] hover:underline">People Directory</Link>
+          <Link href={backHref} className="hover:text-[#3a6db0] hover:underline">{backLabel}</Link>
           <span className="mx-1.5 text-stone-300">›</span>
           <span className="font-medium text-stone-700">{person.full_name}</span>
         </nav>
         <div className="flex shrink-0 items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => router.push("/settings/people")}>
-            <ArrowLeft size={14} /> Back to list
+          <Button size="sm" variant="ghost" onClick={() => router.push(backHref)}>
+            <ArrowLeft size={14} /> Back to {backLabel}
           </Button>
           {canEdit && (
             <Button size="sm" onClick={() => setEditing(true)}><Pencil size={13} /> Edit Profile</Button>

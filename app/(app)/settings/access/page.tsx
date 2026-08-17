@@ -185,7 +185,9 @@ export default function AccessRolesPage() {
                 <li key={a.id} className="grid grid-cols-1 gap-3 border-b-2 border-stone-800 px-5 py-3.5 last:border-0 lg:grid-cols-[minmax(200px,1.4fr)_minmax(200px,1fr)_220px] lg:items-center lg:gap-4">
                   <div className="min-w-0 lg:border-r-2 lg:border-stone-800 lg:pr-4">
                     {person ? (
-                      <Link href={`/settings/people/${person.id}`}
+                      // Straight to the Access & Role tab, and marked so Back
+                      // comes back here rather than to the directory.
+                      <Link href={`/settings/people/${person.id}?tab=access&from=access`}
                         className="truncate text-sm font-semibold text-stone-800 hover:text-[#2f5b9c] hover:underline">
                         {a.full_name || person.full_name}
                       </Link>
