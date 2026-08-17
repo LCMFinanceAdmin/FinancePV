@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { PushSetup } from "@/components/push-setup";
+import { TestAccountBanner } from "@/components/layout/test-account-banner";
 import { getUserProfile } from "@/lib/user-profile";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -19,6 +20,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <PushSetup />
       <Sidebar user={user} ministryList={ministryList} />
       <main className="cloudlight-main flex-1 overflow-y-auto pb-20 md:pb-0 print:overflow-visible print:flex-none print:h-auto">
+        {/* Inside the scrolling element, so `sticky` has something to stick to. */}
+        <TestAccountBanner user={user} />
         {children}
       </main>
       <MobileNav user={user} ministryList={ministryList} />

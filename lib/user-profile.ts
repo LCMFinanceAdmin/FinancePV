@@ -61,6 +61,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     // Keeps the people directory. Not a finance role — no approving, no payments.
     isAdministrator: role === "ADMINISTRATOR",
     isTestAdmin: TEST_ADMIN_EMAILS.includes(user.email!),
+    isTestAccount: profile?.is_test_account === true,
     // Defaults to true so an account with no directory record behaves exactly
     // as it did before this was introduced.
     isLcmStaff: profile?.is_lcm_staff ?? true,

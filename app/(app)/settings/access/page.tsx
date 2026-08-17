@@ -22,7 +22,7 @@ import { fieldClass, labelClass } from "@/lib/field-styles";
 import { roleLabel, roleWithScope } from "@/lib/utils";
 import { loadRoles, assignableRoles, type AppRole } from "@/lib/roles";
 import { RolesModal } from "@/components/people/roles-modal";
-import { ShieldCheck, Search, AlertCircle, Users, KeyRound, Landmark } from "lucide-react";
+import { ShieldCheck, Search, AlertCircle, Users, KeyRound, Landmark, FlaskConical } from "lucide-react";
 
 interface Account {
   id: string;
@@ -32,8 +32,19 @@ interface Account {
   ministries: string[] | null;
   is_lcm_staff: boolean | null;
   designation: string | null;
+  is_test_account: boolean | null;
 }
 interface PersonLite { id: string; full_name: string; user_email: string | null }
+
+/**
+ * The placeholder a test account ships with.
+ *
+ * `.invalid` is reserved by RFC 2606 and resolves nowhere, so an address that
+ * has not been filled in yet cannot receive a magic link and cannot be signed
+ * in as. The placeholder fails safe rather than merely looking unused.
+ */
+const UNSET_LOGIN = "@unset.invalid";
+const loginUnset = (email: string) => email.toLowerCase().endsWith(UNSET_LOGIN);
 interface OfficeLite { name: string; grants_role: string | null; holderEmail: string | null }
 
 export default function AccessRolesPage() {
@@ -48,6 +59,9 @@ export default function AccessRolesPage() {
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [managingRoles, setManagingRoles] = useState(false);
+  // Which test account's address is being filled in, and what has been typed.
+  const [editingLogin, setEditingLogin] = useState<string | null>(null);
+  const [loginDraft, setLoginDraft] = useState("");
 
   function say(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -56,7 +70,7 @@ export default function AccessRolesPage() {
 
   const load = useCallback(async () => {
     const [{ data: acc }, { data: ppl }, { data: perm }, { data: offs }, { data: holds }, roleRows] = await Promise.all([
-      supabase.from("user_roles").select("id,email,full_name,role,ministries,is_lcm_staff,designation").order("full_name"),
+      supabase.from("user_roles").select("id,email,full_name,role,ministries,is_lcm_staff,designation,is_test_account").order("full_name"),
       supabase.from("people").select("id,full_name,user_email").eq("status", "ACTIVE"),
       supabase.rpc("can_manage_people"),
       supabase.from("offices").select("id,name,grants_role").eq("active", true),
@@ -114,6 +128,52 @@ export default function AccessRolesPage() {
     if (error) { say(error.message, false); return; }
     await load();
     say(`${a.full_name || a.email} is now ${roleLabel(role)}`);
+  }
+
+  const testAccounts = useMemo(
+    () => accounts.filter(a => a.is_test_account), [accounts]);
+
+  /**
+   * Give a test account its sign-in address.
+   *
+   * Goes through rename_user_login rather than a plain update because the
+   * address is the identity — it is joined by text from around fifty columns,
+   * so once a test account has signed or verified anything, changing it in one
+   * place would strand the rest. The dry run is what makes that visible: on a
+   * fresh account it moves nothing and asks nothing, and it is only once there
+   * is something to move that it stops to confirm.
+   */
+  async function setLogin(a: Account) {
+    const next = loginDraft.trim().toLowerCase();
+    if (!next || next === a.email.toLowerCase()) { setEditingLogin(null); return; }
+
+    setSaving(a.id);
+    try {
+      const { data: preview, error: dryErr } = await supabase.rpc("rename_user_login", {
+        p_old: a.email, p_new: next, p_apply: false,
+      });
+      if (dryErr) throw new Error(dryErr.message);
+      const p = preview as { rows: number; columns: number };
+      if (p.rows > 0 && !confirm(
+        `Move ${a.full_name} from ${a.email} to ${next}?
+
+` +
+        `${p.rows} record${p.rows === 1 ? "" : "s"} across ${p.columns} ` +
+        `table${p.columns === 1 ? "" : "s"} will move with it.`,
+      )) return;
+
+      const { error } = await supabase.rpc("rename_user_login", {
+        p_old: a.email, p_new: next, p_apply: true,
+      });
+      if (error) throw new Error(error.message);
+      setEditingLogin(null); setLoginDraft("");
+      await load();
+      say(`${a.full_name} signs in as ${next}`);
+    } catch (err: unknown) {
+      say(err instanceof Error ? err.message : "Could not set the address", false);
+    } finally {
+      setSaving(null);
+    }
   }
 
   /** Somebody in the directory with no account at all. */
@@ -196,6 +256,11 @@ export default function AccessRolesPage() {
                     )}
                     <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-stone-500">
                       {a.designation && <span className="truncate">{a.designation}</span>}
+                      {a.is_test_account && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                          <FlaskConical size={9} aria-hidden="true" /> Test
+                        </span>
+                      )}
                       {!a.is_lcm_staff && (
                         <span className="rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-600">
                           not LCM staff
@@ -214,7 +279,9 @@ export default function AccessRolesPage() {
                   </div>
 
                   <div className="min-w-0 text-[13px] text-stone-600 lg:border-r-2 lg:border-stone-800 lg:pr-4">
-                    <span className="truncate">{a.email}</span>
+                    {loginUnset(a.email)
+                      ? <span className="text-[12px] font-medium text-amber-700">No address yet</span>
+                      : <span className="truncate">{a.email}</span>}
                     {a.role === "MINISTRY_HEAD" && (
                       <div className={`text-[11px] ${a.ministries?.length ? "text-stone-400" : "text-amber-700"}`}>
                         {a.ministries?.length
@@ -247,6 +314,64 @@ export default function AccessRolesPage() {
           </ul>
         )}
       </div>
+
+      {/* Test identities. Kept in their own card because the one thing they
+          need — an address to sign in with — is the one thing the list above
+          has no way to set: these hold no post and belong to no person, so
+          there is no profile page to open. */}
+      {testAccounts.length > 0 && (
+        <div className="rounded-2xl border-2 border-amber-400 bg-amber-50/50 p-5">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-amber-900">
+            <FlaskConical size={15} /> Test accounts
+          </h2>
+          <p className="mt-1 text-xs text-amber-800">
+            These hold <strong>real roles with real permissions</strong> — that is what makes them a faithful test,
+            and it means a Test Treasurer&rsquo;s signature clears a real voucher exactly as the Treasurer&rsquo;s does.
+            Whoever is signed in as one sees a warning bar on every page.
+          </p>
+          <p className="mt-1 text-xs text-amber-800">
+            Give each one an address that can receive email, and sign in with the &ldquo;Email me a link&rdquo; option.
+            Change it here whenever you like.
+          </p>
+
+          <ul className="mt-3 space-y-2">
+            {testAccounts.map(a => (
+              <li key={a.id} className="rounded-xl border-2 border-amber-300 bg-white px-3 py-2.5">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="text-sm font-semibold text-stone-800">{a.full_name}</span>
+                  <span className="text-[12px] text-stone-500">{roleWithScope(a.role, a.ministries ?? [])}</span>
+                </div>
+
+                {editingLogin === a.id ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      className={`${fieldClass} max-w-xs flex-1`} type="email" autoFocus
+                      placeholder="somebody@example.com" value={loginDraft}
+                      onChange={e => setLoginDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") setLogin(a); if (e.key === "Escape") setEditingLogin(null); }} />
+                    <Button size="sm" loading={saving === a.id} onClick={() => setLogin(a)}>Save</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingLogin(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    {loginUnset(a.email) ? (
+                      <span className="text-[12px] font-medium text-amber-700">
+                        No address yet — it cannot be signed in as until you set one
+                      </span>
+                    ) : (
+                      <span className="truncate text-[13px] text-stone-600">{a.email}</span>
+                    )}
+                    <Button size="sm" variant="secondary"
+                      onClick={() => { setEditingLogin(a.id); setLoginDraft(loginUnset(a.email) ? "" : a.email); }}>
+                      {loginUnset(a.email) ? "Set address" : "Change"}
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Access is only half the picture — who has none is the other half, and
           it is the half that generates the "why can't they log in" question. */}

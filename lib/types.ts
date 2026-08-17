@@ -82,6 +82,15 @@ export interface UserProfile {
   congregation?: string;
   district?: string;
   designation?: string;
+  /**
+   * A test identity rather than a person.
+   *
+   * Grants and withholds nothing — a test account holds a real role with the
+   * real permissions attached to it, which is the entire point of having one.
+   * All this drives is the banner, so a session that can clear a real voucher
+   * can never be mistaken for an ordinary one.
+   */
+  isTestAccount?: boolean;
 }
 
 /**

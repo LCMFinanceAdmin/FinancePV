@@ -120,6 +120,51 @@ function check (layer 4) if it acts on vouchers. Grep the role name first —
 and full RLS permissions but was missing from the picker, so it could never be
 assigned to anyone.
 
+## Testing a role — don't create a test role
+
+Testing "as the Treasurer" needs a test **account**, not a test **role**. A
+`TEST_TREASURER` key would appear in every picker and grant nothing: no policy
+would recognise it, no queue would list its work, no approval would accept its
+signature. Making it real means the whole seven-step list above, and then
+carrying both keys in every permission check written afterwards.
+
+You never need to, because signing resolves by role rather than by person:
+
+```ts
+if (plan.required === 1) return officerApprovals.some((a) => a.role === "TREASURER");
+```
+
+`.some`, not "all" — so a second account holding the real `TREASURER` role is
+treated identically to the first and adds no extra required signature. It cannot
+drift out of step with the thing it is testing, because it is not a copy of it.
+
+Migration `130_test_accounts.sql` sets up two, and they are the pattern for more:
+
+| Account | Role | Ministries |
+|---|---|---|
+| Test Treasurer | `TREASURER` | — |
+| Test EXCO Education | `MINISTRY_HEAD` | `Education` |
+
+- **Addresses are set in the app**, in Administration → Access & Roles → *Test
+  accounts*. They ship as `…@unset.invalid` — RFC 2606 reserves that TLD, so an
+  address nobody has filled in yet resolves nowhere and cannot be signed in as.
+  The editor goes through `rename_user_login`, so an address can be changed later
+  without stranding whatever the account has already signed.
+- **`is_test_account` restricts nothing.** It drives the warning bar
+  (`components/layout/test-account-banner.tsx`) and the chip in the account list.
+  The permissions are real, which is both the point and the hazard: a Test
+  Treasurer clears a real voucher up to RM30,000 on its own.
+- **Sign in with the email-link option**, not Google — a test address has no
+  Google account behind it.
+- **Education covers Education Desk.** `expandMinistries()` links the two both
+  ways, so the test account sees exactly what the real Education EXCO member
+  sees.
+
+To try a role on your own account instead, `/switch-role` is quicker and needs no
+address; it is limited to `TEST_ADMIN_EMAILS` and changes your own row. The
+tradeoff is that you are one role at a time, so a flow that hands a voucher
+between two people needs the accounts.
+
 ## Gotchas
 
 - **The key is immutable.** `user_roles.role` and every policy store it. Rename
