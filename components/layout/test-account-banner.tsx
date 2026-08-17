@@ -32,7 +32,7 @@ export function TestAccountBanner({ user }: { user: UserProfile }) {
         <FlaskConical size={14} className="shrink-0" /> Test account
       </span>
       <span className="text-[12px]">
-        Signed in as <strong>{user.full_name}</strong> — {roleWithScope(user.role, user.ministries)}.
+        Signed in as <strong>{user.full_name}</strong>, {roleWithScope(user.role, user.ministries)}.
         Real permissions on real records: anything approved here counts.
       </span>
     </div>

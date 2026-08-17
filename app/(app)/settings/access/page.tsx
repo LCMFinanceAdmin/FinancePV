@@ -325,9 +325,9 @@ export default function AccessRolesPage() {
             <FlaskConical size={15} /> Test accounts
           </h2>
           <p className="mt-1 text-xs text-amber-800">
-            These hold <strong>real roles with real permissions</strong> — that is what makes them a faithful test,
-            and it means a Test Treasurer&rsquo;s signature clears a real voucher exactly as the Treasurer&rsquo;s does.
-            Whoever is signed in as one sees a warning bar on every page.
+            These hold <strong>real roles with real permissions</strong>, which is what makes them a
+            faithful test: a Test Treasurer&rsquo;s signature clears a real voucher exactly as the
+            Treasurer&rsquo;s does. Whoever is signed in as one sees a warning bar on every page.
           </p>
           <p className="mt-1 text-xs text-amber-800">
             Give each one an address that can receive email, and sign in with the &ldquo;Email me a link&rdquo; option.
