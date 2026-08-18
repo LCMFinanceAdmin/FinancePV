@@ -185,6 +185,7 @@ export default function PayrollRunDetailPage() {
         s + dueFromBalance(ln, repayments, run.year, run.month, run.id).amount, 0);
       const line = calcLine({
         gross, age: ageAt(e.dob, run.year, ageMonth), employmentType: e.employment_type,
+        month: run.month,
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
         skbbkOptedOut: e.skbbk_opted_out,
         manualPcb: pcb[e.id] || 0, eplDeduction: epl, is13thMonth: is13th, rates,

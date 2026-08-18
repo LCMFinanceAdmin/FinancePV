@@ -195,6 +195,7 @@ export default function PayrollEmployeePage() {
   const monthLines: CalcLine[] = current ? MONTHS.map((_, i) => calcLine({
     gross: grossForMonth(current, emp.date_commenced, i + 1, false, emp.increment_month_override),
     age: ageAt(emp.dob, year, i + 1),
+    month: i + 1,
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
     voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,

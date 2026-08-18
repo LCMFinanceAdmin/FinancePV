@@ -307,6 +307,26 @@ export default function PayrollRatesPage() {
                 {/* A rate left at zero deducts nothing. For EPF or SOCSO that
                     would be obvious from the payslips; SKBBK is new and easy to
                     leave unset without anyone noticing for a month or two. */}
+                {/* A scheme that began in June is not owed for May. Shown
+                    beside the rate because the two are only correct together:
+                    the rate alone would reach back to January. */}
+                {group === "SKBBK" && (
+                  <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-stone-50 px-3 py-2">
+                    <span className="text-sm text-stone-600">
+                      Applies from
+                      <span className="block text-[11px] text-stone-400">
+                        Earlier months deduct nothing. Recover them with an adjustment on the employee&rsquo;s yearly sheet.
+                      </span>
+                    </span>
+                    <select disabled={!canEdit} className={inputCls}
+                      value={Number(row.skbbk_from_month) || 1}
+                      onChange={e => setField("skbbk_from_month", Number(e.target.value))}>
+                      {["January","February","March","April","May","June",
+                        "July","August","September","October","November","December"]
+                        .map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                    </select>
+                  </div>
+                )}
                 {group === "SKBBK" && Number(row.skbbk_ee) === 0 && (
                   <p className="mb-2 rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     Not set, so nothing is being deducted for SKBBK (Lindung 24). Enter the rate

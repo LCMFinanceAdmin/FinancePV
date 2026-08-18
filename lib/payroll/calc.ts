@@ -23,6 +23,14 @@ export interface RateConfig {
   eis_rate: number; eis_ceiling: number;
   // SKBBK (Lindung 24) — employee side only, so there is no employer twin here.
   skbbk_ee: number; skbbk_ceiling: number;
+  /**
+   * First month of the year SKBBK applies. 1 means the whole year.
+   *
+   * The rate table is keyed by year and this scheme began in June 2026, so
+   * without this the rate would reach back to January and deduct five months
+   * that were never taken. See migration 133.
+   */
+  skbbk_from_month?: number;
 }
 
 // Current LCM defaults — used when no year row is loaded.
@@ -35,7 +43,7 @@ export const DEFAULT_RATES: RateConfig = {
   // Zero until Finance enters the PERKESO figure. A blank deducts nothing and
   // is visibly unset; a guessed rate would quietly take the wrong amount from
   // every salary, which is the worse failure by far.
-  skbbk_ee: 0, skbbk_ceiling: 6000,
+  skbbk_ee: 0, skbbk_ceiling: 6000, skbbk_from_month: 1,
 };
 
 export interface CalcAdjustment {
@@ -71,6 +79,13 @@ export interface CalcInput {
   eplDeduction: number;        // monthly loan installment
   is13thMonth: boolean;        // 13th month: EPF + PCB only, no SOCSO/EIS
   skbbkOptedOut?: boolean;     // opted out of SKBBK (Lindung 24) — then nothing is deducted
+  /**
+   * The month being computed, 1-13. Only SKBBK reads it, to honour a scheme
+   * that starts part-way through the year. Optional: a caller that does not
+   * pass it gets the rate applied to every month, which is the right answer
+   * for any year the scheme ran throughout.
+   */
+  month?: number;
   rates?: RateConfig;          // editable statutory config; defaults to current rates
   customItems?: Array<{ label?: string; type: "allowance" | "deduction"; amount: number }>;
   /**
@@ -207,7 +222,13 @@ export function calcLine(input: CalcInput): CalcLine {
     // two gates: nothing on the 13th month, and nothing at 60+, where the
     // employee has no SOCSO share to supplement. Anyone who has left the
     // scheme pays nothing regardless.
-    if (!over60 && !input.skbbkOptedOut) {
+    // ...and a third gate: a scheme that started in June is not owed for May.
+    // Recovering the months between its start date and the payroll catching up
+    // is what an adjustment is for — it is a debt to a past month, not this
+    // month's contribution, and only the two kept apart will reconcile against
+    // PERKESO's own statement.
+    const startedByNow = (input.month ?? 13) >= (rates.skbbk_from_month ?? 1);
+    if (!over60 && !input.skbbkOptedOut && startedByNow) {
       skbbk = round2(Math.min(gross, rates.skbbk_ceiling) * rates.skbbk_ee);
     }
   }

@@ -458,6 +458,8 @@ export interface PayrollStatutoryRates {
   eis_rate: number; eis_ceiling: number;
   // SKBBK (Lindung 24) — employee side only, so no employer rate.
   skbbk_ee: number; skbbk_ceiling: number;
+  /** First month SKBBK applies. 1 = all year; 2026 = 6. See migration 133. */
+  skbbk_from_month: number;
   updated_by: string;
   updated_at: string;
 }
