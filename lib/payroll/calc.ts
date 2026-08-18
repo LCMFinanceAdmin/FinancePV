@@ -10,7 +10,9 @@
 // employer figures to within a few sen. The cent-perfect PERKESO contribution
 // schedule will be wired through the Phase 3 rate tables.
 
-import type { EmploymentType } from "@/lib/types";
+import type { AdjustmentCategory, EmploymentType } from "@/lib/types";
+
+export type { AdjustmentCategory };
 
 // Editable statutory rate config (from payroll_statutory_rates; fractions, 0.11 = 11%).
 export interface RateConfig {
@@ -36,6 +38,23 @@ export const DEFAULT_RATES: RateConfig = {
   skbbk_ee: 0, skbbk_ceiling: 6000,
 };
 
+export interface CalcAdjustment {
+  category: AdjustmentCategory;
+  /** Signed. Always means "add this to the named figure" — see migration 131. */
+  amount: number;
+  reason?: string;
+}
+
+/** What the adjustments come to, per figure. Absent categories are simply 0. */
+function sumAdjustments(adj: CalcAdjustment[]): Record<AdjustmentCategory, number> {
+  const out = {
+    GROSS: 0, PCB: 0, EPF_EE: 0, EPF_ER: 0, SOCSO_EE: 0, SOCSO_ER: 0,
+    SKBBK: 0, EIS_EE: 0, EIS_ER: 0, NET: 0,
+  } as Record<AdjustmentCategory, number>;
+  for (const a of adj) out[a.category] = round2(out[a.category] + Number(a.amount || 0));
+  return out;
+}
+
 export interface StatPortion {
   ee: number;
   er: number;
@@ -54,6 +73,17 @@ export interface CalcInput {
   skbbkOptedOut?: boolean;     // opted out of SKBBK (Lindung 24) — then nothing is deducted
   rates?: RateConfig;          // editable statutory config; defaults to current rates
   customItems?: Array<{ label?: string; type: "allowance" | "deduction"; amount: number }>;
+  /**
+   * Corrections landing in this month.
+   *
+   * Applied AFTER the statutory formulas, never fed back into them. An
+   * adjustment exists precisely because the formula produced the wrong answer,
+   * so recomputing from an adjusted figure would re-derive the error it was
+   * written to fix — and a GROSS correction that quietly moved EPF, SOCSO and
+   * EIS as well would make the one number Finance typed into four they did not.
+   * Anything that should move alongside it is its own adjustment, named.
+   */
+  adjustments?: CalcAdjustment[];
 }
 
 export interface CalcLine {
@@ -78,10 +108,21 @@ export interface CalcLine {
   customAllowances: number;
   customDeductions: number;
   customItems: Array<{ label: string; type: "allowance" | "deduction"; amount: number }>;
+  /** What was applied, kept so a payslip can itemise it rather than just differ. */
+  adjustments: CalcAdjustment[];
+  /** The net-only adjustment, separated because it belongs to no scheme. */
+  netAdjustment: number;
+  /** Whether anything was adjusted at all — cheaper than re-summing at each call site. */
+  hasAdjustments: boolean;
 }
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/** An employee/employer pair with its total, rounded once. */
+function portion(ee: number, er: number): StatPortion {
+  return { ee: round2(ee), er: round2(er), total: round2(ee + er) };
 }
 
 // EPF rate tiers (employee %, employer %), from the editable rate config.
@@ -171,28 +212,55 @@ export function calcLine(input: CalcInput): CalcLine {
     }
   }
 
-  const totalContrib: StatPortion = {
-    ee: round2(epf.ee + eis.ee + socso.ee),
-    er: round2(epf.er + eis.er + socso.er),
-    total: round2(epf.total + eis.total + socso.total),
-  };
+  // ── Corrections ───────────────────────────────────────────────────────
+  // Applied here, between the formulas and the totals. Late enough to override
+  // what the rate table produced, early enough that total contributions, net
+  // pay and LCM's cost all derive from the corrected figures instead of being
+  // patched up afterwards.
+  //
+  // This is the only place an adjustment has to be understood. The yearly
+  // sheet, a run's draft, the finalized line, the payslip and the PERKESO
+  // summary all read these totals, so each of them reflects a correction
+  // without knowing that corrections exist.
+  const adjustments = (input.adjustments ?? []).filter(a => Number(a.amount) !== 0);
+  const adj = sumAdjustments(adjustments);
+
+  const grossAdj  = round2(gross + adj.GROSS);
+  const pcbAdj    = round2((manualPcb || 0) + adj.PCB);
+  const epfAdj    = portion(epf.ee + adj.EPF_EE, epf.er + adj.EPF_ER);
+  const socsoAdj  = portion(socso.ee + adj.SOCSO_EE, socso.er + adj.SOCSO_ER);
+  const eisAdj    = portion(eis.ee + adj.EIS_EE, eis.er + adj.EIS_ER);
+  const skbbkAdj  = round2(skbbk + adj.SKBBK);
+
+  const totalContrib = portion(
+    epfAdj.ee + eisAdj.ee + socsoAdj.ee,
+    epfAdj.er + eisAdj.er + socsoAdj.er,
+  );
 
   const customRaw = input.customItems ?? [];
   const customAllowances = round2(customRaw.filter(i => i.type === "allowance").reduce((s, i) => s + i.amount, 0));
   const customDeductions = round2(customRaw.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0));
-  const net = round2(gross - (manualPcb || 0) - totalContrib.ee - skbbk - (eplDeduction || 0) - customDeductions + customAllowances);
-  const totalLcmPayment = round2(gross + totalContrib.er + customAllowances);
+
+  // adj.NET is money that belongs to no scheme, so it lands straight on take-home
+  // and on what the church pays out. Every other category has already moved net
+  // by moving the figure it names.
+  const net = round2(grossAdj - pcbAdj - totalContrib.ee - skbbkAdj - (eplDeduction || 0)
+    - customDeductions + customAllowances + adj.NET);
+  const totalLcmPayment = round2(grossAdj + totalContrib.er + customAllowances + adj.NET);
 
   return {
-    gross: round2(gross),
-    pcb: round2(manualPcb || 0),
-    epf, eis, socso, skbbk, totalContrib,
+    gross: grossAdj,
+    pcb: pcbAdj,
+    epf: epfAdj, eis: eisAdj, socso: socsoAdj, skbbk: skbbkAdj, totalContrib,
     eplDeduction: round2(eplDeduction || 0),
     net,
     totalLcmPayment,
     customAllowances,
     customDeductions,
     customItems: customRaw.filter(i => i.amount > 0).map(i => ({ label: i.label ?? "", type: i.type, amount: i.amount })),
+    adjustments,
+    netAdjustment: adj.NET,
+    hasAdjustments: adjustments.length > 0,
   };
 }
 

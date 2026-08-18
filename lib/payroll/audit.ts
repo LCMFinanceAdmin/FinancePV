@@ -10,7 +10,12 @@ export type PayrollAuditAction =
   | "RUN_FINALIZED" | "VOUCHER_PAID" | "BANK_EXPORT" | "PAYSLIPS_SENT"
   // Raising the run's payment vouchers for approval, and unwinding a run —
   // both change what has been committed, so both belong in the trail.
-  | "PVS_GENERATED" | "RUN_REVERTED";
+  | "PVS_GENERATED" | "RUN_REVERTED"
+  // Corrections to a payroll year. They move money and they override what the
+  // rate table produced, which is exactly the kind of change somebody will want
+  // an account of later — and the adjustment row itself is editable, so it
+  // cannot be its own history.
+  | "ADJUSTMENT_ADDED" | "ADJUSTMENT_UPDATED" | "ADJUSTMENT_DELETED";
 
 export async function logPayrollAudit(
   supabase: SupabaseClient,

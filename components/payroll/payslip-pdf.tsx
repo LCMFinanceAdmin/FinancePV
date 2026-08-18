@@ -62,6 +62,11 @@ const s = StyleSheet.create({
 
   pcbRow: { flexDirection: "row" },
   netRow: { flexDirection: "row" },
+  // The adjustments note. Deliberately quiet — it explains a figure rather
+  // than being one, and must not compete with the pay table above it.
+  adjBox: { marginTop: 6, border: "0.5 solid #d6d3d1", backgroundColor: "#fafaf9", padding: "4 6" },
+  adjTitle: { fontSize: 6.5, fontFamily: "Helvetica-Bold", color: "#78716c", marginBottom: 2 },
+  adjLine: { fontSize: 7, color: "#44403c", marginBottom: 1 },
 
   // ── Bottom 3-panel ───────────────────────────────────────────────────────────
   bottomRow: { flexDirection: "row", borderWidth: BDR, borderColor: "#78716c", borderTopWidth: 0 },
@@ -96,6 +101,15 @@ const s = StyleSheet.create({
   p3SigLine: { flex: 1, borderBottomWidth: 0.75, borderColor: "#555" },
 });
 
+/** Category keys as an employee should read them. */
+const ADJ_LABEL: Record<string, string> = {
+  PCB: "PCB (Income Tax)",
+  EPF_EE: "Employee EPF", EPF_ER: "Employer EPF",
+  SOCSO_EE: "Employee SOCSO", SOCSO_ER: "Employer SOCSO",
+  SKBBK: "SKBBK (Lindung 24)",
+  EIS_EE: "Employee EIS", EIS_ER: "Employer EIS",
+};
+
 export interface PayslipPDFProps {
   emp: PayrollEmployee;
   monthLabel: string;
@@ -110,12 +124,23 @@ export interface PayslipPDFProps {
   eplDeduction: number;
   net: number;
   customItems: { label: string; type: "allowance" | "deduction"; amount: number }[];
+  /**
+   * Corrections carried by this month.
+   *
+   * The statutory figures above already include theirs — they arrive adjusted
+   * from calcLine — so these are NOT added to them again. What is still missing
+   * without this is the itemisation: why gross is higher than the salary
+   * components add up to, and why SKBBK is three times its usual figure. A
+   * payslip whose total is right and whose lines do not explain it is the one
+   * that generates the phone call.
+   */
+  adjustments?: { category: string; amount: number; reason?: string }[];
 }
 
 export function PayslipPDF({
   emp, monthLabel, year, salary,
   gross, pcbVal, epfEe, epfEr, socsoEe, socsoEr, eisEe, eisEr, skbbk = 0,
-  eplDeduction, net, customItems,
+  eplDeduction, net, customItems, adjustments = [],
 }: PayslipPDFProps) {
   const dept = emp.posting_type === "CHURCH"
     ? `${(emp.designation || "PASTOR").toUpperCase()} - ${(emp.church_name || "").toUpperCase()}`
@@ -131,9 +156,19 @@ export function PayslipPDF({
     if (Number(salary.family_allowance) > 0) earns.push({ label: "Family allowance", amount: Number(salary.family_allowance) });
     if (Number(salary.stm_allowance) > 0) earns.push({ label: "STM / Allowance", amount: Number(salary.stm_allowance) });
     for (const i of customItems.filter(i => i.type === "allowance")) earns.push({ label: i.label, amount: i.amount });
+    // Gross corrections belong on the earnings side, or the items listed there
+    // stop adding up to the GROSS PAY figure printed below them.
+    for (const a of adjustments.filter(a => a.category === "GROSS")) {
+      earns.push({ label: a.reason || "Adjustment", amount: Number(a.amount) });
+    }
   } else {
     earns.push({ label: "Basic Salary", amount: gross });
   }
+
+  const netAdjustments = adjustments.filter(a => a.category === "NET");
+  // Corrections that moved a statutory figure rather than pay. They are already
+  // inside the numbers, so they are listed as a note rather than a line.
+  const statAdjustments = adjustments.filter(a => a.category !== "NET" && a.category !== "GROSS");
 
   // Deduction items
   const deds: { label: string; amount: number }[] = [
@@ -144,10 +179,16 @@ export function PayslipPDF({
     ...(pcbVal > 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
     ...(eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: eplDeduction }] : []),
     ...customItems.filter(i => i.type === "deduction").map(i => ({ label: i.label, amount: i.amount })),
+    // A net-only correction belongs to no scheme, so it has no figure of its
+    // own to sit inside. It goes here with its sign flipped — paying somebody
+    // an extra 100 is a deduction of −100 — which keeps the one piece of
+    // arithmetic a reader actually checks true: gross − deductions = net.
+    ...netAdjustments.map(a => ({ label: a.reason || "Adjustment", amount: -Number(a.amount) })),
   ];
 
   const totalDeductions = epfEe + socsoEe + skbbk + eisEe + pcbVal + eplDeduction +
-    customItems.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0);
+    customItems.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0)
+    - netAdjustments.reduce((s, a) => s + Number(a.amount), 0);
 
   const maxRows = Math.max(earns.length, deds.length);
   const rows = Array.from({ length: maxRows }, (_, i) => ({ e: earns[i], d: deds[i] }));
@@ -247,6 +288,23 @@ export function PayslipPDF({
             <Text style={[s.dDA, { fontFamily: "Helvetica-Bold", fontSize: 10, borderBottomWidth: 0 }]}>{n(net)}</Text>
           </View>
         </View>
+
+        {/* Why a statutory figure is not its usual amount.
+            These corrections are already inside the deductions above, so this
+            adds nothing to the arithmetic — it answers the question the
+            arithmetic provokes. Without it the only honest reading of an
+            unexpected SKBBK figure is that the payslip is wrong. */}
+        {statAdjustments.length > 0 && (
+          <View style={s.adjBox}>
+            <Text style={s.adjTitle}>ADJUSTMENTS THIS MONTH</Text>
+            {statAdjustments.map((a, i) => (
+              <Text key={i} style={s.adjLine}>
+                {`• ${ADJ_LABEL[a.category] ?? a.category}: ${Number(a.amount) > 0 ? "+" : "−"}${n(Math.abs(Number(a.amount)))}`}
+                {a.reason ? ` — ${a.reason}` : ""}
+              </Text>
+            ))}
+          </View>
+        )}
 
         {/* Bottom 3-panel row */}
         <View style={s.bottomRow}>

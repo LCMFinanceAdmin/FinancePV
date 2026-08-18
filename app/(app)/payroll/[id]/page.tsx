@@ -2,15 +2,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
-import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem } from "@/lib/types";
+import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem,
+  PayrollAdjustment, AdjustmentCategory } from "@/lib/types";
+import { ADJUSTMENT_CATEGORIES, adjustmentLabel } from "@/lib/types";
 import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
 import { EmployeeDocuments } from "@/components/payroll/employee-documents";
+import { AdjustmentModal } from "@/components/payroll/adjustment-modal";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
@@ -80,6 +83,8 @@ export default function PayrollEmployeePage() {
   const [slipMonth, setSlipMonth] = useState<number | null>(null); // 0-11 for months
   const [customItemsByMonth, setCustomItemsByMonth] = useState<Record<number, PayrollEmployeeCustomItem[]>>({});
   const [editingMonth, setEditingMonth] = useState<number | null>(null); // 1-13
+  const [adjustments, setAdjustments] = useState<PayrollAdjustment[]>([]);
+  const [adjModal, setAdjModal] = useState<{ month: number; editing: PayrollAdjustment | null } | null>(null);
   const [showYearlySheet, setShowYearlySheet] = useState(false);
   const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "documents">("overview");
 
@@ -94,6 +99,15 @@ export default function PayrollEmployeePage() {
     }
     setCustomItemsByMonth(byMonth);
   }, [supabase, id, year]);
+
+  const refreshAdjustments = useCallback(async () => {
+    const { data } = await supabase.from("payroll_adjustments")
+      .select("*").eq("employee_id", id).eq("year", year)
+      .order("month").order("created_at");
+    setAdjustments((data as PayrollAdjustment[]) ?? []);
+  }, [supabase, id, year]);
+
+  useEffect(() => { refreshAdjustments(); }, [refreshAdjustments]);
 
   useEffect(() => {
     (async () => {
@@ -140,6 +154,44 @@ export default function PayrollEmployeePage() {
   const fullGrossVal = current ? grossOf(current) : 0;
   const effMonth = incrementEffectiveMonth(emp.date_commenced, emp.increment_month_override);
   const eplForMonth = (m: number) => loans.reduce((s, ln) => s + installmentForMonth(ln, year, m), 0);
+
+  // Corrections landing in a given month, in the shape calcLine wants. Passing
+  // them in rather than patching the result is what makes every figure that
+  // derives from them — net, total contributions, LCM's cost — come out right
+  // without this page knowing how any of them are worked out.
+  const adjustmentsFor = (m: number) => adjustments.filter(a => a.month === m);
+  const adjInput = (m: number) => adjustmentsFor(m)
+    .map(a => ({ category: a.category, amount: Number(a.amount), reason: a.reason }));
+  /** What the corrections come to for one figure in one month — 0 if untouched. */
+  const adjAmt = (m: number, c: AdjustmentCategory) =>
+    adjustmentsFor(m).filter(a => a.category === c).reduce((t, a) => t + Number(a.amount), 0);
+  /** The reasons behind a corrected cell, for its tooltip. */
+  const adjWhy = (m: number, c: AdjustmentCategory) =>
+    adjustmentsFor(m).filter(a => a.category === c)
+      .map(a => `${Number(a.amount) > 0 ? "+" : "−"}${num(Math.abs(Number(a.amount)))} — ${a.reason}`)
+      .join("\n");
+  async function deleteAdjustment(a: PayrollAdjustment) {
+    const ok = confirm([
+      "Remove this adjustment?",
+      `${monthShort(a.month)} · ${adjustmentLabel(a.category)} ${Number(a.amount) > 0 ? "+" : "−"}${num(Math.abs(Number(a.amount)))}`
+        + `\n${a.reason}`,
+      "The month goes back to what the rate table produces.",
+    ].join("\n\n"));
+    if (!ok) return;
+    const { error } = await supabase.from("payroll_adjustments").delete().eq("id", a.id);
+    if (error) { alert(error.message); return; }
+    await logPayrollAudit(supabase, {
+      action: "ADJUSTMENT_DELETED", employeeId: id, entity: emp?.full_name ?? "",
+      detail: `${monthShort(a.month)} ${a.year} · ${adjustmentLabel(a.category)} ${num(Number(a.amount))} removed (was: ${a.reason})`,
+    });
+    await refreshAdjustments();
+  }
+
+  /** Tint and tooltip for a cell the corrections have moved. */
+  const adjCell = (m: number, c: AdjustmentCategory) =>
+    adjAmt(m, c) !== 0
+      ? { className: " bg-amber-100/70 font-semibold text-amber-900", title: adjWhy(m, c) }
+      : { className: "", title: undefined as string | undefined };
   const monthLines: CalcLine[] = current ? MONTHS.map((_, i) => calcLine({
     gross: grossForMonth(current, emp.date_commenced, i + 1, false, emp.increment_month_override),
     age: ageAt(emp.dob, year, i + 1),
@@ -152,6 +204,7 @@ export default function PayrollEmployeePage() {
     is13thMonth: false,
     rates,
     customItems: (customItemsByMonth[i + 1] ?? []).map(c => ({ label: c.label, type: c.type, amount: Number(c.amount) })),
+    adjustments: adjInput(i + 1),
   })) : [];
   // Orang Asli are excluded from the 13th month.
   const thirteenth: CalcLine | null = current && !emp.is_orang_asli ? calcLine({
@@ -165,6 +218,7 @@ export default function PayrollEmployeePage() {
     eplDeduction: 0,
     is13thMonth: true,
     rates,
+    adjustments: adjInput(13),
   }) : null;
   const allLines = thirteenth ? [...monthLines, thirteenth] : monthLines;
   const sum = (pick: (l: CalcLine) => number) => allLines.reduce((s, l) => s + pick(l), 0);
@@ -191,13 +245,13 @@ export default function PayrollEmployeePage() {
 
   function exportCsv() {
     const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
-    const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SOCSO ER", "SKBBK", "EIS EE", "EIS ER", "EPL", ...customHead, "Net", "Total LCM"];
+    const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SKBBK", "SOCSO ER", "EIS EE", "EIS ER", "EPL", ...customHead, "Net", "Total LCM"];
     const mkRow = (label: string, l: CalcLine, monthNum: number) =>
-      [label, l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.socso.er, l.skbbk, l.eis.ee, l.eis.er, l.eplDeduction,
+      [label, l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
        ...customCols.map(c => customAmt(monthNum, c)), l.net, l.totalLcmPayment];
     const rows: (string | number)[][] = monthLines.map((l, i) => mkRow(MONTHS[i], l, i + 1));
     if (thirteenth) rows.push(mkRow("13th MTH", thirteenth, 13));
-    rows.push(["ANNUAL", sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.socso.er), sum(l => l.skbbk), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
+    rows.push(["ANNUAL", sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.skbbk), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
     const csv = [head, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -337,27 +391,44 @@ export default function PayrollEmployeePage() {
             <div className="overflow-auto max-h-[72vh] rounded-lg">
               <table className="w-full text-[14px] border-collapse" style={{ minWidth: 1000 }}>
                 <thead>
-                  <tr className="text-stone-600 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-stone-100 [&>th]:shadow-[inset_0_-2px_0_#d6d3d1]">
-                    <th className="border border-stone-200 px-1.5 py-1 text-left">Month</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">Gross</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">PCB</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">EPF EE</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">EPF ER</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">SOCSO EE</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">SOCSO ER</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right" title="SKBBK (Lindung 24) — employee only">SKBBK</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">EIS EE</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">EIS ER</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
+                  {/* Two header rows: the scheme, then the side of it. Without
+                      the grouping, eight look-alike money columns sit in a row
+                      and "SOCSO ER" has to be read letter by letter to be told
+                      from "SOCSO EE". Anything not belonging to a scheme spans
+                      both rows so the reading order stays one column, one
+                      heading. */}
+                  <tr className="text-stone-600 [&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:bg-stone-100">
+                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-left align-bottom">Month</th>
+                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right align-bottom">Gross</th>
+                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right align-bottom">PCB</th>
+                    <th colSpan={2} className="border border-stone-200 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">EPF</th>
+                    {/* SKBBK sits inside SOCSO because that is what it is —
+                        Lindung 24 tops up the employee's SOCSO contribution and
+                        is filed on PERKESO's return. It keeps its own column
+                        and its own tint because it is not SOCSO EE: the two are
+                        reported as separate figures and reconciled separately. */}
+                    <th colSpan={3} className="border border-stone-200 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">SOCSO</th>
+                    <th colSpan={2} className="border border-stone-200 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">EIS</th>
+                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right align-bottom">EPL</th>
                     {customCols.map(col => (
-                      <th key={col.label} className="border border-stone-200 px-1.5 py-1 text-right max-w-[90px]">
+                      <th key={col.label} rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right align-bottom max-w-[90px]">
                         <div className="truncate text-[11px]">{col.label}</div>
                         <div className={`text-[9px] font-normal ${col.type === "allowance" ? "text-green-600" : "text-red-500"}`}>{col.type === "allowance" ? "+ allowance" : "− deduction"}</div>
                       </th>
                     ))}
-                    <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Net</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Total LCM</th>
-                    <th className="border border-stone-200 px-1 py-1 print:hidden w-14"></th>
+                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right font-bold align-bottom">Net</th>
+                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right font-bold align-bottom">Total LCM</th>
+                    <th rowSpan={2} className="border border-stone-200 px-1 py-1 print:hidden w-14"></th>
+                  </tr>
+                  <tr className="text-stone-600 [&>th]:sticky [&>th]:top-[29px] [&>th]:z-20 [&>th]:bg-stone-100 [&>th]:shadow-[inset_0_-2px_0_#d6d3d1]">
+                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
+                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
+                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
+                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold !bg-amber-50 text-amber-800"
+                        title="SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution">SKBBK</th>
+                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
+                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
+                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -367,18 +438,27 @@ export default function PayrollEmployeePage() {
                     return (
                     <tr key={i} className="odd:bg-stone-50/50 hover:bg-blue-50/40">
                       <td className="border border-stone-200 px-1.5 py-1 font-semibold text-stone-600">{MONTHS[i]}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.gross)}</td>
-                      <td className="border border-stone-200 px-0.5 py-0.5 text-right">
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "GROSS").className}`} title={adjCell(monthNum, "GROSS").title}>{num(l.gross)}</td>
+                      {/* The box keeps the figure Finance keyed; a correction is
+                          shown under it rather than folded in, or the number on
+                          screen would stop matching the one that was typed. */}
+                      <td className={`border border-stone-200 px-0.5 py-0.5 text-right${adjCell(monthNum, "PCB").className}`}
+                          title={adjCell(monthNum, "PCB").title}>
                         <input type="number" value={pcb[i] || ""} onChange={e => setPcb(p => { const n = [...p]; n[i] = parseFloat(e.target.value) || 0; return n; })}
                           className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
+                        {adjAmt(monthNum, "PCB") !== 0 && (
+                          <div className="pr-1 text-[9px] font-semibold text-amber-800">
+                            {adjAmt(monthNum, "PCB") > 0 ? "+" : "−"}{num(Math.abs(adjAmt(monthNum, "PCB")))} → {num(l.pcb)}
+                          </div>
+                        )}
                       </td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.epf.ee)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.epf.er)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.socso.ee)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.socso.er)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.skbbk)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.eis.ee)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(l.eis.er)}</td>
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "EPF_EE").className}`} title={adjCell(monthNum, "EPF_EE").title}>{num(l.epf.ee)}</td>
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "EPF_ER").className}`} title={adjCell(monthNum, "EPF_ER").title}>{num(l.epf.er)}</td>
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "SOCSO_EE").className}`} title={adjCell(monthNum, "SOCSO_EE").title}>{num(l.socso.ee)}</td>
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono bg-amber-50/60${adjCell(monthNum, "SKBBK").className}`} title={adjCell(monthNum, "SKBBK").title}>{num(l.skbbk)}</td>
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "SOCSO_ER").className}`} title={adjCell(monthNum, "SOCSO_ER").title}>{num(l.socso.er)}</td>
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "EIS_EE").className}`} title={adjCell(monthNum, "EIS_EE").title}>{num(l.eis.ee)}</td>
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "EIS_ER").className}`} title={adjCell(monthNum, "EIS_ER").title}>{num(l.eis.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
                       {customCols.map(col => {
                         const amt = customAmt(monthNum, col);
@@ -390,7 +470,7 @@ export default function PayrollEmployeePage() {
                           </td>
                         );
                       })}
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(l.net)}</td>
+                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold${adjCell(monthNum, "NET").className}`} title={adjCell(monthNum, "NET").title}>{num(l.net)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(l.totalLcmPayment)}</td>
                       <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
                         <div className="flex items-center justify-center gap-0.5">
@@ -417,8 +497,8 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.ee, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.er, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.ee, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.skbbk, 0))}</td>
+                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
@@ -442,8 +522,8 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.epf.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.epf.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.socso.ee)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.socso.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.skbbk)}</td>
+                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.socso.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.eis.ee)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.eis.er)}</td>
                       <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
@@ -482,8 +562,8 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.epf.ee))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.epf.er))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.socso.ee))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.socso.er))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.skbbk))}</td>
+                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.socso.er))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                     <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
@@ -498,6 +578,83 @@ export default function PayrollEmployeePage() {
                 </tbody>
               </table>
             </div>
+            {/* Corrections.
+                Below the sheet rather than inside it: the table answers "what
+                was paid", and its figures already include everything here. This
+                answers "why is September's SKBBK three times the usual", which
+                is a different question and is asked far less often — but is the
+                one nobody can reconstruct a year later without a record. */}
+            <div className="mt-4 rounded-xl border-2 border-amber-300 bg-amber-50/40 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex items-center gap-1.5 text-sm font-bold text-amber-900">
+                  <Scale size={15} /> Adjustments — {year}
+                  {adjustments.length > 0 && (
+                    <span className="rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      {adjustments.length}
+                    </span>
+                  )}
+                </h3>
+                {canEdit && (
+                  <button onClick={() => setAdjModal({ month: 1, editing: null })}
+                    className="flex items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-700">
+                    <Plus size={12} /> Add an adjustment
+                  </button>
+                )}
+              </div>
+
+              {adjustments.length === 0 ? (
+                <p className="mt-2 text-[12px] text-amber-800">
+                  None this year — every figure above comes straight from the salary record and the rate table.
+                  Add one when something the formula cannot know about has to be put right: a back-dated ruling,
+                  a keying error, a refund owed, or an arrangement agreed outside the scale.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {adjustments.map(a => {
+                    const amt = Number(a.amount);
+                    // What it does to take-home, spelled out. The sign on the
+                    // figure says what happens to that column, which is not the
+                    // same thing and is the easy mistake to make when reading.
+                    const takeHome = a.category === "EPF_ER" || a.category === "SOCSO_ER" || a.category === "EIS_ER"
+                      ? "no change to take-home — employer side"
+                      : (a.category === "GROSS" || a.category === "NET") === (amt > 0)
+                        ? `${num(Math.abs(amt))} more in hand`
+                        : `${num(Math.abs(amt))} less in hand`;
+                    return (
+                      <li key={a.id} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 rounded-lg border border-amber-200 bg-white px-2.5 py-2">
+                        <span className="rounded bg-stone-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                          {monthShort(a.month)}
+                        </span>
+                        <span className="text-[12px] font-semibold text-stone-800">{adjustmentLabel(a.category)}</span>
+                        <span className={`font-mono text-[12px] font-bold ${amt > 0 ? "text-red-600" : "text-green-700"}`}>
+                          {amt > 0 ? "+" : "−"}{num(Math.abs(amt))}
+                        </span>
+                        <span className="text-[11px] text-stone-500">({takeHome})</span>
+                        <span className="w-full text-[11px] text-stone-600">
+                          {a.reason}
+                          {a.origin_month != null && (
+                            <span className="text-stone-400"> · corrects {monthShort(a.origin_month)} {a.origin_year ?? year}</span>
+                          )}
+                        </span>
+                        {canEdit && (
+                          <span className="ml-auto flex items-center gap-1">
+                            <button onClick={() => setAdjModal({ month: a.month, editing: a })}
+                              title="Edit" className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-[#2f5b9c]">
+                              <Pencil size={12} />
+                            </button>
+                            <button onClick={() => deleteAdjustment(a)}
+                              title="Delete" className="rounded p-1 text-stone-400 hover:bg-red-50 hover:text-red-600">
+                              <Trash2 size={12} />
+                            </button>
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
             <p className="text-[11px] text-stone-400 mt-3">
               EPF / SOCSO / EIS auto-calculated from the {rates ? year : "default"} rate table (<Link href="/payroll/rates" className="text-[#4a6da7] hover:underline">edit rates</Link>);
               <span className="font-semibold"> PCB entered manually</span> per month (click a PCB cell).
@@ -678,7 +835,7 @@ export default function PayrollEmployeePage() {
 
       {slipMonth !== null && monthLines[slipMonth] && (
         <SlipModal emp={emp} month={MONTHS[slipMonth]} year={year}
-          line={monthLines[slipMonth]} pcbVal={pcb[slipMonth] || 0}
+          line={monthLines[slipMonth]}
           salary={current}
           onClose={() => setSlipMonth(null)} />
       )}
@@ -690,6 +847,15 @@ export default function PayrollEmployeePage() {
           items={customItemsByMonth[editingMonth] ?? []}
           onClose={() => setEditingMonth(null)}
           onSaved={refreshCustomItems}
+        />
+      )}
+
+      {adjModal && (
+        <AdjustmentModal
+          employeeId={emp.id} employeeName={emp.full_name} year={year}
+          month={adjModal.month} editing={adjModal.editing}
+          onClose={() => setAdjModal(null)}
+          onSaved={async () => { setAdjModal(null); await refreshAdjustments(); }}
         />
       )}
 
@@ -963,25 +1129,34 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
           <table className="w-full text-[12px] border-collapse" style={{ minWidth: 900 }}>
             <thead>
               <tr className="bg-[#4a6da7] text-white">
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-left">Month</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">Gross</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">PCB</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EPF EE</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EPF ER</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">SOCSO EE</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">SOCSO ER</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">SKBBK</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EIS EE</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right">EIS ER</th>
-                {hasEpl && <th className="border border-[#3d5c8f] px-2 py-1.5 text-right bg-red-800">EPL</th>}
+                <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-left align-bottom">Month</th>
+                <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-right align-bottom">Gross</th>
+                <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-right align-bottom">PCB</th>
+                <th colSpan={2} className="border border-[#3d5c8f] px-2 py-1 text-center text-[11px] uppercase tracking-wider">EPF</th>
+                <th colSpan={3} className="border border-[#3d5c8f] px-2 py-1 text-center text-[11px] uppercase tracking-wider">SOCSO</th>
+                <th colSpan={2} className="border border-[#3d5c8f] px-2 py-1 text-center text-[11px] uppercase tracking-wider">EIS</th>
+                {hasEpl && <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-right align-bottom bg-red-800">EPL</th>}
                 {customCols.map(col => (
-                  <th key={col.label} className={`border border-[#3d5c8f] px-2 py-1.5 text-right ${col.type === "allowance" ? "bg-green-800" : "bg-red-800"}`}>
+                  <th key={col.label} rowSpan={2} className={`border border-[#3d5c8f] px-2 py-1.5 text-right align-bottom ${col.type === "allowance" ? "bg-green-800" : "bg-red-800"}`}>
                     <div className="text-[10px] truncate max-w-[80px]">{col.label}</div>
                     <div className="text-[8px] opacity-75">{col.type === "allowance" ? "+allow" : "−deduct"}</div>
                   </th>
                 ))}
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right font-bold">Net</th>
-                <th className="border border-[#3d5c8f] px-2 py-1.5 text-right font-bold">Total LCM</th>
+                <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-right font-bold align-bottom">Net</th>
+                <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-right font-bold align-bottom">Total LCM</th>
+              </tr>
+              {/* The side of each scheme. SKBBK keeps its own column inside
+                  SOCSO: PERKESO itemises it separately on their own statement,
+                  so a sheet that merged it into SOCSO EE could not be lined up
+                  against theirs. */}
+              <tr className="bg-[#4a6da7] text-white">
+                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">EE</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">ER</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">EE</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px] bg-[#3d5c8f]">SKBBK</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">ER</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">EE</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">ER</th>
               </tr>
             </thead>
             <tbody>
@@ -995,8 +1170,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.epf.ee)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.epf.er)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.socso.ee)}</td>
-                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.socso.er)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.skbbk)}</td>
+                    <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.socso.er)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.eis.ee)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.eis.er)}</td>
                     {hasEpl && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{l.eplDeduction > 0 ? num(l.eplDeduction) : <span className="text-stone-200">—</span>}</td>}
@@ -1023,8 +1198,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.ee, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.er, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.ee, 0))}</td>
-                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.skbbk, 0))}</td>
+                <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                 {hasEpl && <td className="border border-stone-300 px-2 py-1 text-right font-mono bg-red-50 text-red-700">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>}
@@ -1044,8 +1219,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(thirteenth.epf.ee)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(thirteenth.epf.er)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.socso.ee)}</td>
-                  <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.socso.er)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.skbbk)}</td>
+                  <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.socso.er)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.eis.ee)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.eis.er)}</td>
                   {hasEpl && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{thirteenth.eplDeduction > 0 ? num(thirteenth.eplDeduction) : <span className="text-stone-200">—</span>}</td>}
@@ -1073,8 +1248,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.epf.ee))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.epf.er))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.socso.ee))}</td>
-                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.socso.er))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.skbbk))}</td>
+                <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.socso.er))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                 {hasEpl && <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono bg-red-700">{num(sum(l => l.eplDeduction))}</td>}
@@ -1266,14 +1441,21 @@ function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose,
 
 // ─── Salary Slip Modal ────────────────────────────────────────────────────────
 
-function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
+function SlipModal({ emp, month, year, line, salary, onClose }: {
   emp: PayrollEmployee; month: string; year: number;
-  line: CalcLine; pcbVal: number; salary: PayrollSalary | null; onClose: () => void;
+  line: CalcLine; salary: PayrollSalary | null; onClose: () => void;
 }) {
   function n2(n: number) { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function rm(n: number) { return `RM ${n2(n)}`; }
 
-  const totalDeductions = line.epf.ee + line.socso.ee + line.skbbk + line.eis.ee + pcbVal + line.eplDeduction + line.customDeductions;
+  // Everything here reads line.pcb rather than the figure Finance keyed. Once a
+  // correction lands on PCB the two differ, and the slip must show what is
+  // actually being withheld. The net-only adjustment sits outside every figure
+  // here, so it is folded in with its sign flipped — that keeps
+  // gross − deductions = net, which is the one sum anybody reading a payslip
+  // actually checks.
+  const totalDeductions = line.epf.ee + line.socso.ee + line.skbbk + line.eis.ee
+    + line.pcb + line.eplDeduction + line.customDeductions - line.netAdjustment;
   const dept = emp.posting_type === "CHURCH"
     ? `${emp.designation || "PASTOR"} - ${(emp.church_name || "").toUpperCase()}`
     : emp.department || emp.designation || "—";
@@ -1293,6 +1475,10 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
     for (const item of line.customItems.filter(i => i.type === "allowance")) {
       components.push({ label: item.label, amount: item.amount });
     }
+    // A gross correction, so the earnings listed still add up to GROSS PAY.
+    for (const a of line.adjustments.filter(a => a.category === "GROSS")) {
+      components.push({ label: a.reason || "Adjustment", amount: Number(a.amount) });
+    }
   } else {
     components.push({ label: "Basic Salary", amount: line.gross });
   }
@@ -1303,7 +1489,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
     `Employee: ${emp.full_name} (${emp.emp_no})`,
     ``,
     `Gross Pay: ${rm(line.gross)}`,
-    `EPF: ${rm(line.epf.ee)} | SOCSO: ${rm(line.socso.ee)}${line.skbbk > 0 ? ` | SKBBK: ${rm(line.skbbk)}` : ""} | EIS: ${rm(line.eis.ee)} | PCB: ${rm(pcbVal)}`,
+    `EPF: ${rm(line.epf.ee)} | SOCSO: ${rm(line.socso.ee)}${line.skbbk > 0 ? ` | SKBBK: ${rm(line.skbbk)}` : ""} | EIS: ${rm(line.eis.ee)} | PCB: ${rm(line.pcb)}`,
     `Total Deductions: ${rm(totalDeductions)}`,
     `*Net Pay: ${rm(line.net)}*`,
   ].join("\n");
@@ -1323,7 +1509,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
     ...components.map(c => `  ${c.label.padEnd(28)} ${n2(c.amount)}`),
     `  ${"".padEnd(28, "─")}`,
     `  GROSS PAY                    ${n2(line.gross)}`,
-    `  PCB (Monthly)                ${n2(pcbVal)}`,
+    `  PCB (Monthly)                ${n2(line.pcb)}`,
     ``,
     `DEDUCTION`,
     `  Employee EPF                 ${n2(line.epf.ee)}`,
@@ -1415,9 +1601,11 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                   { label: "Employee SOCSO", amount: line.socso.ee },
                   ...(line.skbbk > 0 ? [{ label: "SKBBK (Lindung 24)", amount: line.skbbk }] : []),
                   { label: "Employee EIS", amount: line.eis.ee },
-                  ...(pcbVal > 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
+                  ...(line.pcb > 0 ? [{ label: "PCB (Income Tax)", amount: line.pcb }] : []),
                   ...(line.eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: line.eplDeduction }] : []),
                   ...line.customItems.filter(i => i.type === "deduction").map(i => ({ label: i.label, amount: i.amount })),
+                  ...line.adjustments.filter(a => a.category === "NET")
+                    .map(a => ({ label: a.reason || "Adjustment", amount: -Number(a.amount) })),
                 ];
                 const maxRows = Math.max(components.length, deductions.length);
                 const rows = [];
@@ -1445,7 +1633,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                 <td className={`${tdR} font-bold`}>{n2(totalDeductions)}</td>
               </tr>
               <tr>
-                <td className={`${tdC} text-[11px] text-stone-500`}>PCB: Monthly: {n2(pcbVal)}</td>
+                <td className={`${tdC} text-[11px] text-stone-500`}>PCB: Monthly: {n2(line.pcb)}</td>
                 <td className={tdR}></td>
                 <td className={tdC}></td>
                 <td className={tdR}></td>
@@ -1491,7 +1679,7 @@ function SlipModal({ emp, month, year, line, pcbVal, salary, onClose }: {
                         <td className="text-right font-mono px-1">{n2(line.socso.ee)}</td>
                         {line.skbbk > 0 && <td className="text-right font-mono px-1">{n2(line.skbbk)}</td>}
                         <td className="text-right font-mono px-1">{n2(line.eis.ee)}</td>
-                        <td className="text-right font-mono px-1">{n2(pcbVal)}</td>
+                        <td className="text-right font-mono px-1">{n2(line.pcb)}</td>
                       </tr>
                       <tr>
                         <td className="pr-1 font-semibold">EMPLOYER :</td>

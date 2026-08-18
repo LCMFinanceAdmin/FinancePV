@@ -538,7 +538,75 @@ export interface PayrollLine {
   net: number;
   total_lcm: number;
   custom_items: CustomPayrollItem[];
+  /** Corrections as they stood when the run was finalized — see migration 131. */
+  adjustments: PayrollAdjustmentSnapshot[];
   created_at: string;
+}
+
+/**
+ * One named payroll figure an adjustment can move.
+ *
+ * Defined here rather than in lib/payroll/calc.ts because calc.ts already
+ * imports from this module; the other direction would make the two circular.
+ * Every value is a column of the yearly sheet, so an adjustment always has
+ * somewhere to show itself — and always lands in the right box on the
+ * statutory return. See migration 131.
+ */
+export type AdjustmentCategory =
+  | "GROSS" | "PCB"
+  | "EPF_EE" | "EPF_ER"
+  | "SOCSO_EE" | "SOCSO_ER"
+  | "SKBBK"
+  | "EIS_EE" | "EIS_ER"
+  | "NET";
+
+/** What each category is called on screen, and which side of the pay it sits. */
+export const ADJUSTMENT_CATEGORIES: {
+  key: AdjustmentCategory; label: string; group: string; side: "employee" | "employer" | "pay";
+}[] = [
+  { key: "GROSS",    label: "Gross / back pay", group: "Pay",    side: "pay" },
+  { key: "NET",      label: "Net pay only",     group: "Pay",    side: "pay" },
+  { key: "PCB",      label: "PCB (tax)",        group: "LHDN",   side: "employee" },
+  { key: "EPF_EE",   label: "EPF — employee",   group: "EPF",    side: "employee" },
+  { key: "EPF_ER",   label: "EPF — employer",   group: "EPF",    side: "employer" },
+  { key: "SOCSO_EE", label: "SOCSO — employee", group: "SOCSO",  side: "employee" },
+  { key: "SKBBK",    label: "SKBBK (Lindung 24)", group: "SOCSO", side: "employee" },
+  { key: "SOCSO_ER", label: "SOCSO — employer", group: "SOCSO",  side: "employer" },
+  { key: "EIS_EE",   label: "EIS — employee",   group: "EIS",    side: "employee" },
+  { key: "EIS_ER",   label: "EIS — employer",   group: "EIS",    side: "employer" },
+];
+
+export const adjustmentLabel = (c: AdjustmentCategory): string =>
+  ADJUSTMENT_CATEGORIES.find(x => x.key === c)?.label ?? c;
+
+/**
+ * A correction to one named payroll figure, landing in one month.
+ *
+ * `amount` is signed and always means "add this to the named figure", whatever
+ * the category. What that does to take-home follows from what the figure is:
+ * more SKBBK is less in hand, more GROSS is more.
+ */
+export interface PayrollAdjustment {
+  id: string;
+  employee_id: string;
+  year: number;
+  month: number;
+  category: AdjustmentCategory;
+  amount: number;
+  reason: string;
+  /** The period being corrected, when it is not the month this lands in. */
+  origin_year: number | null;
+  origin_month: number | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What a finalized line keeps: enough to itemise, without the row's identity. */
+export interface PayrollAdjustmentSnapshot {
+  category: AdjustmentCategory;
+  amount: number;
+  reason?: string;
 }
 
 export interface PayrollVoucher {

@@ -26,7 +26,7 @@ function listNames(names: string[]): string {
 
 /** Only the fields the balance needs; the full row lives in the table. */
 interface LoanRepaymentRow { loan_id: string; amount: number; payroll_run_id: string | null }
-import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem } from "@/lib/types";
+import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem, PayrollAdjustmentSnapshot } from "@/lib/types";
 
 const MONTH_LABELS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "13th Month"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -55,6 +55,8 @@ export default function PayrollRunDetailPage() {
   const [vouchers, setVouchers] = useState<PayrollVoucher[]>([]);
   const [pcb, setPcb] = useState<Record<string, number>>({});
   const [empCustomItems, setEmpCustomItems] = useState<Record<string, CustomPayrollItem[]>>({});
+  // Corrections landing in this run's month, per employee.
+  const [empAdjustments, setEmpAdjustments] = useState<Record<string, PayrollAdjustmentSnapshot[]>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -136,6 +138,19 @@ export default function PayrollRunDetailPage() {
     }
     setEmpCustomItems(customByEmp);
 
+    // Adjustments for exactly this period. Unlike custom items these never
+    // recur — a correction belongs to the month it was decided for, and one
+    // that repeated itself would go on recovering money already recovered.
+    const { data: adjRows } = await supabase
+      .from("payroll_adjustments")
+      .select("employee_id, category, amount, reason")
+      .eq("year", runRow.year).eq("month", runRow.month);
+    const adjByEmp: Record<string, PayrollAdjustmentSnapshot[]> = {};
+    for (const a of (adjRows as (PayrollAdjustmentSnapshot & { employee_id: string })[]) ?? []) {
+      (adjByEmp[a.employee_id] ??= []).push({ category: a.category, amount: Number(a.amount), reason: a.reason });
+    }
+    setEmpAdjustments(adjByEmp);
+
     // Stored bank exports for this run (private bucket, listed by prefix)
     const { data: exports } = await supabase.storage.from("employee-docs").list(`bank-exports/${id}`);
     setStoredExports((exports ?? [])
@@ -174,6 +189,7 @@ export default function PayrollRunDetailPage() {
         skbbkOptedOut: e.skbbk_opted_out,
         manualPcb: pcb[e.id] || 0, eplDeduction: epl, is13thMonth: is13th, rates,
         customItems: empCustomItems[e.id] ?? [],
+        adjustments: empAdjustments[e.id] ?? [],
       });
       return { emp: e, line };
     }).filter((x): x is ComputedRow => x !== null) : [];
@@ -204,6 +220,7 @@ export default function PayrollRunDetailPage() {
         eisEe: line.eis.ee, eisEr: line.eis.er, skbbk: line.skbbk,
         eplDeduction: line.eplDeduction, net: line.net,
         customItems: (line.customItems as CustomPayrollItem[]),
+        adjustments: line.adjustments,
       }))
     : lines.map(l => {
         const emp = employees.find(e => e.id === l.employee_id);
@@ -216,6 +233,9 @@ export default function PayrollRunDetailPage() {
           eisEe: Number(l.eis_ee), eisEr: Number(l.eis_er), skbbk: Number(l.skbbk ?? 0),
           eplDeduction: Number(l.epl), net: Number(l.net),
           customItems: (l.custom_items as CustomPayrollItem[]) ?? [],
+          // The snapshot, not today's adjustment rows: an issued payslip must
+          // keep saying what it said when it was issued.
+          adjustments: (l.adjustments as PayrollAdjustmentSnapshot[]) ?? [],
         };
       }).filter((x): x is NonNullable<typeof x> => x !== null);
 
@@ -267,6 +287,10 @@ export default function PayrollRunDetailPage() {
         eis_ee: line.eis.ee, eis_er: line.eis.er,
         epl: line.eplDeduction, net: line.net, total_lcm: line.totalLcmPayment,
         custom_items: line.customItems,
+        // Snapshotted with the rest. The figures above are already corrected;
+        // this is what lets a payslip issued today still say why, after the
+        // adjustment row behind it has been edited or removed.
+        adjustments: line.adjustments,
       }));
 
       const tNet = sumDraft(l => l.net);
@@ -380,7 +404,7 @@ export default function PayrollRunDetailPage() {
             emp={row.emp} monthLabel={MONTH_LABELS[run.month]} year={run.year}
             salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
             epfEe={row.epfEe} epfEr={row.epfEr}
-            socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk}
+            socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
             eisEe={row.eisEe} eisEr={row.eisEr}
             eplDeduction={row.eplDeduction} net={row.net}
             customItems={row.customItems}
@@ -1006,6 +1030,7 @@ interface PayslipRow {
   eisEe: number; eisEr: number;
   eplDeduction: number; net: number;
   customItems: CustomPayrollItem[];
+  adjustments?: PayrollAdjustmentSnapshot[];
 }
 
 type SendMethod = "email" | "whatsapp" | "both";
@@ -1057,7 +1082,7 @@ function SendPayslipModal({ run, rows, onClose }: {
           emp={row.emp} monthLabel={monthLabel} year={run.year}
           salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
           epfEe={row.epfEe} epfEr={row.epfEr}
-          socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk}
+          socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
           eisEe={row.eisEe} eisEr={row.eisEr}
           eplDeduction={row.eplDeduction} net={row.net}
           customItems={row.customItems}
@@ -1129,7 +1154,7 @@ function SendPayslipModal({ run, rows, onClose }: {
         const blob = await pdf(
           <PayslipPDF emp={row.emp} monthLabel={monthLabel} year={run.year}
             salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
-            epfEe={row.epfEe} epfEr={row.epfEr} socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk}
+            epfEe={row.epfEe} epfEr={row.epfEr} socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
             eisEe={row.eisEe} eisEr={row.eisEr} eplDeduction={row.eplDeduction} net={row.net}
             customItems={row.customItems} />
         ).toBlob();
