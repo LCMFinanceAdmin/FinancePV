@@ -29,6 +29,7 @@ const ACTION_META: Record<string, { label: string; cls: string }> = {
   LOAN_REJECTED: { label: "Loan rejected", cls: "bg-red-100 text-red-600" },
   LOAN_APPROVED_LEGACY: { label: "Loan approved", cls: "bg-green-100 text-green-700" },
   RUN_FINALIZED: { label: "Run finalized", cls: "bg-[#4a6da7]/10 text-[#4a6da7]" },
+  LINE_CORRECTED: { label: "Line corrected", cls: "bg-amber-100 text-amber-800" },
   VOUCHER_PAID: { label: "Voucher paid", cls: "bg-green-100 text-green-700" },
   BANK_EXPORT: { label: "Bank export", cls: "bg-emerald-100 text-emerald-700" },
   PAYSLIPS_SENT: { label: "Payslips sent", cls: "bg-blue-100 text-blue-700" },
@@ -40,7 +41,7 @@ const FILTER_GROUPS: { key: string; label: string; actions: string[] }[] = [
   { key: "salary", label: "Salary changes", actions: ["SALARY_CHANGE"] },
   { key: "documents", label: "Documents", actions: ["DOC_UPLOAD", "DOC_UPDATE", "DOC_DELETE"] },
   { key: "loans", label: "Loans & e-signs", actions: ["LOAN_APPLIED", "LOAN_SIGNED", "LOAN_REJECTED", "LOAN_APPROVED_LEGACY"] },
-  { key: "runs", label: "Payroll runs", actions: ["RUN_FINALIZED", "VOUCHER_PAID"] },
+  { key: "runs", label: "Payroll runs", actions: ["RUN_FINALIZED", "VOUCHER_PAID", "LINE_CORRECTED"] },
   { key: "exports", label: "Bank exports", actions: ["BANK_EXPORT"] },
   { key: "payslips", label: "Payslips", actions: ["PAYSLIPS_SENT"] },
 ];
