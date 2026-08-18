@@ -8,7 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
 import { BankExportModal, buildBankRows, generateWorkbook } from "@/components/payroll/bank-export-modal";
 import { generateStatutorySummary } from "@/components/payroll/statutory-summary";
-import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
+import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
 
@@ -57,6 +57,7 @@ export default function PayrollRunDetailPage() {
   const [empCustomItems, setEmpCustomItems] = useState<Record<string, CustomPayrollItem[]>>({});
   // Corrections landing in this run's month, per employee.
   const [empAdjustments, setEmpAdjustments] = useState<Record<string, PayrollAdjustmentSnapshot[]>>({});
+  const [bands, setBands] = useState<ContributionBand[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -89,8 +90,11 @@ export default function PayrollRunDetailPage() {
     setRun(runRow);
     if (!runRow) { setLoading(false); return; }
 
-    const [{ data: rateRow }, { data: emps }, { data: sals }, { data: lns }, { data: reps }] = await Promise.all([
+    const [{ data: rateRow }, { data: bandRows }, { data: emps }, { data: sals }, { data: lns }, { data: reps }] = await Promise.all([
       supabase.from("payroll_statutory_rates").select("*").eq("year", runRow.year).maybeSingle(),
+      // PERKESO's schedule for the year. calcLine uses it where it covers the
+      // wage and falls back to the percentage where it does not.
+      supabase.from("payroll_contribution_bands").select("*").eq("year", runRow.year).order("wage_from"),
       supabase.from("payroll_employees").select("*").order("full_name"),
       supabase.from("payroll_salary").select("*").order("effective_from", { ascending: false }),
       supabase.from("employee_loans").select("*").eq("status", "ACTIVE"),
@@ -99,6 +103,7 @@ export default function PayrollRunDetailPage() {
       supabase.from("loan_repayments").select("loan_id,amount,payroll_run_id"),
     ]);
     setRates((rateRow as RateConfig) ?? undefined);
+    setBands((bandRows as ContributionBand[]) ?? []);
     setEmployees((emps as PayrollEmployee[]) ?? []);
 
     const latest: Record<string, PayrollSalary> = {};
@@ -185,7 +190,7 @@ export default function PayrollRunDetailPage() {
         s + dueFromBalance(ln, repayments, run.year, run.month, run.id).amount, 0);
       const line = calcLine({
         gross, age: ageAt(e.dob, run.year, ageMonth), employmentType: e.employment_type,
-        month: run.month,
+        month: run.month, bands,
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
         skbbkOptedOut: e.skbbk_opted_out,
         manualPcb: pcb[e.id] || 0, eplDeduction: epl, is13thMonth: is13th, rates,

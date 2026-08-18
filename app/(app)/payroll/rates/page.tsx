@@ -3,9 +3,10 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Percent, Save, Plus, Upload, FileText, ExternalLink, Sparkles, X, CheckCheck } from "lucide-react";
+import { ArrowLeft, Percent, Save, Plus, Upload, FileText, ExternalLink, Sparkles, X, CheckCheck, Table2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile, PayrollStatutoryRates } from "@/lib/types";
+import type { ContributionBand } from "@/lib/payroll/calc";
 
 const PCT_FIELDS: { key: keyof PayrollStatutoryRates; label: string; group: string }[] = [
   { key: "epf_ee_under60", label: "EPF Employee — under 60", group: "EPF" },
@@ -35,6 +36,7 @@ export default function PayrollRatesPage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const [row, setRow] = useState<PayrollStatutoryRates | null>(null);
+  const [bands, setBands] = useState<ContributionBand[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
@@ -67,9 +69,13 @@ export default function PayrollRatesPage() {
 
   const loadRow = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("payroll_statutory_rates").select("*").eq("year", year).maybeSingle();
+    const [{ data }, { data: bandRows }] = await Promise.all([
+      supabase.from("payroll_statutory_rates").select("*").eq("year", year).maybeSingle(),
+      supabase.from("payroll_contribution_bands").select("*").eq("year", year).order("wage_from"),
+    ]);
     const r = (data as PayrollStatutoryRates) ?? null;
     setRow(r);
+    setBands((bandRows as ContributionBand[]) ?? []);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setGazetteUrl((r as any)?.gazette_url ?? "");
     setGazetteFile(null);
@@ -349,6 +355,66 @@ export default function PayrollRatesPage() {
                 </div>
               </div>
             ))}
+            {/* Whether the percentages above are being used at all.
+                When PERKESO's schedule is loaded for the year it takes over for
+                SOCSO, EIS and SKBBK, and the rates become the fallback for wages
+                the schedule does not reach. Saying so here matters: otherwise
+                somebody edits a percentage, sees no change on any payslip, and
+                has no way to find out why. */}
+            <div className={`rounded-xl border-2 p-3 ${bands.length
+              ? "border-green-300 bg-green-50/60" : "border-stone-200 bg-stone-50"}`}>
+              <p className="flex items-center gap-1.5 text-xs font-bold text-stone-700">
+                <Table2 size={13} /> PERKESO contribution schedule
+              </p>
+              {bands.length === 0 ? (
+                <p className="mt-1 text-[11px] text-stone-500">
+                  Not loaded for {year}. SOCSO, EIS and SKBBK are computed from the percentages above,
+                  applied to the actual wage — within a few sen of PERKESO&rsquo;s schedule, but not identical to it.
+                </p>
+              ) : (
+                <>
+                  <p className="mt-1 text-[11px] text-stone-600">
+                    <span className="font-semibold">{bands.length} bands</span> loaded for {year}, covering
+                    RM{Number(bands[0].wage_from).toFixed(0)} upward. SOCSO, EIS and SKBBK come from this
+                    table, computed on each band&rsquo;s midpoint — so the figures match what PERKESO&rsquo;s own
+                    statement shows. The percentages above apply only to wages below the table.
+                  </p>
+                  <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-stone-200 bg-white">
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 bg-stone-100 text-stone-600">
+                        <tr>
+                          <th className="px-2 py-1 text-left font-semibold">Monthly wage</th>
+                          <th className="px-2 py-1 text-right font-semibold">SOCSO EE</th>
+                          <th className="px-2 py-1 text-right font-semibold">SOCSO ER</th>
+                          <th className="px-2 py-1 text-right font-semibold">SKBBK</th>
+                          <th className="px-2 py-1 text-right font-semibold">EIS ea.</th>
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono">
+                        {bands.map(b => (
+                          <tr key={b.wage_from} className="odd:bg-stone-50/60">
+                            <td className="px-2 py-0.5 font-sans text-stone-600">
+                              {b.wage_to === null
+                                ? `over ${Number(b.wage_from).toFixed(0)}`
+                                : `${Number(b.wage_from).toFixed(0)} – ${Number(b.wage_to).toFixed(0)}`}
+                            </td>
+                            <td className="px-2 py-0.5 text-right">{Number(b.socso_ee).toFixed(2)}</td>
+                            <td className="px-2 py-0.5 text-right">{Number(b.socso_er).toFixed(2)}</td>
+                            <td className="px-2 py-0.5 text-right">{Number(b.skbbk).toFixed(2)}</td>
+                            <td className="px-2 py-0.5 text-right">{Number(b.eis).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="mt-1.5 text-[10.5px] text-stone-500">
+                    A band is read as PERKESO writes it — over the lower figure, up to and including the
+                    upper. A salary of exactly RM4,200 sits in the band below the one starting at 4,200.
+                  </p>
+                </>
+              )}
+            </div>
+
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Wage Ceilings</p>
               <div className="space-y-1.5">

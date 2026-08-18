@@ -5,10 +5,18 @@
 // admin-editable rate tables. Verified against the TAN EE YAN (2025) reference sheet.
 //
 // NOTE on exactness: EPF matches KWSP's contribution schedule via the RM20 wage-band
-// + round-up method. SOCSO/EIS here use the straight-percentage method with a wage
-// ceiling, which matches the reference sheet's employee figures exactly and the
-// employer figures to within a few sen. The cent-perfect PERKESO contribution
-// schedule will be wired through the Phase 3 rate tables.
+// + round-up method.
+//
+// SOCSO, EIS and SKBBK come from PERKESO's own contribution schedule when it is
+// loaded for the year (payroll_contribution_bands, migration 135). Those figures
+// derive from the band's MIDPOINT rather than the wage, which is what PERKESO's
+// statement is built from, so a filed summary reconciles against theirs line by
+// line.
+//
+// The straight-percentage method below is the fallback, used when no band covers
+// the wage — in practice only below the bottom of the schedule. It is within a
+// few sen of the published figures but not identical, and the two are never
+// mixed within one payslip: a wage either finds a band or it does not.
 
 import type { AdjustmentCategory, EmploymentType } from "@/lib/types";
 
@@ -63,6 +71,37 @@ function sumAdjustments(adj: CalcAdjustment[]): Record<AdjustmentCategory, numbe
   return out;
 }
 
+/**
+ * One row of PERKESO's contribution schedule. See migration 135.
+ *
+ * The band is read as PERKESO writes it — "melebihi wage_from tetapi tidak
+ * melebihi wage_to" — so it is exclusive at the bottom and inclusive at the top.
+ * A salary of exactly 4,200 belongs to the band below the one starting there.
+ */
+export interface ContributionBand {
+  wage_from: number;
+  wage_to: number | null;   // null on the open top band, which is the ceiling
+  socso_ee: number;
+  socso_er: number;
+  socso_er_over60: number;
+  skbbk: number;
+  eis: number;
+}
+
+/**
+ * The band a wage falls in, or null if the schedule does not cover it.
+ *
+ * Null is the important case: it is what makes a partly-loaded schedule fall
+ * back to the percentage method for everybody rather than apply the table to
+ * some wages and the formula to others. Two methods running side by side would
+ * be far harder to explain than one that is merely approximate.
+ */
+export function findBand(bands: ContributionBand[] | undefined, gross: number): ContributionBand | null {
+  if (!bands?.length) return null;
+  return bands.find(b =>
+    gross > b.wage_from && (b.wage_to === null || gross <= b.wage_to)) ?? null;
+}
+
 export interface StatPortion {
   ee: number;
   er: number;
@@ -99,6 +138,15 @@ export interface CalcInput {
    * Anything that should move alongside it is its own adjustment, named.
    */
   adjustments?: CalcAdjustment[];
+  /**
+   * PERKESO's schedule for the year.
+   *
+   * When a band covers this wage, SOCSO / EIS / SKBBK come from it rather than
+   * from a percentage — that is what the filed figures have to match, since
+   * PERKESO's own statement is built from the same table. Absent or not
+   * covering the wage, the percentage method applies exactly as before.
+   */
+  bands?: ContributionBand[];
 }
 
 export interface CalcLine {
@@ -205,17 +253,28 @@ export function calcLine(input: CalcInput): CalcLine {
   let eis: StatPortion = { ee: 0, er: 0, total: 0 };
   let skbbk = 0;
   if (!is13thMonth) {
-    const socsoBase = Math.min(gross, rates.socso_ceiling);
     const over60 = input.age >= 60;
-    // 60+: employment-injury only (no employee share); else standard rates
-    const socsoEe = over60 ? 0 : socsoBase * rates.socso_ee;
-    const socsoEr = over60 ? socsoBase * rates.socso_er_over60 : socsoBase * rates.socso_er;
-    socso = { ee: round2(socsoEe), er: round2(socsoEr), total: round2(socsoEe + socsoEr) };
+    // PERKESO's schedule where it covers this wage; the percentage otherwise.
+    // The band's figures already account for the midpoint and the schedule's
+    // own rounding, so nothing here rounds them again.
+    const band = findBand(input.bands, gross);
 
-    if (!over60) {
-      const eisBase = Math.min(gross, rates.eis_ceiling);
-      const eisAmt = eisBase * rates.eis_rate;
-      eis = { ee: round2(eisAmt), er: round2(eisAmt), total: round2(eisAmt * 2) };
+    if (band) {
+      // 60+ is Category 2: employment injury only, and no employee share.
+      socso = portion(over60 ? 0 : band.socso_ee, over60 ? band.socso_er_over60 : band.socso_er);
+      if (!over60) eis = portion(band.eis, band.eis);
+    } else {
+      const socsoBase = Math.min(gross, rates.socso_ceiling);
+      // 60+: employment-injury only (no employee share); else standard rates
+      const socsoEe = over60 ? 0 : socsoBase * rates.socso_ee;
+      const socsoEr = over60 ? socsoBase * rates.socso_er_over60 : socsoBase * rates.socso_er;
+      socso = portion(socsoEe, socsoEr);
+
+      if (!over60) {
+        const eisBase = Math.min(gross, rates.eis_ceiling);
+        const eisAmt = eisBase * rates.eis_rate;
+        eis = portion(eisAmt, eisAmt);
+      }
     }
 
     // SKBBK tops up the employee's SOCSO contribution, so it follows the same
@@ -229,7 +288,9 @@ export function calcLine(input: CalcInput): CalcLine {
     // PERKESO's own statement.
     const startedByNow = (input.month ?? 13) >= (rates.skbbk_from_month ?? 1);
     if (!over60 && !input.skbbkOptedOut && startedByNow) {
-      skbbk = round2(Math.min(gross, rates.skbbk_ceiling) * rates.skbbk_ee);
+      // From the schedule where it reaches, since SKBBK is a column of the same
+      // table and is filed off it. The rate is the fallback, not the source.
+      skbbk = band ? band.skbbk : round2(Math.min(gross, rates.skbbk_ceiling) * rates.skbbk_ee);
     }
   }
 

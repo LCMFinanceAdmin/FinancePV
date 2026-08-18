@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem,
@@ -78,6 +78,7 @@ export default function PayrollEmployeePage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [pcb, setPcb] = useState<number[]>(Array(13).fill(0)); // 0-11 = months, 12 = 13th month
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
+  const [bands, setBands] = useState<ContributionBand[]>([]);
   const [canEdit, setCanEdit] = useState(false);
   const [showRevision, setShowRevision] = useState(false);
   const [slipMonth, setSlipMonth] = useState<number | null>(null); // 0-11 for months
@@ -111,8 +112,13 @@ export default function PayrollEmployeePage() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("payroll_statutory_rates").select("*").eq("year", year).maybeSingle();
+      const [{ data }, { data: bandRows }] = await Promise.all([
+        supabase.from("payroll_statutory_rates").select("*").eq("year", year).maybeSingle(),
+        // PERKESO's schedule for the year — see migration 135.
+        supabase.from("payroll_contribution_bands").select("*").eq("year", year).order("wage_from"),
+      ]);
       setRates((data as RateConfig) ?? undefined);
+      setBands((bandRows as ContributionBand[]) ?? []);
       await refreshCustomItems();
     })();
   }, [supabase, year, id, refreshCustomItems]);
@@ -196,6 +202,7 @@ export default function PayrollEmployeePage() {
     gross: grossForMonth(current, emp.date_commenced, i + 1, false, emp.increment_month_override),
     age: ageAt(emp.dob, year, i + 1),
     month: i + 1,
+    bands,
     employmentType: emp.employment_type,
     isOrangAsli: emp.is_orang_asli,
     voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
@@ -219,6 +226,7 @@ export default function PayrollEmployeePage() {
     eplDeduction: 0,
     is13thMonth: true,
     rates,
+    bands,
     adjustments: adjInput(13),
   }) : null;
   const allLines = thirteenth ? [...monthLines, thirteenth] : monthLines;
