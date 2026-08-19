@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { withTitle } from "@/lib/ministry";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen } from "lucide-react";
@@ -28,7 +29,8 @@ interface Person {
   /** Their contact address, and the one they sign in with — often different. */
   email: string | null; user_email: string | null;
   /** PASTOR | REVEREND | RETIRED, or null for anyone not in ministry. */
-  pastor_standing: string | null;
+  ordination: string | null;
+  ministry_status: string | null;
   congregation_id: string | null;
 }
 
@@ -71,12 +73,12 @@ export default function ChurchDirectoryPage() {
       // educationdesk@, mission@ — and left out anybody with a record who has
       // not signed in yet.
       //
-      // Standing comes from people.pastor_standing (migration 146), not from
-      // user_roles.is_pastor. The two were both claiming to answer "is this
-      // person a pastor" and had already diverged — standing knew about one,
-      // the flag about none — so the directory saw no pastors at all.
+      // Being in ministry comes from people.ministry_status (migration 154),
+      // not from user_roles.is_pastor. The two were both claiming to answer "is
+      // this person a pastor" and had already diverged — standing knew about
+      // one, the flag about none — so the directory saw no pastors at all.
       supabase.from("people")
-        .select("id,full_name,email,user_email,pastor_standing,congregation_id")
+        .select("id,full_name,email,user_email,ordination,ministry_status,congregation_id")
         .eq("status", "ACTIVE").order("full_name"),
       // Why each person cannot be Dean of each district, from the same rule
       // the register uses. One call rather than one per person per district.
@@ -106,7 +108,7 @@ export default function ChurchDirectoryPage() {
   // Somebody with no address at all cannot be reached by a leave request, so
   // they are not offered — picking them would look like it worked.
   const reachable = people.filter(p => loginOf(p));
-  const pastors = reachable.filter(p => p.pastor_standing);
+  const pastors = reachable.filter(p => p.ministry_status);
   const pastorOptions = pastors.length > 0 ? pastors : reachable;
 
   async function saveDistrict(d: District) {
@@ -215,7 +217,7 @@ export default function ChurchDirectoryPage() {
                       const why = deanBlocks[`${d.id}|${p.id}`];
                       return (
                         <option key={p.id} value={loginOf(p)}>
-                          {p.full_name}{why ? `  ·  ${why}` : ""}
+                          {withTitle(p.full_name, p.ordination)}{why ? `  ·  ${why}` : ""}
                         </option>
                       );
                     })}
@@ -225,7 +227,7 @@ export default function ChurchDirectoryPage() {
                     const why = chosen ? deanBlocks[`${d.id}|${chosen.id}`] : null;
                     return why ? (
                       <p className="mt-1 rounded-lg border-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-                        {chosen?.full_name} would not normally be Dean here — {why}.
+                        {chosen ? withTitle(chosen.full_name, chosen.ordination) : ""} would not normally be Dean here — {why}.
                       </p>
                     ) : null;
                   })()}
@@ -289,7 +291,7 @@ export default function ChurchDirectoryPage() {
                       onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, head_pastor_email: e.target.value || null } : x))}>
                       <option value="">— none —</option>
                       {pastorOptions.map(p => (
-                        <option key={p.id} value={loginOf(p)}>{p.full_name}</option>
+                        <option key={p.id} value={loginOf(p)}>{withTitle(p.full_name, p.ordination)}</option>
                       ))}
                     </select>
                   </div>

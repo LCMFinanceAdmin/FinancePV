@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { excoAssignableMinistries } from "@/lib/ministries";
+import { ORDINATIONS, MINISTRY_STATUSES, standingLabel } from "@/lib/ministry";
 import { EmploymentPanel } from "@/components/people/employment-panel";
 import { DocumentsPanel } from "@/components/people/documents-panel";
 import { MembershipPanel } from "@/components/people/membership-panel";
@@ -50,7 +51,10 @@ interface Person {
   user_email: string | null; payroll_employee_id: string | null;
   photo_path: string | null; bio: string | null; notes: string | null;
   // Migration 146 — the facts eligibility for a post actually turns on.
-  pastor_standing: "PASTOR" | "REVEREND" | "RETIRED_WORKING" | "RETIRED" | null;
+  // Migration 154 — ordination is permanent, status is not. One column could
+  // not hold both, so a Reverend who retired stopped reading as a Reverend.
+  ordination: "PASTOR" | "REVEREND" | null;
+  ministry_status: "ACTIVE" | "RETIRED_CONTRACT" | "RETIRED" | null;
   // Migration 152 — where somebody in ministry is posted. Not every pastor
   // serves a church; some are based at HQ running a desk.
   posting: "HQ" | "CONGREGATION" | null;
@@ -69,15 +73,6 @@ interface Organisation { id: string; name: string; short_name: string | null }
 interface ExternalChurch { id: string; name: string; town: string | null }
 interface Department { id: string; name: string }
 
-const STANDINGS = [
-  { key: "PASTOR",          label: "Pastor (unordained)" },
-  { key: "REVEREND",        label: "Rev. (ordained)" },
-  // Retirement splits in two (migration 151): one still serves a congregation
-  // and appears on the payroll, the other does neither. Both are retired for
-  // eligibility — being on contract does not un-retire somebody.
-  { key: "RETIRED_WORKING", label: "Retired pastor (still working on contract)" },
-  { key: "RETIRED",         label: "Retired pastor (not working)" },
-];
 const AFFILIATIONS = [
   { key: "LCM_MEMBER",    label: "Member of an LCM congregation" },
   { key: "OTHER_CHURCH",  label: "Member of another church" },
@@ -380,6 +375,7 @@ export default function PersonProfilePage() {
                 <Field label="Category" value={cat.one} />
                 <Field label="Primary role" value={office ? `${office.title}${office.role ? ` (${office.role})` : ""}` : cat.one} />
                 <Field label="Status" value={titleCase(person.status)} />
+                <Field label="Standing" value={standingLabel(person.ordination, person.ministry_status)} />
                 <Field label="Posted at" value={
                   person.posting === "HQ" ? "HQ"
                     : person.posting === "CONGREGATION" ? (congregationName ?? "An LCM congregation")
@@ -844,11 +840,28 @@ function EditPersonModal({ person, congregations, districts, organisations, extC
             as ineligible, so a post says what it still needs to know. */}
         <div className="grid gap-2 sm:grid-cols-2">
           <div>
-            <label className={labelClass}>Standing in ministry</label>
-            <select className={fieldClass} value={d.pastor_standing ?? ""}
-              onChange={e => set("pastor_standing", (e.target.value || null) as Person["pastor_standing"])}>
+            <label className={labelClass}>Ordination</label>
+            <select className={fieldClass} value={d.ordination ?? ""}
+              onChange={e => set("ordination", (e.target.value || null) as Person["ordination"])}>
+              <option value="">— not recorded —</option>
+              {ORDINATIONS.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
+            <p className="mt-1 text-[11px] text-stone-400">
+              Kept separately from retirement, because it does not lapse — a Reverend who
+              retires is still a Reverend.
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>In ministry</label>
+            <select className={fieldClass} value={d.ministry_status ?? ""}
+              onChange={e => {
+                const v = (e.target.value || null) as Person["ministry_status"];
+                set("ministry_status", v);
+                // Retired outright, they are posted nowhere.
+                if (v === "RETIRED" || v === null) set("posting", null);
+              }}>
               <option value="">— not in ministry —</option>
-              {STANDINGS.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
+              {MINISTRY_STATUSES.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
             </select>
             <p className="mt-1 text-[11px] text-stone-400">
               Bishop and Secretary are open to Reverends; a Dean must be one. Retired pastors
@@ -877,7 +890,7 @@ function EditPersonModal({ person, congregations, districts, organisations, extC
 
         {/* Only put to somebody in ministry, and not to a pastor who has
             retired outright — they are posted nowhere. */}
-        {d.pastor_standing && d.pastor_standing !== "RETIRED" && (
+        {d.ministry_status && d.ministry_status !== "RETIRED" && (
           <div>
             <label className={labelClass}>Posted at</label>
             <select className={fieldClass} value={d.posting ?? ""}

@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
+import { ORDINATIONS, MINISTRY_STATUSES, isRetired } from "@/lib/ministry";
 import { Users } from "lucide-react";
 
 export interface AddPersonCategory { key: string; one: string }
@@ -30,8 +31,10 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
 
-  // Pastors
-  const [standing, setStanding] = useState("");
+  // Pastors. Ordination and status are asked separately because they are
+  // separate facts — somebody retires without ceasing to be a Reverend.
+  const [ordination, setOrdination] = useState("");
+  const [ministryStatus, setMinistryStatus] = useState("");
   const [posting, setPosting] = useState("");
   const [congregationId, setCongregationId] = useState("");
   const [isHeadPastor, setIsHeadPastor] = useState(false);
@@ -65,20 +68,26 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
   const isPastor = category === "PASTOR";
   const isStaff = category === "HQ_STAFF";
   const needsService = ["VENDOR", "AGENT", "PARTNER", "OTHER"].includes(category);
-  // A retired pastor who has stopped working is posted nowhere, so the question
-  // is not put to them. Everyone else in ministry is somewhere, and where decides
-  // what is asked next: a department, or a congregation.
-  const asksPosting = isPastor && ["PASTOR", "REVEREND", "RETIRED_WORKING"].includes(standing);
+  // A pastor who has retired outright is posted nowhere, so the question is not
+  // put to them. Everyone else in ministry is somewhere, and where decides what
+  // is asked next: a department, or a congregation.
+  const asksPosting = isPastor && !!ministryStatus && ministryStatus !== "RETIRED";
   const postedToHQ = asksPosting && posting === "HQ";
   const postedToCongregation = asksPosting && posting === "CONGREGATION";
-  const canBeHeadPastor = postedToCongregation && standing === "REVEREND" && !!congregationId;
+  const canBeHeadPastor = postedToCongregation && ordination === "REVEREND" && !!congregationId;
   // Both HQ staff and a pastor posted to HQ sit in a department.
   const asksDepartment = isStaff || postedToHQ;
 
   /** What this person will be able to stand for, while it can still be corrected. */
   const qualifies = (() => {
-    if (!isPastor || !standing) return null;
-    if (standing === "REVEREND") {
+    if (!isPastor || !ministryStatus) return null;
+    if (isRetired(ministryStatus)) {
+      return ordination === "REVEREND"
+        ? "Retired, so not eligible for Bishop, Secretary, Dean or an EXCO portfolio — though the Rev. title stays on the record."
+        : "Retired, so not eligible for Bishop, Secretary, Dean or an EXCO portfolio.";
+    }
+    if (!ordination) return null;
+    if (ordination === "REVEREND") {
       if (isHeadPastor && congregationId) {
         return "As an ordained head pastor they can stand for Bishop, Secretary, an EXCO portfolio, and Dean of their district.";
       }
@@ -89,15 +98,12 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
         ? "As a Reverend they can stand for Bishop, Secretary and an EXCO portfolio — and for Dean of the district their congregation is in."
         : "As a Reverend they can stand for Bishop, Secretary and an EXCO portfolio. A congregation is needed before they can be Dean.";
     }
-    if (standing === "PASTOR") {
-      return "Not yet ordained, so not eligible for Bishop, Secretary or Dean. An EXCO portfolio is open to them.";
-    }
-    return "Retired, so not eligible for Bishop, Secretary, Dean or an EXCO portfolio.";
+    return "Not yet ordained, so not eligible for Bishop, Secretary or Dean. An EXCO portfolio is open to them.";
   })();
 
   async function save() {
     if (!fullName.trim()) { setErr("A name is required"); return; }
-    if (isPastor && !standing) { setErr("Choose their standing — it decides what they can hold"); return; }
+    if (isPastor && !ministryStatus) { setErr("Say whether they are serving or retired — it decides what they can hold"); return; }
     setErr(""); setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -124,7 +130,8 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
         status: "ACTIVE",
         email: addr,
         phone: phone.trim() || null,
-        pastor_standing: isPastor ? standing : null,
+        ordination: isPastor ? (ordination || null) : null,
+        ministry_status: isPastor ? ministryStatus : null,
         posting: asksPosting ? (posting || null) : null,
         congregation_id: postedToCongregation && congregationId ? congregationId : null,
         // Anybody LCM records as its own ministry is of LCM, wherever they are
@@ -193,7 +200,8 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
             setCategory(e.target.value);
             // Answers to questions this category will not ask must not carry
             // over — they would be saved unseen.
-            setStanding(""); setPosting(""); setCongregationId(""); setIsHeadPastor(false);
+            setOrdination(""); setMinistryStatus("");
+            setPosting(""); setCongregationId(""); setIsHeadPastor(false);
             setDepartment(""); setServiceType("");
           }}>
           {categories.map(c => <option key={c.key} value={c.key}>{c.one}</option>)}
@@ -203,19 +211,30 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
       {/* ── Pastors ──────────────────────────────────────────────────── */}
       {isPastor && (
         <div className="space-y-2 rounded-xl border-2 border-[#dbe9fb] bg-[#f8fbff] p-3">
-          <div>
-            <label className={labelClass}>Standing *</label>
-            <select className={fieldClass} value={standing}
-              onChange={e => {
-                setStanding(e.target.value);
-                setPosting(""); setCongregationId(""); setIsHeadPastor(false); setDepartment("");
-              }}>
-              <option value="">— choose —</option>
-              <option value="PASTOR">Pastor (unordained)</option>
-              <option value="REVEREND">Rev. (ordained)</option>
-              <option value="RETIRED_WORKING">Retired pastor (still working on contract)</option>
-              <option value="RETIRED">Retired pastor (not working)</option>
-            </select>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Ordination</label>
+              <select className={fieldClass} value={ordination}
+                onChange={e => { setOrdination(e.target.value); setIsHeadPastor(false); }}>
+                <option value="">— not recorded —</option>
+                {ORDINATIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Currently *</label>
+              <select className={fieldClass} value={ministryStatus}
+                onChange={e => {
+                  setMinistryStatus(e.target.value);
+                  setPosting(""); setCongregationId(""); setIsHeadPastor(false); setDepartment("");
+                }}>
+                <option value="">— choose —</option>
+                {MINISTRY_STATUSES.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+              </select>
+            </div>
+            <p className="text-[11px] text-stone-500 sm:col-span-2">
+              Two questions, because retiring does not undo an ordination — a Reverend who
+              retires is still a Reverend, and the title stays on the record.
+            </p>
           </div>
 
           {asksPosting && (

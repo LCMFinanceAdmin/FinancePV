@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { withTitle } from "@/lib/ministry";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
@@ -37,6 +38,7 @@ interface Person {
   organisation_id: string | null; org_role: string | null;
   date_joined: string | null; is_employed: boolean;
   photo_path: string | null; user_email: string | null;
+  ordination: string | null; ministry_status: string | null;
 }
 interface Congregation { id: string; name: string; district_id: string | null }
 interface District { id: string; name: string }
@@ -163,7 +165,8 @@ export default function PeopleDirectoryPage() {
 
       if (!q) return true;
       return [
-        p.full_name, p.preferred_name, p.email, p.phone, p.hq_department,
+        p.full_name, withTitle(p.full_name, p.ordination),
+        p.preferred_name, p.email, p.phone, p.hq_department,
         p.company_name, p.vendor_service, p.org_role,
         ...rows.map(r => r.title),
       ].some(f => (f ?? "").toLowerCase().includes(q));
@@ -399,7 +402,9 @@ export default function PeopleDirectoryPage() {
                       <div className="min-w-0 flex-1">
                         <Link href={`/settings/people/${p.id}`}
                           className="block truncate rounded text-sm font-semibold text-stone-800 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
-                          {p.full_name || <span className="text-stone-500">Unnamed</span>}
+                          {p.full_name
+                            ? withTitle(p.full_name, p.ordination)
+                            : <span className="text-stone-500">Unnamed</span>}
                         </Link>
                         <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-stone-500">
                           <span className="truncate">
