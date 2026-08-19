@@ -49,6 +49,12 @@ interface Person {
   is_employed: boolean; date_joined: string | null; date_left: string | null;
   user_email: string | null; payroll_employee_id: string | null;
   photo_path: string | null; bio: string | null; notes: string | null;
+  // Migration 146 — the facts eligibility for a post actually turns on.
+  pastor_standing: "PASTOR" | "REVEREND" | "RETIRED" | null;
+  affiliation: "LCM_MEMBER" | "OTHER_CHURCH" | "NOT_CHRISTIAN" | "NOT_STATED" | null;
+  congregation_id: string | null;
+  external_church_id: string | null;
+  bank_name: string | null; bank_account_no: string | null; serves_entity: string | null;
 }
 interface Note {
   id: string; body: string; tag: string | null;
@@ -57,6 +63,19 @@ interface Note {
 interface Congregation { id: string; name: string }
 interface District { id: string; name: string }
 interface Organisation { id: string; name: string; short_name: string | null }
+interface ExternalChurch { id: string; name: string; town: string | null }
+
+const STANDINGS = [
+  { key: "PASTOR",   label: "Pastor — not yet ordained" },
+  { key: "REVEREND", label: "Reverend — ordained" },
+  { key: "RETIRED",  label: "Retired pastor" },
+];
+const AFFILIATIONS = [
+  { key: "LCM_MEMBER",    label: "Member of an LCM congregation" },
+  { key: "OTHER_CHURCH",  label: "Member of another church" },
+  { key: "NOT_CHRISTIAN", label: "Not Christian" },
+  { key: "NOT_STATED",    label: "Not stated" },
+];
 
 const TABS = [
   { key: "overview",    label: "Overview" },
@@ -85,6 +104,7 @@ export default function PersonProfilePage() {
   const [congregations, setCongregations] = useState<Congregation[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
   const [organisations, setOrganisations] = useState<Organisation[]>([]);
+  const [extChurches, setExtChurches] = useState<ExternalChurch[]>([]);
   const [ministries, setMinistries] = useState<string[]>([]);
   // Just enough to answer "can they sign in, and as what" without opening the
   // tab. Null when they have no account, which is most people.
@@ -124,7 +144,7 @@ export default function PersonProfilePage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: p }, { data: tl }, { data: n }, { data: c }, { data: d }, { data: o }, { count }, { data: perm }, { data: mins }, { data: offs }, { data: hlds }] =
+    const [{ data: p }, { data: tl }, { data: n }, { data: c }, { data: d }, { data: o }, { data: ec }, { count }, { data: perm }, { data: mins }, { data: offs }, { data: hlds }] =
       await Promise.all([
         supabase.from("people").select("*").eq("id", id).maybeSingle(),
         supabase.from("person_timeline").select("*").eq("person_id", id),
@@ -132,6 +152,7 @@ export default function PersonProfilePage() {
         supabase.from("congregations").select("id,name").order("name"),
         supabase.from("districts").select("id,name").order("name"),
         supabase.from("organisations").select("id,name,short_name").order("name"),
+        supabase.from("external_churches").select("id,name,town").order("name"),
         supabase.from("person_documents").select("id", { count: "exact", head: true }).eq("person_id", id),
         supabase.rpc("can_manage_people"),
         supabase.from("ministries").select("name").order("name"),
@@ -149,6 +170,7 @@ export default function PersonProfilePage() {
     setCongregations((c ?? []) as Congregation[]);
     setDistricts((d ?? []) as District[]);
     setOrganisations((o ?? []) as Organisation[]);
+    setExtChurches((ec ?? []) as ExternalChurch[]);
     setOfficeList((offs ?? []) as OfficeOption[]);
     setAllHoldings((hlds ?? []) as HoldingRow[]);
     setDocCount(count ?? 0);
@@ -558,7 +580,12 @@ export default function PersonProfilePage() {
 
       {editing && (
         <EditPersonModal person={person} congregations={congregations} districts={districts}
-          organisations={organisations}
+          organisations={organisations} extChurches={extChurches}
+          onExtChurchesChanged={async () => {
+            const { data } = await supabase.from("external_churches")
+              .select("id,name,town").order("name");
+            setExtChurches((data ?? []) as ExternalChurch[]);
+          }}
           onClose={() => setEditing(false)}
           onSaved={(p) => { setPerson(p); setEditing(false); say("Saved"); }} />
       )}
@@ -691,9 +718,12 @@ function NotesTab({ personId, notes, canEdit, onChanged, say }: {
 }
 
 // ── Edit person ───────────────────────────────────────────────────────────
-function EditPersonModal({ person, congregations, districts, organisations, onClose, onSaved }: {
+function EditPersonModal({ person, congregations, districts, organisations, extChurches, onExtChurchesChanged, onClose, onSaved }: {
   person: Person; congregations: Congregation[]; districts: District[];
   organisations: Organisation[];
+  extChurches: ExternalChurch[];
+  /** So a church added inside the form reaches the list the page holds. */
+  onExtChurchesChanged: () => Promise<void>;
   onClose: () => void; onSaved: (p: Person) => void;
 }) {
   const supabase = createClient();
@@ -781,6 +811,105 @@ function EditPersonModal({ person, congregations, districts, organisations, onCl
             <input className={fieldClass} type="date" value={d.date_joined ?? ""} onChange={e => set("date_joined", e.target.value)} /></div>
         </div>
 
+        {/* Standing and affiliation.
+            Shown for everybody rather than only for a Pastor, because the two
+            questions the constitution turns on are asked of people the
+            category does not mark: an EXCO portfolio is open to a volunteer,
+            and the Treasurer must be one. Leaving them blank is a real answer
+            — office_eligibility() reports missing data as missing rather than
+            as ineligible, so a post says what it still needs to know. */}
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div>
+            <label className={labelClass}>Standing in ministry</label>
+            <select className={fieldClass} value={d.pastor_standing ?? ""}
+              onChange={e => set("pastor_standing", (e.target.value || null) as Person["pastor_standing"])}>
+              <option value="">— not in ministry —</option>
+              {STANDINGS.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
+            <p className="mt-1 text-[11px] text-stone-400">
+              Bishop and Secretary are open to Reverends; a Dean must be one. Retired pastors
+              cannot stand for those or for an EXCO portfolio.
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Church affiliation</label>
+            <select className={fieldClass} value={d.affiliation ?? ""}
+              onChange={e => {
+                const v = (e.target.value || null) as Person["affiliation"];
+                set("affiliation", v);
+                // Clear the branch that no longer applies, so a change of
+                // answer cannot leave the old church attached underneath.
+                if (v !== "LCM_MEMBER")   set("congregation_id", null);
+                if (v !== "OTHER_CHURCH") set("external_church_id", null);
+              }}>
+              <option value="">—</option>
+              {AFFILIATIONS.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
+            <p className="mt-1 text-[11px] text-stone-400">
+              Treasurer and the volunteer route onto EXCO are open to LCM members only.
+            </p>
+          </div>
+        </div>
+
+        {d.affiliation === "LCM_MEMBER" && (
+          <div>
+            <label className={labelClass}>Which LCM congregation</label>
+            <select className={fieldClass} value={d.congregation_id ?? ""}
+              onChange={e => set("congregation_id", e.target.value || null)}>
+              <option value="">—</option>
+              {congregations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <p className="mt-1 text-[11px] text-stone-400">
+              Also decides which district they could serve as Dean.
+            </p>
+          </div>
+        )}
+
+        {d.affiliation === "OTHER_CHURCH" && (
+          <ExternalChurchPicker
+            value={d.external_church_id}
+            churches={extChurches}
+            onChange={v => set("external_church_id", v)}
+            onAdded={onExtChurchesChanged}
+          />
+        )}
+
+        {/* A vendor or an agent is engaged for something, and paid. Neither
+            fact had anywhere to live. */}
+        {(d.category === "VENDOR" || d.category === "AGENT") && (
+          <div className="space-y-2 rounded-xl border-2 border-stone-200 p-3">
+            <p className="text-[12px] font-bold text-stone-600">
+              {d.category === "VENDOR" ? "Supplier details" : "Agent details"}
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div><label className={labelClass}>Company</label>
+                <input className={fieldClass} value={d.company_name ?? ""}
+                  onChange={e => set("company_name", e.target.value)} /></div>
+              <div><label className={labelClass}>Acts for</label>
+                <input className={fieldClass} value={d.serves_entity ?? ""}
+                  placeholder="e.g. Seeds of Grace, Highlands Lakeview"
+                  onChange={e => set("serves_entity", e.target.value)} />
+                <p className="mt-1 text-[11px] text-stone-400">
+                  Blank means LCM as a whole.
+                </p></div>
+            </div>
+            <div>
+              <label className={labelClass}>What they do for LCM</label>
+              <input className={fieldClass} value={d.vendor_service ?? ""}
+                placeholder="e.g. Fire protection system, company secretarial, web hosting"
+                onChange={e => set("vendor_service", e.target.value)} />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div><label className={labelClass}>Bank</label>
+                <input className={fieldClass} value={d.bank_name ?? ""}
+                  onChange={e => set("bank_name", e.target.value)} /></div>
+              <div><label className={labelClass}>Account number</label>
+                <input className={fieldClass} value={d.bank_account_no ?? ""}
+                  onChange={e => set("bank_account_no", e.target.value)} /></div>
+            </div>
+          </div>
+        )}
+
         {d.category === "PARTNER" && (
           <div className="grid gap-2 sm:grid-cols-2">
             <div><label className={labelClass}>Organisation</label>
@@ -808,5 +937,81 @@ function EditPersonModal({ person, congregations, districts, organisations, onCl
 
         {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
     </Modal>
+  );
+}
+
+/**
+ * Choosing a church outside LCM, or naming one nobody has entered yet.
+ *
+ * A free-text box would have been half the work and would have produced "Grace
+ * Assembly", "Grace assembly" and "Grace Ass." as three different churches
+ * within a year — at which point nobody can answer how many volunteers come
+ * from there. So the list is the answer, and adding to it is one field rather
+ * than a trip to another screen.
+ */
+function ExternalChurchPicker({ value, churches, onChange, onAdded }: {
+  value: string | null;
+  churches: { id: string; name: string; town: string | null }[];
+  onChange: (id: string | null) => void;
+  onAdded: () => Promise<void>;
+}) {
+  const supabase = createClient();
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [town, setTown] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function add() {
+    if (!name.trim()) { setErr("Give the church a name"); return; }
+    setErr(""); setBusy(true);
+    const { data, error } = await supabase.from("external_churches")
+      .insert({ name: name.trim(), town: town.trim() || null })
+      .select("id").single();
+    setBusy(false);
+    if (error) {
+      // A duplicate name is the case this list exists to prevent, so it is
+      // reported as "already there" rather than as a database error.
+      setErr(error.code === "23505" ? "That church is already on the list." : error.message);
+      return;
+    }
+    await onAdded();
+    onChange((data as { id: string }).id);
+    setAdding(false); setName(""); setTown("");
+  }
+
+  return (
+    <div>
+      <label className={labelClass}>Which church</label>
+      {adding ? (
+        <div className="space-y-2 rounded-xl border-2 border-[#2f5b9c] bg-[#f4f7fb] p-2.5">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input className={fieldClass} value={name} autoFocus placeholder="Church name"
+              onChange={e => setName(e.target.value)} />
+            <input className={fieldClass} value={town} placeholder="Town (optional)"
+              onChange={e => setTown(e.target.value)} />
+          </div>
+          {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
+          <div className="flex gap-2">
+            <Button size="sm" loading={busy} onClick={add}>Add church</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setErr(""); }}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <select className={fieldClass} value={value ?? ""}
+            onChange={e => onChange(e.target.value || null)}>
+            <option value="">—</option>
+            {churches.map(c => (
+              <option key={c.id} value={c.id}>{c.name}{c.town ? ` · ${c.town}` : ""}</option>
+            ))}
+          </select>
+          <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>Add</Button>
+        </div>
+      )}
+      <p className="mt-1 text-[11px] text-stone-400">
+        Kept as a list so the next volunteer from the same church picks the same entry.
+      </p>
+    </div>
   );
 }

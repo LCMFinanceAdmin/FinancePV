@@ -89,6 +89,8 @@ export default function OfficesPage() {
   // Changing an address somebody already signs in with, as opposed to giving
   // one to somebody who has none.
   const [changingLogin, setChangingLogin] = useState(false);
+  /** person id -> why they cannot hold the post being filled, if they cannot. */
+  const [eligibility, setEligibility] = useState<Record<string, string>>({});
   const [replacementLogin, setReplacementLogin] = useState("");
   const [renaming, setRenaming] = useState(false);
   // A term being corrected or entered by hand, as opposed to elected.
@@ -164,13 +166,26 @@ export default function OfficesPage() {
     return h.term_end ? `${fmt(h.term_start)} to ${fmt(h.term_end)}` : `since ${fmt(h.term_start)}`;
   }
 
-  function openElection(o: Office) {
+  async function openElection(o: Office) {
     setElecting(o);
     setChangingLogin(false); setReplacementLogin("");
     setPersonId("");
     setNewLogin("");
     setElectedOn(new Date().toISOString().slice(0, 10));
     setNote("");
+    setEligibility({});
+
+    // Asked of the database rather than re-derived here, so the rule has one
+    // definition (migration 146) and the form cannot drift from it. One call
+    // per person, but only for the post being filled and only while the form
+    // is open — the alternative is a view that has to be kept in step.
+    const results = await Promise.all(people.map(async pn => {
+      const { data } = await supabase.rpc("office_eligibility", {
+        p_office_id: o.id, p_person_id: pn.id,
+      });
+      return [pn.id, (data as string | null) ?? ""] as const;
+    }));
+    setEligibility(Object.fromEntries(results.filter(([, why]) => why)));
   }
 
   /** The sign-in address on file for whoever is being seated, if any. */
@@ -633,13 +648,34 @@ export default function OfficesPage() {
                   {!electing.single_holder ? "Who is joining"
                     : electing.is_elected ? "Who was elected" : "Who has been appointed"}
                 </label>
+                {/* Everybody is still listed, with the ones who cannot stand
+                    marked and why. Hiding them would leave somebody hunting for
+                    a name that is plainly in the directory, and there are cases
+                    the rules do not cover — a past term recorded years later,
+                    when the constitution said something else. So the rule is
+                    stated and the choice is left open. */}
                 <select className={inp} value={personId} onChange={e => setPersonId(e.target.value)}>
                   <option value="">— choose a person —</option>
-                  {people.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                  {people.map(p => {
+                    const why = eligibility[p.id];
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}{why ? `  ·  ${why}` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
-                <p className="mt-1 text-[11px] text-stone-500">
-                  Anyone in the People Directory. Add them there first if they&apos;re not listed.
-                </p>
+                {personId && eligibility[personId] ? (
+                  <p className="mt-1.5 rounded-lg border-2 border-amber-300 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-900">
+                    <strong>{nameOf(personId)}</strong> would not normally hold this post
+                    — {eligibility[personId]}. Recording it anyway is allowed; the register keeps
+                    what you record.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-stone-500">
+                    Anyone in the People Directory. Add them there first if they&apos;re not listed.
+                  </p>
+                )}
               </div>
 
               {/* The post carries system access, so the address that access
