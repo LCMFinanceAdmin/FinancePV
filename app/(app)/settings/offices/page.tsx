@@ -13,10 +13,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { roleLabel, SWITCHABLE_ROLES } from "@/lib/utils";
+import { loadRoles } from "@/lib/roles";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
   Landmark, Users, History, UserPlus, X, CheckCircle2, AlertCircle, ChevronRight, Church, Briefcase,
-  AlertTriangle, Plus,
+  AlertTriangle, Plus, Pencil, LogOut,
 } from "lucide-react";
 import { OfficeModal, type OfficeCategory } from "@/components/offices/office-modal";
 import { CategoryModal } from "@/components/offices/category-modal";
@@ -106,6 +107,10 @@ export default function OfficesPage() {
       supabase.from("people").select("id,full_name,user_email,email,date_joined,date_left").eq("status", "ACTIVE").order("full_name"),
       supabase.from("user_roles").select("email,role,full_name"),
       supabase.from("office_categories").select("*").eq("active", true).order("sort_order"),
+      // Populates the label overrides roleLabel() reads. Without it the roles
+      // added in 138 had no label to find and fell back to their own key, so a
+      // post granting EXCO_PROPERTY announced itself as "EXCO PROPERTY".
+      loadRoles(supabase),
     ]);
     setOffices((o ?? []) as Office[]);
     setHoldings((h ?? []) as Holding[]);
@@ -442,36 +447,47 @@ export default function OfficesPage() {
                 )}
               </div>
 
-              {/* Shown even when empty. It used to appear only once there was
-                  history, which is exactly when nobody needs it — somebody
-                  filling in past Bishops was looking for the way in and finding
-                  nothing there. */}
+              {/* Four grey words in a row read as a sentence, not as four
+                  things you can press — and "End term", which cannot be undone
+                  without re-recording the term, looked exactly like "Edit post"
+                  next to it. Each is a button with an edge now, and the one
+                  that removes somebody says so in red before it is pressed. */}
               <button onClick={() => setHistoryFor(showing ? null : o.id)}
                 aria-label={`Past holders of ${o.name}`}
-                className="flex items-center gap-1 text-[12px] font-medium text-stone-400 hover:text-stone-600">
+                className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${
+                  showing
+                    ? "border-[#2f5b9c] bg-[#eef4fd] text-[#2f5b9c]"
+                    : "border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-800"}`}>
                 <History size={13} /> {past.length > 0 ? `${past.length} past` : "History"}
                 <ChevronRight size={12} className={showing ? "rotate-90" : ""} />
               </button>
+
               <button onClick={() => setEditingOffice(o)}
                 aria-label={`Edit the ${o.name} post`}
-                className="text-[12px] font-medium text-stone-500 transition-colors hover:text-[#2f5b9c]">
-                Edit post
+                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
+                <Pencil size={12} /> Edit post
               </button>
+
               {/* A term that has already finished. The election flow assumes it
                   is happening now, which is no use for filling in the years
                   before this register existed. */}
               <button onClick={() => setAddingTermFor(o)}
                 aria-label={`Record a past term of ${o.name}`}
-                className="text-[12px] font-medium text-stone-500 transition-colors hover:text-[#2f5b9c]">
-                Add past term
+                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
+                <Plus size={12} /> Past term
               </button>
+
               {cur && o.single_holder && (
                 <button onClick={() => endTerm(cur, o)}
-                  className="text-[12px] font-medium text-stone-400 hover:text-red-500">
-                  End term
+                  aria-label={`End the current term of ${o.name}`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-red-600 transition-colors hover:border-red-400 hover:bg-red-50">
+                  <LogOut size={12} /> End term
                 </button>
               )}
-              <Button size="sm" variant="secondary" onClick={() => openElection(o)}>
+
+              {/* The one thing most rows are opened to do, so it stays the only
+                  filled button on the row. */}
+              <Button size="sm" onClick={() => openElection(o)}>
                 <UserPlus size={13} /> {!o.single_holder ? "Add member"
                   : o.is_elected ? (cur ? "New election" : "Elect")
                   : (cur ? "Replace" : "Appoint")}
