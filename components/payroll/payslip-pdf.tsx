@@ -163,7 +163,6 @@ export function PayslipPDF({
     // printed below them — including whether this month's gross carries the
     // current year's increment yet.
     earns.push(...grossComponentsForMonth(salary, emp.date_commenced, month, is13thMonth, emp.increment_month_override));
-    for (const i of customItems.filter(i => i.type === "allowance")) earns.push({ label: i.label, amount: i.amount });
     // Gross corrections belong on the earnings side, or the items listed there
     // stop adding up to the GROSS PAY figure printed below them.
     for (const a of adjustments.filter(a => a.category === "GROSS")) {
@@ -172,6 +171,17 @@ export function PayslipPDF({
   } else {
     earns.push({ label: "Basic Salary", amount: gross });
   }
+
+  // Allowances sit outside the gross, so they sit outside the earnings list too.
+  //
+  // They are paid on top rather than being part of the wage: calcLine adds them
+  // to net without adding them to gross, because gross is what the statutory
+  // contributions are computed on and an allowance must not inflate it. Listing
+  // them under EARNING therefore made the items above GROSS PAY add up to more
+  // than GROSS PAY, and left gross minus deductions short of net by the same
+  // amount. Below the gross line they are honest on both counts.
+  const allowances = customItems.filter(i => i.type === "allowance");
+  const totalAllowances = allowances.reduce((t, i) => t + i.amount, 0);
 
   const netAdjustments = adjustments.filter(a => a.category === "NET");
   // Corrections that moved a statutory figure rather than pay. They are already
@@ -290,6 +300,35 @@ export function PayslipPDF({
             <Text style={[s.dDL, { borderBottomWidth: BDR }]}> </Text>
             <Text style={[s.dDA, { borderBottomWidth: BDR }]}> </Text>
           </View>
+
+          {/* Allowances, added after the gross rather than inside it.
+              Placed here so the page reads as the arithmetic actually works:
+              GROSS PAY less TOTAL DEDUCTION, then allowances added, giving Net
+              Pay. A reader who checks the sum now gets the right answer. */}
+          {allowances.length > 0 && (
+            <>
+              <View style={s.dataRow}>
+                <Text style={[s.dEL, { fontFamily: "Helvetica-Bold", color: "#166534" }]}>ADD: ALLOWANCES</Text>
+                <Text style={s.dEA}> </Text>
+                <Text style={s.dDL}> </Text>
+                <Text style={s.dDA}> </Text>
+              </View>
+              {allowances.map((a, i) => (
+                <View key={i} style={s.dataRow}>
+                  <Text style={s.dEL}>{a.label}</Text>
+                  <Text style={s.dEA}>{n(a.amount)}</Text>
+                  <Text style={s.dDL}> </Text>
+                  <Text style={s.dDA}> </Text>
+                </View>
+              ))}
+              <View style={s.dataRow}>
+                <Text style={[s.dEL, { fontFamily: "Helvetica-Bold" }]}>TOTAL ALLOWANCES</Text>
+                <Text style={[s.dEA, { fontFamily: "Helvetica-Bold" }]}>{n(totalAllowances)}</Text>
+                <Text style={s.dDL}> </Text>
+                <Text style={s.dDA}> </Text>
+              </View>
+            </>
+          )}
 
           {/* Net Pay */}
           <View style={s.netRow}>

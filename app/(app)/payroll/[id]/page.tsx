@@ -1468,6 +1468,13 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
   // actually checks.
   const totalDeductions = line.epf.ee + line.socso.ee + line.skbbk + line.eis.ee
     + line.pcb + line.eplDeduction + line.customDeductions - line.netAdjustment;
+
+  // Allowances are paid on top of the wage rather than forming part of it —
+  // calcLine adds them to net without adding them to gross, because gross is
+  // what the statutory contributions are computed on. So they belong below the
+  // gross line, not in the earnings that make it up.
+  const allowances = line.customItems.filter(i => i.type === "allowance");
+  const totalAllowances = allowances.reduce((t, i) => t + i.amount, 0);
   const dept = emp.posting_type === "CHURCH"
     ? `${emp.designation || "PASTOR"} - ${(emp.church_name || "").toUpperCase()}`
     : emp.department || emp.designation || "—";
@@ -1480,10 +1487,6 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
     // current year's increment yet.
     components.push(...grossComponentsForMonth(
       salary, emp.date_commenced, monthNum, false, emp.increment_month_override));
-    // Custom allowances
-    for (const item of line.customItems.filter(i => i.type === "allowance")) {
-      components.push({ label: item.label, amount: item.amount });
-    }
     // A gross correction, so the earnings listed still add up to GROSS PAY.
     for (const a of line.adjustments.filter(a => a.category === "GROSS")) {
       components.push({ label: a.reason || "Adjustment", amount: Number(a.amount) });
@@ -1519,6 +1522,13 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
     `  ${"".padEnd(28, "─")}`,
     `  GROSS PAY                    ${n2(line.gross)}`,
     `  PCB (Monthly)                ${n2(line.pcb)}`,
+    ...(allowances.length ? [
+      ``,
+      `ADD: ALLOWANCES`,
+      ...allowances.map(a => `  ${a.label.padEnd(28)} ${n2(a.amount)}`),
+      `  ${"".padEnd(28, "─")}`,
+      `  TOTAL ALLOWANCES             ${n2(totalAllowances)}`,
+    ] : []),
     ``,
     `DEDUCTION`,
     `  Employee EPF                 ${n2(line.epf.ee)}`,
@@ -1647,6 +1657,34 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
                 <td className={tdC}></td>
                 <td className={tdR}></td>
               </tr>
+              {/* Allowances, added after the gross rather than inside it, so
+                  the page reads as the arithmetic works: gross, less
+                  deductions, plus allowances, giving net. */}
+              {allowances.length > 0 && (
+                <>
+                  <tr>
+                    <td className={`${tdC} font-bold text-green-700`}>ADD: ALLOWANCES</td>
+                    <td className={tdR}></td>
+                    <td className={tdC}></td>
+                    <td className={tdR}></td>
+                  </tr>
+                  {allowances.map((a, i) => (
+                    <tr key={i}>
+                      <td className={tdC}>{a.label}</td>
+                      <td className={tdR}>{n2(a.amount)}</td>
+                      <td className={tdC}></td>
+                      <td className={tdR}></td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td className={`${tdC} font-bold`}>TOTAL ALLOWANCES</td>
+                    <td className={`${tdR} font-bold`}>{n2(totalAllowances)}</td>
+                    <td className={tdC}></td>
+                    <td className={tdR}></td>
+                  </tr>
+                </>
+              )}
+
               {/* Net pay */}
               <tr>
                 <td className={tdC}></td>
