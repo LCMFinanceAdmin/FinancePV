@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { OrgContacts } from "@/components/organisations/org-contacts";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
   Plus, Search, ChevronRight, Save, Trash2, X, CheckCircle2, AlertCircle,
@@ -426,40 +427,50 @@ export default function OrganisationsPage() {
                     </div>
                   </fieldset>
 
-                  {/* People are people. A contact keeps their own record in the
-                      directory, and is linked from there rather than copied
-                      here — one phone number, in one place. */}
+                  {/* Their people, then ours.
+                      The single contact_name that used to sit here could not
+                      express the thing that matters: the person who signs is
+                      rarely the person you email, and neither is necessarily
+                      the one who can decide. */}
                   <div>
                     <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-stone-500">
-                      Who we deal with
+                      Who to speak to there
                     </p>
-                    {people_.length > 0 ? (
-                      <ul className="divide-y divide-stone-100 rounded-xl border border-stone-100">
-                        {people_.map(c => (
-                          <li key={c.id} className="flex flex-wrap items-baseline gap-x-2 px-3 py-2">
-                            <span className="text-[13px] font-semibold text-stone-800">{c.full_name}</span>
-                            {c.org_role && <span className="text-[12px] text-stone-500">{c.org_role}</span>}
-                            <span className="ml-auto text-[12px] text-stone-400">
-                              {[c.email, c.phone].filter(Boolean).join(" · ")}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+                    {d.id ? (
+                      <OrgContacts organisationId={d.id} canEdit={canEdit} />
                     ) : (
-                      <fieldset disabled={!canEdit}>
-                        <label className={lbl}>Contact name</label>
-                        <input className={inp} value={d.contact_name ?? ""} onChange={e => set("contact_name", e.target.value)}
-                          placeholder="Whoever LCM deals with there" />
-                      </fieldset>
+                      <p className="text-[12px] text-stone-400">
+                        Save the organisation first — its contacts attach to it.
+                      </p>
                     )}
-                    <p className="mt-1.5 text-[11px] text-stone-400">
-                      For someone LCM deals with regularly, add them in the{" "}
-                      <Link href="/settings/people" className="font-medium text-[#3a6db0] hover:underline">
-                        People Directory
-                      </Link>{" "}
-                      as a <strong>Partner Contact</strong> and pick this organisation — their details
-                      are then kept in one place and appear here.
-                    </p>
+
+                    {/* LCM's own people who work with them, which is a
+                        different thing and stays driven by the directory. */}
+                    {people_.length > 0 && (
+                      <>
+                        <p className="mb-1.5 mt-3 text-[11px] font-bold uppercase tracking-wide text-stone-500">
+                          LCM people linked to them
+                        </p>
+                        <ul className="divide-y divide-stone-100 rounded-xl border border-stone-100">
+                          {people_.map(c => (
+                            <li key={c.id} className="flex flex-wrap items-baseline gap-x-2 px-3 py-2">
+                              <span className="text-[13px] font-semibold text-stone-800">{c.full_name}</span>
+                              {c.org_role && <span className="text-[12px] text-stone-500">{c.org_role}</span>}
+                              <span className="ml-auto text-[12px] text-stone-400">
+                                {[c.email, c.phone].filter(Boolean).join(" · ")}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-1.5 text-[11px] text-stone-400">
+                          Kept in the{" "}
+                          <Link href="/settings/people" className="font-medium text-[#3a6db0] hover:underline">
+                            People Directory
+                          </Link>{" "}
+                          as <strong>Partner Contacts</strong>, so their details live in one place.
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   <fieldset disabled={!canEdit}>
