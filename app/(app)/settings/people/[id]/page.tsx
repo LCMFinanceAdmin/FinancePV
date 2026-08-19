@@ -51,6 +51,9 @@ interface Person {
   photo_path: string | null; bio: string | null; notes: string | null;
   // Migration 146 — the facts eligibility for a post actually turns on.
   pastor_standing: "PASTOR" | "REVEREND" | "RETIRED_WORKING" | "RETIRED" | null;
+  // Migration 152 — where somebody in ministry is posted. Not every pastor
+  // serves a church; some are based at HQ running a desk.
+  posting: "HQ" | "CONGREGATION" | null;
   affiliation: "LCM_MEMBER" | "OTHER_CHURCH" | "NOT_CHRISTIAN" | "NOT_STATED" | null;
   congregation_id: string | null;
   external_church_id: string | null;
@@ -249,6 +252,7 @@ export default function PersonProfilePage() {
   const cat = categoryOf(person.category);
   const office = current.find(r => r.source === "OFFICE");
   const districtName = districts.find(d => d.id === person.district_id)?.name;
+  const congregationName = congregations.find(c => c.id === person.congregation_id)?.name;
 
   return (
     <div className="cloudlight-page max-w-6xl space-y-5">
@@ -376,6 +380,10 @@ export default function PersonProfilePage() {
                 <Field label="Category" value={cat.one} />
                 <Field label="Primary role" value={office ? `${office.title}${office.role ? ` (${office.role})` : ""}` : cat.one} />
                 <Field label="Status" value={titleCase(person.status)} />
+                <Field label="Posted at" value={
+                  person.posting === "HQ" ? "HQ"
+                    : person.posting === "CONGREGATION" ? (congregationName ?? "An LCM congregation")
+                    : null} />
                 <Field label="HQ department" value={person.hq_department} />
                 <Field label="Joined LCM" value={person.date_joined ? fmtMonth(person.date_joined) : null} />
                 <Field label="District" value={districtName} />
@@ -866,6 +874,29 @@ function EditPersonModal({ person, congregations, districts, organisations, extC
             </p>
           </div>
         </div>
+
+        {/* Only put to somebody in ministry, and not to a pastor who has
+            retired outright — they are posted nowhere. */}
+        {d.pastor_standing && d.pastor_standing !== "RETIRED" && (
+          <div>
+            <label className={labelClass}>Posted at</label>
+            <select className={fieldClass} value={d.posting ?? ""}
+              onChange={e => {
+                const v = (e.target.value || null) as Person["posting"];
+                set("posting", v);
+                // Posted to HQ, they pastor no congregation. Left attached it
+                // would still count towards the Dean rule.
+                if (v === "HQ") set("congregation_id", null);
+              }}>
+              <option value="">— not recorded —</option>
+              <option value="CONGREGATION">An LCM congregation</option>
+              <option value="HQ">HQ</option>
+            </select>
+            <p className="mt-1 text-[11px] text-stone-400">
+              A Dean is a district post, so it is open only to somebody posted to a congregation.
+            </p>
+          </div>
+        )}
 
         {d.affiliation === "LCM_MEMBER" && (
           <div>

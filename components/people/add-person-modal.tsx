@@ -32,9 +32,10 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
 
   // Pastors
   const [standing, setStanding] = useState("");
+  const [posting, setPosting] = useState("");
   const [congregationId, setCongregationId] = useState("");
   const [isHeadPastor, setIsHeadPastor] = useState(false);
-  // HQ staff
+  // HQ staff, and pastors posted to HQ
   const [department, setDepartment] = useState("");
   // Vendors, agents, partners, anyone else
   const [serviceType, setServiceType] = useState("");
@@ -64,10 +65,15 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
   const isPastor = category === "PASTOR";
   const isStaff = category === "HQ_STAFF";
   const needsService = ["VENDOR", "AGENT", "PARTNER", "OTHER"].includes(category);
-  // A retired pastor who has stopped working serves no congregation, so the
-  // question is not put to them.
-  const servesCongregation = isPastor && ["PASTOR", "REVEREND", "RETIRED_WORKING"].includes(standing);
-  const canBeHeadPastor = isPastor && standing === "REVEREND" && !!congregationId;
+  // A retired pastor who has stopped working is posted nowhere, so the question
+  // is not put to them. Everyone else in ministry is somewhere, and where decides
+  // what is asked next: a department, or a congregation.
+  const asksPosting = isPastor && ["PASTOR", "REVEREND", "RETIRED_WORKING"].includes(standing);
+  const postedToHQ = asksPosting && posting === "HQ";
+  const postedToCongregation = asksPosting && posting === "CONGREGATION";
+  const canBeHeadPastor = postedToCongregation && standing === "REVEREND" && !!congregationId;
+  // Both HQ staff and a pastor posted to HQ sit in a department.
+  const asksDepartment = isStaff || postedToHQ;
 
   /** What this person will be able to stand for, while it can still be corrected. */
   const qualifies = (() => {
@@ -75,6 +81,9 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
     if (standing === "REVEREND") {
       if (isHeadPastor && congregationId) {
         return "As an ordained head pastor they can stand for Bishop, Secretary, an EXCO portfolio, and Dean of their district.";
+      }
+      if (postedToHQ) {
+        return "As a Reverend they can stand for Bishop, Secretary and an EXCO portfolio. Dean is a district post, so it is not open to somebody posted to HQ.";
       }
       return congregationId
         ? "As a Reverend they can stand for Bishop, Secretary and an EXCO portfolio — and for Dean of the district their congregation is in."
@@ -96,7 +105,7 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
 
       // A typed department or service that is not on the list yet joins it, so
       // the next person picks it rather than retyping a near-miss.
-      if (isStaff && department.trim()
+      if (asksDepartment && department.trim()
           && !departments.some(d => d.name.toLowerCase() === department.trim().toLowerCase())) {
         await supabase.from("departments").insert({ name: department.trim() });
       }
@@ -116,12 +125,13 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
         email: addr,
         phone: phone.trim() || null,
         pastor_standing: isPastor ? standing : null,
-        congregation_id: servesCongregation && congregationId ? congregationId : null,
-        // Serving an LCM congregation is being of it. Set here because
-        // eligibility reads affiliation, and a pastor left blank would be
-        // refused for posts they plainly qualify for.
-        affiliation: servesCongregation && congregationId ? "LCM_MEMBER" : null,
-        hq_department: isStaff ? (department.trim() || null) : null,
+        posting: asksPosting ? (posting || null) : null,
+        congregation_id: postedToCongregation && congregationId ? congregationId : null,
+        // Anybody LCM records as its own ministry is of LCM, wherever they are
+        // posted. Set here because eligibility reads affiliation, and somebody
+        // left blank is refused for posts they plainly qualify for.
+        affiliation: isPastor ? "LCM_MEMBER" : null,
+        hq_department: asksDepartment ? (department.trim() || null) : null,
         vendor_service: needsService ? (serviceType.trim() || null) : null,
         created_by: user?.email ?? "",
       }).select("id").single();
@@ -143,6 +153,21 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
       setSaving(false);
     }
   }
+
+  const departmentField = (
+    <div>
+      <label className={labelClass}>Department</label>
+      <input className={fieldClass} list="dept-options" value={department}
+        onChange={e => setDepartment(e.target.value)}
+        placeholder="Pick one, or type a new one" />
+      <datalist id="dept-options">
+        {departments.map(d => <option key={d.id} value={d.name} />)}
+      </datalist>
+      <p className="mt-1 text-[11px] text-stone-500">
+        A department typed here joins the list and is offered wherever it is asked for.
+      </p>
+    </div>
+  );
 
   return (
     <Modal title="Add a person"
@@ -168,7 +193,7 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
             setCategory(e.target.value);
             // Answers to questions this category will not ask must not carry
             // over — they would be saved unseen.
-            setStanding(""); setCongregationId(""); setIsHeadPastor(false);
+            setStanding(""); setPosting(""); setCongregationId(""); setIsHeadPastor(false);
             setDepartment(""); setServiceType("");
           }}>
           {categories.map(c => <option key={c.key} value={c.key}>{c.one}</option>)}
@@ -181,7 +206,10 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
           <div>
             <label className={labelClass}>Standing *</label>
             <select className={fieldClass} value={standing}
-              onChange={e => { setStanding(e.target.value); setIsHeadPastor(false); }}>
+              onChange={e => {
+                setStanding(e.target.value);
+                setPosting(""); setCongregationId(""); setIsHeadPastor(false); setDepartment("");
+              }}>
               <option value="">— choose —</option>
               <option value="PASTOR">Pastor (unordained)</option>
               <option value="REVEREND">Rev. (ordained)</option>
@@ -190,9 +218,28 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
             </select>
           </div>
 
-          {servesCongregation && (
+          {asksPosting && (
             <div>
-              <label className={labelClass}>LCM congregation</label>
+              <label className={labelClass}>Posted at</label>
+              <select className={fieldClass} value={posting}
+                onChange={e => {
+                  setPosting(e.target.value);
+                  setCongregationId(""); setIsHeadPastor(false); setDepartment("");
+                }}>
+                <option value="">— choose —</option>
+                <option value="CONGREGATION">An LCM congregation</option>
+                <option value="HQ">HQ</option>
+              </select>
+              <p className="mt-1 text-[11px] text-stone-500">
+                Not every pastor serves a church. Somebody ordained can be based at HQ running
+                a desk, and asking them which congregation would only get a wrong answer.
+              </p>
+            </div>
+          )}
+
+          {postedToCongregation && (
+            <div>
+              <label className={labelClass}>Which congregation</label>
               <select className={fieldClass} value={congregationId}
                 onChange={e => { setCongregationId(e.target.value); if (!e.target.value) setIsHeadPastor(false); }}>
                 <option value="">— not recorded —</option>
@@ -205,6 +252,8 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
               )}
             </div>
           )}
+
+          {postedToHQ && departmentField}
 
           {canBeHeadPastor && (
             <label className="flex items-start gap-2 text-[13px] text-stone-700">
@@ -227,20 +276,7 @@ export function AddPersonModal({ categories, onClose, onCreated }: {
       )}
 
       {/* ── HQ staff ─────────────────────────────────────────────────── */}
-      {isStaff && (
-        <div>
-          <label className={labelClass}>Department</label>
-          <input className={fieldClass} list="dept-options" value={department}
-            onChange={e => setDepartment(e.target.value)}
-            placeholder="Pick one, or type a new one" />
-          <datalist id="dept-options">
-            {departments.map(d => <option key={d.id} value={d.name} />)}
-          </datalist>
-          <p className="mt-1 text-[11px] text-stone-500">
-            A department typed here joins the list and is offered wherever it is asked for.
-          </p>
-        </div>
-      )}
+      {isStaff && departmentField}
 
       {/* ── Vendors, agents, partners, anyone else ───────────────────── */}
       {needsService && (
