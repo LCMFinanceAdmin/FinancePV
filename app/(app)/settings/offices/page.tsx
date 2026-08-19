@@ -42,7 +42,11 @@ interface Holding {
   id: string; office_id: string; person_id: string;
   elected_on: string | null; term_start: string; term_end: string | null; note: string | null;
 }
-interface Person { id: string; full_name: string; user_email: string | null; email: string | null }
+interface Person {
+  id: string; full_name: string; user_email: string | null; email: string | null;
+  /** Employment, for HQ staff posts — the register shows these instead of a term. */
+  date_joined: string | null; date_left: string | null;
+}
 
 const inp = fieldClass;
 
@@ -99,7 +103,7 @@ export default function OfficesPage() {
     const [{ data: o }, { data: h }, { data: p }, { data: lg }, { data: cats }] = await Promise.all([
       supabase.from("offices").select("*").order("sort_order").order("name"),
       supabase.from("office_holdings").select("*").order("term_start", { ascending: false }),
-      supabase.from("people").select("id,full_name,user_email,email").eq("status", "ACTIVE").order("full_name"),
+      supabase.from("people").select("id,full_name,user_email,email,date_joined,date_left").eq("status", "ACTIVE").order("full_name"),
       supabase.from("user_roles").select("email,role,full_name"),
       supabase.from("office_categories").select("*").eq("active", true).order("sort_order"),
     ]);
@@ -113,12 +117,47 @@ export default function OfficesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const currentOf = (officeId: string) => holdings.find(h => h.office_id === officeId && !h.term_end);
-  const currentAll = (officeId: string) => holdings.filter(h => h.office_id === officeId && !h.term_end);
+  /**
+   * Whether a term is running today.
+   *
+   * A term used to count as current only while it had no end date at all, so
+   * recording an election with the end date the constitution sets — four years
+   * out for the Bishop — filed the new holder straight into the past and left
+   * the post reading Vacant. Now the dates decide: a term is current from the
+   * day it starts until the day it lapses, and an open-ended one runs until
+   * somebody ends it.
+   */
+  const today = new Date().toISOString().slice(0, 10);
+  const isRunning = (h: Holding) =>
+    h.term_start <= today && (!h.term_end || h.term_end >= today);
+
+  const currentOf  = (officeId: string) => holdings.find(h => h.office_id === officeId && isRunning(h));
+  const currentAll = (officeId: string) => holdings.filter(h => h.office_id === officeId && isRunning(h));
   const pastOf = (officeId: string) =>
-    holdings.filter(h => h.office_id === officeId && h.term_end)
-      .sort((a, b) => (b.term_end ?? "").localeCompare(a.term_end ?? ""));
+    holdings.filter(h => h.office_id === officeId && !isRunning(h))
+      .sort((a, b) => (b.term_end ?? b.term_start).localeCompare(a.term_end ?? a.term_start));
   const nameOf = (personId: string) => people.find(p => p.id === personId)?.full_name ?? "—";
+
+  /**
+   * How long somebody has held a post, in the terms that post is held on.
+   *
+   * An HQ staff post is not held for a term — it is held for as long as
+   * somebody is employed in it, so the register reads their employment dates
+   * rather than inventing a term around them. Those live on the person, which
+   * is where the People directory already keeps them; two places to record when
+   * somebody joined is two places for it to be wrong.
+   */
+  const isStaffPost = (kind: string) => kind === "APPOINTED";
+  function tenureLine(kind: string, h: Holding): string {
+    if (isStaffPost(kind)) {
+      const person = people.find(p => p.id === h.person_id);
+      const from = person?.date_joined;
+      const to = person?.date_left;
+      if (!from && !to) return "employment dates not recorded";
+      return to ? `${fmt(from)} to ${fmt(to)}` : `since ${fmt(from)}`;
+    }
+    return h.term_end ? `${fmt(h.term_start)} to ${fmt(h.term_end)}` : `since ${fmt(h.term_start)}`;
+  }
 
   function openElection(o: Office) {
     setElecting(o);
@@ -382,7 +421,7 @@ export default function OfficesPage() {
                           className="rounded font-medium text-stone-700 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
                           {nameOf(m.person_id)}
                         </Link>
-                        <span className="text-stone-400">since {fmt(m.term_start)}</span>
+                        <span className="text-stone-400">{tenureLine(o.kind, m)}</span>
                         <button onClick={() => setEditingHolding(m)}
                           className="text-[11px] text-stone-400 hover:text-[#2f5b9c]">
                           edit
@@ -403,13 +442,16 @@ export default function OfficesPage() {
                 )}
               </div>
 
-              {past.length > 0 && (
-                <button onClick={() => setHistoryFor(showing ? null : o.id)}
-                  className="flex items-center gap-1 text-[12px] font-medium text-stone-400 hover:text-stone-600">
-                  <History size={13} /> {past.length} past
-                  <ChevronRight size={12} className={showing ? "rotate-90" : ""} />
-                </button>
-              )}
+              {/* Shown even when empty. It used to appear only once there was
+                  history, which is exactly when nobody needs it — somebody
+                  filling in past Bishops was looking for the way in and finding
+                  nothing there. */}
+              <button onClick={() => setHistoryFor(showing ? null : o.id)}
+                aria-label={`Past holders of ${o.name}`}
+                className="flex items-center gap-1 text-[12px] font-medium text-stone-400 hover:text-stone-600">
+                <History size={13} /> {past.length > 0 ? `${past.length} past` : "History"}
+                <ChevronRight size={12} className={showing ? "rotate-90" : ""} />
+              </button>
               <button onClick={() => setEditingOffice(o)}
                 aria-label={`Edit the ${o.name} post`}
                 className="text-[12px] font-medium text-stone-500 transition-colors hover:text-[#2f5b9c]">
@@ -439,13 +481,19 @@ export default function OfficesPage() {
             {showing && (
               <div className="border-t border-[#eaf1fb] bg-[#fbfdff] px-4 py-3">
                 <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-stone-400">
-                  Previously held by
+                  {isStaffPost(o.kind) ? "Previously employed in this post" : "Previously held by"}
                 </p>
+                {past.length === 0 && (
+                  <p className="text-[12px] text-stone-400">
+                    Nothing recorded yet. Use <span className="font-medium text-stone-500">Add past term</span> to
+                    fill in who held this before — one term at a time, whenever you have a moment.
+                  </p>
+                )}
                 <ul className="space-y-1">
                   {past.map(h => (
                     <li key={h.id} className="text-[13px] text-stone-600">
                       <span className="font-medium text-stone-700">{nameOf(h.person_id)}</span>
-                      <span className="text-stone-400"> — {fmt(h.term_start)} to {fmt(h.term_end)}</span>
+                      <span className="text-stone-400"> — {tenureLine(o.kind, h)}</span>
                       {h.note && <span className="text-stone-400"> · {h.note}</span>}
                     </li>
                   ))}

@@ -35,6 +35,8 @@ export interface HoldingRow {
 }
 export interface OfficeOption {
   id: string; name: string; kind: string; single_holder: boolean; active: boolean;
+  /** Length of one term in years, where the constitution sets one. */
+  term_years?: number | null;
 }
 export interface PersonOption { id: string; full_name: string }
 
@@ -68,20 +70,55 @@ export function HoldingModal({
 
   const office = offices.find(o => o.id === officeId);
 
+  /**
+   * The day a term of this length, begun on this day, runs out.
+   *
+   * Four years from 11 Aug 2026 is 10 Aug 2030 — the day before the
+   * anniversary, because a four-year term that ended ON the anniversary would
+   * overlap its successor by a day, and the register would show two Bishops.
+   */
+  function endOfTerm(start: string, years: number): string {
+    const d = new Date(start + "T00:00:00");
+    d.setFullYear(d.getFullYear() + years);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  /**
+   * Fill the end date in from the post's term length.
+   *
+   * Only ever fills a blank, and only when the post has a term length — typing
+   * an end date and then changing the start must not silently overwrite what
+   * was typed, and a past term that ran short needs to be recordable as it was.
+   */
+  function onStartChange(next: string) {
+    setTermStart(next);
+    const years = office?.term_years;
+    if (next && years && !termEnd) setTermEnd(endOfTerm(next, years));
+  }
+
   async function save() {
     if (!officeId) { setErr("Choose the post"); return; }
     if (!personId) { setErr("Choose the person"); return; }
     if (!termStart) { setErr("A term needs a start date"); return; }
     if (termEnd && termEnd < termStart) { setErr("The term cannot end before it started"); return; }
 
-    // One person can hold a single-holder post at a time. Checked here rather
-    // than by a constraint because the register also has to hold history, where
-    // the same post legitimately has many closed terms.
-    if (!termEnd && office?.single_holder) {
+    // One person holds a single-holder post at a time. Checked here rather than
+    // by a constraint because the register also holds history, where the same
+    // post legitimately has many terms — they simply must not overlap.
+    //
+    // Tested as an overlap rather than "is there an open term", which is what
+    // it used to ask. Now that a term carries the end date its length implies,
+    // every term has one, and the old check would have found nothing to clash
+    // with while two people sat in the same post for the same four years.
+    if (office?.single_holder) {
+      const overlaps = (aStart: string, aEnd: string | null, bStart: string, bEnd: string | null) =>
+        aStart <= (bEnd ?? "9999-12-31") && bStart <= (aEnd ?? "9999-12-31");
       const clash = existing.find(h =>
-        h.office_id === officeId && !h.term_end && h.id !== holding?.id);
+        h.office_id === officeId && h.id !== holding?.id
+        && overlaps(termStart, termEnd || null, h.term_start, h.term_end));
       if (clash) {
-        setErr(`${office.name} already has a current holder. End that term first, or give this one an end date.`);
+        setErr(`${office.name} is already held over those dates. End that term first, or change these dates.`);
         return;
       }
     }
@@ -169,14 +206,21 @@ export function HoldingModal({
         <div>
           <label className={labelClass}>Term started *</label>
           <input type="date" className={fieldClass} value={termStart}
-            onChange={e => setTermStart(e.target.value)} />
+            onChange={e => onStartChange(e.target.value)} />
+          {office?.term_years != null && (
+            <p className="mt-1 text-[11px] text-stone-500">
+              {office.term_years}-year term — the end date fills itself in.
+            </p>
+          )}
         </div>
         <div>
           <label className={labelClass}>Term ended</label>
           <input type="date" className={fieldClass} value={termEnd}
             onChange={e => setTermEnd(e.target.value)} />
           <p className="mt-1 text-[11px] text-stone-500">
-            Blank means they still hold it.
+            {office?.term_years != null
+              ? "They stand as the current holder until this date passes. Change it for a term cut short."
+              : "Blank means they still hold it."}
           </p>
         </div>
       </div>
