@@ -689,20 +689,15 @@ export default function PayrollEmployeePage() {
                 )}
               </div>
 
-              {/* Says what this is FOR, and points at the other panel. The two
-                  used to describe themselves without contrasting each other,
-                  and both said "agreed outside the scale" — which is the exact
-                  overlap that made them hard to tell apart. */}
+              {/* Three sentences: what it is, where it shows, and when to use
+                  the other panel instead. Each used to describe itself without
+                  reference to the other, which is what made them hard to tell
+                  apart — the pointer does more work here than more detail would. */}
               <p className="mt-1.5 text-[15px] text-stone-700">
-                <strong>Money you have agreed to pay on top of the salary, or hold back from it.</strong>{" "}
+                Money added to or taken from pay for a given month, either recurring or one-off.
                 Each one becomes its own column above, and shows on the payslip and in the payroll run.
-              </p>
-              <p className="mt-1 text-[14px] text-stone-500">
-                For things that are part of the arrangement — an education allowance, a staff loan
-                repayment, PTPTN. They change take-home pay only: they never change what is filed
-                with EPF, PERKESO or LHDN.
                 <span className="mt-1 block font-medium text-[#1e3f75]">
-                  Putting right a figure that is already there? Use Adjustments below.
+                  Correcting a salary already paid? Use Adjustments below.
                 </span>
               </p>
 
@@ -776,22 +771,17 @@ export default function PayrollEmployeePage() {
               </div>
 
               <p className="mt-1.5 text-[15px] text-amber-900">
-                <strong>Putting right a figure that is already there.</strong>{" "}
-                An adjustment lands inside the column it names, rather than adding a new one.
-              </p>
-              <p className="mt-1 text-[14px] text-amber-800">
-                For when a number came out wrong or a ruling arrived late — SKBBK backdated to June,
-                EPF over-deducted in March, back pay owed. This is the only one that can move a
-                statutory figure, so a SKBBK correction reaches PERKESO&rsquo;s return and not just
-                the take-home.
+                For salaries already paid that need putting right — where too much was deducted,
+                or more was paid than agreed. It settles what is owed to or by the employee, landing
+                inside the column it names rather than adding a new one.
                 <span className="mt-1 block font-medium text-amber-900">
-                  Setting up a standing allowance or deduction? Use the panel above.
+                  Setting up a monthly allowance or deduction? Use the panel above.
                 </span>
               </p>
 
               {adjustments.length === 0 ? (
                 <p className="mt-2 text-[15px] font-medium text-amber-700">
-                  None for {year} — every figure above comes straight from the salary record and the rate table.
+                  None for {year}.
                 </p>
               ) : (
                 <ul className="mt-2 space-y-1.5">
