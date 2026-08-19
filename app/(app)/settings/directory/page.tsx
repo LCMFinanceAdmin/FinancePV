@@ -11,12 +11,16 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
-import { Plus, Trash2, Save, Church, MapPin } from "lucide-react";
+import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen } from "lucide-react";
 import { fieldClass } from "@/lib/field-styles";
+import { CouncilModal } from "@/components/directory/council-modal";
+import { CongregationDocsModal } from "@/components/directory/congregation-docs-modal";
 
 interface District { id: string; name: string; dean_email: string | null; }
 interface Congregation {
   id: string; name: string; district_id: string | null; head_pastor_email: string | null;
+  /** Registry of Societies registration — each congregation registers separately. */
+  ros_number: string | null;
   council_president_name: string | null; council_president_email: string | null;
 }
 interface Person {
@@ -44,6 +48,9 @@ export default function ChurchDirectoryPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [councilFor, setCouncilFor] = useState<Congregation | null>(null);
+  const [docsFor, setDocsFor] = useState<Congregation | null>(null);
+  const [canEdit, setCanEdit] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
 
   function showToast(msg: string, ok = true) {
@@ -85,6 +92,13 @@ export default function ChurchDirectoryPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.rpc("can_manage_directory");
+      setCanEdit(data === true);
+    })();
+  }, [supabase]);
+
   // Deans and head pastors must be pastors; anyone can be listed if none are
   // flagged yet, so the page is still usable before people are set up.
   // Somebody with no address at all cannot be reached by a leave request, so
@@ -121,6 +135,7 @@ export default function ChurchDirectoryPage() {
       name: c.name.trim(),
       district_id: c.district_id || null,
       head_pastor_email: c.head_pastor_email || null,
+      ros_number: c.ros_number?.trim() || null,
       council_president_name: c.council_president_name?.trim() || null,
       council_president_email: c.council_president_email?.trim().toLowerCase() || null,
       updated_at: new Date().toISOString(),
@@ -217,7 +232,7 @@ export default function ChurchDirectoryPage() {
           <h2 className="flex items-center gap-2 text-base font-bold text-stone-700">
             <Church size={16} className="text-[#4a6da7]" /> Congregations
           </h2>
-          <Button size="sm" onClick={() => setCongregations(cs => [...cs, { id: `new-${Date.now()}`, name: "", district_id: null, head_pastor_email: null, council_president_name: null, council_president_email: null }])}>
+          <Button size="sm" onClick={() => setCongregations(cs => [...cs, { id: `new-${Date.now()}`, name: "", district_id: null, head_pastor_email: null, ros_number: null, council_president_name: null, council_president_email: null }])}>
             <Plus size={13} /> Add Congregation
           </Button>
         </div>
@@ -228,7 +243,7 @@ export default function ChurchDirectoryPage() {
           return (
             <Card key={c.id}>
               <CardBody className="space-y-3">
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-4">
                   <div>
                     <label className="text-xs text-stone-400">Congregation name</label>
                     <input className={inp} value={c.name} placeholder="e.g. Bangsar Lutheran Church"
@@ -241,6 +256,11 @@ export default function ChurchDirectoryPage() {
                       <option value="">— none —</option>
                       {districts.filter(d => !d.id.startsWith("new-")).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-stone-400">ROS number</label>
+                    <input className={inp} value={c.ros_number ?? ""} placeholder="e.g. PPM-001-10-01011990"
+                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, ros_number: e.target.value } : x))} />
                   </div>
                   <div>
                     <label className="text-xs text-stone-400">Head pastor</label>
@@ -257,22 +277,40 @@ export default function ChurchDirectoryPage() {
                 {/* The Council Chairman/Rep holds a church council office, not
                     an LCM post, so they have no login here — they are named on
                     the congregation and approve by emailed link. */}
-                <div className="grid gap-3 border-t border-stone-100 pt-3 sm:grid-cols-2">
-                  <div>
-                    <label className="text-xs text-stone-400">Council Chairman / Rep</label>
-                    <input className={inp} value={c.council_president_name ?? ""} placeholder="Full name"
-                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, council_president_name: e.target.value } : x))} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-stone-400">Council Chairman&apos;s email</label>
-                    <input className={inp} type="email" value={c.council_president_email ?? ""} placeholder="chairman@example.com"
-                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, council_president_email: e.target.value } : x))} />
-                    <p className="mt-1 text-[11px] text-stone-400">
-                      Any address — the Council Chairman is not LCM staff and has no login here.
-                      They approve through a one-time emailed link.
-                    </p>
-                  </div>
+                {/* The Chairman is shown here and edited in the council, not
+                    typed here as well. Two fields writing the same value is how
+                    they come to disagree — the council list is the place, and a
+                    trigger writes the answer back to the field leave routing
+                    reads. See migration 145. */}
+                <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
+                  <span className="text-xs text-stone-400">Council Chairman / Rep:</span>
+                  {c.council_president_name || c.council_president_email ? (
+                    <span className="text-[13px] font-semibold text-stone-700">
+                      {c.council_president_name || c.council_president_email}
+                      {c.council_president_email && (
+                        <span className="ml-1 font-normal italic text-stone-400">{c.council_president_email}</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-[13px] italic text-stone-400">not named</span>
+                  )}
+
+                  <span className="ml-auto flex items-center gap-2">
+                    <Button size="sm" variant="secondary" disabled={c.id.startsWith("new-")}
+                      onClick={() => setCouncilFor(c)}>
+                      <Users size={13} /> Council members
+                    </Button>
+                    <Button size="sm" variant="secondary" disabled={c.id.startsWith("new-")}
+                      onClick={() => setDocsFor(c)}>
+                      <FolderOpen size={13} /> Documents
+                    </Button>
+                  </span>
                 </div>
+                {c.id.startsWith("new-") && (
+                  <p className="text-[11px] text-stone-400">
+                    Save the congregation first — the council and its documents attach to it.
+                  </p>
+                )}
 
                 {/* The consequence of the settings above, stated plainly. */}
                 <p className="rounded-lg bg-[#f4f9ff] px-3 py-2 text-xs text-stone-600">
@@ -338,6 +376,24 @@ export default function ChurchDirectoryPage() {
         they sign through a one-time link emailed when the pastor applies. Anyone with a specific
         assignment in Leave Approvers overrides all of this.
       </div>
+
+      {councilFor && (
+        <CouncilModal
+          congregationId={councilFor.id} congregationName={councilFor.name}
+          canEdit={canEdit}
+          onClose={() => setCouncilFor(null)}
+          // The chairman the trigger just wrote back to the congregation.
+          onSaved={load}
+        />
+      )}
+
+      {docsFor && (
+        <CongregationDocsModal
+          congregationId={docsFor.id} congregationName={docsFor.name}
+          canEdit={canEdit}
+          onClose={() => setDocsFor(null)}
+        />
+      )}
     </div>
   );
 }
