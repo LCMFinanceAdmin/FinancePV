@@ -252,6 +252,41 @@ export default function PayrollEmployeePage() {
     return Array.from({ length: 12 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
   }
 
+  /**
+   * Which columns begin a new category, 1-based, for the rules between them.
+   *
+   * Derived rather than written down because the custom columns sit between EPL
+   * and Net: add an allowance and every index after it moves. A hardcoded list
+   * would put the thick rule through the middle of a category the first time
+   * somebody added one.
+   *
+   *   1 Month | 2 Gross | 3 PCB | 4-5 EPF | 6-8 SOCSO | 9-10 EIS | 11 EPL
+   *   | 12.. custom | Net | Total LCM | actions
+   *
+   * SKBBK is deliberately not a boundary. It keeps its own column and its own
+   * tint, but it is filed on PERKESO's return as part of the same schedule as
+   * SOCSO, so a thick rule either side would separate it from what it belongs to.
+   */
+  const categoryStarts = (() => {
+    const fixed = [2, 3, 4, 6, 9, 11];      // Gross, PCB, EPF, SOCSO, EIS, EPL
+    const firstCustom = 12;
+    const custom = customCols.map((_, i) => firstCustom + i);
+    const net = firstCustom + customCols.length;
+    return [...fixed, ...custom, net, net + 1];
+  })();
+
+  /**
+   * The rules themselves.
+   *
+   * A <style> rule rather than utility classes: the indices are computed, and
+   * Tailwind only emits classes it can find written out in the source, so a
+   * class built from a template literal produces no CSS at all. Scoped to
+   * tbody — the header rows carry colspans, which make nth-child stop meaning
+   * "column", so those cells are marked in the markup instead.
+   */
+  const gridCss = `.ysheet tbody tr > *:is(${categoryStarts.map(n => `:nth-child(${n})`).join(",")})`
+    + `{border-left:2px solid #a8a29e}`;
+
   function exportCsv() {
     const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
     const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SKBBK", "SOCSO ER", "EIS EE", "EIS ER", "EPL", ...customHead, "Net", "Total LCM"];
@@ -398,7 +433,8 @@ export default function PayrollEmployeePage() {
         ) : (
           <>
             <div className="overflow-auto max-h-[72vh] rounded-lg">
-              <table className="w-full text-[14px] border-collapse" style={{ minWidth: 1000 }}>
+              <style>{gridCss}</style>
+              <table className="ysheet w-full text-[14px] border-collapse" style={{ minWidth: 1000 }}>
                 <thead>
                   {/* Two header rows: the scheme, then the side of it. Without
                       the grouping, eight look-alike money columns sit in a row
@@ -408,35 +444,35 @@ export default function PayrollEmployeePage() {
                       heading. */}
                   <tr className="text-stone-600 [&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:bg-stone-100">
                     <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-left align-bottom">Month</th>
-                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right align-bottom">Gross</th>
-                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right align-bottom">PCB</th>
-                    <th colSpan={2} className="border border-stone-200 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">EPF</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">Gross</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">PCB</th>
+                    <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">EPF</th>
                     {/* SKBBK sits inside SOCSO because that is what it is —
                         Lindung 24 tops up the employee's SOCSO contribution and
                         is filed on PERKESO's return. It keeps its own column
                         and its own tint because it is not SOCSO EE: the two are
                         reported as separate figures and reconciled separately. */}
-                    <th colSpan={3} className="border border-stone-200 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">SOCSO</th>
-                    <th colSpan={2} className="border border-stone-200 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">EIS</th>
-                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right align-bottom">EPL</th>
+                    <th colSpan={3} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">SOCSO</th>
+                    <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">EIS</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">EPL</th>
                     {customCols.map(col => (
-                      <th key={col.label} rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right align-bottom max-w-[90px]">
+                      <th key={col.label} rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom max-w-[90px]">
                         <div className="truncate text-[11px]">{col.label}</div>
                         <div className={`text-[9px] font-normal ${col.type === "allowance" ? "text-green-600" : "text-red-500"}`}>{col.type === "allowance" ? "+ allowance" : "− deduction"}</div>
                       </th>
                     ))}
-                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right font-bold align-bottom">Net</th>
-                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-right font-bold align-bottom">Total LCM</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right font-bold align-bottom">Net</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right font-bold align-bottom">Total LCM</th>
                     <th rowSpan={2} className="border border-stone-200 px-1 py-1 print:hidden w-14"></th>
                   </tr>
                   <tr className="text-stone-600 [&>th]:sticky [&>th]:top-[29px] [&>th]:z-20 [&>th]:bg-stone-100 [&>th]:shadow-[inset_0_-2px_0_#d6d3d1]">
-                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
+                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
+                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold !bg-amber-50 text-amber-800"
                         title="SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution">SKBBK</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
+                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
                     <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
                   </tr>
                 </thead>
@@ -943,6 +979,22 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const annualEpl = sum(l => l.eplDeduction);
   const hasEpl = annualEpl > 0;
   const specialCustom = customCols; // all custom items are "special"
+
+  // Same categories as the tab table, minus the actions column, and EPL only
+  // appears when somebody has a loan — so the indices after it shift twice over.
+  // Computed for the same reason as there: a hardcoded list would put a thick
+  // rule through the middle of a category as soon as a column was added.
+  const printCategoryStarts = (() => {
+    const fixed = [2, 3, 4, 6, 9];                 // Gross, PCB, EPF, SOCSO, EIS
+    const epl = hasEpl ? [11] : [];
+    const firstCustom = hasEpl ? 12 : 11;
+    const custom = customCols.map((_, i) => firstCustom + i);
+    const net = firstCustom + customCols.length;
+    return [...fixed, ...epl, ...custom, net, net + 1];
+  })();
+  const printGridCss =
+    `.ysheet-print tbody tr > *:is(${printCategoryStarts.map(n => `:nth-child(${n})`).join(",")})`
+    + `{border-left:2px solid #64748b}`;
 
   const hasAnySpecial = hasFamily || hasStm || hasExp || hasEpl || specialCustom.length > 0;
 
