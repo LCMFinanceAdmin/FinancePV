@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, grossComponentsForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem,
@@ -844,7 +844,7 @@ export default function PayrollEmployeePage() {
 
       {slipMonth !== null && monthLines[slipMonth] && (
         <SlipModal emp={emp} month={MONTHS[slipMonth]} year={year}
-          line={monthLines[slipMonth]}
+          line={monthLines[slipMonth]} monthNum={slipMonth + 1}
           salary={current}
           onClose={() => setSlipMonth(null)} />
       )}
@@ -1450,8 +1450,11 @@ function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose,
 
 // ─── Salary Slip Modal ────────────────────────────────────────────────────────
 
-function SlipModal({ emp, month, year, line, salary, onClose }: {
-  emp: PayrollEmployee; month: string; year: number;
+function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
+  emp: PayrollEmployee; month: string;
+  /** The month as a number, 1-12. `month` above is its label, for the heading. */
+  monthNum: number;
+  year: number;
   line: CalcLine; salary: PayrollSalary | null; onClose: () => void;
 }) {
   function n2(n: number) { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -1472,14 +1475,11 @@ function SlipModal({ emp, month, year, line, salary, onClose }: {
   // Salary components for EARNING section (non-zero only, except base)
   const components: { label: string; amount: number }[] = [];
   if (salary) {
-    components.push({ label: "Basic Salary", amount: Number(salary.base_salary) });
-    const incCarried = Number(salary.increment_carried);
-    const incCurrent = Number(salary.increment_current);
-    if (incCarried > 0) components.push({ label: "Increment (accumulated)", amount: incCarried });
-    if (incCurrent > 0) components.push({ label: "Current year increment", amount: incCurrent });
-    if (Number(salary.experience_bonus) > 0) components.push({ label: "Experience bonus", amount: Number(salary.experience_bonus) });
-    if (Number(salary.family_allowance) > 0) components.push({ label: "Family allowance", amount: Number(salary.family_allowance) });
-    if (Number(salary.stm_allowance) > 0) components.push({ label: "STM / Allowance", amount: Number(salary.stm_allowance) });
+    // From calc.ts, so the items listed are exactly the ones inside the gross
+    // shown below them — including whether this month's gross carries the
+    // current year's increment yet.
+    components.push(...grossComponentsForMonth(
+      salary, emp.date_commenced, monthNum, false, emp.increment_month_override));
     // Custom allowances
     for (const item of line.customItems.filter(i => i.type === "allowance")) {
       components.push({ label: item.label, amount: item.amount });

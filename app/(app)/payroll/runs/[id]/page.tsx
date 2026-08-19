@@ -411,6 +411,7 @@ export default function PayrollRunDetailPage() {
             salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
             epfEe={row.epfEe} epfEr={row.epfEr}
             socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
+            month={run.month} is13thMonth={run.month === 13}
             eisEe={row.eisEe} eisEr={row.eisEr}
             eplDeduction={row.eplDeduction} net={row.net}
             customItems={row.customItems}
@@ -1089,6 +1090,7 @@ function SendPayslipModal({ run, rows, onClose }: {
           salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
           epfEe={row.epfEe} epfEr={row.epfEr}
           socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
+            month={run.month} is13thMonth={run.month === 13}
           eisEe={row.eisEe} eisEr={row.eisEr}
           eplDeduction={row.eplDeduction} net={row.net}
           customItems={row.customItems}
@@ -1161,6 +1163,7 @@ function SendPayslipModal({ run, rows, onClose }: {
           <PayslipPDF emp={row.emp} monthLabel={monthLabel} year={run.year}
             salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
             epfEe={row.epfEe} epfEr={row.epfEr} socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
+            month={run.month} is13thMonth={run.month === 13}
             eisEe={row.eisEe} eisEr={row.eisEr} eplDeduction={row.eplDeduction} net={row.net}
             customItems={row.customItems} />
         ).toBlob();

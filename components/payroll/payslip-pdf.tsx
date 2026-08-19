@@ -1,6 +1,7 @@
 "use client";
 import { Document, Font, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary } from "@/lib/types";
+import { grossComponentsForMonth } from "@/lib/payroll/calc";
 
 // Noto Sans SC supports Simplified Chinese (马来西亚基督教信义会 etc.)
 Font.register({
@@ -135,12 +136,21 @@ export interface PayslipPDFProps {
    * that generates the phone call.
    */
   adjustments?: { category: string; amount: number; reason?: string }[];
+  /**
+   * The month being paid, 1-12 (and is13thMonth for the 13th).
+   *
+   * Needed only to itemise the earnings correctly: whether the gross carries
+   * this year's increment depends on the month, so a list built without it can
+   * disagree with the total it sits above.
+   */
+  month: number;
+  is13thMonth?: boolean;
 }
 
 export function PayslipPDF({
   emp, monthLabel, year, salary,
   gross, pcbVal, epfEe, epfEr, socsoEe, socsoEr, eisEe, eisEr, skbbk = 0,
-  eplDeduction, net, customItems, adjustments = [],
+  eplDeduction, net, customItems, adjustments = [], month, is13thMonth = false,
 }: PayslipPDFProps) {
   const dept = emp.posting_type === "CHURCH"
     ? `${(emp.designation || "PASTOR").toUpperCase()} - ${(emp.church_name || "").toUpperCase()}`
@@ -149,12 +159,10 @@ export function PayslipPDF({
   // Earning components
   const earns: { label: string; amount: number }[] = [];
   if (salary) {
-    earns.push({ label: "Basic Salary", amount: Number(salary.base_salary) });
-    if (Number(salary.increment_carried) > 0) earns.push({ label: "Increment (accumulated)", amount: Number(salary.increment_carried) });
-    if (Number(salary.increment_current) > 0) earns.push({ label: "Current year increment", amount: Number(salary.increment_current) });
-    if (Number(salary.experience_bonus) > 0) earns.push({ label: "Experience bonus", amount: Number(salary.experience_bonus) });
-    if (Number(salary.family_allowance) > 0) earns.push({ label: "Family allowance", amount: Number(salary.family_allowance) });
-    if (Number(salary.stm_allowance) > 0) earns.push({ label: "STM / Allowance", amount: Number(salary.stm_allowance) });
+    // From calc.ts, so the items listed are exactly the ones inside the gross
+    // printed below them — including whether this month's gross carries the
+    // current year's increment yet.
+    earns.push(...grossComponentsForMonth(salary, emp.date_commenced, month, is13thMonth, emp.increment_month_override));
     for (const i of customItems.filter(i => i.type === "allowance")) earns.push({ label: i.label, amount: i.amount });
     // Gross corrections belong on the earnings side, or the items listed there
     // stop adding up to the GROSS PAY figure printed below them.

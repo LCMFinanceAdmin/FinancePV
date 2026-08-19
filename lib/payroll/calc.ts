@@ -230,6 +230,47 @@ export function grossForMonth(s: SalaryComponents, dateCommenced: string | null,
   return month >= eff ? full : full - Number(s.increment_current);
 }
 
+export interface EarningComponent { label: string; amount: number }
+
+/**
+ * The same figure as grossForMonth, itemised.
+ *
+ * A payslip has to show what makes up the gross, and both payslips used to
+ * build that list themselves from the salary record. That list included the
+ * current year's increment whenever it was non-zero, while grossForMonth leaves
+ * it out until its effective month — so for anyone who joined after July, the
+ * earnings printed on a January payslip added up to more than the GROSS PAY
+ * printed underneath them.
+ *
+ * Returning the breakdown from the same rule that computes the total is the
+ * only version of this that stays fixed. The two cannot disagree, because
+ * there is no longer a second copy of the rule to drift.
+ */
+export function grossComponentsForMonth(
+  s: SalaryComponents,
+  dateCommenced: string | null,
+  month: number,
+  is13th: boolean,
+  incrementMonthOverride?: number | null,
+): EarningComponent[] {
+  const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
+  // The 13th month is paid on the full gross, so the increment always counts.
+  const incrementApplies = is13th || month >= eff;
+
+  const out: EarningComponent[] = [
+    // Always listed, even at zero: a payslip with no basic salary line reads as
+    // though something failed to load.
+    { label: "Basic Salary", amount: Number(s.base_salary) },
+  ];
+  const add = (label: string, amount: number) => { if (amount > 0) out.push({ label, amount }); };
+  add("Increment (accumulated)", Number(s.increment_carried));
+  if (incrementApplies) add("Current year increment", Number(s.increment_current));
+  add("Experience bonus", Number(s.experience_bonus));
+  add("Family allowance", Number(s.family_allowance));
+  add("STM / Allowance", Number(s.stm_allowance));
+  return out;
+}
+
 // KWSP contribution-schedule approximation: round wage up to the next RM20 band,
 // apply the rate, then round the contribution up to the next ringgit.
 function epfContribution(gross: number, rate: number): number {
