@@ -27,7 +27,9 @@ interface Person {
   id: string; full_name: string;
   /** Their contact address, and the one they sign in with — often different. */
   email: string | null; user_email: string | null;
-  is_pastor: boolean;
+  /** PASTOR | REVEREND | RETIRED, or null for anyone not in ministry. */
+  pastor_standing: string | null;
+  congregation_id: string | null;
 }
 
 /**
@@ -51,6 +53,8 @@ export default function ChurchDirectoryPage() {
   const [councilFor, setCouncilFor] = useState<Congregation | null>(null);
   const [docsFor, setDocsFor] = useState<Congregation | null>(null);
   const [canEdit, setCanEdit] = useState(false);
+  /** "districtId|personId" -> why they cannot be that district's Dean. */
+  const [deanBlocks, setDeanBlocks] = useState<Record<string, string>>({});
   const [toast, setToast] = useState({ msg: "", ok: true });
 
   function showToast(msg: string, ok = true) {
@@ -67,26 +71,24 @@ export default function ChurchDirectoryPage() {
       // educationdesk@, mission@ — and left out anybody with a record who has
       // not signed in yet.
       //
-      // is_pastor lives on user_roles rather than people, so both are loaded
-      // and matched by address below. Reading it off people looks obvious and
-      // returns an error, which PostgREST reports as no rows — an empty list
-      // rather than a failure.
+      // Standing comes from people.pastor_standing (migration 146), not from
+      // user_roles.is_pastor. The two were both claiming to answer "is this
+      // person a pastor" and had already diverged — standing knew about one,
+      // the flag about none — so the directory saw no pastors at all.
       supabase.from("people")
-        .select("id,full_name,email,user_email")
+        .select("id,full_name,email,user_email,pastor_standing,congregation_id")
         .eq("status", "ACTIVE").order("full_name"),
-      supabase.from("user_roles").select("email,is_pastor"),
+      // Why each person cannot be Dean of each district, from the same rule
+      // the register uses. One call rather than one per person per district.
+      supabase.rpc("dean_candidates"),
     ]);
     setDistricts((d ?? []) as District[]);
     setCongregations((c ?? []) as Congregation[]);
-    // Pastor status is carried on the login, so it is folded onto the person
-    // here and the rest of the page can read one shape.
-    const pastorBy = new Map(
-      ((ur ?? []) as { email: string; is_pastor: boolean | null }[])
-        .map(r => [(r.email ?? "").trim().toLowerCase(), !!r.is_pastor]));
-    setPeople(((p ?? []) as Omit<Person, "is_pastor">[]).map(x => ({
-      ...x,
-      is_pastor: pastorBy.get((x.user_email || x.email || "").trim().toLowerCase()) ?? false,
-    })));
+    setPeople((p ?? []) as Person[]);
+    setDeanBlocks(Object.fromEntries(
+      ((ur ?? []) as { district_id: string; person_id: string; reason: string | null }[])
+        .filter(r => r.reason)
+        .map(r => [`${r.district_id}|${r.person_id}`, r.reason as string])));
     setLoading(false);
   }, []);
 
@@ -104,7 +106,7 @@ export default function ChurchDirectoryPage() {
   // Somebody with no address at all cannot be reached by a leave request, so
   // they are not offered — picking them would look like it worked.
   const reachable = people.filter(p => loginOf(p));
-  const pastors = reachable.filter(p => p.is_pastor);
+  const pastors = reachable.filter(p => p.pastor_standing);
   const pastorOptions = pastors.length > 0 ? pastors : reachable;
 
   async function saveDistrict(d: District) {
@@ -201,13 +203,32 @@ export default function ChurchDirectoryPage() {
                 </div>
                 <div>
                   <label className="text-xs text-stone-400">Dean</label>
+                  {/* The same rule the register applies when appointing to the
+                      Dean's post, so setting one here cannot get past a check
+                      the other door enforces. Everyone stays listed with the
+                      reason beside them rather than being hidden — see the
+                      election form for why. */}
                   <select className={inp} value={d.dean_email ?? ""}
                     onChange={e => setDistricts(ds => ds.map(x => x.id === d.id ? { ...x, dean_email: e.target.value || null } : x))}>
                     <option value="">— none —</option>
-                    {pastorOptions.map(p => (
-                        <option key={p.id} value={loginOf(p)}>{p.full_name}</option>
-                      ))}
+                    {pastorOptions.map(p => {
+                      const why = deanBlocks[`${d.id}|${p.id}`];
+                      return (
+                        <option key={p.id} value={loginOf(p)}>
+                          {p.full_name}{why ? `  ·  ${why}` : ""}
+                        </option>
+                      );
+                    })}
                   </select>
+                  {(() => {
+                    const chosen = pastorOptions.find(p => loginOf(p) === d.dean_email);
+                    const why = chosen ? deanBlocks[`${d.id}|${chosen.id}`] : null;
+                    return why ? (
+                      <p className="mt-1 rounded-lg border-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+                        {chosen?.full_name} would not normally be Dean here — {why}.
+                      </p>
+                    ) : null;
+                  })()}
                 </div>
               </div>
               <div className="flex items-center gap-2 border-t border-stone-100 pt-2">
