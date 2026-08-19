@@ -205,6 +205,8 @@ export default function PayrollRunDetailPage() {
     : lines.some(l => ((l.custom_items as CustomPayrollItem[]) ?? []).length > 0);
 
   // Individual custom columns — one per unique label+type across all employees.
+  // Same reasoning as the yearly sheet: the custom columns sit between EPL and
+  // Net, so every index after them moves when one is added.
   const runCustomCols: { label: string; type: "allowance" | "deduction" }[] = [];
   const _rccSeen = new Set<string>();
   const _allCItems: CustomPayrollItem[] = [
@@ -215,6 +217,17 @@ export default function PayrollRunDetailPage() {
     const k = `${item.label}|${item.type}`;
     if (!_rccSeen.has(k)) { _rccSeen.add(k); runCustomCols.push({ label: item.label, type: item.type }); }
   }
+
+  const runCategoryStarts = (() => {
+    const fixed = [2, 3, 4, 6, 9, 11];   // Gross, PCB, EPF, SOCSO, EIS, EPL
+    const firstCustom = 12;
+    const custom = runCustomCols.map((_, i) => firstCustom + i);
+    const net = firstCustom + runCustomCols.length;
+    return [...fixed, ...custom, net];
+  })();
+  const runGridCss =
+    `.runsheet tbody tr > *:is(${runCategoryStarts.map(n => `:nth-child(${n})`).join(",")})`
+    + `{border-left:2px solid #a8a29e}`;
 
   // Data rows for Send Payslip modal.
   const payslipRows = isDraft
@@ -665,28 +678,40 @@ export default function PayrollRunDetailPage() {
 
       {/* Lines table */}
       <div className="bg-white border border-stone-200 rounded-2xl p-4 overflow-x-auto">
-        <table className="w-full text-[11px] border-collapse" style={{ minWidth: 1000 }}>
+        {/* Read alongside the yearly sheet, so grouped and ruled the same way.
+            The two showed the same figures in a different column order until
+            now — SKBBK after SOCSO ER here, between EE and ER there — which is
+            the kind of difference that gets noticed halfway through checking a
+            number against the other screen. */}
+        <style>{runGridCss}</style>
+        <table className="runsheet w-full text-[11px] border-collapse" style={{ minWidth: 1000 }}>
           <thead>
             <tr className="bg-stone-100 text-stone-600">
-              <th className="border border-stone-200 px-1.5 py-1 text-left">Employee</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">Gross</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">PCB</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">EPF EE</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">EPF ER</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">SOCSO EE</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">SOCSO ER</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right" title="SKBBK (Lindung 24) — employee only">SKBBK</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">EIS EE</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">EIS ER</th>
-              <th className="border border-stone-200 px-1.5 py-1 text-right">EPL</th>
+              <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-left align-bottom">Employee</th>
+              <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">Gross</th>
+              <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">PCB</th>
+              <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-wider text-[#4a6da7]">EPF</th>
+              <th colSpan={3} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-wider text-[#4a6da7]">SOCSO</th>
+              <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-wider text-[#4a6da7]">EIS</th>
+              <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">EPL</th>
               {runCustomCols.map(col => (
-                <th key={`${col.label}|${col.type}`}
-                  className={`border border-stone-200 px-1.5 py-1 text-right max-w-[70px] ${col.type === "allowance" ? "text-green-700" : "text-red-600"}`}>
+                <th key={`${col.label}|${col.type}`} rowSpan={2}
+                  className={`border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom max-w-[70px] ${col.type === "allowance" ? "text-green-700" : "text-red-600"}`}>
                   <div className="truncate text-[9px] leading-tight">{col.label}</div>
                   <div className="text-[8px] font-normal opacity-60">{col.type === "allowance" ? "+allow" : "−ded"}</div>
                 </th>
               ))}
-              <th className="border border-stone-200 px-1.5 py-1 text-right font-bold">Net</th>
+              <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right font-bold align-bottom">Net</th>
+            </tr>
+            <tr className="bg-stone-100 text-stone-600">
+              <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[10px] font-semibold">EE</th>
+              <th className="border border-stone-200 px-1.5 py-1 text-right text-[10px] font-semibold">ER</th>
+              <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[10px] font-semibold">EE</th>
+              <th className="border border-stone-200 px-1.5 py-1 text-right text-[10px] font-semibold !bg-amber-50 text-amber-800"
+                  title="SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution">SKBBK</th>
+              <th className="border border-stone-200 px-1.5 py-1 text-right text-[10px] font-semibold">ER</th>
+              <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[10px] font-semibold">EE</th>
+              <th className="border border-stone-200 px-1.5 py-1 text-right text-[10px] font-semibold">ER</th>
             </tr>
           </thead>
           <tbody>
@@ -701,8 +726,8 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.epf.ee)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.epf.er)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.socso.ee)}</td>
-                <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.socso.er)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.skbbk)}</td>
+                <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.socso.er)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.eis.ee)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.eis.er)}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-500">{num(line.eplDeduction)}</td>
@@ -731,8 +756,8 @@ export default function PayrollRunDetailPage() {
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.epf_ee))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.epf_er))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.socso_ee))}</td>
-                <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.socso_er))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.skbbk ?? 0))}</td>
+                <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.socso_er))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.eis_ee))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(Number(l.eis_er))}</td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-500">{num(Number(l.epl))}</td>
@@ -758,8 +783,8 @@ export default function PayrollRunDetailPage() {
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.epf.ee) : sumLines(l => l.epf_ee))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.epf.er) : sumLines(l => l.epf_er))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.socso.ee) : sumLines(l => l.socso_ee))}</td>
-              <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.socso.er) : sumLines(l => l.socso_er))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.skbbk) : sumLines(l => l.skbbk ?? 0))}</td>
+              <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.socso.er) : sumLines(l => l.socso_er))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eis.ee) : sumLines(l => l.eis_ee))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eis.er) : sumLines(l => l.eis_er))}</td>
               <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(isDraft ? sumDraft(l => l.eplDeduction) : sumLines(l => l.epl))}</td>
