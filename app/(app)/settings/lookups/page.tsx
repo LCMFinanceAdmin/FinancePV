@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Plus, Trash2, Save } from "lucide-react";
+import { OptionListCard } from "@/components/settings/option-list-card";
 
 interface Dept { id: string; name: string; head_name: string; head_email: string; }
 interface Ministry { id: string; name: string; }
@@ -13,6 +14,7 @@ export default function LookupsPage() {
   const supabase = createClient();
   const [depts, setDepts] = useState<Dept[]>([]);
   const [ministries, setMinistries] = useState<Ministry[]>([]);
+  const [canEdit, setCanEdit] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -24,10 +26,14 @@ export default function LookupsPage() {
       supabase.from("departments").select("*").order("name"),
       supabase.from("ministries").select("*").order("name"),
       supabase.from("projects").select("*").order("name"),
-    ]).then(([d, m, p]) => {
+      // Same gate the lists themselves use, so the cards do not offer edits
+      // the database will refuse.
+      supabase.rpc("can_manage_directory"),
+    ]).then(([d, m, p, perm]) => {
       setDepts(d.data ?? []);
       setMinistries(m.data ?? []);
       setProjects(p.data ?? []);
+      setCanEdit(perm.data === true);
       setLoading(false);
     });
   }, []);
@@ -191,6 +197,33 @@ export default function LookupsPage() {
           )}
         </CardBody>
       </Card>
+
+      {/* Lists that used to be fixed in code (migration 149). They are here
+          because this page is already where the app's vocabularies live, and
+          because the alternative — editing them where they are used — hides
+          them inside a modal somebody has to know to open. */}
+      <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">
+          Editable lists
+        </p>
+        <p className="mb-3 text-[12px] text-stone-500">
+          These fill the dropdowns elsewhere in the app. Add to them freely — nothing in the system
+          behaves differently because of the value, which is why they can be edited here at all.
+          Lists that do drive behaviour, such as pastor standing or council role, stay fixed.
+        </p>
+      </div>
+
+      <OptionListCard table="document_kinds" canEdit={canEdit}
+        title="Document kinds"
+        hint="What a congregation document is — offered when filing one" />
+
+      <OptionListCard table="document_sources" canEdit={canEdit}
+        title="Document sources"
+        hint="How a document reached LCM" />
+
+      <OptionListCard table="organisation_kinds" canEdit={canEdit} hasPlural
+        title="Organisation kinds"
+        hint="How partners and organisations are grouped" />
     </div>
   );
 }

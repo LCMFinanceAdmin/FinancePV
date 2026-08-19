@@ -21,9 +21,10 @@ import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { Plus, Trash2, Upload, FileText, Download, X } from "lucide-react";
 
-export type DocKind =
-  | "ROS_REPORT" | "STATISTICAL_REPORT" | "CORRESPONDENCE"
-  | "MINUTES" | "CONSTITUTION" | "FINANCIAL" | "OTHER";
+/** Whatever document_kinds holds — the list is editable (migration 149). */
+export type DocKind = string;
+
+export interface OptionRow { key: string; label: string; active: boolean; sort_order: number }
 
 export interface CongregationDoc {
   id: string;
@@ -41,17 +42,18 @@ export interface CongregationDoc {
   created_at: string;
 }
 
-const KINDS: { key: DocKind; label: string }[] = [
-  { key: "ROS_REPORT",         label: "ROS report" },
-  { key: "STATISTICAL_REPORT", label: "Statistical report" },
-  { key: "CORRESPONDENCE",     label: "Correspondence" },
-  { key: "MINUTES",            label: "Minutes" },
-  { key: "CONSTITUTION",       label: "Constitution" },
-  { key: "FINANCIAL",          label: "Financial" },
-  { key: "OTHER",              label: "Other" },
-];
-const SOURCES = ["EMAIL", "WHATSAPP", "LETTER", "MEETING", "OTHER"];
-const kindLabel = (k: string) => KINDS.find(x => x.key === k)?.label ?? k;
+/**
+ * Kinds and sources come from their own tables now, so adding "Audit Report"
+ * is data rather than a deploy. A key with no row left falls back to the key
+ * itself rather than rendering blank — the foreign key makes that unlikely,
+ * but a row read before a rename propagates would otherwise show nothing.
+ */
+const labelOf = (rows: OptionRow[], k: string | null) =>
+  !k ? "" : (rows.find(x => x.key === k)?.label ?? k);
+
+/** Retired options stay visible on rows already using them. */
+const offerable = (rows: OptionRow[], current: string | null) =>
+  rows.filter(r => r.active || r.key === current);
 
 const fmtSize = (n: number) =>
   n <= 0 ? "" : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
@@ -68,18 +70,25 @@ export function CongregationDocsModal({
 }) {
   const supabase = createClient();
   const [docs, setDocs] = useState<CongregationDoc[]>([]);
+  const [kinds, setKinds] = useState<OptionRow[]>([]);
+  const [sources, setSources] = useState<OptionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("congregation_documents").select("*")
-      .eq("congregation_id", congregationId)
-      .order("doc_date", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
+    const [{ data, error }, { data: dk }, { data: ds }] = await Promise.all([
+      supabase.from("congregation_documents").select("*")
+        .eq("congregation_id", congregationId)
+        .order("doc_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false }),
+      supabase.from("document_kinds").select("*").order("sort_order").order("label"),
+      supabase.from("document_sources").select("*").order("sort_order").order("label"),
+    ]);
     if (error) setErr(error.message);
     setDocs((data ?? []) as CongregationDoc[]);
+    setKinds((dk ?? []) as OptionRow[]);
+    setSources((ds ?? []) as OptionRow[]);
     setLoading(false);
   }, [supabase, congregationId]);
 
@@ -118,7 +127,7 @@ export function CongregationDocsModal({
       )}
 
       {adding && (
-        <AddDoc congregationId={congregationId}
+        <AddDoc congregationId={congregationId} kinds={kinds} sources={sources}
           onCancel={() => setAdding(false)}
           onDone={async () => { setAdding(false); await load(); }} />
       )}
@@ -135,11 +144,11 @@ export function CongregationDocsModal({
           {docs.map(d => (
             <li key={d.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-stone-200 bg-white px-2.5 py-2">
               <span className="rounded bg-[#eef4fd] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#2f5b9c]">
-                {kindLabel(d.kind)}
+                {labelOf(kinds, d.kind)}
               </span>
               <span className="text-[13px] font-semibold text-stone-800">{d.title}</span>
               {d.doc_date && <span className="text-[12px] italic text-stone-400">{fmtDate(d.doc_date)}</span>}
-              {d.source && <span className="text-[11px] text-stone-400">via {d.source.toLowerCase()}</span>}
+              {d.source && <span className="text-[11px] text-stone-400">via {labelOf(sources, d.source).toLowerCase()}</span>}
 
               <span className="ml-auto flex items-center gap-1">
                 {d.file_path ? (
@@ -169,11 +178,15 @@ export function CongregationDocsModal({
   );
 }
 
-function AddDoc({ congregationId, onCancel, onDone }: {
-  congregationId: string; onCancel: () => void; onDone: () => void;
+function AddDoc({ congregationId, kinds, sources, onCancel, onDone }: {
+  congregationId: string;
+  kinds: OptionRow[]; sources: OptionRow[];
+  onCancel: () => void; onDone: () => void;
 }) {
   const supabase = createClient();
-  const [kind, setKind] = useState<DocKind>("ROS_REPORT");
+  // First in the list rather than a named constant, since the list is editable
+  // and the old default could be retired out from under this.
+  const [kind, setKind] = useState<DocKind>(kinds.find(k => k.active)?.key ?? "");
   const [title, setTitle] = useState("");
   const [source, setSource] = useState("");
   const [docDate, setDocDate] = useState("");
@@ -233,7 +246,7 @@ function AddDoc({ congregationId, onCancel, onDone }: {
         <div>
           <label className={labelClass}>What it is</label>
           <select className={fieldClass} value={kind} onChange={e => setKind(e.target.value as DocKind)}>
-            {KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+            {offerable(kinds, kind).map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
           </select>
         </div>
         <div>
@@ -255,7 +268,7 @@ function AddDoc({ congregationId, onCancel, onDone }: {
           <label className={labelClass}>Came by</label>
           <select className={fieldClass} value={source} onChange={e => setSource(e.target.value)}>
             <option value="">— not recorded —</option>
-            {SOURCES.map(s => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
+            {offerable(sources, source).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
         </div>
       </div>

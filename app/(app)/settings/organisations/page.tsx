@@ -23,31 +23,31 @@ import {
 
 // The kinds LCM actually deals with. Each says something different about the
 // relationship, which is why they are not all just "partner".
-const KINDS = [
-  { key: "PARTNER_CHURCH", label: "Companion Churches", one: "Companion Church",
-    icon: <Globe size={15} />, accent: "#2563eb",
-    desc: "Lutheran church bodies overseas that walk with LCM" },
-  { key: "INSTITUTION", label: "Institutions", one: "Institution",
-    icon: <GraduationCap size={15} />, accent: "#7c3aed",
-    desc: "Study centres, schools and training bodies" },
-  { key: "TRUST", label: "Trusts", one: "Trust",
-    icon: <Landmark size={15} />, accent: "#0891b2",
-    desc: "Bodies holding property or funds for the church" },
-  { key: "COMPANY", label: "Companies", one: "Company",
-    icon: <Building2 size={15} />, accent: "#ea580c",
-    desc: "Enterprises associated with LCM" },
-  { key: "FOUNDATION", label: "Foundations", one: "Foundation",
-    icon: <HeartHandshake size={15} />, accent: "#16a34a",
-    desc: "Charitable foundations supporting the work" },
-  { key: "MISSION_AGENCY", label: "Mission Agencies", one: "Mission Agency",
-    icon: <Send size={15} />, accent: "#db2777",
-    desc: "Sending and mission societies" },
-  { key: "OTHER", label: "Other", one: "Other",
-    icon: <Handshake size={15} />, accent: "#64748b",
-    desc: "Anyone else LCM works closely with" },
-] as const;
+/**
+ * How each kind LOOKS. Wording and the list itself come from the
+ * organisation_kinds table (migration 149) so a new kind needs no deploy; only
+ * the icon and accent stay here, because a colour is not something anybody
+ * wants to type into a form. A kind added later falls through to the default
+ * and looks unremarkable rather than broken.
+ */
+const KIND_STYLE: Record<string, { icon: React.ReactNode; accent: string }> = {
+  PARTNER_CHURCH: { icon: <Globe size={15} />,         accent: "#2563eb" },
+  INSTITUTION:    { icon: <GraduationCap size={15} />, accent: "#7c3aed" },
+  TRUST:          { icon: <Landmark size={15} />,      accent: "#0891b2" },
+  COMPANY:        { icon: <Building2 size={15} />,     accent: "#ea580c" },
+  FOUNDATION:     { icon: <HeartHandshake size={15} />, accent: "#16a34a" },
+  MISSION_AGENCY: { icon: <Send size={15} />,          accent: "#db2777" },
+  OTHER:          { icon: <Handshake size={15} />,     accent: "#64748b" },
+};
+const KIND_FALLBACK = { icon: <Handshake size={15} />, accent: "#64748b" };
+const styleOf = (key: string) => KIND_STYLE[key] ?? KIND_FALLBACK;
 
-type KindKey = typeof KINDS[number]["key"];
+interface OrgKind {
+  key: string; label: string; plural_label: string | null;
+  description: string; sort_order: number; active: boolean;
+}
+
+type KindKey = string;
 
 const STATUSES = [
   { key: "ACTIVE",  label: "Active" },
@@ -92,6 +92,7 @@ const BLANK: Omit<Organisation, "id"> = {
 export default function OrganisationsPage() {
   const supabase = createClient();
   const [orgs, setOrgs] = useState<Organisation[]>([]);
+  const [kinds, setKinds] = useState<OrgKind[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,14 +111,17 @@ export default function OrganisationsPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: o }, { data: c }, { data: perm }] = await Promise.all([
+    const [{ data: o }, { data: c }, { data: perm }, { data: kd }] = await Promise.all([
       supabase.from("organisations").select("*").order("name"),
       supabase.from("people")
         .select("id,full_name,org_role,email,phone,organisation_id")
         .not("organisation_id", "is", null),
       supabase.rpc("can_manage_people"),
+      // The kinds are data now (migration 149), so a new one needs no deploy.
+      supabase.from("organisation_kinds").select("*").order("sort_order").order("label"),
     ]);
     setOrgs((o ?? []) as Organisation[]);
+    setKinds((kd ?? []) as OrgKind[]);
     setContacts((c ?? []) as Contact[]);
     setCanEdit(perm === true);
     setLoading(false);
@@ -253,12 +257,12 @@ export default function OrganisationsPage() {
             kindFilter === "ALL" ? "border-[#4a6da7] bg-[#eaf2ff] text-[#1d4ed8]" : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"}`}>
           All <span className="text-stone-400">{orgs.filter(o => showEnded || o.status !== "ENDED").length}</span>
         </button>
-        {KINDS.filter(k => (counts[k.key] ?? 0) > 0 || kindFilter === k.key).map(k => (
+        {kinds.filter(k => (counts[k.key] ?? 0) > 0 || kindFilter === k.key).map(k => (
           <button key={k.key} onClick={() => setKindFilter(k.key)}
             className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
               kindFilter === k.key ? "border-[#4a6da7] bg-[#eaf2ff] text-[#1d4ed8]" : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"}`}>
-            <span style={{ color: k.accent }}>{k.icon}</span>
-            {k.label} <span className="text-stone-400">{counts[k.key] ?? 0}</span>
+            <span style={{ color: styleOf(k.key).accent }}>{styleOf(k.key).icon}</span>
+            {k.plural_label ?? k.label} <span className="text-stone-400">{counts[k.key] ?? 0}</span>
           </button>
         ))}
       </div>
@@ -286,7 +290,7 @@ export default function OrganisationsPage() {
 
         {visible.map(o => {
           const isOpen = openId === o.id;
-          const k = KINDS.find(x => x.key === o.kind);
+          const k = kinds.find(x => x.key === o.kind);
           const people_ = contactsOf(o.id);
           const d = isOpen ? draft : null;
 
@@ -296,8 +300,8 @@ export default function OrganisationsPage() {
                 className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#f8fbff]">
                 <ChevronRight size={15} className={`shrink-0 text-stone-300 transition-transform ${isOpen ? "rotate-90" : ""}`} />
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white"
-                  style={{ backgroundColor: k?.accent ?? "#64748b" }}>
-                  {k?.icon}
+                  style={{ backgroundColor: styleOf(o.kind).accent }}>
+                  {styleOf(o.kind).icon}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -326,7 +330,7 @@ export default function OrganisationsPage() {
                   </p>
                 </div>
                 <span className="hidden shrink-0 rounded-full bg-[#eef4fd] px-2.5 py-1 text-[11px] font-semibold text-[#3a6db0] sm:block">
-                  {k?.one}
+                  {k?.label}
                 </span>
               </button>
 
@@ -347,10 +351,13 @@ export default function OrganisationsPage() {
                       <div>
                         <label className={lbl}>Kind</label>
                         <select className={inp} value={d.kind} onChange={e => set("kind", e.target.value as KindKey)}>
-                          {KINDS.map(x => <option key={x.key} value={x.key}>{x.one}</option>)}
+                          {/* A retired kind stays offered on a record already
+                              using it, or saving would silently change it. */}
+                          {kinds.filter(x => x.active || x.key === d.kind)
+                                .map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
                         </select>
                         <p className="mt-1 text-[11px] text-stone-400">
-                          {KINDS.find(x => x.key === d.kind)?.desc}
+                          {kinds.find(x => x.key === d.kind)?.description}
                         </p>
                       </div>
                       <div>
