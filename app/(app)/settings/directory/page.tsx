@@ -52,19 +52,34 @@ export default function ChurchDirectoryPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: d }, { data: c }, { data: p }] = await Promise.all([
+    const [{ data: d }, { data: c }, { data: p }, { data: ur }] = await Promise.all([
       supabase.from("districts").select("*").order("name"),
       supabase.from("congregations").select("*").order("name"),
-      // From the People directory, not from logins. Reading user_roles offered
-      // shared mailboxes with no person behind them — educationdesk@, mission@
-      // — and left out anybody who has a record but has not signed in yet.
+      // Names come from the People directory, not from logins: reading
+      // user_roles offered shared mailboxes with no person behind them —
+      // educationdesk@, mission@ — and left out anybody with a record who has
+      // not signed in yet.
+      //
+      // is_pastor lives on user_roles rather than people, so both are loaded
+      // and matched by address below. Reading it off people looks obvious and
+      // returns an error, which PostgREST reports as no rows — an empty list
+      // rather than a failure.
       supabase.from("people")
-        .select("id,full_name,email,user_email,is_pastor")
+        .select("id,full_name,email,user_email")
         .eq("status", "ACTIVE").order("full_name"),
+      supabase.from("user_roles").select("email,is_pastor"),
     ]);
     setDistricts((d ?? []) as District[]);
     setCongregations((c ?? []) as Congregation[]);
-    setPeople((p ?? []) as Person[]);
+    // Pastor status is carried on the login, so it is folded onto the person
+    // here and the rest of the page can read one shape.
+    const pastorBy = new Map(
+      ((ur ?? []) as { email: string; is_pastor: boolean | null }[])
+        .map(r => [(r.email ?? "").trim().toLowerCase(), !!r.is_pastor]));
+    setPeople(((p ?? []) as Omit<Person, "is_pastor">[]).map(x => ({
+      ...x,
+      is_pastor: pastorBy.get((x.user_email || x.email || "").trim().toLowerCase()) ?? false,
+    })));
     setLoading(false);
   }, []);
 
