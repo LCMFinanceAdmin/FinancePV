@@ -1498,7 +1498,7 @@ function SlipModal({ emp, month, year, line, salary, onClose }: {
     `Employee: ${emp.full_name} (${emp.emp_no})`,
     ``,
     `Gross Pay: ${rm(line.gross)}`,
-    `EPF: ${rm(line.epf.ee)} | SOCSO: ${rm(line.socso.ee)}${line.skbbk > 0 ? ` | SKBBK: ${rm(line.skbbk)}` : ""} | EIS: ${rm(line.eis.ee)} | PCB: ${rm(line.pcb)}`,
+    `EPF: ${rm(line.epf.ee)} | SOCSO: ${rm(line.socso.ee)}${line.skbbk !== 0 ? ` | SKBBK: ${rm(line.skbbk)}` : ""} | EIS: ${rm(line.eis.ee)} | PCB: ${rm(line.pcb)}`,
     `Total Deductions: ${rm(totalDeductions)}`,
     `*Net Pay: ${rm(line.net)}*`,
   ].join("\n");
@@ -1523,7 +1523,7 @@ function SlipModal({ emp, month, year, line, salary, onClose }: {
     `DEDUCTION`,
     `  Employee EPF                 ${n2(line.epf.ee)}`,
     `  Employee SOCSO               ${n2(line.socso.ee)}`,
-    ...(line.skbbk > 0 ? [`  SKBBK (Lindung 24)           ${n2(line.skbbk)}`] : []),
+    ...(line.skbbk !== 0 ? [`  SKBBK (Lindung 24)           ${n2(line.skbbk)}`] : []),
     `  Employee EIS                 ${n2(line.eis.ee)}`,
     line.eplDeduction > 0 ? `  EPL Loan Deduction           ${n2(line.eplDeduction)}` : null,
     `  ${"".padEnd(28, "─")}`,
@@ -1608,7 +1608,7 @@ function SlipModal({ emp, month, year, line, salary, onClose }: {
                 const deductions = [
                   { label: "Employee EPF", amount: line.epf.ee },
                   { label: "Employee SOCSO", amount: line.socso.ee },
-                  ...(line.skbbk > 0 ? [{ label: "SKBBK (Lindung 24)", amount: line.skbbk }] : []),
+                  ...(line.skbbk !== 0 ? [{ label: "SKBBK (Lindung 24)", amount: line.skbbk }] : []),
                   { label: "Employee EIS", amount: line.eis.ee },
                   ...(line.pcb > 0 ? [{ label: "PCB (Income Tax)", amount: line.pcb }] : []),
                   ...(line.eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: line.eplDeduction }] : []),
@@ -1676,7 +1676,7 @@ function SlipModal({ emp, month, year, line, salary, onClose }: {
                         <td className="pr-1 w-20"></td>
                         <td className="text-center font-semibold px-1">E.P.F</td>
                         <td className="text-center font-semibold px-1">SOCSO</td>
-                        {line.skbbk > 0 && <td className="text-center font-semibold px-1">SKBBK</td>}
+                        {line.skbbk !== 0 && <td className="text-center font-semibold px-1">SKBBK</td>}
                         <td className="text-center font-semibold px-1">E.I.S</td>
                         <td className="text-center font-semibold px-1">Tax</td>
                       </tr>
@@ -1686,7 +1686,7 @@ function SlipModal({ emp, month, year, line, salary, onClose }: {
                         <td className="pr-1 font-semibold">EMPLOYEE :</td>
                         <td className="text-right font-mono px-1">{n2(line.epf.ee)}</td>
                         <td className="text-right font-mono px-1">{n2(line.socso.ee)}</td>
-                        {line.skbbk > 0 && <td className="text-right font-mono px-1">{n2(line.skbbk)}</td>}
+                        {line.skbbk !== 0 && <td className="text-right font-mono px-1">{n2(line.skbbk)}</td>}
                         <td className="text-right font-mono px-1">{n2(line.eis.ee)}</td>
                         <td className="text-right font-mono px-1">{n2(line.pcb)}</td>
                       </tr>
@@ -1694,7 +1694,7 @@ function SlipModal({ emp, month, year, line, salary, onClose }: {
                         <td className="pr-1 font-semibold">EMPLOYER :</td>
                         <td className="text-right font-mono px-1">{n2(line.epf.er)}</td>
                         <td className="text-right font-mono px-1">{n2(line.socso.er)}</td>
-                        {line.skbbk > 0 && <td className="px-1"></td>}
+                        {line.skbbk !== 0 && <td className="px-1"></td>}
                         <td className="text-right font-mono px-1">{n2(line.eis.er)}</td>
                         <td className="px-1"></td>
                       </tr>
@@ -1702,7 +1702,7 @@ function SlipModal({ emp, month, year, line, salary, onClose }: {
                         <td className="pr-1 font-semibold">TOTAL :</td>
                         <td className="text-right font-mono px-1">{n2(line.epf.ee + line.epf.er)}</td>
                         <td className="text-right font-mono px-1">{n2(line.socso.ee + line.socso.er)}</td>
-                        {line.skbbk > 0 && <td className="text-right font-mono px-1">{n2(line.skbbk)}</td>}
+                        {line.skbbk !== 0 && <td className="text-right font-mono px-1">{n2(line.skbbk)}</td>}
                         <td className="text-right font-mono px-1">{n2(line.eis.ee + line.eis.er)}</td>
                         <td className="px-1"></td>
                       </tr>

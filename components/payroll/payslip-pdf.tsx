@@ -174,9 +174,12 @@ export function PayslipPDF({
   const deds: { label: string; amount: number }[] = [
     { label: "Employee EPF", amount: epfEe },
     { label: "Employee SOCSO", amount: socsoEe },
-    ...(skbbk > 0 ? [{ label: "SKBBK (Lindung 24)", amount: skbbk }] : []),
+    // Non-zero, not positive: totalDeductions below adds these whatever their
+    // sign, so a refund hidden by a positive test would move the total with
+    // nothing on the payslip to account for it.
+    ...(skbbk !== 0 ? [{ label: "SKBBK (Lindung 24)", amount: skbbk }] : []),
     { label: "Employee EIS", amount: eisEe },
-    ...(pcbVal > 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
+    ...(pcbVal !== 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
     ...(eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: eplDeduction }] : []),
     ...customItems.filter(i => i.type === "deduction").map(i => ({ label: i.label, amount: i.amount })),
     // A net-only correction belongs to no scheme, so it has no figure of its
@@ -316,7 +319,7 @@ export function PayslipPDF({
               <Text style={s.p1Lbl}> </Text>
               <Text style={s.p1ColH}>E.P.F</Text>
               <Text style={s.p1ColH}>SOCSO</Text>
-              {skbbk > 0 && <Text style={s.p1ColH}>SKBBK</Text>}
+              {skbbk !== 0 && <Text style={s.p1ColH}>SKBBK</Text>}
               <Text style={s.p1ColH}>E.I.S</Text>
               <Text style={s.p1ColH}>Tax</Text>
             </View>
@@ -324,7 +327,7 @@ export function PayslipPDF({
               <Text style={s.p1Lbl}>EMPLOYEE :</Text>
               <Text style={s.p1Col}>{n(epfEe)}</Text>
               <Text style={s.p1Col}>{n(socsoEe)}</Text>
-              {skbbk > 0 && <Text style={s.p1Col}>{n(skbbk)}</Text>}
+              {skbbk !== 0 && <Text style={s.p1Col}>{n(skbbk)}</Text>}
               <Text style={s.p1Col}>{n(eisEe)}</Text>
               <Text style={s.p1Col}>{n(pcbVal)}</Text>
             </View>
@@ -332,7 +335,7 @@ export function PayslipPDF({
               <Text style={s.p1Lbl}>EMPLOYER :</Text>
               <Text style={s.p1Col}>{n(epfEr)}</Text>
               <Text style={s.p1Col}>{n(socsoEr)}</Text>
-              {skbbk > 0 && <Text style={s.p1Col}> </Text>}
+              {skbbk !== 0 && <Text style={s.p1Col}> </Text>}
               <Text style={s.p1Col}>{n(eisEr)}</Text>
               <Text style={s.p1Col}> </Text>
             </View>
@@ -341,7 +344,7 @@ export function PayslipPDF({
               <Text style={s.p1Lbl}>TOTAL :</Text>
               <Text style={s.p1Col}>{n(epfEe + epfEr)}</Text>
               <Text style={s.p1Col}>{n(socsoEe + socsoEr)}</Text>
-              {skbbk > 0 && <Text style={s.p1Col}>{n(skbbk)}</Text>}
+              {skbbk !== 0 && <Text style={s.p1Col}>{n(skbbk)}</Text>}
               <Text style={s.p1Col}>{n(eisEe + eisEr)}</Text>
               <Text style={s.p1Col}> </Text>
             </View>

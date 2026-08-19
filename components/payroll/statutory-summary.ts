@@ -72,13 +72,23 @@ function rowFor(body: StatutoryBody, idx: number, line: PayrollLine, emp?: Payro
   }
 }
 
-/** Which lines belong on this body's summary — a nil contribution is noise. */
+/**
+ * Which lines belong on this body's summary — a nil contribution is noise.
+ *
+ * Non-zero rather than positive, and the distinction is not academic. Before
+ * corrections existed a statutory figure could not go below zero, so the two
+ * tests were the same. A refund makes one negative, and a month whose
+ * corrections cancel it out lands exactly on zero — under a positive test the
+ * employee would drop off the summary entirely and the refund would never reach
+ * the figure filed. A negative row is precisely what the body needs to see.
+ */
 function contributes(body: StatutoryBody, line: PayrollLine): boolean {
   const n = (v: unknown) => Number(v ?? 0);
+  const any = (...vs: number[]) => vs.some(v => v !== 0);
   switch (body) {
-    case "EPF":     return n(line.epf_ee) + n(line.epf_er) > 0;
-    case "PERKESO": return n(line.socso_ee) + n(line.socso_er) + n(line.eis_ee) + n(line.eis_er) + n(line.skbbk) > 0;
-    case "PCB":     return n(line.pcb) > 0;
+    case "EPF":     return any(n(line.epf_ee), n(line.epf_er));
+    case "PERKESO": return any(n(line.socso_ee), n(line.socso_er), n(line.eis_ee), n(line.eis_er), n(line.skbbk));
+    case "PCB":     return n(line.pcb) !== 0;
   }
 }
 
