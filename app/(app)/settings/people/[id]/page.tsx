@@ -50,7 +50,7 @@ interface Person {
   user_email: string | null; payroll_employee_id: string | null;
   photo_path: string | null; bio: string | null; notes: string | null;
   // Migration 146 — the facts eligibility for a post actually turns on.
-  pastor_standing: "PASTOR" | "REVEREND" | "RETIRED" | null;
+  pastor_standing: "PASTOR" | "REVEREND" | "RETIRED_WORKING" | "RETIRED" | null;
   affiliation: "LCM_MEMBER" | "OTHER_CHURCH" | "NOT_CHRISTIAN" | "NOT_STATED" | null;
   congregation_id: string | null;
   external_church_id: string | null;
@@ -64,11 +64,16 @@ interface Congregation { id: string; name: string }
 interface District { id: string; name: string }
 interface Organisation { id: string; name: string; short_name: string | null }
 interface ExternalChurch { id: string; name: string; town: string | null }
+interface Department { id: string; name: string }
 
 const STANDINGS = [
-  { key: "PASTOR",   label: "Pastor — not yet ordained" },
-  { key: "REVEREND", label: "Reverend — ordained" },
-  { key: "RETIRED",  label: "Retired pastor" },
+  { key: "PASTOR",          label: "Pastor (unordained)" },
+  { key: "REVEREND",        label: "Rev. (ordained)" },
+  // Retirement splits in two (migration 151): one still serves a congregation
+  // and appears on the payroll, the other does neither. Both are retired for
+  // eligibility — being on contract does not un-retire somebody.
+  { key: "RETIRED_WORKING", label: "Retired pastor (still working on contract)" },
+  { key: "RETIRED",         label: "Retired pastor (not working)" },
 ];
 const AFFILIATIONS = [
   { key: "LCM_MEMBER",    label: "Member of an LCM congregation" },
@@ -105,6 +110,7 @@ export default function PersonProfilePage() {
   const [districts, setDistricts] = useState<District[]>([]);
   const [organisations, setOrganisations] = useState<Organisation[]>([]);
   const [extChurches, setExtChurches] = useState<ExternalChurch[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [ministries, setMinistries] = useState<string[]>([]);
   // Just enough to answer "can they sign in, and as what" without opening the
   // tab. Null when they have no account, which is most people.
@@ -144,7 +150,7 @@ export default function PersonProfilePage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: p }, { data: tl }, { data: n }, { data: c }, { data: d }, { data: o }, { data: ec }, { count }, { data: perm }, { data: mins }, { data: offs }, { data: hlds }] =
+    const [{ data: p }, { data: tl }, { data: n }, { data: c }, { data: d }, { data: o }, { data: ec }, { data: deps }, { count }, { data: perm }, { data: mins }, { data: offs }, { data: hlds }] =
       await Promise.all([
         supabase.from("people").select("*").eq("id", id).maybeSingle(),
         supabase.from("person_timeline").select("*").eq("person_id", id),
@@ -153,6 +159,7 @@ export default function PersonProfilePage() {
         supabase.from("districts").select("id,name").order("name"),
         supabase.from("organisations").select("id,name,short_name").order("name"),
         supabase.from("external_churches").select("id,name,town").order("name"),
+      supabase.from("departments").select("id,name").order("name"),
         supabase.from("person_documents").select("id", { count: "exact", head: true }).eq("person_id", id),
         supabase.rpc("can_manage_people"),
         supabase.from("ministries").select("name").order("name"),
@@ -171,6 +178,7 @@ export default function PersonProfilePage() {
     setDistricts((d ?? []) as District[]);
     setOrganisations((o ?? []) as Organisation[]);
     setExtChurches((ec ?? []) as ExternalChurch[]);
+    setDepartments((deps ?? []) as Department[]);
     setOfficeList((offs ?? []) as OfficeOption[]);
     setAllHoldings((hlds ?? []) as HoldingRow[]);
     setDocCount(count ?? 0);
@@ -580,7 +588,7 @@ export default function PersonProfilePage() {
 
       {editing && (
         <EditPersonModal person={person} congregations={congregations} districts={districts}
-          organisations={organisations} extChurches={extChurches}
+          organisations={organisations} extChurches={extChurches} departments={departments}
           onExtChurchesChanged={async () => {
             const { data } = await supabase.from("external_churches")
               .select("id,name,town").order("name");
@@ -718,10 +726,11 @@ function NotesTab({ personId, notes, canEdit, onChanged, say }: {
 }
 
 // ── Edit person ───────────────────────────────────────────────────────────
-function EditPersonModal({ person, congregations, districts, organisations, extChurches, onExtChurchesChanged, onClose, onSaved }: {
+function EditPersonModal({ person, congregations, districts, organisations, extChurches, departments, onExtChurchesChanged, onClose, onSaved }: {
   person: Person; congregations: Congregation[]; districts: District[];
   organisations: Organisation[];
   extChurches: ExternalChurch[];
+  departments: Department[];
   /** So a church added inside the form reaches the list the page holds. */
   onExtChurchesChanged: () => Promise<void>;
   onClose: () => void; onSaved: (p: Person) => void;
@@ -801,7 +810,14 @@ function EditPersonModal({ person, congregations, districts, organisations, extC
 
         <div className="grid gap-2 sm:grid-cols-3">
           <div><label className={labelClass}>HQ department</label>
-            <input className={fieldClass} value={d.hq_department ?? ""} onChange={e => set("hq_department", e.target.value)} /></div>
+            {/* A list rather than free text, which is how "Admin" and
+                "Administration" became two departments that are one. Typing a
+                new one still works and adds it. */}
+            <input className={fieldClass} list="person-dept-options" value={d.hq_department ?? ""}
+              onChange={e => set("hq_department", e.target.value)} />
+            <datalist id="person-dept-options">
+              {departments.map(x => <option key={x.id} value={x.name} />)}
+            </datalist></div>
           <div><label className={labelClass}>District</label>
             <select className={fieldClass} value={d.district_id ?? ""} onChange={e => set("district_id", e.target.value || null)}>
               <option value="">—</option>

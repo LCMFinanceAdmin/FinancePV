@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
+import { AddPersonModal } from "@/components/people/add-person-modal";
 import {
   Avatar, PersonStatus, CATEGORIES, categoryOf,
   type CategoryKey, type TimelineRow, isCurrent, period,
@@ -487,6 +488,7 @@ export default function PeopleDirectoryPage() {
 
       {addOpen && (
         <AddPersonModal
+          categories={CATEGORIES}
           onClose={() => setAddOpen(false)}
           onCreated={(id, name) => { setAddOpen(false); say(`${name} added`); router.push(`/settings/people/${id}`); }}
         />
@@ -575,80 +577,4 @@ function exportCsv(rows: Person[], involvementOf: (id: string) => TimelineRow[])
   a.download = `lcm-people-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
-}
-
-/**
- * Adding someone asks for the few things that identify them, then opens their
- * profile — where the involvement, employment and documents belong. The old
- * page dropped a blank row into the list with every field at once, which meant
- * every new person started as an unnamed row somebody had to find again.
- */
-function AddPersonModal({ onClose, onCreated }: {
-  onClose: () => void; onCreated: (id: string, name: string) => void;
-}) {
-  const supabase = createClient();
-  const [fullName, setFullName] = useState("");
-  const [category, setCategory] = useState<CategoryKey>("HQ_STAFF");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-  const nameRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { nameRef.current?.focus(); }, []);
-
-  async function save() {
-    if (!fullName.trim()) { setErr("A name is required"); return; }
-    setErr(""); setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase.from("people").insert({
-      full_name: fullName.trim(),
-      category,
-      status: "ACTIVE",
-      email: email.trim().toLowerCase() || null,
-      phone: phone.trim() || null,
-      created_by: user?.email ?? "",
-    }).select("id").single();
-    setSaving(false);
-    if (error) { setErr(error.message); return; }
-    onCreated(data.id as string, fullName.trim());
-  }
-
-  return (
-    <Modal title="Add a person"
-      description="Just enough to identify them — the rest is added on their profile."
-      onClose={onClose}
-      footer={<>
-        <Button className="flex-1" loading={saving} onClick={save}>
-          <Users size={14} /> Add and open profile
-        </Button>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-      </>}>
-
-        <div>
-          <label className={labelClass}>Full name *</label>
-          <input ref={nameRef} className={fieldClass} value={fullName}
-            onChange={e => setFullName(e.target.value)} placeholder="e.g. Andrew Tay" />
-        </div>
-        <div>
-          <label className={labelClass}>Category</label>
-          <select className={fieldClass} value={category}
-            onChange={e => setCategory(e.target.value as CategoryKey)}>
-            {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.one}</option>)}
-          </select>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div>
-            <label className={labelClass}>Email</label>
-            <input className={fieldClass} type="email" value={email} onChange={e => setEmail(e.target.value)} />
-          </div>
-          <div>
-            <label className={labelClass}>Phone</label>
-            <input className={fieldClass} value={phone} onChange={e => setPhone(e.target.value)} />
-          </div>
-        </div>
-
-        {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
-    </Modal>
-  );
 }
