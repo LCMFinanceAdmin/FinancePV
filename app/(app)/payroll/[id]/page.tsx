@@ -673,27 +673,42 @@ export default function PayrollEmployeePage() {
                 twelve. */}
             <div className="mt-4 rounded-xl border-2 border-[#2f5b9c] bg-[#f4f7fb] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="flex items-center gap-1.5 text-sm font-bold text-[#1e3f75]">
-                  <ListPlus size={15} /> Allowances &amp; deductions — {year}
+                <h3 className="flex items-center gap-1.5 text-[17px] font-bold text-[#1e3f75]">
+                  <ListPlus size={18} /> Allowances &amp; deductions — {year}
                   {yearPayItems.length > 0 && (
-                    <span className="rounded-full bg-[#2f5b9c] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    <span className="rounded-full bg-[#2f5b9c] px-2 py-0.5 text-[13px] font-bold text-white">
                       {yearPayItems.length}
                     </span>
                   )}
                 </h3>
                 {canEdit && (
                   <button onClick={() => setPayItemModal({ month: 1, editing: null })}
-                    className="flex items-center gap-1 rounded-lg bg-[#2f5b9c] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-[#254a80]">
+                    className="flex items-center gap-1 rounded-lg bg-[#2f5b9c] px-3 py-2 text-[14px] font-semibold text-white hover:bg-[#254a80]">
                     <Plus size={12} /> Add
                   </button>
                 )}
               </div>
 
+              {/* Says what this is FOR, and points at the other panel. The two
+                  used to describe themselves without contrasting each other,
+                  and both said "agreed outside the scale" — which is the exact
+                  overlap that made them hard to tell apart. */}
+              <p className="mt-1.5 text-[15px] text-stone-700">
+                <strong>Money you have agreed to pay on top of the salary, or hold back from it.</strong>{" "}
+                Each one becomes its own column above, and shows on the payslip and in the payroll run.
+              </p>
+              <p className="mt-1 text-[14px] text-stone-500">
+                For things that are part of the arrangement — an education allowance, a staff loan
+                repayment, PTPTN. They change take-home pay only: they never change what is filed
+                with EPF, PERKESO or LHDN.
+                <span className="mt-1 block font-medium text-[#1e3f75]">
+                  Putting right a figure that is already there? Use Adjustments below.
+                </span>
+              </p>
+
               {yearPayItems.length === 0 ? (
-                <p className="mt-2 text-[12px] text-stone-600">
-                  None this year. Add one for anything agreed outside the salary scale — an education
-                  allowance, a staff loan repayment, a deduction the management agreed to a request for.
-                  Each becomes a column above, and appears on the payslip and in the payroll run.
+                <p className="mt-2 text-[15px] font-medium text-stone-500">
+                  None set up for {year}.
                 </p>
               ) : (
                 <ul className="mt-2 space-y-1.5">
@@ -706,15 +721,15 @@ export default function PayrollEmployeePage() {
                       : `${monthShort(it.month)} ${it.year} only`;
                     return (
                       <li key={it.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-stone-200 bg-white px-2.5 py-2">
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white ${
+                        <span className={`rounded px-1.5 py-0.5 text-[13px] font-bold uppercase text-white ${
                           isAllow ? "bg-green-700" : "bg-red-700"}`}>
                           {isAllow ? "Allowance" : "Deduction"}
                         </span>
-                        <span className="text-[13px] font-semibold text-stone-800">{it.label}</span>
-                        <span className={`font-mono text-[13px] font-bold ${isAllow ? "text-green-700" : "text-red-700"}`}>
+                        <span className="text-[16px] font-semibold text-stone-800">{it.label}</span>
+                        <span className={`font-mono text-[16px] font-bold ${isAllow ? "text-green-700" : "text-red-700"}`}>
                           {isAllow ? "+" : "−"}{num(Number(it.amount))}
                         </span>
-                        <span className="inline-flex items-center gap-1 text-[11px] text-stone-500">
+                        <span className="inline-flex items-center gap-1 text-[14px] text-stone-500">
                           {it.is_recurring && <Repeat size={10} />} {span}
                         </span>
                         {canEdit && (
@@ -744,27 +759,39 @@ export default function PayrollEmployeePage() {
                 one nobody can reconstruct a year later without a record. */}
             <div className="mt-4 rounded-xl border-2 border-amber-300 bg-amber-50/40 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="flex items-center gap-1.5 text-sm font-bold text-amber-900">
-                  <Scale size={15} /> Adjustments — {year}
+                <h3 className="flex items-center gap-1.5 text-[17px] font-bold text-amber-900">
+                  <Scale size={18} /> Adjustments — {year}
                   {adjustments.length > 0 && (
-                    <span className="rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[13px] font-bold text-white">
                       {adjustments.length}
                     </span>
                   )}
                 </h3>
                 {canEdit && (
                   <button onClick={() => setAdjModal({ month: 1, editing: null })}
-                    className="flex items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-700">
+                    className="flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-2 text-[14px] font-semibold text-white hover:bg-amber-700">
                     <Plus size={12} /> Add an adjustment
                   </button>
                 )}
               </div>
 
+              <p className="mt-1.5 text-[15px] text-amber-900">
+                <strong>Putting right a figure that is already there.</strong>{" "}
+                An adjustment lands inside the column it names, rather than adding a new one.
+              </p>
+              <p className="mt-1 text-[14px] text-amber-800">
+                For when a number came out wrong or a ruling arrived late — SKBBK backdated to June,
+                EPF over-deducted in March, back pay owed. This is the only one that can move a
+                statutory figure, so a SKBBK correction reaches PERKESO&rsquo;s return and not just
+                the take-home.
+                <span className="mt-1 block font-medium text-amber-900">
+                  Setting up a standing allowance or deduction? Use the panel above.
+                </span>
+              </p>
+
               {adjustments.length === 0 ? (
-                <p className="mt-2 text-[12px] text-amber-800">
-                  None this year — every figure above comes straight from the salary record and the rate table.
-                  Add one when something the formula cannot know about has to be put right: a back-dated ruling,
-                  a keying error, a refund owed, or an arrangement agreed outside the scale.
+                <p className="mt-2 text-[15px] font-medium text-amber-700">
+                  None for {year} — every figure above comes straight from the salary record and the rate table.
                 </p>
               ) : (
                 <ul className="mt-2 space-y-1.5">
@@ -780,15 +807,15 @@ export default function PayrollEmployeePage() {
                         : `${num(Math.abs(amt))} less in hand`;
                     return (
                       <li key={a.id} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 rounded-lg border border-amber-200 bg-white px-2.5 py-2">
-                        <span className="rounded bg-stone-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        <span className="rounded bg-stone-800 px-2 py-0.5 text-[13px] font-bold text-white">
                           {monthShort(a.month)}
                         </span>
-                        <span className="text-[12px] font-semibold text-stone-800">{adjustmentLabel(a.category)}</span>
-                        <span className={`font-mono text-[12px] font-bold ${amt > 0 ? "text-red-600" : "text-green-700"}`}>
+                        <span className="text-[15px] font-semibold text-stone-800">{adjustmentLabel(a.category)}</span>
+                        <span className={`font-mono text-[15px] font-bold ${amt > 0 ? "text-red-600" : "text-green-700"}`}>
                           {amt > 0 ? "+" : "−"}{num(Math.abs(amt))}
                         </span>
-                        <span className="text-[11px] text-stone-500">({takeHome})</span>
-                        <span className="w-full text-[11px] text-stone-600">
+                        <span className="text-[14px] text-stone-500">({takeHome})</span>
+                        <span className="w-full text-[14px] text-stone-600">
                           {a.reason}
                           {a.origin_month != null && (
                             <span className="text-stone-400"> · corrects {monthShort(a.origin_month)} {a.origin_year ?? year}</span>
