@@ -126,9 +126,14 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
     const k = `${ci.label}|${ci.type}`;
     if (!seen.has(k)) { seen.add(k); customCols.push({ label: ci.label, type: ci.type }); }
   }
-  const cAmt = (mo: number, col: { label: string }) => Number((customItemsByMonth[mo] ?? []).find(i => i.label === col.label)?.amount ?? 0);
-  const cTotal = (col: { label: string }) => Array.from({length:13},(_,i)=>i+1).reduce((s,m)=>s+cAmt(m,col),0);
-  const cSub = (col: { label: string }) => Array.from({length:12},(_,i)=>i+1).reduce((s,m)=>s+cAmt(m,col),0);
+  // Sums every matching row, matching the sheet and what calcLine adds. Taking
+  // the first hid a top-up whenever two rows shared a name.
+  const cAmt = (mo: number, col: { label: string; type: "allowance" | "deduction" }) =>
+    (customItemsByMonth[mo] ?? [])
+      .filter(i => i.label === col.label && i.type === col.type)
+      .reduce((t, i) => t + Number(i.amount), 0);
+  const cTotal = (col: { label: string; type: "allowance" | "deduction" }) => Array.from({length:13},(_,i)=>i+1).reduce((s,m)=>s+cAmt(m,col),0);
+  const cSub = (col: { label: string; type: "allowance" | "deduction" }) => Array.from({length:12},(_,i)=>i+1).reduce((s,m)=>s+cAmt(m,col),0);
   const allL = thirteenth ? [...monthLines, thirteenth] : monthLines;
   const sum = (fn: (l: CalcLine) => number) => allL.reduce((s,l)=>s+fn(l),0);
 

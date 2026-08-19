@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, grossComponentsForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
@@ -14,6 +14,7 @@ import { ADJUSTMENT_CATEGORIES, adjustmentLabel } from "@/lib/types";
 import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
 import { EmployeeDocuments } from "@/components/payroll/employee-documents";
 import { AdjustmentModal } from "@/components/payroll/adjustment-modal";
+import { PayItemModal } from "@/components/payroll/pay-item-modal";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
@@ -83,7 +84,11 @@ export default function PayrollEmployeePage() {
   const [showRevision, setShowRevision] = useState(false);
   const [slipMonth, setSlipMonth] = useState<number | null>(null); // 0-11 for months
   const [customItemsByMonth, setCustomItemsByMonth] = useState<Record<number, PayrollEmployeeCustomItem[]>>({});
-  const [editingMonth, setEditingMonth] = useState<number | null>(null); // 1-13
+  // The rows themselves. customItemsByMonth is those rows expanded across the
+  // months they cover, which is the wrong shape for editing: one recurring row
+  // stands behind twelve entries, and changing it should not mean picking one.
+  const [customItems, setCustomItems] = useState<PayrollEmployeeCustomItem[]>([]);
+  const [payItemModal, setPayItemModal] = useState<{ month: number; editing: PayrollEmployeeCustomItem | null } | null>(null);
   const [adjustments, setAdjustments] = useState<PayrollAdjustment[]>([]);
   const [adjModal, setAdjModal] = useState<{ month: number; editing: PayrollAdjustment | null } | null>(null);
   const [showYearlySheet, setShowYearlySheet] = useState(false);
@@ -99,6 +104,7 @@ export default function PayrollEmployeePage() {
       if (forMonth.length > 0) byMonth[m] = forMonth;
     }
     setCustomItemsByMonth(byMonth);
+    setCustomItems(allItems);
   }, [supabase, id, year]);
 
   const refreshAdjustments = useCallback(async () => {
@@ -165,6 +171,9 @@ export default function PayrollEmployeePage() {
   // them in rather than patching the result is what makes every figure that
   // derives from them — net, total contributions, LCM's cost — come out right
   // without this page knowing how any of them are worked out.
+  const yearPayItems = customItems.filter(it =>
+    Array.from({ length: 13 }, (_, i) => i + 1).some(m => itemAppliesToMonth(it, year, m)));
+
   const adjustmentsFor = (m: number) => adjustments.filter(a => a.month === m);
   const adjInput = (m: number) => adjustmentsFor(m)
     .map(a => ({ category: a.category, amount: Number(a.amount), reason: a.reason }));
@@ -176,6 +185,27 @@ export default function PayrollEmployeePage() {
     adjustmentsFor(m).filter(a => a.category === c)
       .map(a => `${Number(a.amount) > 0 ? "+" : "−"}${num(Math.abs(Number(a.amount)))} — ${a.reason}`)
       .join("\n");
+  async function deletePayItem(it: PayrollEmployeeCustomItem) {
+    const span = it.is_recurring
+      ? (it.recur_until_year
+          ? `${monthShort(it.month)} ${it.year} to ${monthShort(it.recur_until_month ?? 13)} ${it.recur_until_year}`
+          : `${monthShort(it.month)} ${it.year} onwards`)
+      : `${monthShort(it.month)} ${it.year}`;
+    const ok = confirm([
+      `Remove "${it.label}"?`,
+      `${it.type === "allowance" ? "Allowance" : "Deduction"} of ${num(Number(it.amount))} · ${span}`,
+      "Months already paid are not changed — a finalised run keeps the figures it was finalised with.",
+    ].join("\n"));
+    if (!ok) return;
+    const { error } = await supabase.from("payroll_employee_custom_items").delete().eq("id", it.id);
+    if (error) { alert(error.message); return; }
+    await logPayrollAudit(supabase, {
+      action: "PAY_ITEM_DELETED", employeeId: id, entity: emp?.full_name ?? "",
+      detail: `${it.type} "${it.label}" ${num(Number(it.amount))} (${span}) removed`,
+    });
+    await refreshCustomItems();
+  }
+
   async function deleteAdjustment(a: PayrollAdjustment) {
     const ok = confirm([
       "Remove this adjustment?",
@@ -237,18 +267,31 @@ export default function PayrollEmployeePage() {
   const _customSeen = new Set<string>();
   for (let _m = 1; _m <= 13; _m++) {
     for (const _ci of customItemsByMonth[_m] ?? []) {
-      if (!_customSeen.has(_ci.label)) { _customSeen.add(_ci.label); customCols.push({ label: _ci.label, type: _ci.type }); }
+      // Keyed by name AND direction, as the run page already does. Keyed by name
+      // alone, an allowance and a deduction sharing one collapsed into a column.
+      const _k = `${_ci.label}|${_ci.type}`;
+      if (!_customSeen.has(_k)) { _customSeen.add(_k); customCols.push({ label: _ci.label, type: _ci.type }); }
     }
   }
 
-  function customAmt(monthNum: number, col: { label: string }): number {
-    const found = (customItemsByMonth[monthNum] ?? []).find(i => i.label === col.label);
-    return found ? Number(found.amount) : 0;
+  /**
+   * The column's figure for a month.
+   *
+   * Sums every matching row rather than taking the first. calcLine adds them
+   * all, so a first-match column disagreed with the net beside it the moment
+   * two rows shared a name — which is what happens when a standing allowance is
+   * topped up for a single month. Matched on direction too, so an allowance and
+   * a deduction sharing a name cannot cancel each other out.
+   */
+  function customAmt(monthNum: number, col: { label: string; type: "allowance" | "deduction" }): number {
+    return (customItemsByMonth[monthNum] ?? [])
+      .filter(i => i.label === col.label && i.type === col.type)
+      .reduce((t, i) => t + Number(i.amount), 0);
   }
-  function customColTotal(col: { label: string }): number {
+  function customColTotal(col: { label: string; type: "allowance" | "deduction" }): number {
     return Array.from({ length: 13 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
   }
-  function customColSubTotal(col: { label: string }): number {
+  function customColSubTotal(col: { label: string; type: "allowance" | "deduction" }): number {
     return Array.from({ length: 12 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
   }
 
@@ -520,7 +563,7 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
                         <div className="flex items-center justify-center gap-0.5">
                           {canEdit && (
-                            <button onClick={() => setEditingMonth(monthNum)} title="Add/edit custom items"
+                            <button onClick={() => setPayItemModal({ month: monthNum, editing: null })} title="Add an allowance or deduction from this month"
                               className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-semibold ${monthItems.length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
                               <ListPlus size={11} />
                             </button>
@@ -587,7 +630,7 @@ export default function PayrollEmployeePage() {
                       <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
                         <div className="flex items-center justify-center gap-0.5">
                           {canEdit && (
-                            <button onClick={() => setEditingMonth(13)} title="Add/edit custom items"
+                            <button onClick={() => setPayItemModal({ month: 13, editing: null })} title="Add an allowance or deduction for the 13th month"
                               className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-semibold ${(customItemsByMonth[13] ?? []).length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
                               <ListPlus size={11} />
                             </button>
@@ -623,6 +666,76 @@ export default function PayrollEmployeePage() {
                 </tbody>
               </table>
             </div>
+            {/* Standing allowances and deductions.
+                One row here can be twelve entries on the sheet above, so this
+                lists the rows rather than the months: an education allowance is
+                one decision, and stopping it should be one action rather than
+                twelve. */}
+            <div className="mt-4 rounded-xl border-2 border-[#2f5b9c] bg-[#f4f7fb] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex items-center gap-1.5 text-sm font-bold text-[#1e3f75]">
+                  <ListPlus size={15} /> Allowances &amp; deductions — {year}
+                  {yearPayItems.length > 0 && (
+                    <span className="rounded-full bg-[#2f5b9c] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      {yearPayItems.length}
+                    </span>
+                  )}
+                </h3>
+                {canEdit && (
+                  <button onClick={() => setPayItemModal({ month: 1, editing: null })}
+                    className="flex items-center gap-1 rounded-lg bg-[#2f5b9c] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-[#254a80]">
+                    <Plus size={12} /> Add
+                  </button>
+                )}
+              </div>
+
+              {yearPayItems.length === 0 ? (
+                <p className="mt-2 text-[12px] text-stone-600">
+                  None this year. Add one for anything agreed outside the salary scale — an education
+                  allowance, a staff loan repayment, a deduction the management agreed to a request for.
+                  Each becomes a column above, and appears on the payslip and in the payroll run.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {yearPayItems.map(it => {
+                    const isAllow = it.type === "allowance";
+                    const span = it.is_recurring
+                      ? (it.recur_until_year
+                          ? `${monthShort(it.month)} ${it.year} → ${monthShort(it.recur_until_month ?? 13)} ${it.recur_until_year}`
+                          : `${monthShort(it.month)} ${it.year} → ongoing`)
+                      : `${monthShort(it.month)} ${it.year} only`;
+                    return (
+                      <li key={it.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-stone-200 bg-white px-2.5 py-2">
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white ${
+                          isAllow ? "bg-green-700" : "bg-red-700"}`}>
+                          {isAllow ? "Allowance" : "Deduction"}
+                        </span>
+                        <span className="text-[13px] font-semibold text-stone-800">{it.label}</span>
+                        <span className={`font-mono text-[13px] font-bold ${isAllow ? "text-green-700" : "text-red-700"}`}>
+                          {isAllow ? "+" : "−"}{num(Number(it.amount))}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[11px] text-stone-500">
+                          {it.is_recurring && <Repeat size={10} />} {span}
+                        </span>
+                        {canEdit && (
+                          <span className="ml-auto flex items-center gap-1">
+                            <button onClick={() => setPayItemModal({ month: it.month, editing: it })}
+                              title="Edit" className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-[#2f5b9c]">
+                              <Pencil size={12} />
+                            </button>
+                            <button onClick={() => deletePayItem(it)}
+                              title="Remove" className="rounded p-1 text-stone-400 hover:bg-red-50 hover:text-red-600">
+                              <Trash2 size={12} />
+                            </button>
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
             {/* Corrections.
                 Below the sheet rather than inside it: the table answers "what
                 was paid", and its figures already include everything here. This
@@ -885,13 +998,12 @@ export default function PayrollEmployeePage() {
           onClose={() => setSlipMonth(null)} />
       )}
 
-      {editingMonth !== null && (
-        <CustomItemsModal
-          employeeId={emp.id} year={year} month={editingMonth}
-          monthLabel={editingMonth === 13 ? "13th Month" : `${MONTHS[editingMonth - 1]} ${year}`}
-          items={customItemsByMonth[editingMonth] ?? []}
-          onClose={() => setEditingMonth(null)}
-          onSaved={refreshCustomItems}
+      {payItemModal && (
+        <PayItemModal
+          employeeId={emp.id} employeeName={emp.full_name} year={year}
+          month={payItemModal.month} editing={payItemModal.editing}
+          onClose={() => setPayItemModal(null)}
+          onSaved={async () => { setPayItemModal(null); await refreshCustomItems(); }}
         />
       )}
 
@@ -955,14 +1067,24 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       if (!_seen.has(key)) { _seen.add(key); customCols.push({ label: ci.label, type: ci.type }); }
     }
   }
-  function customAmt(monthNum: number, col: { label: string }): number {
-    const found = (customItemsByMonth[monthNum] ?? []).find(i => i.label === col.label);
-    return found ? Number(found.amount) : 0;
+  /**
+   * The column's figure for a month.
+   *
+   * Sums every matching row rather than taking the first. calcLine adds them
+   * all, so a first-match column disagreed with the net beside it the moment
+   * two rows shared a name — which is what happens when a standing allowance is
+   * topped up for a single month. Matched on direction too, so an allowance and
+   * a deduction sharing a name cannot cancel each other out.
+   */
+  function customAmt(monthNum: number, col: { label: string; type: "allowance" | "deduction" }): number {
+    return (customItemsByMonth[monthNum] ?? [])
+      .filter(i => i.label === col.label && i.type === col.type)
+      .reduce((t, i) => t + Number(i.amount), 0);
   }
-  function customColTotal(col: { label: string }): number {
+  function customColTotal(col: { label: string; type: "allowance" | "deduction" }): number {
     return Array.from({ length: 13 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
   }
-  function customColSubTotal(col: { label: string }): number {
+  function customColSubTotal(col: { label: string; type: "allowance" | "deduction" }): number {
     return Array.from({ length: 12 }, (_, i) => i + 1).reduce((s, m) => s + customAmt(m, col), 0);
   }
   function allMonths(): CalcLine[] {
@@ -1352,153 +1474,6 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
 }
 
 // ─── Custom Items Modal ───────────────────────────────────────────────────────
-
-function CustomItemsModal({ employeeId, year, month, monthLabel, items, onClose, onSaved }: {
-  employeeId: string; year: number; month: number; monthLabel: string;
-  items: PayrollEmployeeCustomItem[]; onClose: () => void; onSaved: () => void;
-}) {
-  const supabase = createClient();
-  const [newLabel, setNewLabel] = useState("");
-  const [newType, setNewType] = useState<"allowance" | "deduction">("allowance");
-  const [newAmount, setNewAmount] = useState("");
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [recurUntilMonth, setRecurUntilMonth] = useState(12);
-  const [recurUntilYear, setRecurUntilYear] = useState<number | "">(year);
-  const [noEndDate, setNoEndDate] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  async function add() {
-    if (!newLabel.trim() || !newAmount) return;
-    const amount = parseFloat(newAmount);
-    if (isNaN(amount) || amount <= 0) { setError("Enter a valid amount."); return; }
-    setSaving(true); setError("");
-    const { data: { session } } = await supabase.auth.getSession();
-    const hasEnd = isRecurring && !noEndDate && recurUntilYear !== "";
-    const { error: e } = await supabase.from("payroll_employee_custom_items").insert({
-      employee_id: employeeId, year, month,
-      label: newLabel.trim(), type: newType, amount,
-      is_recurring: isRecurring,
-      recur_until_year: hasEnd ? Number(recurUntilYear) : null,
-      recur_until_month: hasEnd ? recurUntilMonth : null,
-      created_by: session?.user?.email ?? "",
-    });
-    if (e) { setError(e.message); setSaving(false); return; }
-    setNewLabel(""); setNewAmount(""); setIsRecurring(false); setNoEndDate(false); setSaving(false);
-    onSaved();
-  }
-
-  async function remove(itemId: string) {
-    await supabase.from("payroll_employee_custom_items").delete().eq("id", itemId);
-    onSaved();
-  }
-
-  const inputCls = "border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c]";
-
-  function recurLabel(item: PayrollEmployeeCustomItem): string {
-    const from = `${monthShort(item.month)} ${item.year}`;
-    if (!item.recur_until_year) return `↻ from ${from} · ongoing`;
-    return `↻ ${from} – ${monthShort(item.recur_until_month ?? 13)} ${item.recur_until_year}`;
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
-          <h2 className="text-sm font-bold text-stone-800">Custom Items — {monthLabel}</h2>
-          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><X size={18} /></button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-
-          {/* Existing items */}
-          {items.length === 0 ? (
-            <p className="text-sm text-stone-400 text-center py-2">No custom items for this month yet.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {items.map(item => (
-                <div key={item.id} className="flex items-start gap-2 px-3 py-2 rounded-xl border border-stone-100 bg-stone-50">
-                  <span className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
-                    {item.type === "allowance" ? "+" : "−"}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm text-stone-700">{item.label}</span>
-                    {item.is_recurring && (
-                      <div className="text-[10px] text-sky-600 mt-0.5">{recurLabel(item)}</div>
-                    )}
-                  </div>
-                  <span className="text-sm font-mono font-semibold text-stone-700 shrink-0">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
-                  <button onClick={() => remove(item.id)} className="text-stone-300 hover:text-red-400 mt-0.5 shrink-0"><Trash2 size={14} /></button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Add form */}
-          <div className="border-t border-stone-100 pt-3 space-y-2">
-            <p className="text-[11px] text-stone-400 font-semibold uppercase tracking-wide">Add item</p>
-            <div className="flex gap-2">
-              <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && add()}
-                placeholder="Label (e.g. Housing Allowance)"
-                className={`${inputCls} flex-1`} />
-              <select value={newType} onChange={e => setNewType(e.target.value as "allowance" | "deduction")}
-                className={inputCls}>
-                <option value="allowance">Allowance +</option>
-                <option value="deduction">Deduction −</option>
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <input type="number" value={newAmount} onChange={e => setNewAmount(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && add()}
-                placeholder="Amount (RM)"
-                className={`${inputCls} w-36`} />
-            </div>
-            {/* Recurring toggle */}
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-stone-600 select-none">
-              <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)}
-                className="rounded" />
-              Recurring (repeats every month)
-            </label>
-            {isRecurring && (
-              <div className="pl-5 space-y-1.5">
-                <p className="text-[11px] text-stone-400">Starts from <span className="font-semibold">{monthShort(month)} {year}</span>. Set an end date below, or leave blank for no end.</p>
-                <label className="flex items-center gap-2 cursor-pointer text-sm text-stone-600 select-none">
-                  <input type="checkbox" checked={noEndDate} onChange={e => setNoEndDate(e.target.checked)} className="rounded" />
-                  No end date (ongoing)
-                </label>
-                {!noEndDate && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-stone-500 shrink-0">Until:</span>
-                    <select value={recurUntilMonth} onChange={e => setRecurUntilMonth(Number(e.target.value))}
-                      className={inputCls}>
-                      {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
-                        <option key={i + 1} value={i + 1}>{m}</option>
-                      ))}
-                      <option value={13}>13th Month</option>
-                    </select>
-                    <input type="number" value={recurUntilYear} onChange={e => setRecurUntilYear(e.target.value === "" ? "" : Number(e.target.value))}
-                      placeholder="Year"
-                      className={`${inputCls} w-24`} />
-                  </div>
-                )}
-              </div>
-            )}
-            <button onClick={add} disabled={saving || !newLabel.trim() || !newAmount}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4a6da7] text-white rounded-lg text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-40">
-              <Plus size={14} /> {saving ? "…" : "Add"}
-            </button>
-          </div>
-        </div>
-
-        <div className="px-5 py-3 border-t border-stone-100 flex justify-end">
-          <button onClick={onClose} className="px-4 py-2 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">Done</button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Salary Slip Modal ────────────────────────────────────────────────────────
 

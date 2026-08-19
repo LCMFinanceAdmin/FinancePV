@@ -19,7 +19,11 @@ export type PayrollAuditAction =
   // A finalised run's stored figures edited outside the app. Rare, and the
   // reason never survives in the row itself — see migration 134, where August
   // 2026 was finalised before the SKBBK rate existed.
-  | "LINE_CORRECTED";
+  | "LINE_CORRECTED"
+  // Standing allowances and deductions. A recurring one keeps taking money
+  // every month long after the decision behind it has been forgotten, so who
+  // set it up, and when, is worth keeping.
+  | "PAY_ITEM_ADDED" | "PAY_ITEM_UPDATED" | "PAY_ITEM_DELETED";
 
 export async function logPayrollAudit(
   supabase: SupabaseClient,
