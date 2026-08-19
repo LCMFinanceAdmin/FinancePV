@@ -2,6 +2,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail, nextPrNo } from "../_shared/supabase.ts";
 import { sendPushToMinistryHeads, sendPushToRoles } from "../_shared/push.ts";
 import { expandMinistries, coveringMinistries } from "../_shared/ministries.ts";
+import { isExcoRole, EXCO_APPROVAL_ROLE, EXCO_ROLE_FILTER } from "../_shared/roles.ts";
 
 // Raises a Payment Request. Ministerial expenses must be verified by the
 // ministry's own standing committee (EXCO) before they reach the finance desk,
@@ -52,9 +53,9 @@ Deno.serve(async (req) => {
     // Education Desk covers Education.
     const ministries: string[] = expandMinistries(profile?.ministries ?? []);
     const savedExcoSignature =
-      (profile?.saved_signatures as Record<string, string> | null)?.["MINISTRY_HEAD"] ?? null;
+      (profile?.saved_signatures as Record<string, string> | null)?.[EXCO_APPROVAL_ROLE] ?? null;
     const selfRaisedByExco =
-      profile?.role === "MINISTRY_HEAD" && ministries.includes(ministry) && !!savedExcoSignature;
+      isExcoRole(profile?.role) && ministries.includes(ministry) && !!savedExcoSignature;
 
     const excoSignature = selfRaisedByExco ? savedExcoSignature : null;
 
@@ -140,7 +141,7 @@ Deno.serve(async (req) => {
       const { data: excoMembers } = await db
         .from("user_roles")
         .select("email")
-        .eq("role", "MINISTRY_HEAD")
+        .or(EXCO_ROLE_FILTER)
         .overlaps("ministries", coveringMinistries(ministry));
 
       if (excoMembers?.length) {

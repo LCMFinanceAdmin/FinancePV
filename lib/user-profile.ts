@@ -4,6 +4,7 @@
 // answer to decide which features to offer, and two copies of this would drift.
 
 import { createClient } from "@/lib/supabase/server";
+import { isExcoRole } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 
 const TEST_ADMIN_EMAILS = ["finance@lcm.org.my", "jermaineaaron1991@gmail.com"];
@@ -52,7 +53,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     isAccountsExec: role === "FINANCE_ADMIN_2",
     isSignatory,
     signatoryRole: isSignatory ? role : "",
-    isMinistryHead: role === "MINISTRY_HEAD" || ministries.length > 0,
+    isMinistryHead: isExcoRole(role) || ministries.length > 0,
     isMinistryVerifier: ((verifierFor as unknown[] | null)?.length ?? 0) > 0,
     isMinistrySupport: role === "MINISTRY_SUPPORT",
     isGeneralManager: role === "GENERAL_MANAGER",

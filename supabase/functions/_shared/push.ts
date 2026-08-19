@@ -1,6 +1,7 @@
 import webpush from "npm:web-push";
 import { getServiceClient } from "./supabase.ts";
 import { coveringMinistries } from "./ministries.ts";
+import { EXCO_ROLE_FILTER } from "./roles.ts";
 
 type DB = ReturnType<typeof getServiceClient>;
 
@@ -100,7 +101,7 @@ export async function sendPushToMinistryHeads(db: DB, ministry: string, payload:
   const { data: users } = await db
     .from("user_roles")
     .select("email")
-    .eq("role", "MINISTRY_HEAD")
+    .or(EXCO_ROLE_FILTER)
     .overlaps("ministries", coveringMinistries(ministry));
   const emails = (users ?? []).map((u: { email: string }) => u.email);
   await sendPushToEmails(db, emails, payload);

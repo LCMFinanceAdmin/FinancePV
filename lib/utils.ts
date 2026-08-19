@@ -98,15 +98,43 @@ export function setRoleLabelOverrides(map: Record<string, string>) {
  * from the ministries attached to their account rather than from the role
  * name; Mission's holder cannot touch Education's vouchers. What the shared
  * label could not say was *which* portfolio, which is what made "EXCO Member"
- * on eight different people confusing. Minting a role per portfolio would fix
- * the label by making every permission check eight-way and freezing the
- * portfolio list into code — see migration 127.
+ * on eight different people confusing.
+ *
+ * Migration 138 gave each portfolio its own role, so the named ones already
+ * carry it — "EXCO — Education" needs nothing appending. Only the generic seat
+ * still needs the portfolio spelling out beside it, and that exists for
+ * somebody whose portfolio has not been recorded yet.
  */
 export function roleWithScope(role?: string | null, ministries?: string[] | null): string {
   const base = roleLabel(role);
   if (role !== "MINISTRY_HEAD" || !ministries?.length) return base;
   return `${base} — ${ministries.join(", ")}`;
 }
+
+/**
+ * Whether a role is a seat on the EXCO — the generic one, or any portfolio.
+ *
+ * Every check that used to compare against "MINISTRY_HEAD" asks this instead.
+ * One definition, so adding a ninth portfolio cannot silently miss a call site
+ * and leave somebody holding a role that looks privileged and is not.
+ *
+ * Mirrors is_exco_role() in SQL; the two must agree.
+ */
+export function isExcoRole(role?: string | null): boolean {
+  return role === "MINISTRY_HEAD" || (role?.startsWith("EXCO_") ?? false);
+}
+
+/**
+ * The role an EXCO verification is RECORDED as, whoever gave it.
+ *
+ * Deliberately not the holder's own key. A voucher records that the ministry's
+ * EXCO member verified it — the kind of approval, which has not changed — while
+ * the directory records which portfolio that person holds. Keeping the recorded
+ * key fixed also keeps saved signatures working: they are stored under the role
+ * key, so a person moving from MINISTRY_HEAD to EXCO_EDUCATION would otherwise
+ * find their own signature missing.
+ */
+export const EXCO_APPROVAL_ROLE = "MINISTRY_HEAD";
 
 export function roleLabel(role?: string | null): string {
   if (!role) return "";

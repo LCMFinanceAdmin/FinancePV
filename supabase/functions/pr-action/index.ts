@@ -2,6 +2,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
 import { mayVerifyFor } from "../_shared/verifiers.ts";
+import { isExcoRole, EXCO_APPROVAL_ROLE } from "../_shared/roles.ts";
 
 // Payment Request state machine.
 //
@@ -57,7 +58,7 @@ Deno.serve(async (req) => {
       db, user.email!, profile.ministries, pr.ministry, pr.project,
     );
     const isMinistryExco =
-      right.allowed && (right.delegated || profile.role === "MINISTRY_HEAD");
+      right.allowed && (right.delegated || isExcoRole(profile.role));
     const isGM = profile.role === "GENERAL_MANAGER";
 
     // Who owns the stage the request is currently sitting at?
@@ -102,7 +103,7 @@ Deno.serve(async (req) => {
       // mandatory: without it the voucher would claim verification while
       // showing an empty signature box.
       const savedExcoSignature =
-        (profile.saved_signatures as Record<string, string> | null)?.["MINISTRY_HEAD"] ?? null;
+        (profile.saved_signatures as Record<string, string> | null)?.[EXCO_APPROVAL_ROLE] ?? null;
       const excoSignature = signature_data || savedExcoSignature;
       if (!excoSignature) {
         return json({ error: "A signature is required to verify. Draw your signature to continue." }, 400);
@@ -112,7 +113,7 @@ Deno.serve(async (req) => {
       if (signature_data) {
         const sigs = {
           ...(profile.saved_signatures as Record<string, string> || {}),
-          MINISTRY_HEAD: signature_data,
+          [EXCO_APPROVAL_ROLE]: signature_data,
         };
         await db.from("user_security_credentials").upsert({
           email: user.email!, saved_signatures: sigs, updated_at: now,
@@ -127,7 +128,7 @@ Deno.serve(async (req) => {
         : `${pr.ministry} EXCO`;
 
       const approvals = [...(pr.approvals || []), {
-        role: "MINISTRY_HEAD", email: user.email, name: actorName,
+        role: EXCO_APPROVAL_ROLE, email: user.email, name: actorName,
         action: "VERIFIED", timestamp: now, remarks: remarks || "",
         // A delegate's own name goes on the record, marked for what it is. The
         // committee's authority is what makes the verification valid; whose
