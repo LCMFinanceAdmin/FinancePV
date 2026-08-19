@@ -19,7 +19,21 @@ interface Congregation {
   id: string; name: string; district_id: string | null; head_pastor_email: string | null;
   council_president_name: string | null; council_president_email: string | null;
 }
-interface Person { email: string; full_name: string; is_pastor: boolean; }
+interface Person {
+  id: string; full_name: string;
+  /** Their contact address, and the one they sign in with — often different. */
+  email: string | null; user_email: string | null;
+  is_pastor: boolean;
+}
+
+/**
+ * The address to record for a Dean or a head pastor.
+ *
+ * Their login where they have one, because that is what leave routing matches
+ * against — lib/leave-approvers.ts compares this to the signed-in address, and
+ * a contact address nobody signs in with would leave the approval unreachable.
+ */
+const loginOf = (p: Person) => (p.user_email || p.email || "").trim();
 
 const inp = fieldClass;
 
@@ -41,7 +55,12 @@ export default function ChurchDirectoryPage() {
     const [{ data: d }, { data: c }, { data: p }] = await Promise.all([
       supabase.from("districts").select("*").order("name"),
       supabase.from("congregations").select("*").order("name"),
-      supabase.from("user_roles").select("email,full_name,is_pastor").order("full_name"),
+      // From the People directory, not from logins. Reading user_roles offered
+      // shared mailboxes with no person behind them — educationdesk@, mission@
+      // — and left out anybody who has a record but has not signed in yet.
+      supabase.from("people")
+        .select("id,full_name,email,user_email,is_pastor")
+        .eq("status", "ACTIVE").order("full_name"),
     ]);
     setDistricts((d ?? []) as District[]);
     setCongregations((c ?? []) as Congregation[]);
@@ -53,8 +72,11 @@ export default function ChurchDirectoryPage() {
 
   // Deans and head pastors must be pastors; anyone can be listed if none are
   // flagged yet, so the page is still usable before people are set up.
-  const pastors = people.filter(p => p.is_pastor);
-  const pastorOptions = pastors.length > 0 ? pastors : people;
+  // Somebody with no address at all cannot be reached by a leave request, so
+  // they are not offered — picking them would look like it worked.
+  const reachable = people.filter(p => loginOf(p));
+  const pastors = reachable.filter(p => p.is_pastor);
+  const pastorOptions = pastors.length > 0 ? pastors : reachable;
 
   async function saveDistrict(d: District) {
     setSaving(true);
@@ -152,7 +174,9 @@ export default function ChurchDirectoryPage() {
                   <select className={inp} value={d.dean_email ?? ""}
                     onChange={e => setDistricts(ds => ds.map(x => x.id === d.id ? { ...x, dean_email: e.target.value || null } : x))}>
                     <option value="">— none —</option>
-                    {pastorOptions.map(p => <option key={p.email} value={p.email}>{p.full_name || p.email}</option>)}
+                    {pastorOptions.map(p => (
+                        <option key={p.id} value={loginOf(p)}>{p.full_name}</option>
+                      ))}
                   </select>
                 </div>
               </div>
@@ -185,7 +209,7 @@ export default function ChurchDirectoryPage() {
 
         {congregations.map(c => {
           const district = districts.find(d => d.id === c.district_id);
-          const deanName = people.find(p => p.email === district?.dean_email)?.full_name;
+          const deanName = people.find(p => loginOf(p) === district?.dean_email)?.full_name;
           return (
             <Card key={c.id}>
               <CardBody className="space-y-3">
@@ -208,7 +232,9 @@ export default function ChurchDirectoryPage() {
                     <select className={inp} value={c.head_pastor_email ?? ""}
                       onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, head_pastor_email: e.target.value || null } : x))}>
                       <option value="">— none —</option>
-                      {pastorOptions.map(p => <option key={p.email} value={p.email}>{p.full_name || p.email}</option>)}
+                      {pastorOptions.map(p => (
+                        <option key={p.id} value={loginOf(p)}>{p.full_name}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -240,7 +266,7 @@ export default function ChurchDirectoryPage() {
                     // misroutes somebody's leave.
                     const parts = [
                       c.head_pastor_email
-                        ? `${people.find(p => p.email === c.head_pastor_email)?.full_name || c.head_pastor_email} (head pastor)`
+                        ? `${people.find(p => loginOf(p) === c.head_pastor_email)?.full_name || c.head_pastor_email} (head pastor)`
                         : null,
                       c.council_president_email
                         ? `${c.council_president_name || c.council_president_email} (Council Chairman/Rep, by email)`

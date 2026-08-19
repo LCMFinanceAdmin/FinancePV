@@ -419,14 +419,14 @@ export default function OfficesPage() {
                   )}
                 </div>
                 {members.length > 0 ? (
-                  <ul className="text-[13px] text-stone-600">
+                  <ul className="text-[19px] text-stone-600">
                     {members.map(m => (
                       <li key={m.id} className="flex flex-wrap items-baseline gap-x-1.5">
                         <Link href={`/settings/people/${m.person_id}`}
-                          className="rounded font-medium text-stone-700 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+                          className="rounded text-[19px] font-semibold text-stone-800 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
                           {nameOf(m.person_id)}
                         </Link>
-                        <span className="text-stone-400">{tenureLine(o.kind, m)}</span>
+                        <span className="text-[15px] italic text-stone-400">{tenureLine(o.kind, m)}</span>
                         <button onClick={() => setEditingHolding(m)}
                           className="text-[11px] text-stone-400 hover:text-[#2f5b9c]">
                           edit
@@ -441,7 +441,7 @@ export default function OfficesPage() {
                     ))}
                   </ul>
                 ) : (
-                  <div className="text-[13px] font-medium text-amber-700">
+                  <div className="text-[19px] font-semibold text-amber-700">
                     {o.single_holder ? "Vacant" : "No members"}
                   </div>
                 )}
@@ -454,7 +454,7 @@ export default function OfficesPage() {
                   that removes somebody says so in red before it is pressed. */}
               <button onClick={() => setHistoryFor(showing ? null : o.id)}
                 aria-label={`Past holders of ${o.name}`}
-                className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${
+                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
                   showing
                     ? "border-[#2f5b9c] bg-[#eef4fd] text-[#2f5b9c]"
                     : "border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-800"}`}>
@@ -464,7 +464,7 @@ export default function OfficesPage() {
 
               <button onClick={() => setEditingOffice(o)}
                 aria-label={`Edit the ${o.name} post`}
-                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
+                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
                 <Pencil size={12} /> Edit post
               </button>
 
@@ -473,14 +473,14 @@ export default function OfficesPage() {
                   before this register existed. */}
               <button onClick={() => setAddingTermFor(o)}
                 aria-label={`Record a past term of ${o.name}`}
-                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
+                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
                 <Plus size={12} /> Past term
               </button>
 
               {cur && o.single_holder && (
                 <button onClick={() => endTerm(cur, o)}
                   aria-label={`End the current term of ${o.name}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-red-600 transition-colors hover:border-red-400 hover:bg-red-50">
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-semibold text-red-600 transition-colors hover:border-red-400 hover:bg-red-50">
                   <LogOut size={12} /> End term
                 </button>
               )}
@@ -581,7 +581,7 @@ export default function OfficesPage() {
         <div className="flex flex-wrap items-center gap-2">
           {retiredCount > 0 && (
             <button onClick={() => setShowRetired(v => !v)}
-              className="rounded-lg border-2 border-stone-800 px-2.5 py-1.5 text-[12px] font-medium text-stone-600 hover:bg-stone-50">
+              className="rounded-lg border-2 border-stone-800 px-2.5 py-1.5 text-[12px] font-bold text-stone-700 hover:bg-stone-50">
               {showRetired ? "Hide retired" : `Show ${retiredCount} retired`}
             </button>
           )}
