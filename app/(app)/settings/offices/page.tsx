@@ -454,7 +454,7 @@ export default function OfficesPage() {
                   that removes somebody says so in red before it is pressed. */}
               <button onClick={() => setHistoryFor(showing ? null : o.id)}
                 aria-label={`Past holders of ${o.name}`}
-                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 !text-[11px] font-semibold transition-colors ${
+                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 !text-[11px] font-semibold whitespace-nowrap transition-colors ${
                   showing
                     ? "border-[#2f5b9c] bg-[#eef4fd] text-[#2f5b9c]"
                     : "border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-800"}`}>
@@ -464,7 +464,7 @@ export default function OfficesPage() {
 
               <button onClick={() => setEditingOffice(o)}
                 aria-label={`Edit the ${o.name} post`}
-                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 !text-[11px] font-semibold text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
+                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 !text-[11px] font-semibold whitespace-nowrap text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
                 <Pencil size={12} /> Edit post
               </button>
 
@@ -473,21 +473,21 @@ export default function OfficesPage() {
                   before this register existed. */}
               <button onClick={() => setAddingTermFor(o)}
                 aria-label={`Record a past term of ${o.name}`}
-                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 !text-[11px] font-semibold text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
+                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 !text-[11px] font-semibold whitespace-nowrap text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
                 <Plus size={12} /> Past term
               </button>
 
               {cur && o.single_holder && (
                 <button onClick={() => endTerm(cur, o)}
                   aria-label={`End the current term of ${o.name}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 !text-[11px] font-semibold text-red-600 transition-colors hover:border-red-400 hover:bg-red-50">
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 !text-[11px] font-semibold whitespace-nowrap text-red-600 transition-colors hover:border-red-400 hover:bg-red-50">
                   <LogOut size={12} /> End term
                 </button>
               )}
 
               {/* The one thing most rows are opened to do, so it stays the only
                   filled button on the row. */}
-              <Button size="sm" className="!text-[11px] px-2.5 py-1" onClick={() => openElection(o)}>
+              <Button size="sm" className="!text-[11px] px-2.5 py-1 whitespace-nowrap" onClick={() => openElection(o)}>
                 <UserPlus size={13} /> {!o.single_holder ? "Add member"
                   : o.is_elected ? (cur ? "New election" : "Elect")
                   : (cur ? "Replace" : "Appoint")}
@@ -581,7 +581,7 @@ export default function OfficesPage() {
         <div className="flex flex-wrap items-center gap-2">
           {retiredCount > 0 && (
             <button onClick={() => setShowRetired(v => !v)}
-              className="rounded-lg border-2 border-stone-800 px-2.5 py-1.5 !text-[12px] font-bold text-stone-700 hover:bg-stone-50">
+              className="rounded-lg border-2 border-stone-800 px-2.5 py-1.5 !text-[12px] !font-bold text-stone-700 hover:bg-stone-50">
               {showRetired ? "Hide retired" : `Show ${retiredCount} retired`}
             </button>
           )}
