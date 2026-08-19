@@ -58,7 +58,6 @@ export default function ExcoPage() {
   const [myEmail, setMyEmail] = useState("");
   // What each body may commit on its own, so a voucher over the limit says so
   // on the card rather than after the verify button has been pressed.
-  const [limits, setLimits] = useState<Record<string, { limit: number; parent: string | null }>>({});
 
   const toggleDocs = useCallback((pvId: string) => {
     setExpandedDocs(prev => {
@@ -86,22 +85,6 @@ export default function ExcoPage() {
         supabase.rpc("get_my_security_context").single(),
         loadMyVerifierScopes(supabase),
       ]);
-      const { data: officeRows } = await supabase
-        .from("offices")
-        .select("name,approval_limit,parent:parent_office_id(name)")
-        .not("approval_limit", "is", null);
-      // PostgREST returns an embedded relation as an array, so the parent is
-      // unwrapped rather than read as an object.
-      type OfficeLimitRow = {
-        name: string; approval_limit: number;
-        parent: { name: string } | { name: string }[] | null;
-      };
-      setLimits(Object.fromEntries(
-        ((officeRows ?? []) as unknown as OfficeLimitRow[]).map(o => {
-          const parent = Array.isArray(o.parent) ? o.parent[0] : o.parent;
-          return [o.name.toLowerCase(), { limit: Number(o.approval_limit), parent: parent?.name ?? null }];
-        }),
-      ));
       setScopes(myScopes);
 
       const sigs = (security as { saved_signatures?: Record<string, string> | null } | null)?.saved_signatures;
@@ -229,13 +212,6 @@ export default function ExcoPage() {
   /** True when this is somebody else's ministry that you have been asked to cover. */
   const onBehalf = (ministry?: string | null) =>
     !!ministry && !ownMinistries.includes(ministry);
-
-  /** Over what this ministry may commit on its own, if a limit is set. */
-  function overLimit(ministry?: string | null, amount?: number | null) {
-    const row = limits[(ministry ?? "").toLowerCase()];
-    if (!row || !amount || amount <= row.limit) return null;
-    return row;
-  }
 
   return (
     <div className="cloudlight-page max-w-5xl space-y-5">
@@ -516,20 +492,6 @@ export default function ExcoPage() {
                           is pressed. The budget line is checked server-side on
                           the same figures BudgetImpact shows above, so the two
                           cannot disagree. */}
-                      {(() => {
-                        const over = overLimit(pv.ministry, pv.amount);
-                        if (!over) return null;
-                        return (
-                          <p className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                            {pv.ministry} may verify up to {formatCurrency(over.limit)} on one voucher
-                            and this is {formatCurrency(pv.amount!)}.{" "}
-                            {over.parent
-                              ? `It has to go to ${over.parent}, which ${pv.ministry} sits under.`
-                              : "It needs Finance to route it."}{" "}
-                            Rejecting is still open to you.
-                          </p>
-                        );
-                      })()}
                       <div className="flex gap-2">
                         <Button variant="primary" size="sm" loading={acting} onClick={() => act(pv.id!, "APPROVED")} className="flex-1">
                           <CheckCircle size={14} /> Verify

@@ -2,7 +2,6 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
 import { mayVerifyFor } from "../_shared/verifiers.ts";
-import { expandMinistries } from "../_shared/ministries.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -46,7 +45,7 @@ Deno.serve(async (req) => {
     // decline to spend, and making them escalate to say no would be an odd
     // rule.
     if (action === "APPROVED") {
-      const [{ data: budgetGate }, { data: limitGate }] = await Promise.all([
+      const [{ data: budgetGate }] = await Promise.all([
         db.rpc("budget_project_gate", {
           p_ministry: pv.ministry, p_project: pv.project ?? null,
           p_amount: pv.amount, p_exclude_pv_id: pv.id,
@@ -54,11 +53,8 @@ Deno.serve(async (req) => {
           // January belongs to December's budget.
           p_year: new Date(pv.date ?? pv.submitted_at).getFullYear(),
         }),
-        db.rpc("ministry_approval_gate", { p_ministry: pv.ministry, p_amount: pv.amount }),
       ]);
       const b = Array.isArray(budgetGate) ? budgetGate[0] : budgetGate;
-      const g = Array.isArray(limitGate) ? limitGate[0] : limitGate;
-      const parent = g?.escalates_to as string | null | undefined;
 
       // Ordered by how specific the breach is. The project line is what an
       // approver is looking at, so it is named first when both are blown; the
@@ -72,20 +68,14 @@ Deno.serve(async (req) => {
         breach = `${pv.ministry} has ${rm(b.ministry_remaining)} left of its ${rm(b.ministry_budget)} budget`
           + ` for the year and this voucher is ${rm(pv.amount)}`
           + `${pv.project ? ", even though its own line has room" : ""}.`;
-      } else if (g?.over_limit) {
-        breach = `${pv.ministry} may verify up to ${rm(g.limit_amount)} on one voucher`
-          + ` and this is ${rm(pv.amount)}.`;
       }
 
+      // A budget breach is refused outright. It used to be escalatable to the
+      // post above, but that route existed for the per-post approval limit,
+      // which is gone — and spending more than the budget was never something
+      // the parent committee could wave through anyway.
       if (breach) {
-        const holdsParent = parent && expandMinistries(profile.ministries ?? []).includes(parent);
-        if (!holdsParent) {
-          return json({
-            error: `${breach} ${parent
-              ? `It has to be verified by ${parent}, which ${pv.ministry} sits under.`
-              : `${pv.ministry} sits under nothing, so Finance has to route it.`}`,
-          }, 403);
-        }
+        return json({ error: `${breach} Finance has to route it.` }, 403);
       }
     }
 

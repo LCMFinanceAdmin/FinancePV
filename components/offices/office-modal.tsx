@@ -28,7 +28,8 @@ export interface OfficeRow {
   active: boolean;
   tenure: "ELECTED" | "PERMANENT" | "TEMPORARY";
   parent_office_id: string | null;
-  approval_limit: number | null;
+  /** Length of one term in years — 4 for the Bishop, 2 for the rest. */
+  term_years: number | null;
 }
 
 export interface OfficeCategory {
@@ -60,11 +61,9 @@ export function OfficeModal({
   const [name, setName] = useState(office?.name ?? "");
   const [kind, setKind] = useState(office?.kind ?? categories[0]?.key ?? "APPOINTED");
   const [parentId, setParentId] = useState(office?.parent_office_id ?? "");
-  const [limit, setLimit] = useState(office?.approval_limit != null ? String(office.approval_limit) : "");
   const [tenure, setTenure] = useState<OfficeRow["tenure"]>(office?.tenure ?? "PERMANENT");
   const [grantsRole, setGrantsRole] = useState(office?.grants_role ?? "");
-  const [singleHolder, setSingleHolder] = useState(office?.single_holder ?? true);
-  const [active, setActive] = useState(office?.active ?? true);
+  const [termYears, setTermYears] = useState(office?.term_years != null ? String(office.term_years) : "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [roles, setRoles] = useState<AppRole[]>([]);
@@ -72,6 +71,20 @@ export function OfficeModal({
 
   const category = categories.find(c => c.key === kind);
   const seatsMany = category?.seats_many ?? false;
+
+  // Which questions this kind of post actually has an answer to. Asking all of
+  // them of every post is what made the form read as a list of settings rather
+  // than a description of the post.
+  //
+  //   An elected post stands for a fixed term and seats one person. It answers
+  //   to the membership, not to another post, so "reports to" is meaningless
+  //   for it — the Bishop sits under nobody.
+  //
+  //   A committee or a staff post does sit beneath something, and a committee
+  //   seats as many people as it needs.
+  const isElected  = tenure === "ELECTED";
+  const reportsTo  = !isElected;                 // committees, projects, HQ staff posts
+  const hasTerm    = isElected;
 
   /**
    * Posts that may be this one's parent.
@@ -96,8 +109,9 @@ export function OfficeModal({
 
   async function save() {
     if (!name.trim()) { setErr("Give the post a name"); return; }
-    if (limit.trim() !== "" && (!Number.isFinite(Number(limit)) || Number(limit) < 0)) {
-      setErr("The approval limit has to be a number, or blank for no limit");
+    if (hasTerm && termYears.trim() !== ""
+        && (!Number.isInteger(Number(termYears)) || Number(termYears) < 1 || Number(termYears) > 20)) {
+      setErr("A term is a whole number of years, between 1 and 20");
       return;
     }
     setErr(""); setSaving(true);
@@ -106,10 +120,15 @@ export function OfficeModal({
       kind,
       tenure,
       grants_role: grantsRole || null,
-      single_holder: seatsMany ? false : singleHolder,
-      active,
-      parent_office_id: parentId || null,
-      approval_limit: limit.trim() === "" ? null : Number(limit),
+      // Follows the kind rather than being asked: an elected post seats one
+      // person because only one was elected, and a committee seats several
+      // because that is what a committee is.
+      single_holder: !seatsMany,
+      // Only a post that answers to another keeps a parent. Changing a
+      // committee into an elected post would otherwise leave it reporting
+      // somewhere with no way to see that it did.
+      parent_office_id: reportsTo ? (parentId || null) : null,
+      term_years: hasTerm && termYears.trim() !== "" ? Number(termYears) : null,
     };
     const { error } = office
       ? await supabase.from("offices").update(payload).eq("id", office.id)
@@ -130,6 +149,16 @@ export function OfficeModal({
    * the record and takes it off the working list. Only a post nobody has ever
    * held actually goes.
    */
+  /** Back onto the working list. The record was never lost, only hidden. */
+  async function reinstate() {
+    if (!office) return;
+    setSaving(true);
+    const { error } = await supabase.from("offices").update({ active: true }).eq("id", office.id);
+    setSaving(false);
+    if (error) { setErr(error.message); return; }
+    onSaved(`${office.name} is back on the register`);
+  }
+
   async function remove() {
     if (!office) return;
 
@@ -163,11 +192,16 @@ export function OfficeModal({
         <Button className="flex-1" loading={saving} onClick={save}>
           <Plus size={13} /> {office ? "Save post" : "Add post"}
         </Button>
-        {office && (
+        {office && (office.active ? (
           <Button variant="ghost" onClick={remove}>
             {holdingCount > 0 ? "Retire" : "Delete"}
           </Button>
-        )}
+        ) : (
+          // The checkbox that used to do this read as a setting rather than an
+          // action, which is why it was easy to miss that it was the only way
+          // back onto the register.
+          <Button variant="ghost" onClick={reinstate}>Reinstate</Button>
+        ))}
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
       </>}
     >
@@ -195,31 +229,37 @@ export function OfficeModal({
         </div>
       </div>
 
-      <div>
-        <label className={labelClass}>Sits under</label>
-        <select className={fieldClass} value={parentId} onChange={e => setParentId(e.target.value)}>
-          <option value="">Nothing — it stands on its own</option>
-          {parentOptions.map(o => (
-            <option key={o.id} value={o.id}>{o.name}{o.active ? "" : " (retired)"}</option>
-          ))}
-        </select>
-        <p className="mt-1 text-[11px] text-stone-500">
-          For a body that answers to another — BAM sits under the Property portfolio.
-          The register groups it beneath its parent.
-        </p>
-      </div>
+      {/* Only for a post that answers to another. An elected post answers to
+          the membership that elected it — the Bishop sits under nobody — so
+          asking was noise on exactly the posts people edit most. */}
+      {reportsTo && (
+        <div>
+          <label className={labelClass}>Reports to</label>
+          <select className={fieldClass} value={parentId} onChange={e => setParentId(e.target.value)}>
+            <option value="">Nothing — it stands on its own</option>
+            {parentOptions.map(o => (
+              <option key={o.id} value={o.id}>{o.name}{o.active ? "" : " (retired)"}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-stone-500">
+            For a body that answers to another — BAM reports to the Property portfolio.
+            The register groups it beneath its parent.
+          </p>
+        </div>
+      )}
 
-      <div>
-        <label className={labelClass}>May approve up to (RM)</label>
-        <input type="number" min="0" step="100" className={fieldClass} value={limit}
-          onChange={e => setLimit(e.target.value)} placeholder="No limit" />
-        <p className="mt-1 text-[11px] text-stone-500">
-          The most this body may verify on one voucher, against its budget items. Above it the
-          voucher goes to {parentId
-            ? allOffices.find(o => o.id === parentId)?.name ?? "the post it sits under"
-            : "the post it sits under"} rather than being refused. Blank means no limit of its own.
-        </p>
-      </div>
+      {hasTerm && (
+        <div>
+          <label className={labelClass}>Term length (years)</label>
+          <input type="number" min="1" max="20" step="1" className={fieldClass} value={termYears}
+            onChange={e => setTermYears(e.target.value)} placeholder="e.g. 4" />
+          <p className="mt-1 text-[11px] text-stone-500">
+            What the constitution sets — four years for the Bishop, two for the Secretary,
+            Treasurer and every EXCO portfolio. Recording an election fills the end date in from
+            this, and the holder stands as current until that date passes.
+          </p>
+        </div>
+      )}
 
       <div>
         <label className={labelClass}>Gives access as</label>
@@ -235,22 +275,20 @@ export function OfficeModal({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4">
-        {!seatsMany && (
-          <label className="flex items-center gap-2 text-sm text-stone-700">
-            <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
-              checked={singleHolder} onChange={e => setSingleHolder(e.target.checked)} />
-            One holder at a time
-          </label>
+      {/* How many it seats is no longer a question, because the kind already
+          answers it. Both checkboxes that used to sit here were settings a
+          person could put in a state the post cannot actually be in — an
+          elected post seating three, a committee seating one. */}
+      <p className="rounded-lg bg-stone-50 px-3 py-2 text-[12px] text-stone-600">
+        {seatsMany
+          ? `A ${category?.label.replace(/s$/, "").toLowerCase() ?? "post"} seats as many people as it needs.`
+          : "One holder at a time — this post seats a single person."}
+        {office && !office.active && (
+          <span className="mt-1 block font-medium text-amber-700">
+            Retired, so it is off the working list. Reinstate it below to bring it back.
+          </span>
         )}
-        {office && (
-          <label className="flex items-center gap-2 text-sm text-stone-700">
-            <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
-              checked={active} onChange={e => setActive(e.target.checked)} />
-            On the working list
-          </label>
-        )}
-      </div>
+      </p>
 
       {err && <p className="text-xs font-medium text-red-600" role="alert">{err}</p>}
     </Modal>
