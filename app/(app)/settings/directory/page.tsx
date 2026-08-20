@@ -6,14 +6,20 @@
 // leave form, a pastor's application goes to their congregation's Council
 // Chairman/Rep and their district Dean. Both change hands regularly, so this
 // has to be editable here rather than hardcoded.
+//
+// Laid out as two tables rather than a card per record. A card repeats every
+// field label once per row, so five districts meant five copies of "District
+// name" and "Dean" and a screenful of scrolling to compare two of them. A table
+// states each label once in the header and puts the values in a column, which is
+// the shape the question actually has: who is Dean of what, which churches still
+// have nobody.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { withTitle } from "@/lib/ministry";
 import { Button } from "@/components/ui/button";
-import { Card, CardBody } from "@/components/ui/card";
-import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen } from "lucide-react";
-import { fieldClass } from "@/lib/field-styles";
+import { Card } from "@/components/ui/card";
+import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen, AlertTriangle, Check, ChevronRight } from "lucide-react";
 import { CouncilModal } from "@/components/directory/council-modal";
 import { CongregationDocsModal } from "@/components/directory/congregation-docs-modal";
 
@@ -28,7 +34,7 @@ interface Person {
   id: string; full_name: string;
   /** Their contact address, and the one they sign in with — often different. */
   email: string | null; user_email: string | null;
-  /** PASTOR | REVEREND | RETIRED, or null for anyone not in ministry. */
+  /** PASTOR | REVEREND, or null for anyone not in ministry. */
   ordination: string | null;
   ministry_status: string | null;
   congregation_id: string | null;
@@ -43,7 +49,35 @@ interface Person {
  */
 const loginOf = (p: Person) => (p.user_email || p.email || "").trim();
 
-const inp = fieldClass;
+const isNew = (id: string) => id.startsWith("new-");
+
+/**
+ * What a row looked like when it was loaded.
+ *
+ * Kept so Save can appear only on rows that were actually changed. A Save button
+ * on every row is a button that means nothing — with twenty congregations there
+ * is no way to see which two are unsaved, which is exactly when it matters.
+ */
+const districtSig = (d: District) => JSON.stringify([d.name, d.dean_email]);
+const congregationSig = (c: Congregation) =>
+  JSON.stringify([c.name, c.district_id, c.head_pastor_email, c.ros_number]);
+
+// Table furniture. Gridlines both ways: a row of seven values is hard to track
+// across without them, and the columns here are unrelated to each other.
+const th = "px-2.5 py-2 text-left text-[10.5px] font-bold uppercase tracking-wider text-stone-500 whitespace-nowrap";
+const td = "px-2.5 py-1.5 align-middle";
+const rowCls = "divide-x divide-stone-100 border-t border-stone-100 hover:bg-[#f8fbff]";
+/**
+ * Cell inputs read as text until you go near them.
+ *
+ * A bordered box in every cell turns a table back into the form this replaced.
+ * The `!` on the size is not decoration: globals.css sets `font: inherit` on
+ * inputs and selects outside any layer, and unlayered CSS beats a layered
+ * utility, so a plain text-[13px] here is silently dropped.
+ */
+const cell = "w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 !text-[13px] text-stone-700 hover:border-stone-200 focus:bg-white";
+const iconBtn = "rounded p-1 text-stone-300 transition-colors hover:bg-stone-100 hover:text-[#2f5b9c] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-300";
+const saveBtn = "inline-flex items-center gap-1 rounded-md bg-[#2f5b9c] px-2 py-1 !text-[11px] !font-bold text-white transition-colors hover:bg-[#24487d] disabled:opacity-40";
 
 export default function ChurchDirectoryPage() {
   const supabase = createClient();
@@ -58,6 +92,10 @@ export default function ChurchDirectoryPage() {
   /** "districtId|personId" -> why they cannot be that district's Dean. */
   const [deanBlocks, setDeanBlocks] = useState<Record<string, string>>({});
   const [toast, setToast] = useState({ msg: "", ok: true });
+  /** Row id -> its signature at load, for spotting unsaved edits. */
+  const [baseline, setBaseline] = useState<Record<string, string>>({});
+  /** Congregations whose leave-routing detail is open. */
+  const [openRouting, setOpenRouting] = useState<Set<string>>(new Set());
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -68,7 +106,7 @@ export default function ChurchDirectoryPage() {
     const [{ data: d }, { data: c }, { data: p }, { data: ur }] = await Promise.all([
       supabase.from("districts").select("*").order("name"),
       supabase.from("congregations").select("*").order("name"),
-      // Names come from the People directory, not from logins: reading
+      // Everybody comes from people rather than user_roles, because
       // user_roles offered shared mailboxes with no person behind them —
       // educationdesk@, mission@ — and left out anybody with a record who has
       // not signed in yet.
@@ -84,9 +122,15 @@ export default function ChurchDirectoryPage() {
       // the register uses. One call rather than one per person per district.
       supabase.rpc("dean_candidates"),
     ]);
-    setDistricts((d ?? []) as District[]);
-    setCongregations((c ?? []) as Congregation[]);
+    const ds = (d ?? []) as District[];
+    const cs = (c ?? []) as Congregation[];
+    setDistricts(ds);
+    setCongregations(cs);
     setPeople((p ?? []) as Person[]);
+    setBaseline(Object.fromEntries([
+      ...ds.map(x => [x.id, districtSig(x)] as const),
+      ...cs.map(x => [x.id, congregationSig(x)] as const),
+    ]));
     setDeanBlocks(Object.fromEntries(
       ((ur ?? []) as { district_id: string; person_id: string; reason: string | null }[])
         .filter(r => r.reason)
@@ -111,10 +155,23 @@ export default function ChurchDirectoryPage() {
   const pastors = reachable.filter(p => p.ministry_status);
   const pastorOptions = pastors.length > 0 ? pastors : reachable;
 
+  const nameFor = (email: string | null | undefined) => {
+    if (!email) return null;
+    const p = people.find(x => loginOf(x) === email);
+    return p ? withTitle(p.full_name, p.ordination) : email;
+  };
+
+  const dirty = (id: string, sig: string) => isNew(id) || baseline[id] !== sig;
+
+  const patchDistrict = (id: string, p: Partial<District>) =>
+    setDistricts(ds => ds.map(x => x.id === id ? { ...x, ...p } : x));
+  const patchCongregation = (id: string, p: Partial<Congregation>) =>
+    setCongregations(cs => cs.map(x => x.id === id ? { ...x, ...p } : x));
+
   async function saveDistrict(d: District) {
     setSaving(true);
     const payload = { name: d.name.trim(), dean_email: d.dean_email || null, updated_at: new Date().toISOString() };
-    const { error } = d.id.startsWith("new-")
+    const { error } = isNew(d.id)
       ? await supabase.from("districts").insert(payload)
       : await supabase.from("districts").update(payload).eq("id", d.id);
     setSaving(false);
@@ -124,7 +181,7 @@ export default function ChurchDirectoryPage() {
   }
 
   async function deleteDistrict(id: string) {
-    if (id.startsWith("new-")) { setDistricts(ds => ds.filter(x => x.id !== id)); return; }
+    if (isNew(id)) { setDistricts(ds => ds.filter(x => x.id !== id)); return; }
     const used = congregations.filter(c => c.district_id === id).length;
     if (used > 0 && !confirm(`${used} congregation(s) are in this district. They'll be left without one. Delete anyway?`)) return;
     const { error } = await supabase.from("districts").delete().eq("id", id);
@@ -144,7 +201,7 @@ export default function ChurchDirectoryPage() {
       council_president_email: c.council_president_email?.trim().toLowerCase() || null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = c.id.startsWith("new-")
+    const { error } = isNew(c.id)
       ? await supabase.from("congregations").insert(payload)
       : await supabase.from("congregations").update(payload).eq("id", c.id);
     setSaving(false);
@@ -154,17 +211,43 @@ export default function ChurchDirectoryPage() {
   }
 
   async function deleteCongregation(id: string) {
-    if (id.startsWith("new-")) { setCongregations(cs => cs.filter(x => x.id !== id)); return; }
+    if (isNew(id)) { setCongregations(cs => cs.filter(x => x.id !== id)); return; }
     const { error } = await supabase.from("congregations").delete().eq("id", id);
     if (error) { showToast(error.message, false); return; }
     showToast("Congregation removed");
     load();
   }
 
+  /** Who has to approve leave for this congregation, and who is still missing. */
+  function routingOf(c: Congregation) {
+    const district = districts.find(d => d.id === c.district_id);
+    const approvers = [
+      c.head_pastor_email ? `${nameFor(c.head_pastor_email)} (head pastor)` : null,
+      c.council_president_email
+        ? `${c.council_president_name || c.council_president_email} (Council Chairman/Rep, by email)`
+        : null,
+      district?.dean_email ? `${nameFor(district.dean_email)} (Dean)` : null,
+    ].filter(Boolean) as string[];
+    const missing = [
+      c.head_pastor_email ? null : "head pastor",
+      c.council_president_email ? null : "Council Chairman/Rep",
+      district?.dean_email ? null : "Dean",
+    ].filter(Boolean) as string[];
+    return { approvers, missing };
+  }
+
+  function toggleRouting(id: string) {
+    setOpenRouting(s => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
   if (loading) return <div className="p-8 text-center text-sm text-stone-400">Loading…</div>;
 
   return (
-    <div className="cloudlight-page max-w-5xl space-y-6">
+    <div className="cloudlight-page max-w-7xl space-y-6">
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 rounded-xl px-4 py-3 text-sm text-white shadow-lg ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.msg}
@@ -180,214 +263,259 @@ export default function ChurchDirectoryPage() {
       </div>
 
       {/* ── Districts ─────────────────────────────────────────────────── */}
-      <div className="space-y-3">
+      <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-base font-bold text-stone-700">
             <MapPin size={16} className="text-[#4a6da7]" /> Districts
+            <span className="text-[12px] font-normal text-stone-400">
+              {districts.length} · {districts.filter(d => d.dean_email).length} with a Dean
+            </span>
           </h2>
           <Button size="sm" onClick={() => setDistricts(ds => [...ds, { id: `new-${Date.now()}`, name: "", dean_email: null }])}>
             <Plus size={13} /> Add District
           </Button>
         </div>
 
-        {districts.length === 0 && (
-          <p className="px-1 text-sm text-stone-400">No districts yet. Add one, then assign congregations to it below.</p>
-        )}
-
-        {districts.map(d => (
-          <Card key={d.id}>
-            <CardBody className="space-y-3">
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div>
-                  <label className="text-xs text-stone-400">District name</label>
-                  <input className={inp} value={d.name} placeholder="e.g. Central District"
-                    onChange={e => setDistricts(ds => ds.map(x => x.id === d.id ? { ...x, name: e.target.value } : x))} />
-                </div>
-                <div>
-                  <label className="text-xs text-stone-400">Dean</label>
-                  {/* The same rule the register applies when appointing to the
-                      Dean's post, so setting one here cannot get past a check
-                      the other door enforces. Everyone stays listed with the
-                      reason beside them rather than being hidden — see the
-                      election form for why. */}
-                  <select className={inp} value={d.dean_email ?? ""}
-                    onChange={e => setDistricts(ds => ds.map(x => x.id === d.id ? { ...x, dean_email: e.target.value || null } : x))}>
-                    <option value="">— none —</option>
-                    {pastorOptions.map(p => {
-                      const why = deanBlocks[`${d.id}|${p.id}`];
-                      return (
-                        <option key={p.id} value={loginOf(p)}>
-                          {withTitle(p.full_name, p.ordination)}{why ? `  ·  ${why}` : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {(() => {
-                    const chosen = pastorOptions.find(p => loginOf(p) === d.dean_email);
-                    const why = chosen ? deanBlocks[`${d.id}|${chosen.id}`] : null;
-                    return why ? (
-                      <p className="mt-1 rounded-lg border-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-                        {chosen ? withTitle(chosen.full_name, chosen.ordination) : ""} would not normally be Dean here — {why}.
-                      </p>
-                    ) : null;
-                  })()}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 border-t border-stone-100 pt-2">
-                <Button size="sm" variant="secondary" loading={saving} onClick={() => saveDistrict(d)} disabled={!d.name.trim()}>
-                  <Save size={13} /> Save
-                </Button>
-                <span className="text-xs text-stone-400">
-                  {congregations.filter(c => c.district_id === d.id).length} congregation(s)
-                </span>
-                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => deleteDistrict(d.id)}>
-                  <Trash2 size={13} className="text-red-400" />
-                </Button>
-              </div>
-            </CardBody>
-          </Card>
-        ))}
-      </div>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse">
+              <thead className="bg-stone-50">
+                <tr className="divide-x divide-stone-100">
+                  <th className={`${th} w-[34%]`}>District</th>
+                  <th className={th}>Dean</th>
+                  <th className={`${th} w-24 text-center`}>Churches</th>
+                  <th className={`${th} w-24`}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {districts.length === 0 && (
+                  <tr className="border-t border-stone-100">
+                    <td colSpan={4} className="px-3 py-6 text-center text-sm text-stone-400">
+                      No districts yet. Add one, then assign congregations to it below.
+                    </td>
+                  </tr>
+                )}
+                {districts.map(d => {
+                  const chosen = pastorOptions.find(p => loginOf(p) === d.dean_email);
+                  const why = chosen ? deanBlocks[`${d.id}|${chosen.id}`] : null;
+                  const count = congregations.filter(c => c.district_id === d.id).length;
+                  const changed = dirty(d.id, districtSig(d));
+                  return (
+                    <tr key={d.id} className={`${rowCls} ${isNew(d.id) ? "bg-[#fffdf5]" : ""}`}>
+                      <td className={td}>
+                        <input className={`${cell} font-semibold`} value={d.name} placeholder="e.g. Central District"
+                          onChange={e => patchDistrict(d.id, { name: e.target.value })} />
+                      </td>
+                      <td className={td}>
+                        {/* The same rule the register applies when appointing to
+                            the Dean's post, so setting one here cannot get past
+                            a check the other door enforces. Everyone stays
+                            listed with the reason beside them rather than being
+                            hidden — see the election form for why. */}
+                        <select className={cell} value={d.dean_email ?? ""}
+                          onChange={e => patchDistrict(d.id, { dean_email: e.target.value || null })}>
+                          <option value="">— none —</option>
+                          {pastorOptions.map(p => {
+                            const block = deanBlocks[`${d.id}|${p.id}`];
+                            return (
+                              <option key={p.id} value={loginOf(p)}>
+                                {withTitle(p.full_name, p.ordination)}{block ? `  ·  ${block}` : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        {why && (
+                          <p className="mt-0.5 flex items-start gap-1 px-1.5 text-[11px] text-amber-700">
+                            <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                            <span>Not normally Dean here — {why}.</span>
+                          </p>
+                        )}
+                      </td>
+                      <td className={`${td} text-center text-[13px] ${count ? "text-stone-600" : "text-stone-300"}`}>
+                        {count}
+                      </td>
+                      <td className={`${td} whitespace-nowrap text-right`}>
+                        {changed && (
+                          <button className={saveBtn} disabled={saving || !d.name.trim()}
+                            onClick={() => saveDistrict(d)}>
+                            <Save size={11} /> Save
+                          </button>
+                        )}
+                        <button className={`${iconBtn} ml-1 hover:!text-red-600`} onClick={() => deleteDistrict(d.id)}
+                          aria-label={`Delete ${d.name || "district"}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </section>
 
       {/* ── Congregations ─────────────────────────────────────────────── */}
-      <div className="space-y-3">
+      <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-base font-bold text-stone-700">
             <Church size={16} className="text-[#4a6da7]" /> Congregations
+            <span className="text-[12px] font-normal text-stone-400">
+              {congregations.length} · {congregations.filter(c => routingOf(c).missing.length === 0).length} fully routed
+            </span>
           </h2>
           <Button size="sm" onClick={() => setCongregations(cs => [...cs, { id: `new-${Date.now()}`, name: "", district_id: null, head_pastor_email: null, ros_number: null, council_president_name: null, council_president_email: null }])}>
             <Plus size={13} /> Add Congregation
           </Button>
         </div>
 
-        {congregations.map(c => {
-          const district = districts.find(d => d.id === c.district_id);
-          const deanName = people.find(p => loginOf(p) === district?.dean_email)?.full_name;
-          return (
-            <Card key={c.id}>
-              <CardBody className="space-y-3">
-                <div className="grid gap-2 sm:grid-cols-4">
-                  <div>
-                    <label className="text-xs text-stone-400">Congregation name</label>
-                    <input className={inp} value={c.name} placeholder="e.g. Bangsar Lutheran Church"
-                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, name: e.target.value } : x))} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-stone-400">District</label>
-                    <select className={inp} value={c.district_id ?? ""}
-                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, district_id: e.target.value || null } : x))}>
-                      <option value="">— none —</option>
-                      {districts.filter(d => !d.id.startsWith("new-")).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-stone-400">ROS number</label>
-                    <input className={inp} value={c.ros_number ?? ""} placeholder="e.g. PPM-001-10-01011990"
-                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, ros_number: e.target.value } : x))} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-stone-400">Head pastor</label>
-                    <select className={inp} value={c.head_pastor_email ?? ""}
-                      onChange={e => setCongregations(cs => cs.map(x => x.id === c.id ? { ...x, head_pastor_email: e.target.value || null } : x))}>
-                      <option value="">— none —</option>
-                      {pastorOptions.map(p => (
-                        <option key={p.id} value={loginOf(p)}>{withTitle(p.full_name, p.ordination)}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* The Council Chairman/Rep holds a church council office, not
-                    an LCM post, so they have no login here — they are named on
-                    the congregation and approve by emailed link. */}
-                {/* The Chairman is shown here and edited in the council, not
-                    typed here as well. Two fields writing the same value is how
-                    they come to disagree — the council list is the place, and a
-                    trigger writes the answer back to the field leave routing
-                    reads. See migration 145. */}
-                <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
-                  <span className="text-xs text-stone-400">Council Chairman / Rep:</span>
-                  {c.council_president_name || c.council_president_email ? (
-                    <span className="text-[13px] font-semibold text-stone-700">
-                      {c.council_president_name || c.council_president_email}
-                      {c.council_president_email && (
-                        <span className="ml-1 font-normal italic text-stone-400">{c.council_president_email}</span>
-                      )}
-                    </span>
-                  ) : (
-                    <span className="text-[13px] italic text-stone-400">not named</span>
-                  )}
-
-                  <span className="ml-auto flex items-center gap-2">
-                    <Button size="sm" variant="secondary" disabled={c.id.startsWith("new-")}
-                      onClick={() => setCouncilFor(c)}>
-                      <Users size={13} /> Council members
-                    </Button>
-                    <Button size="sm" variant="secondary" disabled={c.id.startsWith("new-")}
-                      onClick={() => setDocsFor(c)}>
-                      <FolderOpen size={13} /> Documents
-                    </Button>
-                  </span>
-                </div>
-                {c.id.startsWith("new-") && (
-                  <p className="text-[11px] text-stone-400">
-                    Save the congregation first — the council and its documents attach to it.
-                  </p>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1000px] border-collapse">
+              <thead className="bg-stone-50">
+                <tr className="divide-x divide-stone-100">
+                  <th className={`${th} w-[20%]`}>Congregation</th>
+                  <th className={`${th} w-[14%]`}>District</th>
+                  <th className={`${th} w-[15%]`}>ROS number</th>
+                  <th className={`${th} w-[17%]`}>Head pastor</th>
+                  <th className={`${th} w-[17%]`}>Council Chairman / Rep</th>
+                  <th className={`${th} w-[17%]`}>Leave routing</th>
+                  <th className={`${th} w-28`}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {congregations.length === 0 && (
+                  <tr className="border-t border-stone-100">
+                    <td colSpan={7} className="px-3 py-6 text-center text-sm text-stone-400">
+                      No congregations yet.
+                    </td>
+                  </tr>
                 )}
+                {congregations.map(c => {
+                  const fresh = isNew(c.id);
+                  const changed = dirty(c.id, congregationSig(c));
+                  const { approvers, missing } = routingOf(c);
+                  const open = openRouting.has(c.id);
+                  return (
+                    <Fragment key={c.id}>
+                      <tr className={`${rowCls} ${fresh ? "bg-[#fffdf5]" : ""}`}>
+                        <td className={td}>
+                          <input className={`${cell} font-semibold`} value={c.name} placeholder="e.g. Bangsar Lutheran Church"
+                            onChange={e => patchCongregation(c.id, { name: e.target.value })} />
+                        </td>
+                        <td className={td}>
+                          <select className={cell} value={c.district_id ?? ""}
+                            onChange={e => patchCongregation(c.id, { district_id: e.target.value || null })}>
+                            <option value="">— none —</option>
+                            {districts.filter(d => !isNew(d.id)).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                          </select>
+                        </td>
+                        <td className={td}>
+                          <input className={cell} value={c.ros_number ?? ""} placeholder="PPM-001-10-01011990"
+                            onChange={e => patchCongregation(c.id, { ros_number: e.target.value })} />
+                        </td>
+                        <td className={td}>
+                          <select className={cell} value={c.head_pastor_email ?? ""}
+                            onChange={e => patchCongregation(c.id, { head_pastor_email: e.target.value || null })}>
+                            <option value="">— none —</option>
+                            {pastorOptions.map(p => (
+                              <option key={p.id} value={loginOf(p)}>{withTitle(p.full_name, p.ordination)}</option>
+                            ))}
+                          </select>
+                        </td>
 
-                {/* The consequence of the settings above, stated plainly. */}
-                <p className="rounded-lg bg-[#f4f9ff] px-3 py-2 text-xs text-stone-600">
-                  {(() => {
-                    // Named plainly so a gap here is obvious before it
-                    // misroutes somebody's leave.
-                    const parts = [
-                      c.head_pastor_email
-                        ? `${people.find(p => loginOf(p) === c.head_pastor_email)?.full_name || c.head_pastor_email} (head pastor)`
-                        : null,
-                      c.council_president_email
-                        ? `${c.council_president_name || c.council_president_email} (Council Chairman/Rep, by email)`
-                        : null,
-                      district?.dean_email
-                        ? `${deanName || district.dean_email} (Dean)`
-                        : null,
-                    ].filter(Boolean) as string[];
-                    if (parts.length === 0) {
-                      return <>Nothing is set here, so leave for pastors falls back to the <strong>Bishop</strong>.</>;
-                    }
-                    const missing = [
-                      c.head_pastor_email ? null : "head pastor",
-                      c.council_president_email ? null : "Council Chairman/Rep",
-                      district?.dean_email ? null : "Dean",
-                    ].filter(Boolean) as string[];
-                    return (
-                      <>
-                        Leave for pastors here needs <strong>{parts.join(", ")}</strong>
-                        {parts.length > 1 ? " — all must approve." : "."}
-                        {missing.length > 0 && (
-                          <span className="text-amber-700"> No {missing.join(" or ")} set yet.</span>
-                        )}
-                      </>
-                    );
-                  })()}
-                </p>
+                        {/* The Chairman is shown here and edited in the council,
+                            not typed here as well. Two fields writing the same
+                            value is how they come to disagree — the council list
+                            is the place, and a trigger writes the answer back to
+                            the field leave routing reads. See migration 145. */}
+                        <td className={`${td} px-3`}>
+                          {c.council_president_name || c.council_president_email ? (
+                            <>
+                              <span className="block truncate text-[13px] font-medium text-stone-700">
+                                {c.council_president_name || c.council_president_email}
+                              </span>
+                              {c.council_president_email && c.council_president_name && (
+                                <span className="block truncate text-[11px] italic text-stone-400">
+                                  {c.council_president_email}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[12px] italic text-stone-400">
+                              {fresh ? "save first" : "not named"}
+                            </span>
+                          )}
+                        </td>
 
-                <div className="flex items-center gap-2 border-t border-stone-100 pt-2">
-                  <Button size="sm" variant="secondary" loading={saving} onClick={() => saveCongregation(c)} disabled={!c.name.trim()}>
-                    <Save size={13} /> Save
-                  </Button>
-                  <Button size="sm" variant="ghost" className="ml-auto" onClick={() => deleteCongregation(c.id)}>
-                    <Trash2 size={13} className="text-red-400" />
-                  </Button>
-                </div>
-              </CardBody>
-            </Card>
-          );
-        })}
+                        {/* The consequence of the row, at a glance. What used to
+                            be a paragraph under every card is a chip that opens
+                            it — the sentence matters when something is wrong,
+                            and the rest of the time it is the same sentence
+                            repeated down the page. */}
+                        <td className={`${td} px-3`}>
+                          <button onClick={() => toggleRouting(c.id)}
+                            aria-expanded={open}
+                            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 !text-[11px] !font-semibold transition-colors ${
+                              missing.length === 0 ? "bg-green-50 text-green-700 hover:bg-green-100"
+                                : missing.length === 3 ? "bg-stone-100 text-stone-500 hover:bg-stone-200"
+                                : "bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>
+                            <ChevronRight size={11} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+                            {missing.length === 0 ? <><Check size={11} className="shrink-0" /> All three set</>
+                              : missing.length === 3 ? "Falls to Bishop"
+                              : <span className="truncate">Needs {missing.join(", ")}</span>}
+                          </button>
+                        </td>
 
-        {congregations.length === 0 && (
-          <p className="px-1 text-sm text-stone-400">No congregations yet.</p>
-        )}
-      </div>
+                        <td className={`${td} whitespace-nowrap text-right`}>
+                          <button className={iconBtn} disabled={fresh} onClick={() => setCouncilFor(c)}
+                            title={fresh ? "Save the congregation first" : "Council members"}
+                            aria-label={`Council members for ${c.name || "congregation"}`}>
+                            <Users size={14} />
+                          </button>
+                          <button className={iconBtn} disabled={fresh} onClick={() => setDocsFor(c)}
+                            title={fresh ? "Save the congregation first" : "Documents"}
+                            aria-label={`Documents for ${c.name || "congregation"}`}>
+                            <FolderOpen size={14} />
+                          </button>
+                          <button className={`${iconBtn} hover:!text-red-600`} onClick={() => deleteCongregation(c.id)}
+                            aria-label={`Delete ${c.name || "congregation"}`}>
+                            <Trash2 size={14} />
+                          </button>
+                          {changed && (
+                            <button className={`${saveBtn} ml-1`} disabled={saving || !c.name.trim()}
+                              onClick={() => saveCongregation(c)}>
+                              <Save size={11} /> Save
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+
+                      {open && (
+                        <tr className="border-t border-stone-100 bg-[#f4f9ff]">
+                          <td colSpan={7} className="px-4 py-2 text-xs text-stone-600">
+                            {approvers.length === 0 ? (
+                              <>Nothing is set here, so leave for pastors falls back to the <strong>Bishop</strong>.</>
+                            ) : (
+                              <>
+                                Leave for pastors here needs <strong>{approvers.join(", ")}</strong>
+                                {approvers.length > 1 ? " — all must approve, in any order." : "."}
+                                {missing.length > 0 && (
+                                  <span className="text-amber-700"> No {missing.join(" or ")} set yet.</span>
+                                )}
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </section>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
         <strong>How leave routing uses this</strong> — following note 6 on the church&apos;s leave
