@@ -17,6 +17,7 @@ import {
   Settings, Activity, ClipboardCheck, PiggyBank, FlaskConical, ShoppingCart,
   ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
   Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle, Handshake, Hash, CalendarCheck,
+  FileSpreadsheet,
 } from "lucide-react";
 
 export interface NavItem {
@@ -287,6 +288,13 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/settings/offices", label: "Offices & Elections", desc: "Bishop, Secretary, Treasurer and EXCO portfolios",
         icon: <Landmark size={size} />, show: canManagePeople,
+      },
+      {
+        // The one page that produces something to send outside the church, so
+        // it sits with the records it draws on rather than under reporting.
+        href: "/settings/registers", label: "Official Registers",
+        desc: "Employee, officer and payroll lists as PDF or Excel",
+        icon: <FileSpreadsheet size={size} />, show: canManagePeople,
       },
       {
         href: "/settings/organisations", label: "Partners & Organisations",
