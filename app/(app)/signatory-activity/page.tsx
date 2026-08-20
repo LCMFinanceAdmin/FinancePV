@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { PVSummary } from "@/components/pv/pv-summary";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, roleLabel, computedBadgeStatus } from "@/lib/utils";
 import {
@@ -358,20 +359,27 @@ export default function SignatoryActivityPage() {
           }} className="w-3.5 h-3.5 accent-[#4a6da7] cursor-pointer shrink-0" />
         )}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-0.5">
-            <Link href={`/my-pvs/${pv.id}`} className="text-xs font-bold text-[#4a6da7] hover:underline">{pv.pv_no}</Link>
-            <StatusBadge status={computedBadgeStatus(pv)} />
-            {isPaid && pv.paid_at && (
-              <span className="text-[10px] text-emerald-600 font-medium">Paid {formatDate(pv.paid_at)}</span>
-            )}
-            {isApproved && (
-              <span className="text-[10px] text-green-700 font-medium bg-green-50 px-1.5 py-0.5 rounded-full border border-green-200">
-                ✓ Approved
-              </span>
-            )}
-          </div>
-          <div className="text-sm font-medium text-stone-800 truncate">{pv.payee_name}</div>
-          <div className="text-xs text-stone-400 truncate">{pv.ministry || pv.dept} · {pv.purpose}</div>
+          <PVSummary
+            id={pv.id}
+            pvNo={pv.pv_no}
+            payee={pv.payee_name}
+            amount={pv.amount}
+            ministry={pv.ministry}
+            dept={pv.dept}
+            purpose={pv.purpose}
+            date={pv.submitted_at}
+            badge={<>
+              <StatusBadge status={computedBadgeStatus(pv)} />
+              {isPaid && pv.paid_at && (
+                <span className="text-[10px] font-medium text-emerald-600">Paid {formatDate(pv.paid_at)}</span>
+              )}
+              {isApproved && (
+                <span className="rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
+                  ✓ Approved
+                </span>
+              )}
+            </>}
+          />
           {!isPaid && !isApproved && (
             <div className="mt-1"><ApprovalProgress pv={pv} /></div>
           )}
@@ -381,17 +389,16 @@ export default function SignatoryActivityPage() {
             </div>
           )}
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-sm font-bold text-stone-800">{formatCurrency(pv.amount)}</div>
+        <div className="shrink-0 text-right">
           {canAct && (
-            <div className="flex items-center gap-1 mt-1.5 justify-end">
+            <div className="mt-1.5 flex items-center justify-end gap-2">
               <button onClick={() => handleApprove([pv.id])}
-                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors">
-                <CheckCircle2 size={11} /> Approve
+                className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 !text-[12.5px] !font-bold text-white transition-colors hover:bg-green-700">
+                <CheckCircle2 size={13} /> Approve
               </button>
               <button onClick={() => handleReject([pv.id])}
-                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors">
-                <XCircle size={11} /> Reject
+                className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 !text-[12.5px] !font-bold text-white transition-colors hover:bg-red-600">
+                <XCircle size={13} /> Reject
               </button>
             </div>
           )}

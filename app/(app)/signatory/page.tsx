@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { NotificationsOptIn } from "@/components/notifications-optin";
+import { PVSummary } from "@/components/pv/pv-summary";
 
 
 interface BudgetSummary {
@@ -499,30 +500,19 @@ export default function SignatoryPage() {
     return (
       <div className={`bg-white ${compact ? "border-t border-stone-100" : "border border-stone-200 rounded-xl shadow-sm"} hover:border-[#4a6da7]/40 hover:shadow-sm transition-all`}>
         <div className="px-4 py-3.5">
-          {/* Top row: PV no + status (left), amount (right) */}
-          <div className="flex items-start justify-between gap-3">
-            <Link href={`/my-pvs/${pv.id}`} className="flex items-center gap-2 flex-wrap min-w-0 hover:opacity-90 transition-opacity">
-              <span className="text-xs font-semibold text-stone-500">{pv.pv_no}</span>
-              <StatusBadge status={computedBadgeStatus(pv)} />
-            </Link>
-            <div className="text-sm font-bold text-stone-800 shrink-0">{formatCurrency(pv.amount!)}</div>
-          </div>
-
-          {/* Payee + ministry + purpose */}
-          <Link href={`/my-pvs/${pv.id}`} className="block min-w-0 mt-1.5 hover:opacity-90 transition-opacity">
-            <div className="text-sm font-semibold text-stone-800 truncate">{pv.payee_name}</div>
-            <div className="flex items-center gap-1.5 flex-wrap mt-1">
-              {pv.ministry && (
-                <button
-                  onClick={e => { e.preventDefault(); e.stopPropagation(); openMinistryPopup(pv.ministry!, pv.amount ?? 0); }}
-                  className="flex items-center gap-1 text-[11px] bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium hover:bg-[#4a6da7]/20 transition-colors max-w-full">
-                  <Wallet size={10} className="shrink-0" /> <span className="truncate">{pv.ministry}</span>
-                </button>
-              )}
-              {pv.purpose && <span className="text-xs text-stone-400 truncate min-w-0">{pv.purpose}</span>}
-            </div>
-            <div className="text-[11px] text-stone-400 mt-1">{formatDate(pv.submitted_at!)}</div>
-          </Link>
+          <PVSummary
+            id={pv.id}
+            pvNo={pv.pv_no}
+            payee={pv.payee_name}
+            amount={pv.amount ?? 0}
+            ministry={pv.ministry}
+            purpose={pv.purpose}
+            date={pv.submitted_at}
+            badge={<StatusBadge status={computedBadgeStatus(pv)} />}
+            onMinistryClick={pv.ministry
+              ? () => openMinistryPopup(pv.ministry!, pv.amount ?? 0)
+              : undefined}
+          />
 
           {/* Why a second payment exists. Without this a correcting PV looks
               like a duplicate at exactly the moment someone is deciding. */}
@@ -559,8 +549,9 @@ export default function SignatoryPage() {
           )}
 
           {/* Action row: buttons (left) · status/view (right) */}
-          <div className="flex items-center justify-between gap-2 mt-2.5" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
-            <div className="flex items-center gap-1.5 min-w-0">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2.5"
+            onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
               {isSignatoryUser && userHasActed && (isRelevantForRole || canRetractApproved) && (
                 <>
                   <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
@@ -578,11 +569,15 @@ export default function SignatoryPage() {
                 </>
               )}
               {isSignatoryUser && !userHasActed && isRelevantForRole && (
-                <div className="flex gap-1.5">
-                  <ActionBtn color="green" icon={<CheckCircle size={16} />} label="Approve"
-                    onClick={() => openPin([pv.id!], "APPROVED")} />
-                  <ActionBtn color="red" icon={<XCircle size={16} />} label="Reject"
-                    onClick={() => openPin([pv.id!], "REJECTED")} />
+                <div className="flex flex-1 gap-2">
+                  <button onClick={() => openPin([pv.id!], "APPROVED")}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 !text-[13px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5">
+                    <CheckCircle size={15} /> Approve
+                  </button>
+                  <button onClick={() => openPin([pv.id!], "REJECTED")}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 !text-[13px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5">
+                    <XCircle size={15} /> Reject
+                  </button>
                 </div>
               )}
             </div>

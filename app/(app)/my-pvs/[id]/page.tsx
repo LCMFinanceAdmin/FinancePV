@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatDateTime, getLOATier, roleLabel, computedBadgeStatus } from "@/lib/utils";
+import { PVKeyFacts } from "@/components/pv/pv-summary";
 import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
@@ -881,6 +882,28 @@ export default function PVDetailPage() {
           </div>
           <WorkflowBar pv={pv} />
         </div>
+      </div>
+
+      {/* ── What this voucher is, before the form it is written on ──── */}
+      {/*
+        Below this sits the A4 voucher as a scaled facsimile — right for
+        checking wording, wrong for deciding on a phone, where the amount is
+        somewhere inside a page you have to pan around to find. The answer goes
+        first; the form becomes something to consult rather than mine.
+      */}
+      <div className="print:hidden mx-auto mt-4 max-w-4xl px-4">
+        <PVKeyFacts
+          payee={pv.payee_name}
+          amount={pv.amount ?? 0}
+          ministry={pv.ministry}
+          dept={pv.dept}
+          purpose={pv.purpose}
+          date={pv.submitted_at}
+          rows={[
+            { label: "Signed", value: `${sigApprovals.length} of ${loa.required}` },
+            { label: "Payment", value: pv.payment_method || "Not yet paid" },
+          ]}
+        />
       </div>
 
       {/* ── GM Instruction banner ─────────────────────────────────── */}
