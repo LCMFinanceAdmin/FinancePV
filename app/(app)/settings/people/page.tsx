@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { AddPersonModal } from "@/components/people/add-person-modal";
+import { Card } from "@/components/ui/card";
+import { th, td, rowCls, termChip } from "@/lib/table-styles";
 import {
   Avatar, PersonStatus, CATEGORIES, categoryOf,
   type CategoryKey, type TimelineRow, isCurrent, period,
@@ -232,7 +234,7 @@ export default function PeopleDirectoryPage() {
   }
 
   return (
-    <div className="cloudlight-page max-w-6xl space-y-5" onClick={() => setMenuFor(null)}>
+    <div className="cloudlight-page max-w-7xl space-y-5" onClick={() => setMenuFor(null)}>
       {toast && (
         <div className={`fixed right-4 top-4 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm text-white shadow-lg ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.ok ? <CheckCircle2 size={15} /> : <X size={15} />} {toast.msg}
@@ -361,130 +363,126 @@ export default function PeopleDirectoryPage() {
       </div>
 
       {/* ── The list ───────────────────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-2xl border-2 border-stone-800 bg-white shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
-        {/* Column headings are desktop-only; below that each person is a card. */}
-        <div className="hidden border-b-2 border-stone-800 bg-[#f4f7fb] px-5 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.09em] text-stone-700 lg:grid lg:grid-cols-[minmax(210px,1.6fr)_150px_150px_190px_100px_40px] lg:gap-4">
-          <span className="border-r-2 border-stone-800 pr-4">Person</span>
-          <span className="border-r-2 border-stone-800 pr-4">Primary role</span>
-          <span className="border-r-2 border-stone-800 pr-4">Appointed</span>
-          <span className="border-r-2 border-stone-800 pr-4">Contact</span>
-          <span className="border-r-2 border-stone-800 pr-4">Status</span>
-          <span />
-        </div>
+      {/*
+        A real table, sharing the furniture with the Church Directory and the
+        register — same header, same gridlines, same row height. It was a CSS
+        grid pretending to be a table, with heavy black rules and px-5 py-4
+        padding that fitted about eight people on a screen.
 
-        {visible.length === 0 ? (
-          <p className="px-5 py-14 text-center text-sm text-stone-400">
-            {query || activeFilterCount ? "Nobody matches those filters." : "Nobody in this category yet."}
-          </p>
-        ) : (
-          <ul>
-            {visible.map(p => {
-              const role = primaryRole(p);
-
-              return (
-                <li key={p.id}
-                  className="border-b-2 border-stone-800 last:border-0 transition-colors hover:bg-[#f9fcff]">
-                  <div
+        The trade-off is that the stacked card layout below lg has gone: this
+        scrolls sideways on a narrow screen instead, which is what the other two
+        tables do.
+      */}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1000px] border-collapse">
+            <thead className="bg-stone-50">
+              <tr className="divide-x divide-stone-100">
+                <th className={`${th} w-[28%]`}>Person</th>
+                <th className={`${th} w-[20%]`}>Primary role</th>
+                <th className={`${th} w-[13%]`}>Appointed</th>
+                <th className={`${th} w-[24%]`}>Contact</th>
+                <th className={`${th} w-[11%]`}>Status</th>
+                <th className={`${th} w-12`}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.length === 0 ? (
+                <tr className="border-t border-stone-100">
+                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-stone-400">
+                    {query || activeFilterCount ? "Nobody matches those filters." : "Nobody in this category yet."}
+                  </td>
+                </tr>
+              ) : visible.map(p => {
+                const role = primaryRole(p);
+                return (
+                  <tr key={p.id}
                     onClick={e => {
                       // Clicking the row is a convenience for the mouse; the
-                      // link on the name is the real control. Ignore clicks
-                      // that landed on something interactive of their own.
+                      // link on the name is the real control. Ignore clicks that
+                      // landed on something interactive of their own.
                       if ((e.target as HTMLElement).closest("a,button")) return;
                       router.push(`/settings/people/${p.id}`);
                     }}
-                    className="grid cursor-pointer grid-cols-1 gap-3 px-5 py-4 lg:grid-cols-[minmax(210px,1.6fr)_150px_150px_190px_100px_40px] lg:items-center lg:gap-4">
+                    className={`${rowCls} cursor-pointer`}>
 
-                    {/* Person. Below lg this is the card's header, so the
-                        status and the menu come up here rather than sitting as
-                        two orphan rows at the bottom of a stack. */}
-                    <div className="flex min-w-0 items-center gap-3 lg:border-r-2 lg:border-stone-800 lg:pr-4">
-                      <Avatar name={p.full_name} photoPath={p.photo_path} size={40} />
-                      <div className="min-w-0 flex-1">
-                        <Link href={`/settings/people/${p.id}`}
-                          className="block truncate rounded text-sm font-semibold text-stone-800 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
-                          {p.full_name
-                            ? withTitle(p.full_name, p.ordination)
-                            : <span className="text-stone-500">Unnamed</span>}
-                        </Link>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-stone-500">
-                          <span className="truncate">
-                            {categoryOf(p.category).one}
-                            {p.preferred_name ? ` · ${p.preferred_name}` : ""}
-                          </span>
-                          {roleOf(p) && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[10px] font-semibold text-[#2f5b9c]">
-                              <ShieldCheck size={9} aria-hidden="true" />
-                              {roleWithScope(roleOf(p), ministriesOf(p))}
+                    {/* Person — the name carries the weight, with what they are
+                        and any access they hold underneath it. */}
+                    <td className={`${td} px-3`}>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Avatar name={p.full_name} photoPath={p.photo_path} size={28} />
+                        <div className="min-w-0 flex-1">
+                          <Link href={`/settings/people/${p.id}`}
+                            className="block truncate rounded text-[13.5px] font-bold text-stone-900 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+                            {p.full_name
+                              ? withTitle(p.full_name, p.ordination)
+                              : <span className="text-stone-500">Unnamed</span>}
+                          </Link>
+                          <div className="flex flex-wrap items-center gap-1 text-[11px] text-stone-500">
+                            <span className="truncate">
+                              {categoryOf(p.category).one}
+                              {p.preferred_name ? ` · ${p.preferred_name}` : ""}
                             </span>
-                          )}
+                            {roleOf(p) && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[9.5px] font-semibold text-[#2f5b9c]">
+                                <ShieldCheck size={9} aria-hidden="true" />
+                                {roleWithScope(roleOf(p), ministriesOf(p))}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1 lg:hidden">
-                        <PersonStatus status={p.status} />
-                        <RowMenu p={p} canEdit={canEdit} open={menuFor === p.id}
-                          onToggle={() => setMenuFor(m => (m === p.id ? null : p.id))}
-                          router={router} onStatus={toggleStatus} />
-                      </div>
-                    </div>
+                    </td>
 
-                    {/* Primary role */}
-                    <div className="min-w-0 lg:border-r-2 lg:border-stone-800 lg:pr-4">
-                      <div className="flex flex-wrap items-baseline gap-x-1.5">
-                        <span className="text-[11px] font-medium uppercase tracking-wide text-stone-400 lg:hidden">Role</span>
-                        <span className="truncate text-[13px] font-medium text-stone-700">{role.label}</span>
-                      </div>
-                      {role.since && <div className="text-[12px] text-stone-500">{role.since}</div>}
-                    </div>
+                    <td className={`${td} px-3`}>
+                      <div className="truncate text-[13px] font-medium text-stone-700">{role.label}</div>
+                      {role.since && <div className="truncate text-[11px] text-stone-400">{role.since}</div>}
+                    </td>
 
                     {/* When they took the post. The access role sits beside the
                         name, once — it had a column of its own as well, which
                         said the same thing twice and left the date nowhere. */}
-                    <div className="flex min-w-0 items-center lg:border-r-2 lg:border-stone-800 lg:pr-4">
-                      <span className="text-[11px] font-medium uppercase tracking-wide text-stone-400 lg:hidden">Appointed&nbsp;</span>
+                    <td className={`${td} px-3`}>
                       {role.appointed ? (
-                        <span className="text-[13px] text-stone-700">
+                        <span className={termChip}>
                           {new Date(role.appointed + "T00:00:00").toLocaleDateString("en-GB",
                             { day: "numeric", month: "short", year: "numeric" })}
                         </span>
                       ) : (
-                        <span className="text-[12px] text-stone-400">—</span>
+                        <span className="text-[13px] text-stone-300">—</span>
                       )}
-                    </div>
+                    </td>
 
-                    {/* Contact */}
-                    <div className={`flex min-w-0 flex-wrap gap-x-4 gap-y-0.5 lg:block lg:space-y-0.5 lg:border-r-2 lg:border-stone-800 lg:pr-4`}>
+                    <td className={`${td} px-3`}>
                       {p.email && (
-                        <div className="flex items-center gap-1.5 text-[12.5px] text-stone-600">
-                          <Mail size={12} className="shrink-0 text-stone-400" />
+                        <div className="flex items-center gap-1.5 text-[12px] text-stone-600">
+                          <Mail size={11} className="shrink-0 text-stone-400" />
                           <span className="truncate">{p.email}</span>
                         </div>
                       )}
                       {p.phone && (
-                        <div className="flex items-center gap-1.5 text-[12.5px] text-stone-600">
-                          <Phone size={12} className="shrink-0 text-stone-400" />
+                        <div className="flex items-center gap-1.5 text-[12px] text-stone-600">
+                          <Phone size={11} className="shrink-0 text-stone-400" />
                           <span className="truncate">{p.phone}</span>
                         </div>
                       )}
-                      {!p.email && !p.phone && <span className="text-[12px] text-stone-500">No contact</span>}
-                    </div>
+                      {!p.email && !p.phone && <span className="text-[12px] text-stone-300">No contact</span>}
+                    </td>
 
-                    {/* Status */}
-                    <div className={`hidden lg:block lg:border-r-2 lg:border-stone-800 lg:pr-4`}><PersonStatus status={p.status} /></div>
+                    <td className={`${td} px-3`}><PersonStatus status={p.status} /></td>
 
-                    {/* Row actions */}
-                    <div className="hidden justify-self-end lg:block"
-                      onClick={e => e.stopPropagation()}>
+                    <td className={`${td} px-1 text-right`} onClick={e => e.stopPropagation()}>
                       <RowMenu p={p} canEdit={canEdit} open={menuFor === p.id}
                         onToggle={() => setMenuFor(m => (m === p.id ? null : p.id))}
                         router={router} onStatus={toggleStatus} />
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <p className="text-center text-[12px] text-stone-400">
         Showing {visible.length} of {totalShown} {totalShown === 1 ? "person" : "people"}
@@ -529,15 +527,54 @@ function RowMenu({ p, canEdit, open, onToggle, router, onStatus }: {
   router: ReturnType<typeof useRouter>;
   onStatus: (p: Person) => void;
 }) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  /**
+   * The menu is positioned against the viewport, not against the row.
+   *
+   * The table scrolls sideways on a narrow screen, and a scroll container clips
+   * what overflows it — an absolutely positioned menu inside one gets cut off
+   * at the row's edge, which is most of it. Fixed positioning escapes the clip;
+   * the cost is that the menu no longer travels with the row, so it closes when
+   * anything scrolls.
+   */
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+
+    const place = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      // Roughly how tall the menu will be, to decide whether it opens downwards.
+      const estimated = canEdit ? 252 : 44;
+      const below = r.bottom + 4;
+      setPos({
+        top: below + estimated > window.innerHeight ? Math.max(8, r.top - 4 - estimated) : below,
+        right: Math.max(8, window.innerWidth - r.right),
+      });
+    };
+    place();
+
+    // Capture phase, so scrolling inside the table is caught as well as the page.
+    const close = () => onToggle();
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open, canEdit, onToggle]);
+
   return (
-    <div className="relative" onClick={e => e.stopPropagation()}>
-      <button onClick={onToggle} aria-haspopup="menu" aria-expanded={open}
+    <div className="relative inline-block" onClick={e => e.stopPropagation()}>
+      <button ref={btnRef} onClick={onToggle} aria-haspopup="menu" aria-expanded={open}
         aria-label={`Actions for ${p.full_name}`}
-        className="grid h-8 w-8 place-items-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
-        <MoreVertical size={16} />
+        className="grid h-7 w-7 place-items-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+        <MoreVertical size={15} />
       </button>
-      {open && (
-        <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-[#dbe9fb] bg-white py-1 shadow-[0_16px_50px_rgba(22,51,94,0.18)]">
+      {open && pos && (
+        <div style={{ position: "fixed", top: pos.top, right: pos.right }}
+          className="z-50 w-52 overflow-hidden rounded-xl border border-[#dbe9fb] bg-white py-1 shadow-[0_16px_50px_rgba(22,51,94,0.18)]">
           <MenuItem onClick={() => router.push(`/settings/people/${p.id}`)}>View profile</MenuItem>
           {canEdit && <>
             <MenuItem onClick={() => router.push(`/settings/people/${p.id}?edit=1`)}>Edit person</MenuItem>
