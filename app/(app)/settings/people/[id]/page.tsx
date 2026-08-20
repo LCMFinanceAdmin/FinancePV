@@ -285,7 +285,7 @@ export default function PersonProfilePage() {
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="!text-xl font-bold tracking-tight text-stone-800">{person.full_name}</h1>
+                <h1 className="text-xl font-bold tracking-tight text-stone-800">{person.full_name}</h1>
                 {office && (
                   <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
                     {office.title}

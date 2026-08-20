@@ -42,10 +42,29 @@ input:focus, textarea:focus, select:focus {
      ends, so fixed modals center in the viewport wherever the user is. */
   animation: cloudlight-enter .42s ease-out backwards;
 }
-.cloudlight-app h1, .cloudlight-app h2, .cloudlight-app h3 { color: var(--ink); letter-spacing: -.025em; }
-@media screen {
-  .cloudlight-app h1 { font-size: clamp(1.5rem, 2vw, 2rem); line-height: 1.15; }
-  .cloudlight-app h2 { font-size: clamp(1.18rem, 1.5vw, 1.45rem); }
+/* Heading defaults, in the base layer so they are a starting point rather than
+   a veto.
+   
+   Unlayered, these beat every Tailwind utility no matter how specific: layered
+   CSS always loses to unlayered CSS, so `text-base` on an h2 did nothing and the
+   heading rendered at the clamp size regardless. Every h1 and h2 in the app —
+   115 of them — declares its own size, and not one relied on this default, so
+   the rule was overriding 115 deliberate choices and providing none.
+
+   In @layer base it still sizes a heading written without a class, and any
+   heading that states a size now gets the size it states. Same for the colour:
+   a heading asking to be stone-500 is a label, not a title, and it was being
+   forced to ink.
+
+   The sibling trap is still live one line above: `button, input, textarea,
+   select { font: inherit }` is unlayered too, which is why text sizes on those
+   elements need a ! prefix throughout the app. */
+@layer base {
+  .cloudlight-app h1, .cloudlight-app h2, .cloudlight-app h3 { color: var(--ink); letter-spacing: -.025em; }
+  @media screen {
+    .cloudlight-app h1 { font-size: clamp(1.5rem, 2vw, 2rem); line-height: 1.15; }
+    .cloudlight-app h2 { font-size: clamp(1.18rem, 1.5vw, 1.45rem); }
+  }
 }
 .cloudlight-app .bg-white { background-color: var(--card); }
 .cloudlight-app .bg-stone-50 { background-color: rgba(242, 248, 255, .7); }
