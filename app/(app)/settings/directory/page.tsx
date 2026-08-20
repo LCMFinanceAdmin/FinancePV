@@ -405,28 +405,26 @@ export default function ChurchDirectoryPage() {
                             <span>No longer qualifies — {why}.</span>
                           </p>
                         )}
-                        {/* An empty dropdown and a broken one look identical, so
-                            the reason for it being empty is stated. */}
-                        {offerable.length === 0 && !d.dean_email && (
-                          <p className="mt-0.5 px-1.5 text-[11px] text-stone-400">
-                            Nobody qualifies yet — a Dean is a serving Reverend of a church in this district.
-                          </p>
-                        )}
+
                       </td>
                       {/* The term lives on the office_holdings row, not on
                           the district — saving sends both through
                           set_district_dean() so the register and the working
                           copy cannot disagree. */}
                       <td className={td}>
-                        <div className="flex items-center gap-1">
-                          <input type="date" className={`${cell} !text-[12px]`} value={d.term_start ?? ""}
-                            disabled={!d.dean_email} title="Term start"
-                            onChange={e => patchDistrict(d.id, { term_start: e.target.value || null })} />
-                          <span className="shrink-0 text-[11px] text-stone-300">to</span>
-                          <input type="date" className={`${cell} !text-[12px]`} value={d.term_end ?? ""}
-                            disabled={!d.dean_email} title="Term end — leave blank while they are still serving"
-                            onChange={e => patchDistrict(d.id, { term_end: e.target.value || null })} />
-                        </div>
+                        {d.dean_email ? (
+                          <div className="flex items-center gap-1">
+                            <input type="date" className={`${cell} !text-[12px]`} value={d.term_start ?? ""}
+                              title="Term start"
+                              onChange={e => patchDistrict(d.id, { term_start: e.target.value || null })} />
+                            <span className="shrink-0 text-[11px] text-stone-300">to</span>
+                            <input type="date" className={`${cell} !text-[12px]`} value={d.term_end ?? ""}
+                              title="Term end — leave blank while they are still serving"
+                              onChange={e => patchDistrict(d.id, { term_end: e.target.value || null })} />
+                          </div>
+                        ) : (
+                          <span className="px-1.5 text-[13px] text-stone-300">—</span>
+                        )}
                       </td>
                       <td className={`${td} text-center`}>
                         <span className={`text-[13px] ${count ? "text-stone-600" : "text-stone-300"}`}>{count}</span>
@@ -462,6 +460,12 @@ export default function ChurchDirectoryPage() {
             </table>
           </div>
         </Card>
+        {districts.some(d => !d.dean_email && eligibleDeans(d).length === 0) && (
+          <p className="px-1 text-[11px] text-stone-400">
+            Districts showing no candidates have nobody eligible yet — a Dean is a serving
+            Reverend of a church in that district.
+          </p>
+        )}
       </section>
 
       {/* ── Congregations ─────────────────────────────────────────────── */}
