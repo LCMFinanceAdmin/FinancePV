@@ -42,6 +42,10 @@ export interface PersonForEmployment {
   hq_department: string | null;
   date_joined: string | null;
   payroll_employee_id: string | null;
+  /** Carried onto the payroll record so it is not asked for a second time. */
+  phone: string | null;
+  email: string | null;
+  marital_status: string | null;
 }
 
 const inp = fieldClass;
@@ -102,8 +106,10 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
   /**
    * Create the payroll record from what the directory already knows.
    *
-   * Name, IC and date of birth are carried across rather than asked for again —
-   * re-keying them is how two records end up disagreeing about the same person.
+   * Name, IC, date of birth, contact details and marital status are carried
+   * across rather than asked for again — re-keying them is how two records end
+   * up disagreeing about the same person. person_id joins the two, and a
+   * trigger writes people.payroll_employee_id back (migration 157).
    */
   async function createPayrollRecord() {
     const baseAmt = Number(base);
@@ -125,6 +131,13 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
         church_name: isPastorish ? (congregationName ?? "") : "",
         department: isPastorish ? "" : (person.hq_department ?? ""),
         date_commenced: person.date_joined,
+        designation: person.hq_department ?? "",
+        phone_no: person.phone ?? "",
+        email: person.email ?? "",
+        // Only a value payroll actually understands. Its family allowance turns
+        // on marital status, so a word it cannot read is worse than a blank.
+        marital_status: ["SINGLE", "MARRIED", "WIDOWED"].includes(person.marital_status ?? "")
+          ? (person.marital_status as string) : "",
         person_id: person.id,
         created_by: user?.email ?? "",
       }).select("id,emp_no,status,date_commenced").single();
@@ -143,9 +156,9 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
       });
       if (salErr) throw new Error(salErr.message);
 
-      const { error: linkErr } = await supabase.from("people")
-        .update({ payroll_employee_id: emp.id, is_employed: true }).eq("id", person.id);
-      if (linkErr) throw new Error(linkErr.message);
+      // people.payroll_employee_id and is_employed are written by the trigger
+      // on payroll_employees.person_id — see migration 157. Setting them here
+      // as well would be a second writer to a derived value.
 
       onLinked(emp.id);
       setEmployee(emp as EmployeeRow);

@@ -412,6 +412,9 @@ export type PayrollEmployeeStatus = "ACTIVE" | "RESIGNED";
 export interface PayrollEmployee {
   id: string;
   emp_no: string;
+  /** The People Directory record this employee is — see migration 157. The
+      link is written here; people.payroll_employee_id follows by trigger. */
+  person_id: string | null;
   full_name: string;
   ic_no: string;
   dob: string | null;

@@ -66,6 +66,14 @@ interface EmpModalProps {
   onSaved: () => void;
 }
 
+/** What the payroll form needs to know about a directory record. */
+interface DirectoryPerson {
+  id: string; full_name: string; category: string; status: string;
+  ic_no: string | null; dob: string | null;
+  email: string | null; phone: string | null; hq_department: string | null;
+  payroll_employee_id: string | null;
+}
+
 function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpModalProps) {
   const supabase = createClient();
   const [saving, setSaving] = useState(false);
@@ -73,6 +81,21 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
 
   // master fields
   const [fullName, setFullName] = useState(existing?.full_name ?? "");
+  /**
+   * The People Directory record this employee is.
+   *
+   * Every payroll employee is somebody the directory either already knows or is
+   * about to. Both columns for the link existed and neither was ever written,
+   * so payroll carried a second, unconnected copy of the same person — the
+   * directory said "Jermaine Aaron", payroll said "Jermaine Aaron Jayaraj", and
+   * nothing joined them.
+   *
+   * Set by picking a name off the list, and only by that. Typing on after
+   * picking leaves the link alone, because the payroll name and the directory
+   * name are allowed to differ — one is what the bank account says.
+   */
+  const [personId, setPersonId] = useState<string | null>(existing?.person_id ?? null);
+  const [directory, setDirectory] = useState<DirectoryPerson[]>([]);
   const [icNo, setIcNo] = useState(existing?.ic_no ?? "");
   const [dob, setDob] = useState(existing?.dob ?? "");
   const [designation, setDesignation] = useState(existing?.designation ?? "");
@@ -171,6 +194,66 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
     loadCustomItems();
   }
 
+  // Everyone the directory knows, so this employee can be joined to one of
+  // them. Anybody already on payroll is left out — one person, one payroll
+  // record — except whoever this record is already linked to.
+  useEffect(() => {
+    supabase.from("people")
+      .select("id,full_name,category,ic_no,dob,email,phone,hq_department,payroll_employee_id,status")
+      .order("full_name")
+      .then(({ data }) => setDirectory((data ?? []) as DirectoryPerson[]));
+  }, [supabase]);
+
+  const linkedPerson = directory.find(d => d.id === personId) ?? null;
+  const offerable = directory.filter(
+    d => (!d.payroll_employee_id || d.id === personId) && d.status === "ACTIVE",
+  );
+
+  /** Picking a name off the list fills in what the directory already knows. */
+  function pickPerson(name: string) {
+    setFullName(name);
+    if (personId) return;              // already joined; typing on is just the payroll name
+    const hit = offerable.find(d => d.full_name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (!hit) return;
+    setPersonId(hit.id);
+    // Only into empty fields. Somebody who has typed a value here meant it.
+    if (!icNo.trim() && hit.ic_no) setIcNo(hit.ic_no);
+    if (!dob && hit.dob) setDob(hit.dob);
+    if (!empEmail.trim() && hit.email) setEmpEmail(hit.email);
+    if (!phoneNo.trim() && hit.phone) setPhoneNo(hit.phone);
+    if (!department.trim() && hit.hq_department) setDepartment(hit.hq_department);
+  }
+
+  /**
+   * Create the directory record for somebody payroll knows and the directory
+   * does not, and return its id.
+   *
+   * Deliberately not fatal. A payroll record that saved without its directory
+   * record is a link to add later; a payroll record that refused to save
+   * because of one is a wage nobody can pay.
+   */
+  async function createDirectoryPerson(): Promise<{ id: string | null; warn: string | null }> {
+    const { data, error } = await supabase.from("people").insert({
+      full_name: fullName.trim(),
+      category: isPastor ? "PASTOR" : "HQ_STAFF",
+      status: "ACTIVE",
+      ic_no: icNo.trim() || null,
+      dob: dob || null,
+      email: empEmail.trim().toLowerCase() || null,
+      phone: phoneNo.trim() || null,
+      hq_department: postingType === "OFFICE" ? (department.trim() || null) : null,
+      date_joined: dateCommenced || null,
+      // A pastor on payroll is serving. Ordination is left unrecorded rather
+      // than guessed — the payroll form has never asked, and office_eligibility
+      // reports it as missing rather than treating them as unordained.
+      ministry_status: isPastor ? "ACTIVE" : null,
+      posting: isPastor ? (postingType === "CHURCH" ? "CONGREGATION" : "HQ") : null,
+      created_by: user.email,
+    }).select("id").single();
+    if (error) return { id: null, warn: error.message };
+    return { id: data.id as string, warn: null };
+  }
+
   // Load latest salary when editing
   useEffect(() => {
     if (!isEdit) return;
@@ -223,8 +306,20 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
     setError("");
     setSaving(true);
     try {
+      // Every payroll employee belongs to a person. If the directory has never
+      // heard of them, it hears about them now — which is the other half of
+      // setting somebody up from their profile.
+      let linkTo = personId;
+      let linkWarning: string | null = null;
+      if (!linkTo) {
+        const made = await createDirectoryPerson();
+        linkTo = made.id;
+        linkWarning = made.warn;
+      }
+
       const maritalOpt = MARITAL_OPTIONS.find(o => o.value === maritalValue);
       const payload = {
+        person_id: linkTo,
         full_name: fullName.trim(),
         ic_no: icNo.trim(),
         dob: dob || null,
@@ -257,6 +352,10 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
       };
 
       const baseAmt = parseFloat(baseSalary) || 0;
+      if (linkWarning) {
+        // Saved, but say plainly that the directory half did not happen.
+        setError(`Saved on payroll, but no People Directory record was created — ${linkWarning}`);
+      }
       if (isEdit) {
         const { error: e } = await supabase.from("payroll_employees")
           .update({ ...payload, updated_at: new Date().toISOString() }).eq("id", existing!.id);
@@ -318,7 +417,10 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           detail: `New employee — base salary RM ${baseAmt.toFixed(2)}`,
         });
       }
-      onSaved();
+      // A warning is not a failure — the record saved. Leave it on screen
+      // rather than closing over the top of it.
+      if (!linkWarning) onSaved();
+      else await new Promise(r => setTimeout(r, 0));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -341,7 +443,36 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="col-span-2"><label className={labelCls}>Full Name *</label><input className={inputCls} value={fullName} onChange={e => setFullName(e.target.value)} /></div>
+            {/* Type a new name, or pick somebody the directory already has —
+                the two screens are meant to hold one record of a person, not
+                two that drift. */}
+            <div className="col-span-2">
+              <label className={labelCls}>Full Name *</label>
+              <input className={inputCls} list="directory-people" value={fullName}
+                onChange={e => pickPerson(e.target.value)}
+                placeholder="Start typing — existing people are offered" />
+              <datalist id="directory-people">
+                {offerable.map(d => <option key={d.id} value={d.full_name} />)}
+              </datalist>
+              {linkedPerson ? (
+                <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
+                  <span className="rounded-full bg-[#eef4fd] px-2 py-0.5 font-semibold text-[#2f5b9c]">
+                    Linked to {linkedPerson.full_name}
+                  </span>
+                  <span>in the People Directory — their profile and this record stay in step.</span>
+                  <button type="button" onClick={() => setPersonId(null)}
+                    className="font-semibold text-stone-500 underline underline-offset-2 hover:text-[#2f5b9c]">
+                    Not this person
+                  </button>
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-amber-700">
+                  {fullName.trim()
+                    ? `No directory record yet — one will be created for ${fullName.trim()} when you save.`
+                    : "Pick somebody the directory knows, or type a new name and a record is created for them."}
+                </p>
+              )}
+            </div>
             <div><label className={labelCls}>I/C No</label><input className={inputCls} value={icNo} onChange={e => setIcNo(e.target.value)} /></div>
             <div><label className={labelCls}>Date of Birth</label><input type="date" className={inputCls} value={dob ?? ""} onChange={e => setDob(e.target.value)} /></div>
             <div><label className={labelCls}>Designation</label><input className={inputCls} value={designation} onChange={e => setDesignation(e.target.value)} /></div>

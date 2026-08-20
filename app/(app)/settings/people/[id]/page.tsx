@@ -555,6 +555,7 @@ export default function PersonProfilePage() {
               id: person.id, full_name: person.full_name, ic_no: person.ic_no, dob: person.dob,
               category: person.category, hq_department: person.hq_department,
               date_joined: person.date_joined, payroll_employee_id: person.payroll_employee_id,
+              phone: person.phone, email: person.email, marital_status: person.marital_status,
             }}
             onLinked={(payrollId) => setPerson(p => (p ? { ...p, payroll_employee_id: payrollId, is_employed: true } : p))}
           />
