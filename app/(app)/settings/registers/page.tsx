@@ -12,10 +12,18 @@
 // tables, nothing to keep in step — and rendered from one definition to both
 // PDF and Excel, so the printed copy and the spreadsheet cannot disagree.
 //
-// What is offered depends on what the viewer may see. The payroll register
-// carries salaries, so it appears only for whoever may manage payroll; RLS
-// stops the data reaching anybody else regardless, but a button that always
-// fails is worse than no button.
+// What is offered depends on what the viewer may see, and getting that wrong
+// here is worse than a broken button. payroll_employees is readable under
+// `can_manage_payroll() OR id = my_payroll_employee_id()`, so somebody without
+// payroll rights reading the employee list sees exactly one row: their own.
+// A register titled "every person employed by the church", listing one person,
+// under a block certifying it a true extract, is a document that would embarrass
+// whoever signed it.
+//
+// So every register drawn from payroll_employees — the employee list, the
+// payroll list, and an individual record — is offered only to whoever can see
+// all of it. The officer register comes from the office tables, which are
+// readable across the church, and stays available.
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -82,6 +90,12 @@ export default function RegistersPage() {
   const [asAt, setAsAt] = useState(new Date().toISOString().slice(0, 10));
   const [profileFor, setProfileFor] = useState("");
   const [active, setActive] = useState("employees");
+
+  // Keep the selected tab on a register that is actually offered — the default
+  // is the employee list, which is not available without payroll rights.
+  useEffect(() => {
+    if (!canPayroll && active !== "officers") setActive("officers");
+  }, [canPayroll, active]);
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -254,11 +268,12 @@ export default function RegistersPage() {
     note: "Salary in force on the date of this register. Allowances combine service, family and any carried or current increment. Gross is before statutory deductions.",
   };
 
-  const registers: Register[] = [
-    employeeRegister,
-    officerRegister,
-    ...(canPayroll ? [payrollRegister] : []),
-  ];
+  // Ordered as they are most often asked for, but the employee-derived ones
+  // are only correct for somebody who can see every row — see the note at the
+  // top of this file.
+  const registers: Register[] = canPayroll
+    ? [employeeRegister, officerRegister, payrollRegister]
+    : [officerRegister];
   const shown = registers.find(r => r.key === active) ?? registers[0];
 
   const meta = (): RegisterMeta => ({
@@ -483,6 +498,7 @@ export default function RegistersPage() {
       )}
 
       {/* ── One person ─────────────────────────────────────────────────── */}
+      {canPayroll ? (
       <Card className="p-4">
         <div className="mb-2 flex items-center gap-2">
           <UserSquare size={16} className="text-[#4a6da7]" />
@@ -514,13 +530,23 @@ export default function RegistersPage() {
             <Sheet size={13} /> Excel
           </Button>
         </div>
-        {!canPayroll && (
-          <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-700">
-            <ShieldAlert size={12} className="mt-px shrink-0" />
-            Remuneration is left out of your copy — salary details are limited to payroll.
-          </p>
-        )}
       </Card>
+      ) : (
+        <Card className="flex flex-wrap items-start gap-2 p-4">
+          <ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-bold text-stone-800">
+              Employee, payroll and individual records need payroll access
+            </h2>
+            <p className="mt-1 text-[12px] text-stone-500">
+              Employment records are readable only by payroll, apart from your own. A register built
+              from what you can see would list one person while calling itself the church&apos;s
+              employee list — and it would carry a block certifying it true. Rather than issue that,
+              these three are withheld. The Register of Officers above is complete and yours to use.
+            </p>
+          </div>
+        </Card>
+      )}
 
       {err && (
         <p className="rounded-xl border-2 border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700"
