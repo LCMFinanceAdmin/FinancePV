@@ -76,7 +76,7 @@ const rowCls = "divide-x divide-stone-100 border-t border-stone-100 hover:bg-[#f
  * utility, so a plain text-[13px] here is silently dropped.
  */
 const cell = "w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 !text-[13px] text-stone-700 hover:border-stone-200 focus:bg-white";
-const iconBtn = "rounded p-1 text-stone-300 transition-colors hover:bg-stone-100 hover:text-[#2f5b9c] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-300";
+const iconBtn = "rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-[#2f5b9c] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400";
 const saveBtn = "inline-flex items-center gap-1 rounded-md bg-[#2f5b9c] px-2 py-1 !text-[11px] !font-bold text-white transition-colors hover:bg-[#24487d] disabled:opacity-40";
 
 export default function ChurchDirectoryPage() {
