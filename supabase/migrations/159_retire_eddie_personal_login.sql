@@ -1,0 +1,33 @@
+-- 159: retire Eddie Kwan's second login.
+--
+-- The same shape as 158, found by the warning that migration added to the
+-- People Directory. Two records, one person, one login each:
+--
+--   ACTIVE    eddie.kwan@lcm.org.my   BUILDING_MANAGER, 26 references — 7
+--                                     vouchers raised, 7 submitted, 5 worker
+--                                     worksheets, a BAM worker record,
+--                                     notifications, stored credentials.
+--   INACTIVE  kpkwan63@gmail.com      STAFF, 4 references, and all four are the
+--                                     account itself: people.email,
+--                                     people.user_email, user_roles.email,
+--                                     user_security_credentials.email. No
+--                                     voucher, no worksheet, not even a
+--                                     notification. It has never been used for
+--                                     anything.
+--
+-- Recorded so this file is the way back:
+--
+--   user_roles                 email = kpkwan63@gmail.com
+--                              role  = STAFF
+--                              is_test_account = false
+--   role_switch_grants         none
+--   user_security_credentials  1 row
+--
+-- Both child tables cascade from user_roles(email) — migration 118 — so this
+-- removes the account and its credentials together, or neither.
+--
+-- Unlike 158 there is nothing to change in code: this address was never
+-- hardcoded anywhere. And as before, people.email, people.user_email and the
+-- INACTIVE directory record stay — they are the record of who the account
+-- belonged to.
+DELETE FROM user_roles WHERE lower(email) = 'kpkwan63@gmail.com';
