@@ -7,7 +7,11 @@ import { createClient } from "@/lib/supabase/server";
 import { isExcoRole } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 
-const TEST_ADMIN_EMAILS = ["finance@lcm.org.my", "jermaineaaron1991@gmail.com"];
+// Role switching is a testing aid, so the list is deliberately short and
+// deliberately in code. jermaineaaron1991@gmail.com was removed with its
+// login in migration 158 — the address alone opened /switch-role, so
+// deleting the account without this would have left the door ajar.
+const TEST_ADMIN_EMAILS = ["finance@lcm.org.my"];
 
 export async function getUserProfile(): Promise<UserProfile | null> {
   const supabase = await createClient();

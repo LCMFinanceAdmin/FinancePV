@@ -27,7 +27,7 @@ import {
 } from "@/components/people/ui";
 import {
   Plus, Search, SlidersHorizontal, Mail, Phone, MoreVertical, AlertCircle,
-  CheckCircle2, X, Download, Users, ShieldCheck,
+  CheckCircle2, X, Download, Users, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 import { roleLabel, roleWithScope } from "@/lib/utils";
 
@@ -135,6 +135,20 @@ export default function PeopleDirectoryPage() {
   const isPast = (p: Person) => p.status !== "ACTIVE";
   const roleOf = (p: Person) => accounts[(p.user_email ?? "").trim().toLowerCase()] ?? null;
   const ministriesOf = (p: Person) => accountMinistries[(p.user_email ?? "").trim().toLowerCase()] ?? [];
+
+  /**
+   * Marked past in the directory, but the login still works.
+   *
+   * people.status and user_roles are different tables with nothing joining
+   * them, so marking somebody past is a note about the person and not a change
+   * to their access. That is a reasonable design — somebody can leave a post
+   * and keep their account — but it reads as though access had been withdrawn,
+   * and nothing said otherwise. A personal account sat like this holding
+   * FINANCE_ADMIN and the right to switch into every approval seat, and the
+   * directory had been showing it as past for a week.
+   */
+  const stillHasAccess = (p: Person) => isPast(p) && !!roleOf(p);
+  const lingering = people.filter(stillHasAccess);
 
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
@@ -362,6 +376,28 @@ export default function PeopleDirectoryPage() {
         </div>
       </div>
 
+      {lingering.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
+          <ShieldAlert size={16} className="shrink-0 text-amber-700" aria-hidden="true" />
+          <p className="text-[13px] text-amber-900">
+            <strong>
+              {lingering.length === 1
+                ? "1 person is marked past but can still sign in"
+                : `${lingering.length} people are marked past but can still sign in`}
+              {" "}— {lingering.map(x => x.full_name).join(", ")}.
+            </strong>{" "}
+            Marking somebody past is a note on their directory record; it does not touch the
+            access on their login. Open them and use Access &amp; role to withdraw it.
+          </p>
+          {!showPast && (
+            <button onClick={() => setShowPast(true)}
+              className="ml-auto rounded-lg border-2 border-amber-400 bg-white px-2.5 py-1 !text-[12px] !font-bold text-amber-800 hover:bg-amber-100">
+              Show them
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── The list ───────────────────────────────────────────────────── */}
       {/*
         A real table, sharing the furniture with the Church Directory and the
@@ -469,7 +505,16 @@ export default function PeopleDirectoryPage() {
                       {!p.email && !p.phone && <span className="text-[12px] text-stone-300">No contact</span>}
                     </td>
 
-                    <td className={`${td} px-3`}><PersonStatus status={p.status} /></td>
+                    <td className={`${td} px-3`}>
+                      <PersonStatus status={p.status} />
+                      {stillHasAccess(p) && (
+                        <span
+                          title="Marked past, but their login still works. Access is withdrawn under Access & role on their profile."
+                          className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-amber-700">
+                          <ShieldAlert size={10} aria-hidden="true" /> still signs in
+                        </span>
+                      )}
+                    </td>
 
                     <td className={`${td} px-1 text-right`} onClick={e => e.stopPropagation()}>
                       <RowMenu p={p} canEdit={canEdit} open={menuFor === p.id}

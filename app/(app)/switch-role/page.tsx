@@ -6,7 +6,11 @@ import { excoAssignableMinistries } from "@/lib/ministries";
 import { Eye, EyeOff } from "lucide-react";
 import { switchableRoleOptions } from "@/lib/utils";
 
-const TEST_ADMIN_EMAILS = ["finance@lcm.org.my", "jermaineaaron1991@gmail.com"];
+// Role switching is a testing aid, so the list is deliberately short and
+// deliberately in code. jermaineaaron1991@gmail.com was removed with its
+// login in migration 158 — the address alone opened /switch-role, so
+// deleting the account without this would have left the door ajar.
+const TEST_ADMIN_EMAILS = ["finance@lcm.org.my"];
 
 // Colour per role; the roles themselves and their labels come from the one
 // shared list, so a new role appears here without being added twice.
