@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen, AlertTriangle, Check, ChevronRight, List, History } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { th, td, rowCls, cell, iconBtn, saveBtn } from "@/lib/table-styles";
 import { CouncilModal } from "@/components/directory/council-modal";
 import { CongregationDocsModal } from "@/components/directory/congregation-docs-modal";
 
@@ -76,23 +77,6 @@ const fmtDay = (iso: string | null) =>
 const districtSig = (d: District) => JSON.stringify([d.name, d.dean_email, d.term_start, d.term_end]);
 const congregationSig = (c: Congregation) =>
   JSON.stringify([c.name, c.district_id, c.head_pastor_email, c.ros_number]);
-
-// Table furniture. Gridlines both ways: a row of seven values is hard to track
-// across without them, and the columns here are unrelated to each other.
-const th = "px-2.5 py-2 text-left text-[10.5px] font-bold uppercase tracking-wider text-stone-500 whitespace-nowrap";
-const td = "px-2.5 py-1.5 align-middle";
-const rowCls = "divide-x divide-stone-100 border-t border-stone-100 hover:bg-[#f8fbff]";
-/**
- * Cell inputs read as text until you go near them.
- *
- * A bordered box in every cell turns a table back into the form this replaced.
- * The `!` on the size is not decoration: globals.css sets `font: inherit` on
- * inputs and selects outside any layer, and unlayered CSS beats a layered
- * utility, so a plain text-[13px] here is silently dropped.
- */
-const cell = "w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 !text-[13px] text-stone-700 hover:border-stone-200 focus:bg-white";
-const iconBtn = "rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-[#2f5b9c] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400";
-const saveBtn = "inline-flex items-center gap-1 rounded-md bg-[#2f5b9c] px-2 py-1 !text-[11px] !font-bold text-white transition-colors hover:bg-[#24487d] disabled:opacity-40";
 
 export default function ChurchDirectoryPage() {
   const supabase = createClient();

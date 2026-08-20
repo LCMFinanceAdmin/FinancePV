@@ -8,16 +8,18 @@
 // seat two people in one office; and it moves the system role with the post,
 // so the new Treasurer can approve and the old one cannot.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { th, td, rowCls, iconBtn, rowBtn, rowBtnDanger, rowBtnPrimary, termChip } from "@/lib/table-styles";
 import { roleLabel, SWITCHABLE_ROLES } from "@/lib/utils";
 import { loadRoles } from "@/lib/roles";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import {
-  Landmark, Users, History, UserPlus, X, CheckCircle2, AlertCircle, ChevronRight, Church, Briefcase,
-  AlertTriangle, Plus, Pencil, LogOut,
+  Landmark, Users, History, UserPlus, X, CheckCircle2, AlertCircle, Church, Briefcase,
+  Plus, Pencil, LogOut,
 } from "lucide-react";
 import { OfficeModal, type OfficeCategory } from "@/components/offices/office-modal";
 import { CategoryModal } from "@/components/offices/category-modal";
@@ -380,165 +382,223 @@ export default function OfficesPage() {
   const visible   = offices.filter(o => showRetired || o.active);
   const retiredCount = offices.filter(o => !o.active).length;
 
+  /**
+   * One section of the register, as a table.
+   *
+   * A card per post repeated the field labels down the page and gave five
+   * buttons a whole row each, so three offices filled the screen. The table
+   * states Position, Holder and Term once and puts the actions in a fixed-width
+   * column, two rows of them — laid out on a grid rather than left to wrap,
+   * because wrapping is what let them spill past the column edge.
+   */
   const section = (title: string, sub: string, icon: React.ReactNode, list: Office[]) => (
-    <div className="space-y-2">
+    <section className="space-y-2">
       <div>
         <h2 className="flex items-center gap-2 text-base font-bold text-stone-700">{icon} {title}</h2>
         <p className="text-xs text-stone-400">{sub}</p>
       </div>
-      {list.map(o => {
-        const cur = currentOf(o.id);
-        const members = currentAll(o.id);
-        const past = pastOf(o.id);
-        const showing = historyFor === o.id;
-        return (
-          <div key={o.id} className={`overflow-hidden rounded-2xl border bg-white ${
-            o.active ? "border-[#e4edf9]" : "border-dashed border-stone-300 opacity-70"}`}>
-            <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-stone-800">
-                  {o.name}
-                  {/* What it answers to. Shown on the child rather than nesting
-                      the list, because a body can sit under a portfolio in a
-                      different section and indentation could not show that. */}
-                  {o.parent_office_id && (
-                    <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-600">
-                      reports to {offices.find(x => x.id === o.parent_office_id)?.name ?? "—"}
-                    </span>
-                  )}
-                  {o.term_years != null && (
-                    <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
-                      {o.term_years}-year term
-                    </span>
-                  )}
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    o.tenure === "ELECTED" ? "bg-violet-100 text-violet-700"
-                      : o.tenure === "TEMPORARY" ? "bg-amber-100 text-amber-700"
-                      : "bg-stone-100 text-stone-600"}`}>
-                    {o.tenure === "ELECTED" ? "Elected" : o.tenure === "TEMPORARY" ? "Temporary" : "Permanent"}
-                  </span>
-                  {o.grants_role && (
-                    <span className="rounded-full bg-[#eef4fd] px-2 py-0.5 text-[10px] font-semibold text-[#2f5b9c]">
-                      {roleLabel(o.grants_role)}
-                    </span>
-                  )}
-                  {!o.active && (
-                    <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-600">
-                      Retired
-                    </span>
-                  )}
-                  {!o.single_holder && members.length > 0 && (
-                    <span className="ml-1.5 text-[12px] font-medium text-stone-400">
-                      {members.length} member{members.length === 1 ? "" : "s"}
-                    </span>
-                  )}
-                </div>
-                {members.length > 0 ? (
-                  <ul className="text-[19px] text-stone-600">
-                    {members.map(m => (
-                      <li key={m.id} className="flex flex-wrap items-baseline gap-x-1.5">
-                        <Link href={`/settings/people/${m.person_id}`}
-                          className="rounded text-[19px] font-semibold text-stone-800 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
-                          {nameOf(m.person_id)}
-                        </Link>
-                        <span className="text-[15px] italic text-stone-400">{tenureLine(o.kind, m)}</span>
-                        <button onClick={() => setEditingHolding(m)}
-                          className="text-[11px] text-stone-400 hover:text-[#2f5b9c]">
-                          edit
-                        </button>
-                        {!o.single_holder && (
-                          <button onClick={() => endTerm(m, o)}
-                            className="text-[11px] text-stone-400 hover:text-red-500">
-                            remove
-                          </button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="text-[19px] font-semibold text-amber-700">
-                    {o.single_holder ? "Vacant" : "No members"}
-                  </div>
-                )}
-              </div>
 
-              {/* Four grey words in a row read as a sentence, not as four
-                  things you can press — and "End term", which cannot be undone
-                  without re-recording the term, looked exactly like "Edit post"
-                  next to it. Each is a button with an edge now, and the one
-                  that removes somebody says so in red before it is pressed. */}
-              <button onClick={() => setHistoryFor(showing ? null : o.id)}
-                aria-label={`Past holders of ${o.name}`}
-                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 !text-[11px] font-semibold whitespace-nowrap transition-colors ${
-                  showing
-                    ? "border-[#2f5b9c] bg-[#eef4fd] text-[#2f5b9c]"
-                    : "border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-800"}`}>
-                <History size={13} /> {past.length > 0 ? `${past.length} past` : "History"}
-                <ChevronRight size={12} className={showing ? "rotate-90" : ""} />
-              </button>
-
-              <button onClick={() => setEditingOffice(o)}
-                aria-label={`Edit the ${o.name} post`}
-                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 !text-[11px] font-semibold whitespace-nowrap text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
-                <Pencil size={12} /> Edit post
-              </button>
-
-              {/* A term that has already finished. The election flow assumes it
-                  is happening now, which is no use for filling in the years
-                  before this register existed. */}
-              <button onClick={() => setAddingTermFor(o)}
-                aria-label={`Record a past term of ${o.name}`}
-                className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 !text-[11px] font-semibold whitespace-nowrap text-stone-600 transition-colors hover:border-[#2f5b9c] hover:text-[#2f5b9c]">
-                <Plus size={12} /> Past term
-              </button>
-
-              {cur && o.single_holder && (
-                <button onClick={() => endTerm(cur, o)}
-                  aria-label={`End the current term of ${o.name}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 !text-[11px] font-semibold whitespace-nowrap text-red-600 transition-colors hover:border-red-400 hover:bg-red-50">
-                  <LogOut size={12} /> End term
-                </button>
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[940px] border-collapse">
+            <thead className="bg-stone-50">
+              <tr className="divide-x divide-stone-100">
+                <th className={`${th} w-[30%]`}>Position</th>
+                <th className={`${th} w-[26%]`}>Holder</th>
+                <th className={`${th} w-[22%]`}>Term</th>
+                <th className={`${th} w-[268px]`}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.length === 0 && (
+                <tr className="border-t border-stone-100">
+                  <td colSpan={4} className="px-3 py-6 text-center text-sm text-stone-400">
+                    No posts in this section yet.
+                  </td>
+                </tr>
               )}
+              {list.map(o => {
+                const cur = currentOf(o.id);
+                const members = currentAll(o.id);
+                const past = pastOf(o.id);
+                const showing = historyFor === o.id;
+                return (
+                  <Fragment key={o.id}>
+                    <tr className={`${rowCls} ${o.active ? "" : "bg-stone-50/60 opacity-70"}`}>
+                      {/* Position — the name carries the weight; what kind of
+                          post it is sits under it so the badges do not compete
+                          with the thing you are scanning for. */}
+                      <td className={`${td} px-3`}>
+                        <div className="text-[13.5px] font-bold text-stone-800">{o.name}</div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                          {o.term_years != null && (
+                            <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-violet-700">
+                              {o.term_years}-year term
+                            </span>
+                          )}
+                          <span className={`rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold ${
+                            o.tenure === "ELECTED" ? "bg-violet-100 text-violet-700"
+                              : o.tenure === "TEMPORARY" ? "bg-amber-100 text-amber-700"
+                              : "bg-stone-100 text-stone-600"}`}>
+                            {o.tenure === "ELECTED" ? "Elected" : o.tenure === "TEMPORARY" ? "Temporary" : "Permanent"}
+                          </span>
+                          {o.grants_role && (
+                            <span className="rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[9.5px] font-semibold text-[#2f5b9c]">
+                              {roleLabel(o.grants_role)}
+                            </span>
+                          )}
+                          {!o.active && (
+                            <span className="rounded-full bg-stone-200 px-1.5 py-0.5 text-[9.5px] font-semibold text-stone-600">
+                              Retired
+                            </span>
+                          )}
+                          {/* What it answers to. Shown on the child rather than
+                              nesting the list, because a body can sit under a
+                              portfolio in a different section and indentation
+                              could not show that. */}
+                          {o.parent_office_id && (
+                            <span className="rounded-full bg-stone-100 px-1.5 py-0.5 text-[9.5px] font-semibold text-stone-600">
+                              under {offices.find(x => x.id === o.parent_office_id)?.name ?? "—"}
+                            </span>
+                          )}
+                        </div>
+                      </td>
 
-              {/* The one thing most rows are opened to do, so it stays the only
-                  filled button on the row. */}
-              <Button size="sm" className="!text-[11px] px-2.5 py-1 whitespace-nowrap" onClick={() => openElection(o)}>
-                <UserPlus size={13} /> {!o.single_holder ? "Add member"
-                  : o.is_elected ? (cur ? "New election" : "Elect")
-                  : (cur ? "Replace" : "Appoint")}
-              </Button>
-            </div>
+                      {/* Holder — one line each, in the same order as the terms
+                          beside them so the two columns read across. */}
+                      <td className={`${td} px-3`}>
+                        {members.length > 0 ? (
+                          <ul className="space-y-1">
+                            {members.map(m => (
+                              <li key={m.id} className="flex items-center gap-1">
+                                <Link href={`/settings/people/${m.person_id}`}
+                                  className="truncate text-[13.5px] font-bold text-stone-900 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+                                  {nameOf(m.person_id)}
+                                </Link>
+                                <button onClick={() => setEditingHolding(m)} className={iconBtn}
+                                  title="Correct this term" aria-label={`Edit the term of ${nameOf(m.person_id)}`}>
+                                  <Pencil size={11} />
+                                </button>
+                                {!o.single_holder && (
+                                  <button onClick={() => endTerm(m, o)}
+                                    className={`${iconBtn} hover:!text-red-600`}
+                                    title="Remove from this committee"
+                                    aria-label={`Remove ${nameOf(m.person_id)}`}>
+                                    <X size={11} />
+                                  </button>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-[13.5px] font-bold text-amber-700">
+                            {o.single_holder ? "Vacant" : "No members"}
+                          </span>
+                        )}
+                        {!o.single_holder && members.length > 0 && (
+                          <span className="text-[10.5px] text-stone-400">
+                            {members.length} member{members.length === 1 ? "" : "s"}
+                          </span>
+                        )}
+                      </td>
 
-            {showing && (
-              <div className="border-t border-[#eaf1fb] bg-[#fbfdff] px-4 py-3">
-                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-stone-400">
-                  {isStaffPost(o.kind) ? "Previously employed in this post" : "Previously held by"}
-                </p>
-                {past.length === 0 && (
-                  <p className="text-[12px] text-stone-400">
-                    Nothing recorded yet. Use <span className="font-medium text-stone-500">Add past term</span> to
-                    fill in who held this before — one term at a time, whenever you have a moment.
-                  </p>
-                )}
-                <ul className="space-y-1">
-                  {past.map(h => (
-                    <li key={h.id} className="text-[13px] text-stone-600">
-                      <span className="font-medium text-stone-700">{nameOf(h.person_id)}</span>
-                      <span className="text-stone-400"> — {tenureLine(o.kind, h)}</span>
-                      {h.note && <span className="text-stone-400"> · {h.note}</span>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+                      <td className={`${td} px-3`}>
+                        {members.length > 0 ? (
+                          <ul className="space-y-1">
+                            {members.map(m => (
+                              <li key={m.id} className="leading-[22px]">
+                                <span className={termChip}>{tenureLine(o.kind, m)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-[13px] text-stone-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Two fixed rows on a grid. Equal-width cells keep the
+                          buttons tight to each other and inside the column,
+                          which free-flowing widths did not. */}
+                      <td className={`${td} px-2`}>
+                        <div className="grid grid-cols-3 gap-1">
+                          <button onClick={() => setHistoryFor(showing ? null : o.id)}
+                            aria-label={`Past holders of ${o.name}`}
+                            className={showing
+                              ? "inline-flex w-full items-center justify-center gap-1 rounded-lg border border-[#2f5b9c] bg-[#eef4fd] px-1.5 py-1 !text-[10.5px] !font-semibold whitespace-nowrap text-[#2f5b9c]"
+                              : rowBtn}>
+                            <History size={11} /> {past.length > 0 ? `${past.length} past` : "History"}
+                          </button>
+
+                          <button onClick={() => setEditingOffice(o)} className={rowBtn}
+                            aria-label={`Edit the ${o.name} post`}>
+                            <Pencil size={11} /> Edit post
+                          </button>
+
+                          {/* A term that has already finished. The election flow
+                              assumes it is happening now, which is no use for
+                              filling in the years before this register existed. */}
+                          <button onClick={() => setAddingTermFor(o)} className={rowBtn}
+                            aria-label={`Record a past term of ${o.name}`}>
+                            <Plus size={11} /> Past term
+                          </button>
+
+                          {cur && o.single_holder && (
+                            <button onClick={() => endTerm(cur, o)} className={rowBtnDanger}
+                              aria-label={`End the current term of ${o.name}`}>
+                              <LogOut size={11} /> End term
+                            </button>
+                          )}
+
+                          {/* The one thing most rows are opened to do, so it
+                              stays the only filled button. */}
+                          <button onClick={() => openElection(o)}
+                            className={`${rowBtnPrimary} ${cur && o.single_holder ? "col-span-2" : "col-span-3"}`}>
+                            <UserPlus size={11} /> {!o.single_holder ? "Add member"
+                              : o.is_elected ? (cur ? "New election" : "Elect")
+                              : (cur ? "Replace" : "Appoint")}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {showing && (
+                      <tr className="border-t border-stone-100 bg-[#f8fbff]">
+                        <td colSpan={4} className="px-4 py-2.5">
+                          <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-stone-400">
+                            {isStaffPost(o.kind) ? "Previously employed in this post" : "Previously held by"}
+                          </p>
+                          {past.length === 0 ? (
+                            <p className="text-[12px] text-stone-400">
+                              Nothing recorded yet. Use <span className="font-medium text-stone-500">Past term</span> to
+                              fill in who held this before — one term at a time, whenever you have a moment.
+                            </p>
+                          ) : (
+                            <ol className="space-y-0.5">
+                              {past.map((h, i) => (
+                                <li key={h.id} className="flex items-baseline gap-2 text-[12.5px]">
+                                  <span className="w-5 shrink-0 text-right text-[11px] font-bold text-stone-400">{i + 1}.</span>
+                                  <span className="font-semibold text-stone-700">{nameOf(h.person_id)}</span>
+                                  <span className={termChip}>{tenureLine(o.kind, h)}</span>
+                                  {h.note && <span className="text-stone-400">{h.note}</span>}
+                                </li>
+                              ))}
+                            </ol>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </section>
   );
 
   return (
-    <div className="cloudlight-page max-w-4xl space-y-6">
+    <div className="cloudlight-page max-w-7xl space-y-6">
       {managingKinds && (
         <CategoryModal
           categories={categories}
