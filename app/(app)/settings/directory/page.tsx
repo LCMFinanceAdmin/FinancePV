@@ -19,11 +19,22 @@ import { createClient } from "@/lib/supabase/client";
 import { withTitle } from "@/lib/ministry";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen, AlertTriangle, Check, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen, AlertTriangle, Check, ChevronRight, List, History } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
 import { CouncilModal } from "@/components/directory/council-modal";
 import { CongregationDocsModal } from "@/components/directory/congregation-docs-modal";
 
-interface District { id: string; name: string; dean_email: string | null; }
+interface District {
+  id: string; name: string; dean_email: string | null;
+  /** The current Dean's term, from their open office_holdings row. Edited here
+      and written back by set_district_dean() — see migration 155. */
+  term_start: string | null; term_end: string | null;
+}
+interface DeanTerm {
+  district_id: string; holding_id: string; person_id: string | null;
+  full_name: string | null; ordination: string | null;
+  term_start: string | null; term_end: string | null;
+}
 interface Congregation {
   id: string; name: string; district_id: string | null; head_pastor_email: string | null;
   /** Registry of Societies registration — each congregation registers separately. */
@@ -51,6 +62,10 @@ const loginOf = (p: Person) => (p.user_email || p.email || "").trim();
 
 const isNew = (id: string) => id.startsWith("new-");
 
+const fmtDay = (iso: string | null) =>
+  iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-MY",
+    { day: "2-digit", month: "short", year: "numeric" }) : "not recorded";
+
 /**
  * What a row looked like when it was loaded.
  *
@@ -58,7 +73,7 @@ const isNew = (id: string) => id.startsWith("new-");
  * on every row is a button that means nothing — with twenty congregations there
  * is no way to see which two are unsaved, which is exactly when it matters.
  */
-const districtSig = (d: District) => JSON.stringify([d.name, d.dean_email]);
+const districtSig = (d: District) => JSON.stringify([d.name, d.dean_email, d.term_start, d.term_end]);
 const congregationSig = (c: Congregation) =>
   JSON.stringify([c.name, c.district_id, c.head_pastor_email, c.ros_number]);
 
@@ -96,6 +111,10 @@ export default function ChurchDirectoryPage() {
   const [baseline, setBaseline] = useState<Record<string, string>>({});
   /** Congregations whose leave-routing detail is open. */
   const [openRouting, setOpenRouting] = useState<Set<string>>(new Set());
+  /** Every term ever held, current and past, keyed by district. */
+  const [deanTerms, setDeanTerms] = useState<Record<string, DeanTerm[]>>({});
+  const [churchesFor, setChurchesFor] = useState<District | null>(null);
+  const [historyFor, setHistoryFor] = useState<District | null>(null);
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -103,7 +122,7 @@ export default function ChurchDirectoryPage() {
   }
 
   const load = useCallback(async () => {
-    const [{ data: d }, { data: c }, { data: p }, { data: ur }] = await Promise.all([
+    const [{ data: d }, { data: c }, { data: p }, { data: ur }, { data: dh }] = await Promise.all([
       supabase.from("districts").select("*").order("name"),
       supabase.from("congregations").select("*").order("name"),
       // Everybody comes from people rather than user_roles, because
@@ -121,8 +140,22 @@ export default function ChurchDirectoryPage() {
       // Why each person cannot be Dean of each district, from the same rule
       // the register uses. One call rather than one per person per district.
       supabase.rpc("dean_candidates"),
+      // Who has held each district's post, current term first.
+      supabase.rpc("dean_history"),
     ]);
-    const ds = (d ?? []) as District[];
+
+    const terms: Record<string, DeanTerm[]> = {};
+    for (const t of (dh ?? []) as DeanTerm[]) {
+      (terms[t.district_id] ||= []).push(t);
+    }
+    setDeanTerms(terms);
+
+    // The term shown on the row is the open one. Carried onto the district so
+    // it edits like any other field on it and Save appears when it changes.
+    const ds = ((d ?? []) as District[]).map(x => {
+      const open = (terms[x.id] ?? []).find(t => !t.term_end);
+      return { ...x, term_start: open?.term_start ?? null, term_end: open?.term_end ?? null };
+    });
     const cs = (c ?? []) as Congregation[];
     setDistricts(ds);
     setCongregations(cs);
@@ -163,6 +196,23 @@ export default function ChurchDirectoryPage() {
 
   const dirty = (id: string, sig: string) => isNew(id) || baseline[id] !== sig;
 
+  /**
+   * Who can be offered as Dean of a district.
+   *
+   * Anybody the rule blocks is left out rather than listed with the reason —
+   * a dropdown is for choosing from, and an option that cannot be chosen is
+   * noise on every district that will never want it.
+   *
+   * The sitting Dean stays on the list even once they no longer qualify, since
+   * dropping them would blank the field and read as though the record had been
+   * lost. The row says why instead.
+   */
+  const eligibleDeans = (d: District) =>
+    pastorOptions.filter(p => !deanBlocks[`${d.id}|${p.id}`] || loginOf(p) === d.dean_email);
+
+  const personByLogin = (email: string | null) =>
+    email ? people.find(p => loginOf(p) === email) ?? null : null;
+
   const patchDistrict = (id: string, p: Partial<District>) =>
     setDistricts(ds => ds.map(x => x.id === id ? { ...x, ...p } : x));
   const patchCongregation = (id: string, p: Partial<Congregation>) =>
@@ -170,14 +220,41 @@ export default function ChurchDirectoryPage() {
 
   async function saveDistrict(d: District) {
     setSaving(true);
-    const payload = { name: d.name.trim(), dean_email: d.dean_email || null, updated_at: new Date().toISOString() };
-    const { error } = isNew(d.id)
-      ? await supabase.from("districts").insert(payload)
-      : await supabase.from("districts").update(payload).eq("id", d.id);
-    setSaving(false);
-    if (error) { showToast(error.message, false); return; }
-    showToast("District saved");
-    load();
+    try {
+      // The name goes on the district; the Dean goes through the register, so
+      // the appointment leaves a term behind it. dean_email is not written
+      // here — set_district_dean() owns that copy now (migration 155).
+      let id = d.id;
+      if (isNew(id)) {
+        const { data, error } = await supabase.from("districts")
+          .insert({ name: d.name.trim() }).select("id").single();
+        if (error) throw new Error(error.message);
+        id = data.id as string;
+      } else {
+        const { error } = await supabase.from("districts")
+          .update({ name: d.name.trim(), updated_at: new Date().toISOString() }).eq("id", id);
+        if (error) throw new Error(error.message);
+      }
+
+      const person = personByLogin(d.dean_email);
+      if (d.dean_email && !person) {
+        throw new Error("That Dean is no longer in the people directory — pick again.");
+      }
+      const { error: deanErr } = await supabase.rpc("set_district_dean", {
+        p_district_id: id,
+        p_person_id: person?.id ?? null,
+        p_term_start: d.term_start || null,
+        p_term_end: d.term_end || null,
+      });
+      if (deanErr) throw new Error(deanErr.message);
+
+      showToast("District saved");
+      load();
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Could not save", false);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function deleteDistrict(id: string) {
@@ -271,7 +348,7 @@ export default function ChurchDirectoryPage() {
               {districts.length} · {districts.filter(d => d.dean_email).length} with a Dean
             </span>
           </h2>
-          <Button size="sm" onClick={() => setDistricts(ds => [...ds, { id: `new-${Date.now()}`, name: "", dean_email: null }])}>
+          <Button size="sm" onClick={() => setDistricts(ds => [...ds, { id: `new-${Date.now()}`, name: "", dean_email: null, term_start: null, term_end: null }])}>
             <Plus size={13} /> Add District
           </Button>
         </div>
@@ -281,16 +358,17 @@ export default function ChurchDirectoryPage() {
             <table className="w-full min-w-[640px] border-collapse">
               <thead className="bg-stone-50">
                 <tr className="divide-x divide-stone-100">
-                  <th className={`${th} w-[34%]`}>District</th>
+                  <th className={`${th} w-[24%]`}>District</th>
                   <th className={th}>Dean</th>
-                  <th className={`${th} w-24 text-center`}>Churches</th>
-                  <th className={`${th} w-24`}></th>
+                  <th className={`${th} w-[19%]`}>Term</th>
+                  <th className={`${th} w-28 text-center`}>Churches</th>
+                  <th className={`${th} w-28`}></th>
                 </tr>
               </thead>
               <tbody>
                 {districts.length === 0 && (
                   <tr className="border-t border-stone-100">
-                    <td colSpan={4} className="px-3 py-6 text-center text-sm text-stone-400">
+                    <td colSpan={5} className="px-3 py-6 text-center text-sm text-stone-400">
                       No districts yet. Add one, then assign congregations to it below.
                     </td>
                   </tr>
@@ -300,6 +378,8 @@ export default function ChurchDirectoryPage() {
                   const why = chosen ? deanBlocks[`${d.id}|${chosen.id}`] : null;
                   const count = congregations.filter(c => c.district_id === d.id).length;
                   const changed = dirty(d.id, districtSig(d));
+                  const offerable = eligibleDeans(d);
+                  const past = (deanTerms[d.id] ?? []).filter(t => t.term_end);
                   return (
                     <tr key={d.id} className={`${rowCls} ${isNew(d.id) ? "bg-[#fffdf5]" : ""}`}>
                       <td className={td}>
@@ -315,24 +395,47 @@ export default function ChurchDirectoryPage() {
                         <select className={cell} value={d.dean_email ?? ""}
                           onChange={e => patchDistrict(d.id, { dean_email: e.target.value || null })}>
                           <option value="">— none —</option>
-                          {pastorOptions.map(p => {
-                            const block = deanBlocks[`${d.id}|${p.id}`];
-                            return (
-                              <option key={p.id} value={loginOf(p)}>
-                                {withTitle(p.full_name, p.ordination)}{block ? `  ·  ${block}` : ""}
-                              </option>
-                            );
-                          })}
+                          {offerable.map(p => (
+                            <option key={p.id} value={loginOf(p)}>{withTitle(p.full_name, p.ordination)}</option>
+                          ))}
                         </select>
                         {why && (
                           <p className="mt-0.5 flex items-start gap-1 px-1.5 text-[11px] text-amber-700">
                             <AlertTriangle size={11} className="mt-0.5 shrink-0" />
-                            <span>Not normally Dean here — {why}.</span>
+                            <span>No longer qualifies — {why}.</span>
+                          </p>
+                        )}
+                        {/* An empty dropdown and a broken one look identical, so
+                            the reason for it being empty is stated. */}
+                        {offerable.length === 0 && !d.dean_email && (
+                          <p className="mt-0.5 px-1.5 text-[11px] text-stone-400">
+                            Nobody qualifies yet — a Dean is a serving Reverend of a church in this district.
                           </p>
                         )}
                       </td>
-                      <td className={`${td} text-center text-[13px] ${count ? "text-stone-600" : "text-stone-300"}`}>
-                        {count}
+                      {/* The term lives on the office_holdings row, not on
+                          the district — saving sends both through
+                          set_district_dean() so the register and the working
+                          copy cannot disagree. */}
+                      <td className={td}>
+                        <div className="flex items-center gap-1">
+                          <input type="date" className={`${cell} !text-[12px]`} value={d.term_start ?? ""}
+                            disabled={!d.dean_email} title="Term start"
+                            onChange={e => patchDistrict(d.id, { term_start: e.target.value || null })} />
+                          <span className="shrink-0 text-[11px] text-stone-300">to</span>
+                          <input type="date" className={`${cell} !text-[12px]`} value={d.term_end ?? ""}
+                            disabled={!d.dean_email} title="Term end — leave blank while they are still serving"
+                            onChange={e => patchDistrict(d.id, { term_end: e.target.value || null })} />
+                        </div>
+                      </td>
+                      <td className={`${td} text-center`}>
+                        <span className={`text-[13px] ${count ? "text-stone-600" : "text-stone-300"}`}>{count}</span>
+                        <button className={`${iconBtn} ml-1 align-middle`} disabled={count === 0}
+                          onClick={() => setChurchesFor(d)}
+                          title={count ? "List the churches" : "No churches in this district yet"}
+                          aria-label={`Churches in ${d.name || "district"}`}>
+                          <List size={13} />
+                        </button>
                       </td>
                       <td className={`${td} whitespace-nowrap text-right`}>
                         {changed && (
@@ -341,7 +444,13 @@ export default function ChurchDirectoryPage() {
                             <Save size={11} /> Save
                           </button>
                         )}
-                        <button className={`${iconBtn} ml-1 hover:!text-red-600`} onClick={() => deleteDistrict(d.id)}
+                        <button className={`${iconBtn} ml-1`} disabled={past.length === 0}
+                          onClick={() => setHistoryFor(d)}
+                          title={past.length ? `${past.length} previous Dean(s)` : "No previous Deans recorded"}
+                          aria-label={`Past Deans of ${d.name || "district"}`}>
+                          <History size={14} />
+                        </button>
+                        <button className={`${iconBtn} hover:!text-red-600`} onClick={() => deleteDistrict(d.id)}
                           aria-label={`Delete ${d.name || "district"}`}>
                           <Trash2 size={14} />
                         </button>
@@ -536,6 +645,53 @@ export default function ChurchDirectoryPage() {
           // The chairman the trigger just wrote back to the congregation.
           onSaved={load}
         />
+      )}
+
+      {churchesFor && (
+        <Modal
+          title={`Churches in ${churchesFor.name}`}
+          description="Every congregation assigned to this district."
+          onClose={() => setChurchesFor(null)}
+          footer={<Button variant="ghost" onClick={() => setChurchesFor(null)}>Close</Button>}
+        >
+          <ol className="space-y-1">
+            {congregations.filter(c => c.district_id === churchesFor.id).map((c, i) => (
+              <li key={c.id} className="flex items-baseline gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2">
+                <span className="w-5 shrink-0 text-right text-[12px] font-bold text-stone-400">{i + 1}.</span>
+                <span className="text-[13px] font-semibold text-stone-800">{c.name}</span>
+                {c.head_pastor_email && (
+                  <span className="ml-auto text-[11px] text-stone-400">{nameFor(c.head_pastor_email)}</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </Modal>
+      )}
+
+      {historyFor && (
+        <Modal
+          title={`Deans of ${historyFor.name}`}
+          description="Who has held the post, most recent first. Kept for reference — editing happens on the row."
+          onClose={() => setHistoryFor(null)}
+          footer={<Button variant="ghost" onClick={() => setHistoryFor(null)}>Close</Button>}
+        >
+          <ol className="space-y-1">
+            {(deanTerms[historyFor.id] ?? []).map((t, i) => (
+              <li key={t.holding_id}
+                className={`flex items-baseline gap-2 rounded-lg border px-3 py-2 ${
+                  t.term_end ? "border-stone-200 bg-white" : "border-[#dbe9fb] bg-[#f4f9ff]"}`}>
+                <span className="w-5 shrink-0 text-right text-[12px] font-bold text-stone-400">{i + 1}.</span>
+                <span className="text-[13px] font-semibold text-stone-800">
+                  {t.full_name ? withTitle(t.full_name, t.ordination) : "Not recorded"}
+                </span>
+                <span className="ml-auto text-[12px] text-stone-500">
+                  {fmtDay(t.term_start)} — {t.term_end ? fmtDay(t.term_end)
+                    : <span className="font-semibold text-[#2f5b9c]">present</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Modal>
       )}
 
       {docsFor && (
