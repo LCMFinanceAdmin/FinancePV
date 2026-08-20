@@ -304,22 +304,22 @@ export function OfficeModal({
 
       <div>
         <label className={labelClass}>What it covers</label>
-        <textarea className={`${fieldClass} min-h-[68px]`} value={responsibilities}
+        <textarea className={`${fieldClass} min-h-[73px]`} value={responsibilities}
           onChange={e => setResponsibilities(e.target.value)}
           placeholder="e.g. Oversees the church's buildings and land — repairs, insurance, tenancy, and any purchase or disposal of property." />
-        <p className="mt-1 text-[11px] text-stone-500">
+        <p className="mt-0.5 text-[11px] text-stone-500">
           The decisions it carries and the part of the ministry it answers for. Shown on the
           register, and when working out which post a decision belongs to.
         </p>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-1.5 sm:grid-cols-2">
         <div>
           <label className={labelClass}>Kind</label>
           <select className={fieldClass} value={kind} onChange={e => setKind(e.target.value)}>
             {categories.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
           </select>
-          <p className="mt-1 text-[11px] text-stone-500">{category?.description}</p>
+          <p className="mt-0.5 text-[11px] text-stone-500">{category?.description}</p>
         </div>
         <div>
           <label className={labelClass}>Held for</label>
@@ -327,7 +327,7 @@ export function OfficeModal({
             onChange={e => setTenure(e.target.value as OfficeRow["tenure"])}>
             {TENURES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
           </select>
-          <p className="mt-1 text-[11px] text-stone-500">{TENURES.find(t => t.key === tenure)?.hint}</p>
+          <p className="mt-0.5 text-[11px] text-stone-500">{TENURES.find(t => t.key === tenure)?.hint}</p>
         </div>
       </div>
 
@@ -343,7 +343,7 @@ export function OfficeModal({
               <option key={o.id} value={o.id}>{o.name}{o.active ? "" : " (retired)"}</option>
             ))}
           </select>
-          <p className="mt-1 text-[11px] text-stone-500">
+          <p className="mt-0.5 text-[11px] text-stone-500">
             For a body that answers to another — BAM reports to the Property portfolio.
             The register groups it beneath its parent.
           </p>
@@ -355,7 +355,7 @@ export function OfficeModal({
           <label className={labelClass}>Term length (years)</label>
           <input type="number" min="1" max="20" step="1" className={fieldClass} value={termYears}
             onChange={e => setTermYears(e.target.value)} placeholder="e.g. 4" />
-          <p className="mt-1 text-[11px] text-stone-500">
+          <p className="mt-0.5 text-[11px] text-stone-500">
             What the constitution sets — four years for the Bishop, two for the Secretary,
             Treasurer and every EXCO portfolio. Recording an election fills the end date in from
             this, and the holder stands as current until that date passes.
@@ -371,19 +371,19 @@ export function OfficeModal({
             <option key={r.key} value={r.key}>{r.label}</option>
           ))}
         </select>
-        <p className="mt-1 text-[11px] text-stone-500">
+        <p className="mt-0.5 text-[11px] text-stone-500">
           Whoever holds it gains this role and the outgoing holder loses it. Most posts grant
           nothing — leave it blank unless the post really carries system access.
         </p>
       </div>
 
       {holder && (
-        <div className="space-y-2 rounded-xl border-2 border-[#dbe9fb] bg-[#f8fbff] p-3">
+        <div className="space-y-1.5 rounded-xl border-2 border-[#dbe9fb] bg-[#f8fbff] p-2.5">
           <p className="text-[12px] font-bold text-[#1e3f75]">
             Currently held by {holder.name}
           </p>
 
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-1.5 sm:grid-cols-2">
             <div>
               <label className={labelClass}>Since</label>
               <input type="date" className={fieldClass} value={termStart}
@@ -393,7 +393,7 @@ export function OfficeModal({
               <label className={labelClass}>Until</label>
               <input type="date" className={fieldClass} value={termEnd}
                 onChange={e => setTermEnd(e.target.value)} />
-              <p className="mt-1 text-[11px] text-stone-500">
+              <p className="mt-0.5 text-[11px] text-stone-500">
                 Leave blank while they are still serving.
               </p>
             </div>
@@ -415,7 +415,7 @@ export function OfficeModal({
                     Change
                   </Button>
                 </div>
-                <p className="mt-1 text-[11px] text-stone-500">
+                <p className="mt-0.5 text-[11px] text-stone-500">
                   Everything they have signed or approved moves with the address, and their
                   system role comes with them — the post is not disturbed. Their personal
                   contact email is separate and is not touched. You will be shown how many
@@ -436,7 +436,7 @@ export function OfficeModal({
           answers it. Both checkboxes that used to sit here were settings a
           person could put in a state the post cannot actually be in — an
           elected post seating three, a committee seating one. */}
-      <p className="rounded-lg bg-stone-50 px-3 py-2 text-[12px] text-stone-600">
+      <p className="rounded-lg bg-stone-50 px-2.5 py-1.5 text-[12px] text-stone-600">
         {seatsMany
           ? `A ${category?.label.replace(/s$/, "").toLowerCase() ?? "post"} seats as many people as it needs.`
           : "One holder at a time — this post seats a single person."}

@@ -81,7 +81,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 px-4 py-10 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 px-4 py-6 backdrop-blur-[2px]"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
@@ -91,7 +91,7 @@ export function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
-        className={`w-full ${width} space-y-3 rounded-3xl border border-[#dbe9fb] bg-white p-6 shadow-[0_24px_70px_rgba(22,51,94,0.24)] focus:outline-none`}
+        className={`w-full ${width} space-y-2 rounded-2xl border border-[#dbe9fb] bg-white p-4 shadow-[0_24px_70px_rgba(22,51,94,0.24)] focus:outline-none`}
       >
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
@@ -110,7 +110,7 @@ export function Modal({
 
         {children}
 
-        {footer && <div className="flex gap-2 border-t border-stone-100 pt-3">{footer}</div>}
+        {footer && <div className="flex gap-2 border-t border-stone-100 pt-2.5">{footer}</div>}
       </div>
     </div>
   );

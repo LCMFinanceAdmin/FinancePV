@@ -250,7 +250,7 @@ export default function PersonProfilePage() {
   const congregationName = congregations.find(c => c.id === person.congregation_id)?.name;
 
   return (
-    <div className="cloudlight-page max-w-6xl space-y-5">
+    <div className="cloudlight-page max-w-6xl space-y-3">
       {toast && (
         <div className={`fixed right-4 top-4 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm text-white shadow-lg ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.ok ? <CheckCircle2 size={15} /> : <X size={15} />} {toast.msg}
@@ -275,17 +275,17 @@ export default function PersonProfilePage() {
       </div>
 
       {/* ── Identity ───────────────────────────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="rounded-2xl border border-[#e4edf9] bg-white p-5 shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-            <Avatar name={person.full_name} photoPath={person.photo_path} size={96}
+      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+        <div className="rounded-2xl border border-[#e4edf9] bg-white p-4 shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <Avatar name={person.full_name} photoPath={person.photo_path} size={72}
               onEdit={canEdit ? () => photoInput.current?.click() : undefined} />
             <input ref={photoInput} type="file" accept="image/*" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); e.target.value = ""; }} />
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight text-stone-800">{person.full_name}</h1>
+                <h1 className="text-xl font-bold tracking-tight text-stone-800">{person.full_name}</h1>
                 {office && (
                   <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
                     {office.title}
@@ -293,7 +293,7 @@ export default function PersonProfilePage() {
                 )}
                 <PersonStatus status={person.status} />
               </div>
-              <p className="mt-0.5 text-[15px] text-stone-600">{cat.one}</p>
+              <p className="mt-0.5 text-[14px] text-stone-600">{cat.one}</p>
               {person.date_joined && (
                 <p className="mt-1 text-[13px] text-stone-500">Member since {fmtMonth(person.date_joined)}</p>
               )}
@@ -323,8 +323,8 @@ export default function PersonProfilePage() {
         {/* The identifying details, which are the sensitive ones — this card is
             only rendered for people who may manage the directory at all. */}
         {canEdit && (
-          <div className="rounded-2xl border border-[#e4edf9] bg-white p-5 shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+          <div className="rounded-2xl border border-[#e4edf9] bg-white p-4 shadow-[0_1px_3px_rgba(41,87,149,0.05)]">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
               <Field label="Full name" value={person.full_name} />
               <Field label="Known as" value={person.preferred_name} />
               <Field label="IC number" value={person.ic_no} />
@@ -357,7 +357,7 @@ export default function PersonProfilePage() {
             aria-controls={`panel-${t.key}`}
             tabIndex={tab === t.key ? 0 : -1}
             onClick={() => setTab(t.key)}
-            className={`shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2f5b9c] ${
+            className={`shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2f5b9c] ${
               tab === t.key
                 ? "border-[#2f5b9c] text-[#2f5b9c]"
                 : "border-transparent text-stone-600 hover:text-stone-900"}`}>
@@ -369,9 +369,9 @@ export default function PersonProfilePage() {
       {/* ── Overview ───────────────────────────────────────────────────── */}
       {tab === "overview" && (
         <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" className="grid gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="space-y-4">
+          <div className="space-y-3">
             <ProfileSection title="About">
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px] sm:grid-cols-3">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px] sm:grid-cols-3">
                 <Field label="Category" value={cat.one} />
                 <Field label="Primary role" value={office ? `${office.title}${office.role ? ` (${office.role})` : ""}` : cat.one} />
                 <Field label="Status" value={titleCase(person.status)} />
@@ -387,7 +387,7 @@ export default function PersonProfilePage() {
             </ProfileSection>
 
             <ProfileSection title="Contact information">
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
                 <Field label="Email" value={person.email} />
                 <Field label="Phone" value={person.phone} />
                 <Field label="Other phone" value={person.alt_phone} />
@@ -423,7 +423,7 @@ export default function PersonProfilePage() {
 
           {/* The same timeline as the tab, abbreviated — the questions people
               ask on arriving are "what do they do" and "since when". */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             {account && (
               <ProfileSection title="Access & role"
                 action={
@@ -474,7 +474,7 @@ export default function PersonProfilePage() {
 
       {/* ── Involvement ────────────────────────────────────────────────── */}
       {tab === "involvement" && (
-        <div id="panel-involvement" role="tabpanel" aria-labelledby="tab-involvement" className="space-y-4">
+        <div id="panel-involvement" role="tabpanel" aria-labelledby="tab-involvement" className="space-y-3">
           <MembershipPanel personId={person.id} congregations={congregations}
             canEdit={canEdit} onChanged={load} say={say} />
 

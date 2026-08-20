@@ -235,11 +235,11 @@ export function ProfileSection({ title, action, children }: {
 }) {
   return (
     <section className="rounded-2xl border border-[#e4edf9] bg-white shadow-[0_1px_2px_rgba(41,87,149,0.04)]">
-      <header className="flex flex-wrap items-center gap-3 border-b border-[#eef3fa] px-5 py-3">
+      <header className="flex flex-wrap items-center gap-2 border-b border-[#eef3fa] px-4 py-2">
         <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-stone-500">{title}</h2>
         {action && <div className="ml-auto">{action}</div>}
       </header>
-      <div className="px-5 py-4">{children}</div>
+      <div className="px-4 py-3">{children}</div>
     </section>
   );
 }
