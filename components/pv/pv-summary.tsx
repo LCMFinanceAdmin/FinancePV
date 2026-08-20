@@ -16,7 +16,7 @@
 // almost this, differing in ways nobody chose.
 
 import Link from "next/link";
-import { Wallet } from "lucide-react";
+import { Wallet, Layers, ChevronDown, ChevronRight } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export interface PVSummaryProps {
@@ -146,6 +146,76 @@ export function PVKeyFacts({
           ))}
         </dl>
       )}
+    </div>
+  );
+}
+
+/**
+ * A Bulk batch or a Master container, read the same way as a single voucher.
+ *
+ * All four of these — bulk and master, on the queue and on Finance Activity —
+ * laid everything on one horizontal line: chevron, badge, name, count, link,
+ * total, then two buttons. On a desktop it fits. On a phone the batch name is
+ * the flexible element, so it is the one that collapses, and the row ends up
+ * announcing "BULK · 3 PVs" for a batch whose name you cannot read.
+ *
+ * Same shape as PVSummary instead: the total is the largest thing and sits top
+ * right, the name is the line you scan, and the actions sit below a rule where
+ * a thumb can reach them.
+ */
+export function PVGroupSummary({
+  kind, name, total, countLabel, expanded, onToggle, href, hrefLabel, actions, children,
+}: {
+  kind: "BULK" | "MASTER";
+  name: string;
+  total: number;
+  countLabel: string;
+  expanded: boolean;
+  onToggle: () => void;
+  href: string;
+  hrefLabel: string;
+  actions?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const master = kind === "MASTER";
+  return (
+    <div className={`overflow-hidden rounded-xl bg-white shadow-sm ${
+      master ? "border-2 border-violet-200 bg-violet-50/30" : "border border-stone-200"}`}>
+      <div className="px-4 py-3">
+        <button onClick={onToggle}
+          className="flex w-full items-start justify-between gap-3 text-left transition-opacity hover:opacity-80">
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="flex items-center gap-1.5">
+              {expanded
+                ? <ChevronDown size={14} className={`shrink-0 ${master ? "text-violet-400" : "text-stone-400"}`} />
+                : <ChevronRight size={14} className={`shrink-0 ${master ? "text-violet-400" : "text-stone-400"}`} />}
+              <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${
+                master ? "bg-violet-100 text-violet-700" : "bg-green-100 text-green-700"}`}>
+                <Layers size={10} /> {kind}
+              </span>
+              <span className="truncate text-[11.5px] text-stone-500">{countLabel}</span>
+            </span>
+            {/* The name gets a line of its own, so it is never the thing that
+                gets squeezed out to make room for a button. */}
+            <span className="truncate pl-[22px] text-[15px] font-bold text-stone-900">{name}</span>
+          </span>
+          <span className={`shrink-0 text-[17px] font-bold tabular-nums ${
+            master ? "text-violet-800" : "text-stone-900"}`}>
+            {formatCurrency(total)}
+          </span>
+        </button>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2.5"
+          onClick={e => e.stopPropagation()}>
+          {actions}
+          <Link href={href}
+            className={`ml-auto inline-flex items-center gap-1 whitespace-nowrap text-[11.5px] font-semibold ${
+              master ? "text-violet-700" : "text-[#4a6da7]"} hover:underline`}>
+            {hrefLabel} →
+          </Link>
+        </div>
+      </div>
+      {children}
     </div>
   );
 }

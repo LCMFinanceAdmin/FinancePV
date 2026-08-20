@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { PVSummary } from "@/components/pv/pv-summary";
+import { PVSummary, PVGroupSummary } from "@/components/pv/pv-summary";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, roleLabel, computedBadgeStatus } from "@/lib/utils";
 import {
-  CheckCircle2, XCircle, Clock, Search, ChevronDown, ChevronRight,
+  CheckCircle2, XCircle, Clock, Search,
   Layers, CheckSquare, RotateCcw, BadgeCheck, Banknote, Hourglass, Plus,
 } from "lucide-react";
 import Link from "next/link";
@@ -440,44 +440,39 @@ export default function SignatoryActivityPage() {
     const groupCanAct = group.pvs.some(pv => isSignatory && !hasSigned(pv));
     const groupTotal  = group.pvs.reduce((s, p) => s + p.amount, 0);
     return (
-      <div key={group.runId} className="border border-stone-200 rounded-xl overflow-hidden bg-white shadow-sm">
-        <button
-          onClick={() => setExpandedBulk(s => { const n = new Set(s); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
-          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-stone-50 transition-colors">
-          {expanded ? <ChevronDown size={15} className="text-stone-400 shrink-0" /> : <ChevronRight size={15} className="text-stone-400 shrink-0" />}
-          <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 bg-green-100 text-green-700">
-            <Layers size={10} /> BULK
-          </span>
-          <span className="font-semibold text-stone-800 text-sm">{group.groupName}</span>
-          <span className="text-xs text-stone-400">{group.pvs.length} PVs</span>
-          <div className="ml-auto flex items-center gap-3">
-            <Link
-              href={`/bulk-pvs/${group.runId}`}
-              onClick={e => e.stopPropagation()}
-              className="text-[11px] text-[#4a6da7] hover:underline font-medium shrink-0">
-              View Batch →
-            </Link>
-            <span className="text-sm font-bold text-stone-700">{formatCurrency(groupTotal)}</span>
-            {groupCanAct && (
-              <div className="flex gap-1.5" onClick={e => e.stopPropagation()}>
-                <button onClick={() => handleApprove(group.pvs.filter(p => !hasSigned(p)).map(p => p.id))}
-                  className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700">
-                  <CheckCircle2 size={10} /> Approve All
-                </button>
-                <button onClick={() => handleReject(group.pvs.filter(p => !hasSigned(p)).map(p => p.id))}
-                  className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600">
-                  <XCircle size={10} /> Reject All
-                </button>
-              </div>
-            )}
+      <PVGroupSummary
+        key={group.runId}
+        kind="BULK"
+        name={group.groupName}
+        total={groupTotal}
+        countLabel={`${group.pvs.length} PVs`}
+        expanded={expanded}
+        onToggle={() => setExpandedBulk(s => {
+          const n = new Set(s);
+          if (n.has(group.runId)) n.delete(group.runId); else n.add(group.runId);
+          return n;
+        })}
+        href={`/bulk-pvs/${group.runId}`}
+        hrefLabel="View batch"
+        actions={groupCanAct ? (
+          <div className="flex flex-1 gap-2">
+            <button onClick={() => handleApprove(group.pvs.filter(p => !hasSigned(p)).map(p => p.id))}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 !text-[12.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5">
+              <CheckCircle2 size={13} /> Approve all
+            </button>
+            <button onClick={() => handleReject(group.pvs.filter(p => !hasSigned(p)).map(p => p.id))}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 !text-[12.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5">
+              <XCircle size={13} /> Reject all
+            </button>
           </div>
-        </button>
+        ) : undefined}
+      >
         {expanded && (
           <div className="border-t border-stone-100 divide-y divide-stone-100">
             {group.pvs.map(pv => <PVRow key={pv.id} pv={pv} compact />)}
           </div>
         )}
-      </div>
+      </PVGroupSummary>
     );
   }
 
@@ -603,32 +598,27 @@ export default function SignatoryActivityPage() {
             const masterTotal = mc.groups.reduce((s, g) => s + g.pvs.reduce((a, p) => a + p.amount, 0), 0);
             const masterPvCount = mc.groups.reduce((s, g) => s + g.pvs.length, 0);
             return (
-              <div key={mc.masterRunId} className="border-2 border-violet-200 rounded-xl overflow-hidden bg-violet-50/30 shadow-sm">
-                <button
-                  onClick={() => setExpandedBulk(s => { const n = new Set(s); n.has(mc.masterRunId) ? n.delete(mc.masterRunId) : n.add(mc.masterRunId); return n; })}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-violet-50/60 transition-colors">
-                  {expanded ? <ChevronDown size={15} className="text-violet-400 shrink-0" /> : <ChevronRight size={15} className="text-violet-400 shrink-0" />}
-                  <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 bg-violet-100 text-violet-700">
-                    <Layers size={10} /> MASTER
-                  </span>
-                  <span className="font-semibold text-stone-800 text-sm">{mc.masterName}</span>
-                  <span className="text-xs text-stone-400">{mc.groups.length} batches · {masterPvCount} PVs</span>
-                  <div className="ml-auto flex items-center gap-3">
-                    <Link
-                      href={`/bulk-pvs/${mc.masterRunId}`}
-                      onClick={e => e.stopPropagation()}
-                      className="text-[11px] text-violet-700 hover:underline font-medium shrink-0">
-                      View Master →
-                    </Link>
-                    <span className="text-sm font-bold text-violet-800">{formatCurrency(masterTotal)}</span>
-                  </div>
-                </button>
+              <PVGroupSummary
+                key={mc.masterRunId}
+                kind="MASTER"
+                name={mc.masterName}
+                total={masterTotal}
+                countLabel={`${mc.groups.length} batches · ${masterPvCount} PVs`}
+                expanded={expanded}
+                onToggle={() => setExpandedBulk(s => {
+                  const n = new Set(s);
+                  if (n.has(mc.masterRunId)) n.delete(mc.masterRunId); else n.add(mc.masterRunId);
+                  return n;
+                })}
+                href={`/bulk-pvs/${mc.masterRunId}`}
+                hrefLabel="View master"
+              >
                 {expanded && (
                   <div className="pl-4 pr-2 pb-2 pt-2 space-y-2 border-l-2 border-violet-200 ml-4">
                     {mc.groups.map(group => renderBulkGroup(group))}
                   </div>
                 )}
-              </div>
+              </PVGroupSummary>
             );
           })}
 

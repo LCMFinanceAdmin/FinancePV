@@ -8,12 +8,12 @@ import { formatCurrency, formatDate, getLOATier, computedBadgeStatus } from "@/l
 import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
-  Layers, ChevronDown, ChevronRight, ExternalLink, RotateCcw, Search, PenLine, Trash2, KeyRound,
+  ExternalLink, RotateCcw, Search, PenLine, Trash2, KeyRound,
   Link2 as LinkIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { NotificationsOptIn } from "@/components/notifications-optin";
-import { PVSummary } from "@/components/pv/pv-summary";
+import { PVSummary, PVGroupSummary } from "@/components/pv/pv-summary";
 
 
 interface BudgetSummary {
@@ -618,49 +618,41 @@ export default function SignatoryPage() {
     );
 
     return (
-      <div key={group.runId} className="border border-stone-200 rounded-xl overflow-hidden bg-white shadow-sm">
-        <div className="flex flex-col gap-1 px-4 py-3">
-          {/* Row 1: expand toggle + BULK badge + group name + PV count */}
-          <button
-            onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(group.runId) ? n.delete(group.runId) : n.add(group.runId); return n; })}
-            className="flex items-center gap-2 min-w-0 text-left hover:opacity-80 transition-opacity">
-            {isExpanded ? <ChevronDown size={14} className="text-stone-400 shrink-0" /> : <ChevronRight size={14} className="text-stone-400 shrink-0" />}
-            <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 bg-green-100 text-green-700">
-              <Layers size={10} /> BULK
-            </span>
-            <span className="font-semibold text-stone-800 text-sm truncate">{group.groupName}</span>
-            <span className="text-xs text-stone-400 shrink-0">{group.pvs.length} PVs</span>
-          </button>
-          {/* Row 2: amount + action buttons */}
-          <div className="flex items-center gap-2 pl-5">
-            <span className="text-sm font-bold text-stone-800 mr-1">{formatCurrency(groupTotal)}</span>
-            <Link href={`/bulk-pvs/${group.runId}`}
-              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 transition-colors">
-              <ExternalLink size={11} /> View Batch
-            </Link>
-            {isSignatoryUser && (<>
-              <button onClick={() => openPin(groupIds, "APPROVED")}
-                disabled={!!allGroupActed}
-                className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-100 text-stone-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>
-                <CheckCircle size={11} /> Approve All
-              </button>
-              <button onClick={() => openPin(groupIds, "REJECTED")}
-                disabled={!!allGroupActed}
-                className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${allGroupActed ? "bg-stone-100 text-stone-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600 text-white"}`}>
-                <XCircle size={11} /> Reject All
-              </button>
-            </>)}
+      <PVGroupSummary
+        key={group.runId}
+        kind="BULK"
+        name={group.groupName}
+        total={groupTotal}
+        countLabel={`${group.pvs.length} PVs`}
+        expanded={isExpanded}
+        onToggle={() => setExpandedBulk(prev => {
+          const n = new Set(prev);
+          if (n.has(group.runId)) n.delete(group.runId); else n.add(group.runId);
+          return n;
+        })}
+        href={`/bulk-pvs/${group.runId}`}
+        hrefLabel="View batch"
+        actions={isSignatoryUser ? (
+          <div className="flex flex-1 gap-2">
+            <button onClick={() => openPin(groupIds, "APPROVED")} disabled={!!allGroupActed}
+              className={allGroupActed ? "flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 !text-[12.5px] !font-bold text-stone-400 sm:flex-none sm:py-1.5" : "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 !text-[12.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5"}>
+              <CheckCircle size={14} /> Approve all
+            </button>
+            <button onClick={() => openPin(groupIds, "REJECTED")} disabled={!!allGroupActed}
+              className={allGroupActed ? "flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 !text-[12.5px] !font-bold text-stone-400 sm:flex-none sm:py-1.5" : "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 !text-[12.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5"}>
+              <XCircle size={14} /> Reject all
+            </button>
           </div>
-        </div>
-
+        ) : undefined}
+      >
         {isExpanded && (
-          <div className="divide-y divide-stone-100">
+          <div className="divide-y divide-stone-100 border-t border-stone-100">
             {group.pvs.map(pv => (
               <PVCard key={pv.id} pv={pv} compact />
             ))}
           </div>
         )}
-      </div>
+      </PVGroupSummary>
     );
   }
 
@@ -901,35 +893,27 @@ export default function SignatoryPage() {
             const masterTotal = mc.groups.reduce((s, g) => s + g.pvs.reduce((a, p) => a + (p.amount ?? 0), 0), 0);
             const masterPvCount = mc.groups.reduce((s, g) => s + g.pvs.length, 0);
             return (
-              <div key={mc.masterRunId} className="border-2 border-violet-200 rounded-xl overflow-hidden bg-violet-50/30 shadow-sm">
-                <div className="flex flex-col gap-1 px-4 py-3">
-                  {/* Row 1: expand toggle + MASTER badge + name + batch/PV count */}
-                  <button
-                    onClick={() => setExpandedBulk(prev => { const n = new Set(prev); n.has(mc.masterRunId) ? n.delete(mc.masterRunId) : n.add(mc.masterRunId); return n; })}
-                    className="flex items-center gap-2 min-w-0 text-left hover:opacity-80 transition-opacity">
-                    {isExpanded ? <ChevronDown size={14} className="text-violet-400 shrink-0" /> : <ChevronRight size={14} className="text-violet-400 shrink-0" />}
-                    <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full shrink-0 bg-violet-100 text-violet-700">
-                      <Layers size={10} /> MASTER
-                    </span>
-                    <span className="font-semibold text-stone-800 text-sm truncate">{mc.masterName}</span>
-                    <span className="text-xs text-stone-400 shrink-0">{mc.groups.length} batches · {masterPvCount} PVs</span>
-                  </button>
-                  {/* Row 2: amount + view master */}
-                  <div className="flex items-center gap-2 pl-5">
-                    <span className="text-sm font-bold text-violet-800 mr-1">{formatCurrency(masterTotal)}</span>
-                    <Link href={`/bulk-pvs/${mc.masterRunId}`}
-                      className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-violet-200 bg-white hover:bg-violet-50 text-violet-700 transition-colors">
-                      <ExternalLink size={11} /> View Master
-                    </Link>
-                  </div>
-                </div>
-
+              <PVGroupSummary
+                key={mc.masterRunId}
+                kind="MASTER"
+                name={mc.masterName}
+                total={masterTotal}
+                countLabel={`${mc.groups.length} batches · ${masterPvCount} PVs`}
+                expanded={isExpanded}
+                onToggle={() => setExpandedBulk(prev => {
+                  const n = new Set(prev);
+                  if (n.has(mc.masterRunId)) n.delete(mc.masterRunId); else n.add(mc.masterRunId);
+                  return n;
+                })}
+                href={`/bulk-pvs/${mc.masterRunId}`}
+                hrefLabel="View master"
+              >
                 {isExpanded && (
-                  <div className="pl-4 pr-2 pb-2 space-y-2 border-l-2 border-violet-200 ml-4">
+                  <div className="ml-4 space-y-2 border-l-2 border-violet-200 pb-2 pl-4 pr-2 pt-2">
                     {mc.groups.map(group => renderBulkGroup(group))}
                   </div>
                 )}
-              </div>
+              </PVGroupSummary>
             );
           })}
 
