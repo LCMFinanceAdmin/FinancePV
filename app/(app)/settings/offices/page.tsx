@@ -21,7 +21,7 @@ import {
   Landmark, Users, History, UserPlus, X, CheckCircle2, AlertCircle, Church, Briefcase,
   Plus, Pencil, LogOut,
 } from "lucide-react";
-import { OfficeModal, type OfficeCategory } from "@/components/offices/office-modal";
+import { OfficeModal, type OfficeCategory, type CurrentHolder } from "@/components/offices/office-modal";
 import { CategoryModal } from "@/components/offices/category-modal";
 import { HoldingModal, type HoldingRow } from "@/components/offices/holding-modal";
 
@@ -40,6 +40,8 @@ interface Office {
   /** The most it may verify on one voucher; null means no limit of its own. */
   /** Length of one term in years — 4 for the Bishop, 2 for the rest. */
   term_years: number | null;
+  /** What the post covers — see migration 156. */
+  responsibilities: string | null;
 }
 interface Holding {
   id: string; office_id: string; person_id: string;
@@ -146,6 +148,25 @@ export default function OfficesPage() {
     holdings.filter(h => h.office_id === officeId && !isRunning(h))
       .sort((a, b) => (b.term_end ?? b.term_start).localeCompare(a.term_end ?? a.term_start));
   const nameOf = (personId: string) => people.find(p => p.id === personId)?.full_name ?? "—";
+
+  /** Whoever holds the post now, for the edit form. Null when it is vacant. */
+  function holderOf(o: Office): CurrentHolder | null {
+    const h = currentOf(o.id);
+    if (!h) return null;
+    const person = people.find(x => x.id === h.person_id);
+    const addr = (person?.user_email ?? "").trim().toLowerCase();
+    return {
+      holdingId: h.id,
+      personId: h.person_id,
+      name: person?.full_name ?? "—",
+      // Only an address somebody actually signs in with. A contact address
+      // that has no account behind it cannot be renamed, and offering to
+      // would fail at the point of pressing.
+      login: addr && logins.some(l => l.email.trim().toLowerCase() === addr) ? addr : null,
+      termStart: h.term_start,
+      termEnd: h.term_end,
+    };
+  }
 
   /**
    * How long somebody has held a post, in the terms that post is held on.
@@ -462,6 +483,12 @@ export default function OfficesPage() {
                             </span>
                           )}
                         </div>
+                        {o.responsibilities && (
+                          <p className="mt-0.5 truncate text-[11px] text-stone-500"
+                            title={o.responsibilities}>
+                            {o.responsibilities}
+                          </p>
+                        )}
                       </td>
 
                       {/* Holder — one line each, in the same order as the terms
@@ -633,6 +660,7 @@ export default function OfficesPage() {
 
       {editingOffice && (
         <OfficeModal office={editingOffice} categories={categories} allOffices={offices}
+          holder={editingOffice.single_holder ? holderOf(editingOffice) : null}
           holdingCount={holdings.filter(h => h.office_id === editingOffice.id).length}
           onClose={() => setEditingOffice(null)}
           onSaved={async (msg) => { setEditingOffice(null); await load(); say(msg); }} say={say} />

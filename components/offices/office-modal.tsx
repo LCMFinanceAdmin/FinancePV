@@ -30,6 +30,25 @@ export interface OfficeRow {
   parent_office_id: string | null;
   /** Length of one term in years — 4 for the Bishop, 2 for the rest. */
   term_years: number | null;
+  /** What the post covers — see migration 156. */
+  responsibilities: string | null;
+}
+
+/**
+ * The person sitting in the post right now, if anybody is.
+ *
+ * Passed in rather than looked up here because the page has already worked out
+ * which term is running, and two answers to "who holds this" is one more than
+ * the question has.
+ */
+export interface CurrentHolder {
+  holdingId: string;
+  personId: string;
+  name: string;
+  /** The address they sign in with, which is not their contact address. */
+  login: string | null;
+  termStart: string;
+  termEnd: string | null;
 }
 
 export interface OfficeCategory {
@@ -44,10 +63,12 @@ const TENURES = [
 ];
 
 export function OfficeModal({
-  office, categories, allOffices, holdingCount = 0, onClose, onSaved, say,
+  office, categories, allOffices, holder = null, holdingCount = 0, onClose, onSaved, say,
 }: {
   office: OfficeRow | null;
   categories: OfficeCategory[];
+  /** Whoever holds it now — their term is edited here, alongside the post. */
+  holder?: CurrentHolder | null;
   /** Every post, so one can be chosen as the parent — and so this one's own
       descendants can be kept out of that list. */
   allOffices: OfficeRow[];
@@ -64,6 +85,16 @@ export function OfficeModal({
   const [tenure, setTenure] = useState<OfficeRow["tenure"]>(office?.tenure ?? "PERMANENT");
   const [grantsRole, setGrantsRole] = useState(office?.grants_role ?? "");
   const [termYears, setTermYears] = useState(office?.term_years != null ? String(office.term_years) : "");
+  const [responsibilities, setResponsibilities] = useState(office?.responsibilities ?? "");
+  // The sitting holder's term. Editable here because "since 11 Aug 2026" is
+  // read off this row on the register, and the only way to correct it was a
+  // separate modal reached from a pencil most people never found.
+  const [termStart, setTermStart] = useState(holder?.termStart ?? "");
+  const [termEnd, setTermEnd] = useState(holder?.termEnd ?? "");
+  // Changing the sign-in address is its own action, not part of Save — it
+  // rewrites the address across every table that records what the person did.
+  const [login, setLogin] = useState(holder?.login ?? "");
+  const [movingLogin, setMovingLogin] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [roles, setRoles] = useState<AppRole[]>([]);
@@ -129,16 +160,76 @@ export function OfficeModal({
       // somewhere with no way to see that it did.
       parent_office_id: reportsTo ? (parentId || null) : null,
       term_years: hasTerm && termYears.trim() !== "" ? Number(termYears) : null,
+      responsibilities: responsibilities.trim() || null,
     };
     const { error } = office
       ? await supabase.from("offices").update(payload).eq("id", office.id)
       : await supabase.from("offices").insert({ ...payload, sort_order: 500 });
-    setSaving(false);
     if (error) {
+      setSaving(false);
       setErr(error.code === "23505" ? "There is already a post with that name." : error.message);
       return;
     }
+
+    // The sitting holder's dates, if they were touched. A term that ends before
+    // it starts would read as current forever, since nothing between the two
+    // dates is ever today.
+    if (holder && (termStart !== holder.termStart || (termEnd || null) !== holder.termEnd)) {
+      if (!termStart) { setSaving(false); setErr("A term needs a start date"); return; }
+      if (termEnd && termEnd < termStart) {
+        setSaving(false); setErr("The term cannot end before it starts"); return;
+      }
+      const { error: tErr } = await supabase.from("office_holdings")
+        .update({ term_start: termStart, term_end: termEnd || null })
+        .eq("id", holder.holdingId);
+      if (tErr) { setSaving(false); setErr(tErr.message); return; }
+    }
+
+    setSaving(false);
     onSaved(office ? "Post updated" : "Post added");
+  }
+
+  /**
+   * Move the holder's sign-in address.
+   *
+   * The address is the identity — it is joined by text from around fifty
+   * columns, so this is never a one-field edit. rename_user_login moves the lot
+   * in one transaction, user_roles first, which is what carries the system role
+   * across with them. It is asked first what *would* move, because a number in
+   * the confirmation is what makes this safe to press.
+   */
+  async function moveLogin() {
+    if (!holder?.login) return;
+    const next = login.trim().toLowerCase();
+    if (!next || next === holder.login.toLowerCase()) return;
+    setErr(""); setMovingLogin(true);
+    try {
+      const { data: preview, error: dryErr } = await supabase.rpc("rename_user_login", {
+        p_old: holder.login, p_new: next, p_apply: false,
+      });
+      if (dryErr) throw new Error(dryErr.message);
+      const pv = preview as { rows: number; columns: number };
+      const ok = confirm(
+        [
+          `Change ${holder.name}'s sign-in address from ${holder.login} to ${next}?`,
+          `${pv.rows} record${pv.rows === 1 ? "" : "s"} across ${pv.columns} table${pv.columns === 1 ? "" : "s"} move with it` +
+            " — vouchers, approvals, notifications, their signature and PIN. Their role and this post come with them.",
+          `They must sign in as ${next} from now on. Their personal contact email is not affected.`,
+        ].join("\n\n"),
+      );
+      if (!ok) return;
+
+      const { data: done, error } = await supabase.rpc("rename_user_login", {
+        p_old: holder.login, p_new: next, p_apply: true,
+      });
+      if (error) throw new Error(error.message);
+      const d = done as { rows: number };
+      onSaved(`${holder.name} signs in as ${next} now — ${d.rows} records moved`);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Could not change the address");
+    } finally {
+      setMovingLogin(false);
+    }
   }
 
   /**
@@ -211,6 +302,17 @@ export function OfficeModal({
           placeholder="e.g. Media Desk, Assistant Dean" />
       </div>
 
+      <div>
+        <label className={labelClass}>What it covers</label>
+        <textarea className={`${fieldClass} min-h-[68px]`} value={responsibilities}
+          onChange={e => setResponsibilities(e.target.value)}
+          placeholder="e.g. Oversees the church's buildings and land — repairs, insurance, tenancy, and any purchase or disposal of property." />
+        <p className="mt-1 text-[11px] text-stone-500">
+          The decisions it carries and the part of the ministry it answers for. Shown on the
+          register, and when working out which post a decision belongs to.
+        </p>
+      </div>
+
       <div className="grid gap-2 sm:grid-cols-2">
         <div>
           <label className={labelClass}>Kind</label>
@@ -274,6 +376,61 @@ export function OfficeModal({
           nothing — leave it blank unless the post really carries system access.
         </p>
       </div>
+
+      {holder && (
+        <div className="space-y-2 rounded-xl border-2 border-[#dbe9fb] bg-[#f8fbff] p-3">
+          <p className="text-[12px] font-bold text-[#1e3f75]">
+            Currently held by {holder.name}
+          </p>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Since</label>
+              <input type="date" className={fieldClass} value={termStart}
+                onChange={e => setTermStart(e.target.value)} />
+            </div>
+            <div>
+              <label className={labelClass}>Until</label>
+              <input type="date" className={fieldClass} value={termEnd}
+                onChange={e => setTermEnd(e.target.value)} />
+              <p className="mt-1 text-[11px] text-stone-500">
+                Leave blank while they are still serving.
+              </p>
+            </div>
+          </div>
+
+          {/* Separate from Save, and confirmed with a count, because it is not a
+              field edit: the address is the identity, joined by text from about
+              fifty columns with almost no foreign keys behind it. */}
+          <div>
+            <label className={labelClass}>Signs in as</label>
+            {holder.login ? (
+              <>
+                <div className="flex gap-2">
+                  <input className={fieldClass} value={login} type="email"
+                    onChange={e => setLogin(e.target.value)} />
+                  <Button variant="secondary" loading={movingLogin}
+                    disabled={!login.trim() || login.trim().toLowerCase() === holder.login.toLowerCase()}
+                    onClick={moveLogin}>
+                    Change
+                  </Button>
+                </div>
+                <p className="mt-1 text-[11px] text-stone-500">
+                  Everything they have signed or approved moves with the address, and their
+                  system role comes with them — the post is not disturbed. Their personal
+                  contact email is separate and is not touched. You will be shown how many
+                  records move before anything happens.
+                </p>
+              </>
+            ) : (
+              <p className="text-[11px] text-amber-700">
+                No account signs in as this person yet, so there is no address to change.
+                Give them one from their profile under Access &amp; role.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* How many it seats is no longer a question, because the kind already
           answers it. Both checkboxes that used to sit here were settings a
