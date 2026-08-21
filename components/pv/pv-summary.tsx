@@ -41,27 +41,34 @@ export function PVSummary({
 }: PVSummaryProps) {
   const scope = ministry || dept || null;
 
-  // One fact per line, each a single line, in a fixed order. The previous
-  // version let the purpose wrap to two lines and the ministry sit as a pill
-  // beside it, so no two cards in a queue had their rows in the same places and
-  // the eye had to re-find the amount on every one.
+  // Sized down about four points from where this started, so a queue shows
+  // roughly half as many again per screen. It can afford to be small because
+  // the page allows pinch-zoom (see the viewport in app/layout.tsx) — anyone
+  // who finds it tight magnifies it, rather than everyone paying for the
+  // largest reader on every card.
+  //
+  // Nothing here can overlap: every row is its own flex line with a gap, every
+  // text node that could run long is truncate or line-clamp, and the two halves
+  // of a row are min-w-0 (so they may shrink) or shrink-0 (so they may not).
+  // Overlap in the old card came from a wrapping paragraph sharing a line with
+  // absolutely nothing stopping the buttons beside it.
   const body = (
     <>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[11.5px] font-medium text-stone-500">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 truncate text-[10.5px] font-medium text-stone-500">
           {date ? formatDate(date) : "—"}
         </span>
-        <span className="shrink-0 text-[18px] font-bold leading-none tabular-nums text-stone-900">
+        <span className="shrink-0 text-[14.5px] font-bold leading-none tabular-nums text-stone-900">
           {formatCurrency(amount)}
         </span>
       </div>
 
-      <div className="mt-1.5 truncate text-[15.5px] font-bold leading-tight text-stone-900">
+      <div className="mt-1 truncate text-[12.5px] font-bold leading-tight text-stone-900">
         {payee || "—"}
       </div>
 
       {purpose && (
-        <div className="mt-1 truncate text-[13px] leading-snug text-stone-600">{purpose}</div>
+        <div className="mt-0.5 truncate text-[11px] leading-snug text-stone-600">{purpose}</div>
       )}
     </>
   );
@@ -70,21 +77,18 @@ export function PVSummary({
     <div className="min-w-0">
       {id ? <Link href={`/my-pvs/${id}`} className="block min-w-0">{body}</Link> : body}
 
-      {/* Reference and scope on one quiet line. A ministry that opens its
-          budget stays clickable, but as text rather than a third pill
-          competing with the amount and the status. */}
       {(scope || pvNo) && (
-        <div className="mt-1.5 flex items-center gap-1.5 truncate text-[11px] text-stone-400">
+        <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-stone-400">
           {scope && (
             onMinistryClick ? (
               <button onClick={e => { e.preventDefault(); e.stopPropagation(); onMinistryClick(); }}
-                className="inline-flex min-w-0 items-center gap-1 !text-[11px] !font-semibold text-[#4a6da7] hover:underline">
-                <Wallet size={10} className="shrink-0" />
+                className="inline-flex min-w-0 items-center gap-0.5 !text-[10px] !font-semibold text-[#4a6da7] hover:underline">
+                <Wallet size={9} className="shrink-0" />
                 <span className="truncate">{scope}</span>
               </button>
             ) : (
-              <span className="inline-flex min-w-0 items-center gap-1 font-semibold text-[#4a6da7]">
-                <Wallet size={10} className="shrink-0" />
+              <span className="inline-flex min-w-0 items-center gap-0.5 font-semibold text-[#4a6da7]">
+                <Wallet size={9} className="shrink-0" />
                 <span className="truncate">{scope}</span>
               </span>
             )
@@ -94,13 +98,12 @@ export function PVSummary({
         </div>
       )}
 
-      {/* Status on the left, whatever the page wants to offer on the right —
-          always the last row, always the same height, so a column of cards
-          lines up. */}
+      {/* Status left, page controls right. Wraps as a whole rather than letting
+          one side ride over the other. */}
       {(badge || footer) && (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-stone-100 pt-2">
-          <span className="flex min-w-0 flex-wrap items-center gap-1.5">{badge}</span>
-          {footer && <span className="flex shrink-0 items-center gap-2">{footer}</span>}
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-stone-100 pt-1.5">
+          <span className="flex min-w-0 flex-wrap items-center gap-1">{badge}</span>
+          {footer && <span className="flex shrink-0 items-center gap-1.5">{footer}</span>}
         </div>
       )}
     </div>
@@ -195,7 +198,7 @@ export function PVGroupSummary({
   return (
     <div className={`overflow-hidden rounded-xl bg-white shadow-sm ${
       master ? "border-2 border-violet-200 bg-violet-50/30" : "border border-stone-200"}`}>
-      <div className="px-4 py-3">
+      <div className="px-3 py-2.5">
         <button onClick={onToggle}
           className="flex w-full items-start justify-between gap-3 text-left transition-opacity hover:opacity-80">
           <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -203,27 +206,27 @@ export function PVGroupSummary({
               {expanded
                 ? <ChevronDown size={14} className={`shrink-0 ${master ? "text-violet-400" : "text-stone-400"}`} />
                 : <ChevronRight size={14} className={`shrink-0 ${master ? "text-violet-400" : "text-stone-400"}`} />}
-              <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${
+              <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-bold ${
                 master ? "bg-violet-100 text-violet-700" : "bg-green-100 text-green-700"}`}>
                 <Layers size={10} /> {kind}
               </span>
-              <span className="truncate text-[11.5px] text-stone-500">{countLabel}</span>
+              <span className="truncate text-[10.5px] text-stone-500">{countLabel}</span>
             </span>
             {/* The name gets a line of its own, so it is never the thing that
                 gets squeezed out to make room for a button. */}
-            <span className="truncate pl-[22px] text-[15px] font-bold text-stone-900">{name}</span>
+            <span className="truncate pl-[20px] text-[12.5px] font-bold text-stone-900">{name}</span>
           </span>
-          <span className={`shrink-0 text-[17px] font-bold tabular-nums ${
+          <span className={`shrink-0 text-[14.5px] font-bold tabular-nums ${
             master ? "text-violet-800" : "text-stone-900"}`}>
             {formatCurrency(total)}
           </span>
         </button>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2.5"
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-stone-100 pt-2"
           onClick={e => e.stopPropagation()}>
           {actions}
           <Link href={href}
-            className={`ml-auto inline-flex items-center gap-1 whitespace-nowrap text-[11.5px] font-semibold ${
+            className={`ml-auto inline-flex items-center gap-1 whitespace-nowrap text-[10.5px] font-semibold ${
               master ? "text-violet-700" : "text-[#4a6da7]"} hover:underline`}>
             {hrefLabel} →
           </Link>

@@ -500,7 +500,7 @@ export default function SignatoryPage() {
 
     return (
       <div className={`bg-white ${compact ? "border-t border-stone-100" : "border border-stone-200 rounded-xl shadow-sm"} hover:border-[#4a6da7]/40 hover:shadow-sm transition-all`}>
-        <div className="px-4 py-3.5">
+        <div className="px-3 py-2.5">
           <PVSummary
             id={pv.id}
             pvNo={pv.pv_no}
@@ -572,11 +572,11 @@ export default function SignatoryPage() {
               {isSignatoryUser && !userHasActed && isRelevantForRole && (
                 <div className="flex flex-1 gap-2">
                   <button onClick={() => openPin([pv.id!], "APPROVED")}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 !text-[13px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5">
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5">
                     <CheckCircle size={15} /> Approve
                   </button>
                   <button onClick={() => openPin([pv.id!], "REJECTED")}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 !text-[13px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5">
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5">
                     <XCircle size={15} /> Reject
                   </button>
                 </div>
@@ -636,11 +636,11 @@ export default function SignatoryPage() {
         actions={isSignatoryUser ? (
           <div className="flex flex-1 gap-2">
             <button onClick={() => openPin(groupIds, "APPROVED")} disabled={!!allGroupActed}
-              className={allGroupActed ? "flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 !text-[12.5px] !font-bold text-stone-400 sm:flex-none sm:py-1.5" : "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 !text-[12.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5"}>
+              className={allGroupActed ? "flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-2.5 py-1.5 !text-[11.5px] !font-bold text-stone-400 sm:flex-none sm:py-1.5" : "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5"}>
               <CheckCircle size={14} /> Approve all
             </button>
             <button onClick={() => openPin(groupIds, "REJECTED")} disabled={!!allGroupActed}
-              className={allGroupActed ? "flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 !text-[12.5px] !font-bold text-stone-400 sm:flex-none sm:py-1.5" : "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 !text-[12.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5"}>
+              className={allGroupActed ? "flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-2.5 py-1.5 !text-[11.5px] !font-bold text-stone-400 sm:flex-none sm:py-1.5" : "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5"}>
               <XCircle size={14} /> Reject all
             </button>
           </div>

@@ -353,7 +353,7 @@ export default function SignatoryActivityPage() {
     const isApproved    = pv.status === "APPROVED";
 
     return (
-      <div className={`flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 ${compact ? "bg-stone-50/60" : "bg-white border border-stone-200 rounded-xl hover:shadow-sm"} transition-all group`}>
+      <div className={`flex flex-col gap-1.5 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3 ${compact ? "bg-stone-50/60" : "bg-white border border-stone-200 rounded-xl hover:shadow-sm"} transition-all group`}>
         {canAct && (
           <input type="checkbox" checked={isSel} onChange={() => {
             setSelected(s => { const n = new Set(s); n.has(pv.id) ? n.delete(pv.id) : n.add(pv.id); return n; });
@@ -394,11 +394,11 @@ export default function SignatoryActivityPage() {
           {canAct && (
             <div className="mt-1.5 flex items-center justify-end gap-2">
               <button onClick={() => handleApprove([pv.id])}
-                className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 !text-[12.5px] !font-bold text-white transition-colors hover:bg-green-700">
+                className="flex items-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700">
                 <CheckCircle2 size={13} /> Approve
               </button>
               <button onClick={() => handleReject([pv.id])}
-                className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 !text-[12.5px] !font-bold text-white transition-colors hover:bg-red-600">
+                className="flex items-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600">
                 <XCircle size={13} /> Reject
               </button>
             </div>
@@ -458,11 +458,11 @@ export default function SignatoryActivityPage() {
         actions={groupCanAct ? (
           <div className="flex flex-1 gap-2">
             <button onClick={() => handleApprove(group.pvs.filter(p => !hasSigned(p)).map(p => p.id))}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 !text-[12.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5">
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5">
               <CheckCircle2 size={13} /> Approve all
             </button>
             <button onClick={() => handleReject(group.pvs.filter(p => !hasSigned(p)).map(p => p.id))}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 !text-[12.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5">
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5">
               <XCircle size={13} /> Reject all
             </button>
           </div>

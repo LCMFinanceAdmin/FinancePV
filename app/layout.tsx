@@ -13,6 +13,12 @@ export const viewport: Viewport = {
   themeColor: "#eff8ff",
   width: "device-width",
   initialScale: 1,
+  // Stated rather than left to the default, because the default is the browser's
+  // and an installed PWA in standalone mode does not always keep it. Anyone who
+  // finds the type small can pinch to five times size — which is also why the
+  // type can afford to be small in the first place.
+  maximumScale: 5,
+  userScalable: true,
 };
 
 const splashStyles = `
