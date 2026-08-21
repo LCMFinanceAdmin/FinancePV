@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { NotificationsOptIn } from "@/components/notifications-optin";
 import { PVSummary, PVGroupSummary } from "@/components/pv/pv-summary";
+import { chipRow } from "@/lib/table-styles";
 
 
 interface BudgetSummary {
@@ -705,7 +706,7 @@ export default function SignatoryPage() {
       </div>
 
       {/* Role-aware status filter tabs */}
-      <div className="flex gap-2 flex-wrap">
+      <div className={chipRow}>
         {(isGM ? [
           { key: "pending",           label: "Pending",                   count: pendingPvsAll.length,          activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
           { key: "pending_signatory", label: "Pending Signatory Approval", count: pendingSignatoryPvsAll.length, activeColor: "bg-orange-500 text-white border-transparent", dot: "bg-orange-100 text-orange-700" },
@@ -721,7 +722,7 @@ export default function SignatoryPage() {
             <button
               key={tab.key}
               onClick={() => setStatusFilter(tab.key as "pending" | "pending_signatory" | "approved" | "paid")}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${active ? `${tab.activeColor} shadow-sm` : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition-colors ${active ? `${tab.activeColor} shadow-sm` : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
             >
               {tab.label}
               <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? "bg-white/25 text-white" : tab.dot}`}>

@@ -32,65 +32,79 @@ export interface PVSummaryProps {
   badge?: React.ReactNode;
   /** Ministry chips open a budget popup on the queue; plain text elsewhere. */
   onMinistryClick?: () => void;
+  /** Page-specific controls, pinned to the card's last row beside the status. */
+  footer?: React.ReactNode;
 }
 
 export function PVSummary({
-  id, pvNo, payee, amount, ministry, dept, purpose, date, badge, onMinistryClick,
+  id, pvNo, payee, amount, ministry, dept, purpose, date, badge, onMinistryClick, footer,
 }: PVSummaryProps) {
   const scope = ministry || dept || null;
+
+  // One fact per line, each a single line, in a fixed order. The previous
+  // version let the purpose wrap to two lines and the ministry sit as a pill
+  // beside it, so no two cards in a queue had their rows in the same places and
+  // the eye had to re-find the amount on every one.
   const body = (
     <>
-      {/* When and how much — the two facts that decide whether to read on. */}
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-[11.5px] font-medium text-stone-500">
           {date ? formatDate(date) : "—"}
         </span>
-        <span className="shrink-0 text-[17px] font-bold tabular-nums text-stone-900">
+        <span className="shrink-0 text-[18px] font-bold leading-none tabular-nums text-stone-900">
           {formatCurrency(amount)}
         </span>
       </div>
 
-      {/* Who it pays. The largest text on the card, because on a queue of
-          twenty this is what is being scanned for. */}
-      <div className="mt-0.5 truncate text-[15px] font-bold text-stone-900">{payee || "—"}</div>
+      <div className="mt-1.5 truncate text-[15.5px] font-bold leading-tight text-stone-900">
+        {payee || "—"}
+      </div>
 
-      {/* What it is for, with room to actually be read — two lines rather than
-          the tail end of one shared with the ministry chip. */}
-      {(scope || purpose) && (
-        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+      {purpose && (
+        <div className="mt-1 truncate text-[13px] leading-snug text-stone-600">{purpose}</div>
+      )}
+    </>
+  );
+
+  return (
+    <div className="min-w-0">
+      {id ? <Link href={`/my-pvs/${id}`} className="block min-w-0">{body}</Link> : body}
+
+      {/* Reference and scope on one quiet line. A ministry that opens its
+          budget stays clickable, but as text rather than a third pill
+          competing with the amount and the status. */}
+      {(scope || pvNo) && (
+        <div className="mt-1.5 flex items-center gap-1.5 truncate text-[11px] text-stone-400">
           {scope && (
             onMinistryClick ? (
-              <button
-                onClick={e => { e.preventDefault(); e.stopPropagation(); onMinistryClick(); }}
-                className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 !text-[11px] !font-semibold text-[#4a6da7] transition-colors hover:bg-[#4a6da7]/20">
+              <button onClick={e => { e.preventDefault(); e.stopPropagation(); onMinistryClick(); }}
+                className="inline-flex min-w-0 items-center gap-1 !text-[11px] !font-semibold text-[#4a6da7] hover:underline">
                 <Wallet size={10} className="shrink-0" />
                 <span className="truncate">{scope}</span>
               </button>
             ) : (
-              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 text-[11px] font-semibold text-[#4a6da7]">
+              <span className="inline-flex min-w-0 items-center gap-1 font-semibold text-[#4a6da7]">
                 <Wallet size={10} className="shrink-0" />
                 <span className="truncate">{scope}</span>
               </span>
             )
           )}
-          {purpose && (
-            <span className="line-clamp-2 min-w-0 text-[12.5px] text-stone-600">{purpose}</span>
-          )}
+          {scope && pvNo && <span className="shrink-0">·</span>}
+          {pvNo && <span className="shrink-0 font-mono">{pvNo}</span>}
         </div>
       )}
 
-      {/* The reference and where it has got to — small print, because by the
-          time you care about these you have already chosen this row. */}
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-        {pvNo && <span className="font-mono text-[11px] text-stone-400">{pvNo}</span>}
-        {badge}
-      </div>
-    </>
+      {/* Status on the left, whatever the page wants to offer on the right —
+          always the last row, always the same height, so a column of cards
+          lines up. */}
+      {(badge || footer) && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-stone-100 pt-2">
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5">{badge}</span>
+          {footer && <span className="flex shrink-0 items-center gap-2">{footer}</span>}
+        </div>
+      )}
+    </div>
   );
-
-  return id
-    ? <Link href={`/my-pvs/${id}`} className="block min-w-0">{body}</Link>
-    : <div className="min-w-0">{body}</div>;
 }
 
 /**

@@ -400,7 +400,14 @@ export default function GMClaimsPage() {
   // Custom (GM-added) committee/district/personal options — the standard LCM
   // ministries live in LCM_MINISTRIES; these are the extras the GM types in.
   const [gmCommittees, setGmCommittees] = useState<{ id: string; name: string }[]>([]);
+  // A claims table is nine columns of ledger. On a phone that is a page you
+  // pan around rather than read, so the card view — which already existed and
+  // was one tap away — is what a narrow screen opens on. The toggle still
+  // works; this only changes where it starts.
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) setViewMode("cards");
+  }, []);
   const [bankSummary, setBankSummary] = useState<{ name: string; bank_name: string; balance: number; tag: string }[]>([]);
 
   const [showModal, setShowModal] = useState(false);

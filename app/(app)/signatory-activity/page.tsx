@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { PVSummary, PVGroupSummary } from "@/components/pv/pv-summary";
+import { chipRow } from "@/lib/table-styles";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, roleLabel, computedBadgeStatus } from "@/lib/utils";
 import {
@@ -324,7 +325,7 @@ export default function SignatoryActivityPage() {
   function ApprovalProgress({ pv }: { pv: PendingPV }) {
     const required = pv.status === "PENDING_SIGNATORY" ? getRequiredSigs(pv.loa_required) : ["GENERAL_MANAGER"];
     return (
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className={chipRow}>
         {required.map(role => {
           const done     = (pv.approvals ?? []).find(a => a.role === role && a.action === "APPROVED");
           const rejected = (pv.approvals ?? []).find(a => a.role === role && a.action === "REJECTED");
@@ -352,7 +353,7 @@ export default function SignatoryActivityPage() {
     const isApproved    = pv.status === "APPROVED";
 
     return (
-      <div className={`flex items-center gap-3 px-4 py-3 ${compact ? "bg-stone-50/60" : "bg-white border border-stone-200 rounded-xl hover:shadow-sm"} transition-all group`}>
+      <div className={`flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 ${compact ? "bg-stone-50/60" : "bg-white border border-stone-200 rounded-xl hover:shadow-sm"} transition-all group`}>
         {canAct && (
           <input type="checkbox" checked={isSel} onChange={() => {
             setSelected(s => { const n = new Set(s); n.has(pv.id) ? n.delete(pv.id) : n.add(pv.id); return n; });
@@ -513,7 +514,7 @@ export default function SignatoryActivityPage() {
 
       {/* ── Colour pillar tabs ────────────────────────────────── */}
       {viewMode === "activity" && (
-      <div className="flex gap-2 flex-wrap">
+      <div className={chipRow}>
         {TAB_CONFIG.map(tab => {
           const active = statusTab === tab.key;
           const count  = tabCounts[tab.key];
@@ -521,7 +522,7 @@ export default function SignatoryActivityPage() {
             <button
               key={tab.key}
               onClick={() => { setStatusTab(tab.key); setSearch(""); setSelected(new Set()); }}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${active ? tab.activeColor : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition-colors ${active ? tab.activeColor : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
             >
               {tab.icon}
               {tab.label}

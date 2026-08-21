@@ -54,3 +54,16 @@ export const rowBtnPrimary =
 /** The term dates, which are one of the three things worth spotting at a glance. */
 export const termChip =
   "inline-block rounded bg-[#f4f9ff] px-1.5 py-0.5 !text-[11.5px] font-semibold text-[#2f5b9c] whitespace-nowrap";
+
+/**
+ * A row of filter chips that stays a row.
+ *
+ * Five status chips wrap to four lines at 376px, which pushes the list itself
+ * below the fold before anything has been read. They scroll sideways instead —
+ * the scrollbar is hidden because a row of pills that runs off the edge already
+ * reads as scrollable, and above sm they simply wrap as before.
+ *
+ * Chips inside need `shrink-0`, or flex will compress them rather than overflow.
+ */
+export const chipRow =
+  "flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0";
