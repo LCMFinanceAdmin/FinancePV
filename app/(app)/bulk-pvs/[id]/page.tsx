@@ -149,7 +149,10 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
           <dd className="min-w-0 flex-1 border-b border-black font-semibold">{pv.payee_name}</dd>
         </div>
         <div className="flex items-end gap-2 sm:col-span-2">
-          <dt className="shrink-0 font-bold leading-tight">Payee Bank A/C No <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收款人账户号码</span>：</dt>
+          <dt className="shrink-0 font-bold leading-tight">
+            Payee Bank A/C No<br />
+            <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收款人账户号码</span>：
+          </dt>
           <dd className="min-w-0 flex-1 break-words border-b border-black">{bLine}{acct ? `   A/C: ${acct}` : ""}</dd>
         </div>
         <div className="flex items-end gap-2 sm:col-span-2">
