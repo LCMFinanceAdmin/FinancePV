@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { formatDateTime, roleLabel } from "@/lib/utils";
+import { formatDateTime, roleLabel, formatCurrency } from "@/lib/utils";
 import type { PV, UserProfile, PVApproval, BulkRun } from "@/lib/types";
 import dynamic from "next/dynamic";
 const PVPdfDownload     = dynamic(() => import("@/components/pv/pv-pdf-download"),      { ssr: false });
@@ -113,7 +113,7 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
       <div className="flex items-start gap-4 mb-1">
         <div className="flex items-center gap-3 flex-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="https://www.lutheran.org.my/wp-content/uploads/2018/09/LCM-Logo-120px.png"
+          <img src="/lcm-logo.svg"
             alt="LCM" className="w-11 h-14 object-contain shrink-0" />
         </div>
         <div className="border border-black shrink-0 text-[12px]" style={{ width: 165 }}>
@@ -1297,7 +1297,7 @@ export default function BulkPVPage() {
             <div className="flex items-start gap-4 mb-1">
               <div className="flex items-center gap-3 flex-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="https://www.lutheran.org.my/wp-content/uploads/2018/09/LCM-Logo-120px.png"
+                <img src="/lcm-logo.svg"
                   alt="LCM" className="w-11 h-14 object-contain shrink-0" />
               </div>
               <div className="border border-black shrink-0 text-[12px]" style={{ width: 200 }}>
@@ -1492,12 +1492,62 @@ export default function BulkPVPage() {
         return (
           <div key={pv.id} className="bulk-pv-voucher max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0" style={{ pageBreakBefore: "always", breakBefore: "page" } as React.CSSProperties}>
             {/* Per-PV header bar */}
-          <div className="print:hidden flex items-center gap-3 mb-2 px-1">
-            <span className="text-sm font-semibold text-stone-600">{pv.pv_no} — {pv.payee_name}</span>
-            <PVPdfDownload pv={pv} />
+          {/*
+            The voucher below is an A4 facsimile 560px wide, so on a phone it is
+            a page you pan around — and the signature space, which is the only
+            way to sign an individual PV in a batch, sits off the right edge.
+            Signing was wired the whole time and simply out of reach.
+
+            So the facts and the action come first, at a size that fits, and the
+            form stays underneath for anyone checking its wording.
+          */}
+          <div className="print:hidden mb-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="min-w-0 truncate text-[10.5px] font-medium text-stone-500">
+                Attachment {i + 1} · <span className="font-mono">{pv.pv_no}</span>
+              </span>
+              <span className="shrink-0 text-[14.5px] font-bold leading-none tabular-nums text-stone-900">
+                {formatCurrency(pv.amount ?? 0)}
+              </span>
+            </div>
+            <div className="mt-1 truncate text-[12.5px] font-bold leading-tight text-stone-900">
+              {pv.payee_name}
+            </div>
+            {pv.purpose && (
+              <div className="mt-0.5 truncate text-[11px] text-stone-600">{pv.purpose}</div>
+            )}
+
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-stone-100 pt-1.5">
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                {sigSigned ? (
+                  <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-700">
+                    ✓ Signed
+                  </span>
+                ) : (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                    Awaiting signature
+                  </span>
+                )}
+                {gmSigned && (
+                  <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-500">
+                    GM verified
+                  </span>
+                )}
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                {((isSig && !sigSigned) || (isGM && !gmSigned)) && (
+                  <button onClick={() => openSignModal(pv.id)}
+                    aria-label={`Sign ${pv.pv_no}`} title={`Sign ${pv.pv_no}`}
+                    className="flex items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700">
+                    <CheckCircle2 size={15} /> Sign
+                  </button>
+                )}
+                <PVPdfDownload pv={pv} />
+              </span>
+            </div>
           </div>
 
-          <div className="bg-white shadow-lg rounded-xl print:shadow-none print:rounded-none">
+          <div className="overflow-x-auto rounded-xl bg-white shadow-lg print:overflow-visible print:rounded-none print:shadow-none">
               <PVVoucher
                 pv={pv} idx={i}
                 finSigData={finSigData}

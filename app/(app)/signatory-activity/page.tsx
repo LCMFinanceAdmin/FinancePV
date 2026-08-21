@@ -395,11 +395,11 @@ export default function SignatoryActivityPage() {
             <div className="mt-1.5 flex items-center justify-end gap-2">
               <button onClick={() => handleApprove([pv.id])}
                 className="flex items-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700">
-                <CheckCircle2 size={13} /> Approve
+                <CheckCircle2 size={15} />
               </button>
               <button onClick={() => handleReject([pv.id])}
                 className="flex items-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600">
-                <XCircle size={13} /> Reject
+                <XCircle size={15} />
               </button>
             </div>
           )}
@@ -459,11 +459,11 @@ export default function SignatoryActivityPage() {
           <div className="flex flex-1 gap-2">
             <button onClick={() => handleApprove(group.pvs.filter(p => !hasSigned(p)).map(p => p.id))}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5">
-              <CheckCircle2 size={13} /> Approve all
+              <CheckCircle2 size={14} /> All
             </button>
             <button onClick={() => handleReject(group.pvs.filter(p => !hasSigned(p)).map(p => p.id))}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5">
-              <XCircle size={13} /> Reject all
+              <XCircle size={14} /> All
             </button>
           </div>
         ) : undefined}

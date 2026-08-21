@@ -2247,7 +2247,7 @@ export default function PVDetailPage() {
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="https://www.lutheran.org.my/wp-content/uploads/2018/09/LCM-Logo-120px.png"
+                  src="/lcm-logo.svg"
                   alt="LCM Logo"
                   className="w-11 h-14 object-contain shrink-0"
                   style={{ imageRendering: "crisp-edges" }}

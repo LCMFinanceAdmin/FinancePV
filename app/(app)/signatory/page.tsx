@@ -572,12 +572,14 @@ export default function SignatoryPage() {
               {isSignatoryUser && !userHasActed && isRelevantForRole && (
                 <div className="flex flex-1 gap-2">
                   <button onClick={() => openPin([pv.id!], "APPROVED")}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5">
-                    <CheckCircle size={15} /> Approve
+                    aria-label="Approve" title="Approve"
+                    className="flex flex-1 items-center justify-center rounded-lg bg-green-600 px-3 py-1.5 text-white transition-colors hover:bg-green-700 sm:flex-none">
+                    <CheckCircle size={16} />
                   </button>
                   <button onClick={() => openPin([pv.id!], "REJECTED")}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5">
-                    <XCircle size={15} /> Reject
+                    aria-label="Reject" title="Reject"
+                    className="flex flex-1 items-center justify-center rounded-lg bg-red-500 px-3 py-1.5 text-white transition-colors hover:bg-red-600 sm:flex-none">
+                    <XCircle size={16} />
                   </button>
                 </div>
               )}
@@ -637,11 +639,11 @@ export default function SignatoryPage() {
           <div className="flex flex-1 gap-2">
             <button onClick={() => openPin(groupIds, "APPROVED")} disabled={!!allGroupActed}
               className={allGroupActed ? "flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-2.5 py-1.5 !text-[11.5px] !font-bold text-stone-400 sm:flex-none sm:py-1.5" : "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700 sm:flex-none sm:py-1.5"}>
-              <CheckCircle size={14} /> Approve all
+              <CheckCircle size={14} /> All
             </button>
             <button onClick={() => openPin(groupIds, "REJECTED")} disabled={!!allGroupActed}
               className={allGroupActed ? "flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-2.5 py-1.5 !text-[11.5px] !font-bold text-stone-400 sm:flex-none sm:py-1.5" : "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600 sm:flex-none sm:py-1.5"}>
-              <XCircle size={14} /> Reject all
+              <XCircle size={14} /> All
             </button>
           </div>
         ) : undefined}
@@ -709,11 +711,11 @@ export default function SignatoryPage() {
       <div className={chipRow}>
         {(isGM ? [
           { key: "pending",           label: "Pending",                   count: pendingPvsAll.length,          activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
-          { key: "pending_signatory", label: "Pending Signatory Approval", count: pendingSignatoryPvsAll.length, activeColor: "bg-orange-500 text-white border-transparent", dot: "bg-orange-100 text-orange-700" },
+          { key: "pending_signatory", label: "Pending", count: pendingSignatoryPvsAll.length, activeColor: "bg-orange-500 text-white border-transparent", dot: "bg-orange-100 text-orange-700" },
           { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
           { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
         ] : [
-          { key: "pending_signatory", label: "Pending Signatory Approval", count: pendingSignatoryPvsAll.length, activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
+          { key: "pending_signatory", label: "Pending", count: pendingSignatoryPvsAll.length, activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
           { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
           { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
         ] as { key: "pending" | "pending_signatory" | "approved" | "paid"; label: string; count: number; activeColor: string; dot: string }[]).map(tab => {
