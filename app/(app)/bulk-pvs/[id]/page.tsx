@@ -135,35 +135,32 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-[13px] mt-3" style={{ tableLayout: "fixed", minWidth: 340 }}>
-        <colgroup><col style={{ width: "22%" }} /><col style={{ width: "43%" }} /><col style={{ width: "10%" }} /><col style={{ width: "25%" }} /></colgroup>
-        <tbody>
-          <tr>
-            <td className="font-bold py-1.5 pr-1 align-bottom whitespace-nowrap">Applicant <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>申请者</span>:</td>
-            <td className="border-b border-black py-1.5 px-1 align-bottom">{pv.applicant_name || pv.submitted_by}</td>
-            <td className="font-bold py-1.5 px-1 align-bottom whitespace-nowrap">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</td>
-            <td className="border-b border-black py-1.5 px-1 align-bottom">{fmtDate(pv.date ?? pv.submitted_at)}</td>
-          </tr>
-          <tr>
-            <td className="font-bold py-1.5 pr-1 align-bottom whitespace-nowrap">Payable to <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>付给</span>:</td>
-            <td className="border-b border-black py-1.5 px-1 align-bottom font-semibold" colSpan={3}>{pv.payee_name}</td>
-          </tr>
-          <tr>
-            <td className="font-bold py-1.5 pr-1 align-bottom text-[12px] leading-tight">Payee Bank A/C No<br /><span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收款人账户号码</span>：</td>
-            <td className="border-b border-t border-black py-1.5 px-1 align-bottom" colSpan={3}>{bLine}{acct ? `   A/C: ${acct}` : ""}</td>
-          </tr>
-          <tr>
-            <td className="font-bold py-1.5 pr-1 align-bottom">Project <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>事工</span>:</td>
-            <td className="border-b border-black py-1.5 px-1 align-bottom" colSpan={3}>{projectLabel}</td>
-          </tr>
-          <tr>
-            <td className="font-bold py-1.5 pr-1 align-top">Purpose <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>用途</span>:</td>
-            <td className="border-b border-black py-1.5 px-1 align-top whitespace-pre-wrap" colSpan={3}>{pv.purpose}</td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
+      <dl className="mt-3 grid grid-cols-1 gap-x-5 gap-y-1 text-[13px] sm:grid-cols-2">
+        <div className="flex items-end gap-2">
+          <dt className="shrink-0 font-bold">Applicant <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>申请者</span>:</dt>
+          <dd className="min-w-0 flex-1 border-b border-black">{pv.applicant_name || pv.submitted_by}</dd>
+        </div>
+        <div className="flex items-end gap-2">
+          <dt className="shrink-0 font-bold">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</dt>
+          <dd className="min-w-0 flex-1 border-b border-black">{fmtDate(pv.date ?? pv.submitted_at)}</dd>
+        </div>
+        <div className="flex items-end gap-2 sm:col-span-2">
+          <dt className="shrink-0 font-bold">Payable to <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>付给</span>:</dt>
+          <dd className="min-w-0 flex-1 border-b border-black font-semibold">{pv.payee_name}</dd>
+        </div>
+        <div className="flex items-end gap-2 sm:col-span-2">
+          <dt className="shrink-0 font-bold leading-tight">Payee Bank A/C No <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收款人账户号码</span>：</dt>
+          <dd className="min-w-0 flex-1 break-words border-b border-black">{bLine}{acct ? `   A/C: ${acct}` : ""}</dd>
+        </div>
+        <div className="flex items-end gap-2 sm:col-span-2">
+          <dt className="shrink-0 font-bold">Project <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>事工</span>:</dt>
+          <dd className="min-w-0 flex-1 border-b border-black">{projectLabel}</dd>
+        </div>
+        <div className="flex items-start gap-2 sm:col-span-2">
+          <dt className="shrink-0 font-bold">Purpose <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>用途</span>:</dt>
+          <dd className="min-w-0 flex-1 whitespace-pre-wrap border-b border-black">{pv.purpose}</dd>
+        </div>
+      </dl>
 
       <div className="font-bold text-[12px] mt-3 mb-0">
         Particulars of Claim/Payment (Please attach relevant Receipts/Invoices/Bills){" "}
@@ -257,7 +254,7 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
             onClick={gmClickable ? onSignGM : undefined}>
             <div className="text-[12px] font-bold mb-0.5 flex items-center justify-between">
               Verified by:
-              {gmClickable && <span className="text-[10px] text-indigo-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">Click to sign</span>}
+              {gmClickable && <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 transition-opacity sm:bg-transparent sm:px-0 sm:py-0 sm:font-normal sm:text-indigo-400 sm:opacity-0 sm:group-hover:opacity-100">Tap to sign</span>}
             </div>
             <div className="text-[11px] text-stone-800 mb-1">(General Manager)</div>
             <div className={`h-8 border-b mb-1 flex items-end ${gmClickable ? "border-indigo-300 border-dashed" : "border-black"}`}>
@@ -276,7 +273,7 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
             onClick={sigClickable ? onSignSig : undefined}>
             <div className="text-[12px] font-bold mb-0.5 flex items-center justify-between">
               Approved by:
-              {sigClickable && <span className="text-[10px] text-purple-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">Click to sign</span>}
+              {sigClickable && <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700 transition-opacity sm:bg-transparent sm:px-0 sm:py-0 sm:font-normal sm:text-purple-400 sm:opacity-0 sm:group-hover:opacity-100">Tap to sign</span>}
             </div>
             <div className="text-[11px] text-stone-800 mb-1">(Bishop / Secretary / Treasurer)</div>
             <div className={`h-8 border-b mb-1 flex items-end ${sigClickable ? "border-purple-300 border-dashed" : "border-black"}`}>
@@ -1506,16 +1503,29 @@ export default function BulkPVPage() {
         return (
           <div key={pv.id} className="bulk-pv-voucher max-w-6xl mx-auto px-4 pb-6 print:p-0 print:max-w-none mt-6 print:mt-0" style={{ pageBreakBefore: "always", breakBefore: "page" } as React.CSSProperties}>
             {/* Per-PV header bar */}
+          <div className="overflow-x-auto rounded-xl bg-white shadow-lg print:overflow-visible print:rounded-none print:shadow-none">
+              <PVVoucher
+                pv={pv} idx={i}
+                finSigData={finSigData}
+                approverSigs={approverSigs}
+                canSignAsGM={isGM && !gmSigned}
+                canSignAsSig={isSig && !sigSigned}
+                onSignGM={() => openSignModal(pv.id)}
+                onSignSig={() => openSignModal(pv.id)}
+              />
+            </div>
           {/*
-            The voucher below is an A4 facsimile 560px wide, so on a phone it is
+            The voucher above is an A4 facsimile 560px wide, so on a phone it is
             a page you pan around — and the signature space, which is the only
             way to sign an individual PV in a batch, sits off the right edge.
             Signing was wired the whole time and simply out of reach.
 
-            So the facts and the action come first, at a size that fits, and the
-            form stays underneath for anyone checking its wording.
+            So the action sits after it: an approver scrolls the voucher, reaches
+            the end, and signs there — rather than being offered the button
+            before they have read what they are signing. The signature space in
+            the form itself is tappable too, for anyone who gets there first.
           */}
-          <div className="print:hidden mb-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+          <div className="print:hidden mt-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className="min-w-0 truncate text-[10.5px] font-medium text-stone-500">
                 Attachment {i + 1} · <span className="font-mono">{pv.pv_no}</span>
@@ -1561,17 +1571,6 @@ export default function BulkPVPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl bg-white shadow-lg print:overflow-visible print:rounded-none print:shadow-none">
-              <PVVoucher
-                pv={pv} idx={i}
-                finSigData={finSigData}
-                approverSigs={approverSigs}
-                canSignAsGM={isGM && !gmSigned}
-                canSignAsSig={isSig && !sigSigned}
-                onSignGM={() => openSignModal(pv.id)}
-                onSignSig={() => openSignModal(pv.id)}
-              />
-            </div>
 
             {/* Attachment management panel — print hidden */}
             {(user?.isFinanceAdmin || (pv.attachments ?? []).length > 0 || pv.payment_receipt_url) && (
