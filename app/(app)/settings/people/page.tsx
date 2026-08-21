@@ -409,7 +409,97 @@ export default function PeopleDirectoryPage() {
         scrolls sideways on a narrow screen instead, which is what the other two
         tables do.
       */}
-      <Card className="overflow-hidden">
+      {/* ── Phone: one card per person ─────────────────────────────────
+          A six-column table cannot fit 376px. It scrolls sideways, and the
+          contact column — the reason most people open this page — is the
+          first thing off the edge. Below md each person becomes a card in
+          reading order, which is what this list had before it became a table
+          and should not have lost. */}
+      <div className="space-y-2 md:hidden">
+        {visible.length === 0 ? (
+          <Card className="px-4 py-10 text-center text-sm text-stone-400">
+            {query || activeFilterCount ? "Nobody matches those filters." : "Nobody in this category yet."}
+          </Card>
+        ) : visible.map(p => {
+          const role = primaryRole(p);
+          return (
+            <Card key={p.id} className="p-3">
+              <div className="flex items-start gap-2.5">
+                <Avatar name={p.full_name} photoPath={p.photo_path} size={36} />
+                <div className="min-w-0 flex-1">
+                  <Link href={`/settings/people/${p.id}`}
+                    className="block truncate text-[15px] font-bold text-stone-900 underline-offset-2 hover:text-[#2f5b9c] hover:underline">
+                    {p.full_name ? withTitle(p.full_name, p.ordination) : "Unnamed"}
+                  </Link>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11.5px] text-stone-500">
+                    <span className="truncate">
+                      {categoryOf(p.category).one}
+                      {p.preferred_name ? ` · ${p.preferred_name}` : ""}
+                    </span>
+                    {roleOf(p) && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[9.5px] font-semibold text-[#2f5b9c]">
+                        <ShieldCheck size={9} aria-hidden="true" />
+                        {roleWithScope(roleOf(p), ministriesOf(p))}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <PersonStatus status={p.status} />
+                  <RowMenu p={p} canEdit={canEdit} open={menuFor === p.id}
+                    onToggle={() => setMenuFor(m => (m === p.id ? null : p.id))}
+                    router={router} onStatus={toggleStatus} />
+                </div>
+              </div>
+
+              {stillHasAccess(p) && (
+                <p className="mt-1.5 flex items-center gap-1 text-[10.5px] font-semibold text-amber-700">
+                  <ShieldAlert size={10} aria-hidden="true" /> still signs in
+                </p>
+              )}
+
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-stone-100 pt-2">
+                <div className="min-w-0">
+                  <dt className="text-[9.5px] font-semibold uppercase tracking-wide text-stone-400">Primary role</dt>
+                  <dd className="truncate text-[12.5px] font-medium text-stone-700">{role.label}</dd>
+                  {role.since && <dd className="truncate text-[11px] text-stone-400">{role.since}</dd>}
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-[9.5px] font-semibold uppercase tracking-wide text-stone-400">Appointed</dt>
+                  <dd>
+                    {role.appointed ? (
+                      <span className={termChip}>
+                        {new Date(role.appointed + "T00:00:00").toLocaleDateString("en-GB",
+                          { day: "numeric", month: "short", year: "numeric" })}
+                      </span>
+                    ) : <span className="text-[12.5px] text-stone-300">—</span>}
+                  </dd>
+                </div>
+              </dl>
+
+              {(p.email || p.phone) && (
+                <div className="mt-2 space-y-0.5 border-t border-stone-100 pt-2">
+                  {p.email && (
+                    <a href={`mailto:${p.email}`} className="flex items-center gap-1.5 text-[12px] text-stone-600">
+                      <Mail size={11} className="shrink-0 text-stone-400" />
+                      <span className="truncate">{p.email}</span>
+                    </a>
+                  )}
+                  {p.phone && (
+                    <a href={`tel:${p.phone}`} className="flex items-center gap-1.5 text-[12px] text-stone-600">
+                      <Phone size={11} className="shrink-0 text-stone-400" />
+                      <span className="truncate">{p.phone}</span>
+                    </a>
+                  )}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* ── Desktop: the directory as a table ───────────────────────────── */}
+      <Card className="hidden overflow-hidden md:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1000px] border-collapse">
             <thead className="bg-stone-50">

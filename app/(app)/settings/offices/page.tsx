@@ -412,6 +412,163 @@ export default function OfficesPage() {
    * column, two rows of them — laid out on a grid rather than left to wrap,
    * because wrapping is what let them spill past the column edge.
    */
+  /**
+   * The four things a row says about a post, built once.
+   *
+   * Rendered as table cells on a desktop and as a stacked card on a phone. A
+   * seven-column table cannot fit 376px — it scrolls sideways and the Holder
+   * column, which is the one being looked for, is the first thing off the edge.
+   * Two layouts, one set of contents, so they cannot come to say different
+   * things.
+   */
+  const officeCells = (o: Office) => {
+    const cur = currentOf(o.id);
+    const members = currentAll(o.id);
+    const past = pastOf(o.id);
+    const showing = historyFor === o.id;
+
+    const badges = (
+      <div className="flex flex-wrap items-center gap-1">
+        {o.term_years != null && (
+          <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-violet-700">
+            {o.term_years}-year term
+          </span>
+        )}
+        <span className={`rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold ${
+          o.tenure === "ELECTED" ? "bg-violet-100 text-violet-700"
+            : o.tenure === "TEMPORARY" ? "bg-amber-100 text-amber-700"
+            : "bg-stone-100 text-stone-600"}`}>
+          {o.tenure === "ELECTED" ? "Elected" : o.tenure === "TEMPORARY" ? "Temporary" : "Permanent"}
+        </span>
+        {o.grants_role && (
+          <span className="rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[9.5px] font-semibold text-[#2f5b9c]">
+            {roleLabel(o.grants_role)}
+          </span>
+        )}
+        {!o.active && (
+          <span className="rounded-full bg-stone-200 px-1.5 py-0.5 text-[9.5px] font-semibold text-stone-600">
+            Retired
+          </span>
+        )}
+        {o.parent_office_id && (
+          <span className="rounded-full bg-stone-100 px-1.5 py-0.5 text-[9.5px] font-semibold text-stone-600">
+            under {offices.find(x => x.id === o.parent_office_id)?.name ?? "—"}
+          </span>
+        )}
+      </div>
+    );
+
+    const position = (
+      <>
+        <div className="text-[13.5px] font-bold text-stone-800">{o.name}</div>
+        <div className="mt-0.5">{badges}</div>
+        {o.responsibilities && (
+          <p className="mt-0.5 truncate text-[11px] text-stone-500" title={o.responsibilities}>
+            {o.responsibilities}
+          </p>
+        )}
+      </>
+    );
+
+    const holder = members.length > 0 ? (
+      <ul className="space-y-1">
+        {members.map(m => (
+          <li key={m.id} className="flex items-center gap-1">
+            <Link href={`/settings/people/${m.person_id}`}
+              className="truncate text-[13.5px] font-bold text-stone-900 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
+              {nameOf(m.person_id)}
+            </Link>
+            <button onClick={() => setEditingHolding(m)} className={iconBtn}
+              title="Correct this term" aria-label={`Edit the term of ${nameOf(m.person_id)}`}>
+              <Pencil size={11} />
+            </button>
+            {!o.single_holder && (
+              <button onClick={() => endTerm(m, o)} className={`${iconBtn} hover:!text-red-600`}
+                title="Remove from this committee" aria-label={`Remove ${nameOf(m.person_id)}`}>
+                <X size={11} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <span className="text-[13.5px] font-bold text-amber-700">
+        {o.single_holder ? "Vacant" : "No members"}
+      </span>
+    );
+
+    const term = members.length > 0 ? (
+      <ul className="space-y-1">
+        {members.map(m => (
+          <li key={m.id} className="leading-[22px]">
+            <span className={termChip}>{tenureLine(o.kind, m)}</span>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <span className="text-[13px] text-stone-300">—</span>
+    );
+
+    const actions = (
+      <div className="grid grid-cols-3 gap-1">
+        <button onClick={() => setHistoryFor(showing ? null : o.id)}
+          aria-label={`Past holders of ${o.name}`}
+          className={showing
+            ? "inline-flex w-full items-center justify-center gap-1 rounded-lg border border-[#2f5b9c] bg-[#eef4fd] px-1.5 py-1 !text-[10.5px] !font-semibold whitespace-nowrap text-[#2f5b9c]"
+            : rowBtn}>
+          <History size={11} /> {past.length > 0 ? `${past.length} past` : "History"}
+        </button>
+        <button onClick={() => setEditingOffice(o)} className={rowBtn}
+          aria-label={`Edit the ${o.name} post`}>
+          <Pencil size={11} /> Edit post
+        </button>
+        <button onClick={() => setAddingTermFor(o)} className={rowBtn}
+          aria-label={`Record a past term of ${o.name}`}>
+          <Plus size={11} /> Past term
+        </button>
+        {cur && o.single_holder && (
+          <button onClick={() => endTerm(cur, o)} className={rowBtnDanger}
+            aria-label={`End the current term of ${o.name}`}>
+            <LogOut size={11} /> End term
+          </button>
+        )}
+        <button onClick={() => openElection(o)}
+          className={`${rowBtnPrimary} ${cur && o.single_holder ? "col-span-2" : "col-span-3"}`}>
+          <UserPlus size={11} /> {!o.single_holder ? "Add member"
+            : o.is_elected ? (cur ? "New election" : "Elect")
+            : (cur ? "Replace" : "Appoint")}
+        </button>
+      </div>
+    );
+
+    const history = showing ? (
+      <div className="px-1 py-2">
+        <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-stone-400">
+          {isStaffPost(o.kind) ? "Previously employed in this post" : "Previously held by"}
+        </p>
+        {past.length === 0 ? (
+          <p className="text-[12px] text-stone-400">
+            Nothing recorded yet. Use <span className="font-medium text-stone-500">Past term</span> to
+            fill in who held this before — one term at a time, whenever you have a moment.
+          </p>
+        ) : (
+          <ol className="space-y-0.5">
+            {past.map((h, i) => (
+              <li key={h.id} className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]">
+                <span className="w-5 shrink-0 text-right text-[11px] font-bold text-stone-400">{i + 1}.</span>
+                <span className="font-semibold text-stone-700">{nameOf(h.person_id)}</span>
+                <span className={termChip}>{tenureLine(o.kind, h)}</span>
+                {h.note && <span className="text-stone-400">{h.note}</span>}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    ) : null;
+
+    return { position, holder, term, actions, history, showing };
+  };
+
   const section = (title: string, sub: string, icon: React.ReactNode, list: Office[]) => (
     <section className="space-y-2">
       <div>
@@ -419,208 +576,69 @@ export default function OfficesPage() {
         <p className="text-xs text-stone-400">{sub}</p>
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[940px] border-collapse">
-            <thead className="bg-stone-50">
-              <tr className="divide-x divide-stone-100">
-                <th className={`${th} w-[30%]`}>Position</th>
-                <th className={`${th} w-[26%]`}>Holder</th>
-                <th className={`${th} w-[22%]`}>Term</th>
-                <th className={`${th} w-[268px]`}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.length === 0 && (
-                <tr className="border-t border-stone-100">
-                  <td colSpan={4} className="px-3 py-6 text-center text-sm text-stone-400">
-                    No posts in this section yet.
-                  </td>
-                </tr>
+      {list.length === 0 && (
+        <Card className="px-3 py-6 text-center text-sm text-stone-400">
+          No posts in this section yet.
+        </Card>
+      )}
+
+      {/* ── Phone: one card per post, nothing sideways ────────────────── */}
+      <div className="space-y-2 md:hidden">
+        {list.map(o => {
+          const c = officeCells(o);
+          return (
+            <Card key={o.id} className={`p-3 ${o.active ? "" : "opacity-70"}`}>
+              {c.position}
+              <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-stone-100 pt-2">
+                <div className="min-w-0">{c.holder}</div>
+                <div className="shrink-0">{c.term}</div>
+              </div>
+              <div className="mt-2.5 border-t border-stone-100 pt-2.5">{c.actions}</div>
+              {c.history && (
+                <div className="mt-2 rounded-lg bg-[#f8fbff] px-2 pb-1">{c.history}</div>
               )}
-              {list.map(o => {
-                const cur = currentOf(o.id);
-                const members = currentAll(o.id);
-                const past = pastOf(o.id);
-                const showing = historyFor === o.id;
-                return (
-                  <Fragment key={o.id}>
-                    <tr className={`${rowCls} ${o.active ? "" : "bg-stone-50/60 opacity-70"}`}>
-                      {/* Position — the name carries the weight; what kind of
-                          post it is sits under it so the badges do not compete
-                          with the thing you are scanning for. */}
-                      <td className={`${td} px-3`}>
-                        <div className="text-[13.5px] font-bold text-stone-800">{o.name}</div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                          {o.term_years != null && (
-                            <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-violet-700">
-                              {o.term_years}-year term
-                            </span>
-                          )}
-                          <span className={`rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold ${
-                            o.tenure === "ELECTED" ? "bg-violet-100 text-violet-700"
-                              : o.tenure === "TEMPORARY" ? "bg-amber-100 text-amber-700"
-                              : "bg-stone-100 text-stone-600"}`}>
-                            {o.tenure === "ELECTED" ? "Elected" : o.tenure === "TEMPORARY" ? "Temporary" : "Permanent"}
-                          </span>
-                          {o.grants_role && (
-                            <span className="rounded-full bg-[#eef4fd] px-1.5 py-0.5 text-[9.5px] font-semibold text-[#2f5b9c]">
-                              {roleLabel(o.grants_role)}
-                            </span>
-                          )}
-                          {!o.active && (
-                            <span className="rounded-full bg-stone-200 px-1.5 py-0.5 text-[9.5px] font-semibold text-stone-600">
-                              Retired
-                            </span>
-                          )}
-                          {/* What it answers to. Shown on the child rather than
-                              nesting the list, because a body can sit under a
-                              portfolio in a different section and indentation
-                              could not show that. */}
-                          {o.parent_office_id && (
-                            <span className="rounded-full bg-stone-100 px-1.5 py-0.5 text-[9.5px] font-semibold text-stone-600">
-                              under {offices.find(x => x.id === o.parent_office_id)?.name ?? "—"}
-                            </span>
-                          )}
-                        </div>
-                        {o.responsibilities && (
-                          <p className="mt-0.5 truncate text-[11px] text-stone-500"
-                            title={o.responsibilities}>
-                            {o.responsibilities}
-                          </p>
-                        )}
-                      </td>
+            </Card>
+          );
+        })}
+      </div>
 
-                      {/* Holder — one line each, in the same order as the terms
-                          beside them so the two columns read across. */}
-                      <td className={`${td} px-3`}>
-                        {members.length > 0 ? (
-                          <ul className="space-y-1">
-                            {members.map(m => (
-                              <li key={m.id} className="flex items-center gap-1">
-                                <Link href={`/settings/people/${m.person_id}`}
-                                  className="truncate text-[13.5px] font-bold text-stone-900 underline-offset-2 hover:text-[#2f5b9c] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5b9c]">
-                                  {nameOf(m.person_id)}
-                                </Link>
-                                <button onClick={() => setEditingHolding(m)} className={iconBtn}
-                                  title="Correct this term" aria-label={`Edit the term of ${nameOf(m.person_id)}`}>
-                                  <Pencil size={11} />
-                                </button>
-                                {!o.single_holder && (
-                                  <button onClick={() => endTerm(m, o)}
-                                    className={`${iconBtn} hover:!text-red-600`}
-                                    title="Remove from this committee"
-                                    aria-label={`Remove ${nameOf(m.person_id)}`}>
-                                    <X size={11} />
-                                  </button>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <span className="text-[13.5px] font-bold text-amber-700">
-                            {o.single_holder ? "Vacant" : "No members"}
-                          </span>
-                        )}
-                        {!o.single_holder && members.length > 0 && (
-                          <span className="text-[10.5px] text-stone-400">
-                            {members.length} member{members.length === 1 ? "" : "s"}
-                          </span>
-                        )}
-                      </td>
-
-                      <td className={`${td} px-3`}>
-                        {members.length > 0 ? (
-                          <ul className="space-y-1">
-                            {members.map(m => (
-                              <li key={m.id} className="leading-[22px]">
-                                <span className={termChip}>{tenureLine(o.kind, m)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <span className="text-[13px] text-stone-300">—</span>
-                        )}
-                      </td>
-
-                      {/* Two fixed rows on a grid. Equal-width cells keep the
-                          buttons tight to each other and inside the column,
-                          which free-flowing widths did not. */}
-                      <td className={`${td} px-2`}>
-                        <div className="grid grid-cols-3 gap-1">
-                          <button onClick={() => setHistoryFor(showing ? null : o.id)}
-                            aria-label={`Past holders of ${o.name}`}
-                            className={showing
-                              ? "inline-flex w-full items-center justify-center gap-1 rounded-lg border border-[#2f5b9c] bg-[#eef4fd] px-1.5 py-1 !text-[10.5px] !font-semibold whitespace-nowrap text-[#2f5b9c]"
-                              : rowBtn}>
-                            <History size={11} /> {past.length > 0 ? `${past.length} past` : "History"}
-                          </button>
-
-                          <button onClick={() => setEditingOffice(o)} className={rowBtn}
-                            aria-label={`Edit the ${o.name} post`}>
-                            <Pencil size={11} /> Edit post
-                          </button>
-
-                          {/* A term that has already finished. The election flow
-                              assumes it is happening now, which is no use for
-                              filling in the years before this register existed. */}
-                          <button onClick={() => setAddingTermFor(o)} className={rowBtn}
-                            aria-label={`Record a past term of ${o.name}`}>
-                            <Plus size={11} /> Past term
-                          </button>
-
-                          {cur && o.single_holder && (
-                            <button onClick={() => endTerm(cur, o)} className={rowBtnDanger}
-                              aria-label={`End the current term of ${o.name}`}>
-                              <LogOut size={11} /> End term
-                            </button>
-                          )}
-
-                          {/* The one thing most rows are opened to do, so it
-                              stays the only filled button. */}
-                          <button onClick={() => openElection(o)}
-                            className={`${rowBtnPrimary} ${cur && o.single_holder ? "col-span-2" : "col-span-3"}`}>
-                            <UserPlus size={11} /> {!o.single_holder ? "Add member"
-                              : o.is_elected ? (cur ? "New election" : "Elect")
-                              : (cur ? "Replace" : "Appoint")}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {showing && (
-                      <tr className="border-t border-stone-100 bg-[#f8fbff]">
-                        <td colSpan={4} className="px-4 py-2.5">
-                          <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-stone-400">
-                            {isStaffPost(o.kind) ? "Previously employed in this post" : "Previously held by"}
-                          </p>
-                          {past.length === 0 ? (
-                            <p className="text-[12px] text-stone-400">
-                              Nothing recorded yet. Use <span className="font-medium text-stone-500">Past term</span> to
-                              fill in who held this before — one term at a time, whenever you have a moment.
-                            </p>
-                          ) : (
-                            <ol className="space-y-0.5">
-                              {past.map((h, i) => (
-                                <li key={h.id} className="flex items-baseline gap-2 text-[12.5px]">
-                                  <span className="w-5 shrink-0 text-right text-[11px] font-bold text-stone-400">{i + 1}.</span>
-                                  <span className="font-semibold text-stone-700">{nameOf(h.person_id)}</span>
-                                  <span className={termChip}>{tenureLine(o.kind, h)}</span>
-                                  {h.note && <span className="text-stone-400">{h.note}</span>}
-                                </li>
-                              ))}
-                            </ol>
-                          )}
-                        </td>
+      {/* ── Desktop: the register as a table ──────────────────────────── */}
+      {list.length > 0 && (
+        <Card className="hidden overflow-hidden md:block">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[940px] border-collapse">
+              <thead className="bg-stone-50">
+                <tr className="divide-x divide-stone-100">
+                  <th className={`${th} w-[30%]`}>Position</th>
+                  <th className={`${th} w-[26%]`}>Holder</th>
+                  <th className={`${th} w-[22%]`}>Term</th>
+                  <th className={`${th} w-[268px]`}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map(o => {
+                  const c = officeCells(o);
+                  return (
+                    <Fragment key={o.id}>
+                      <tr className={`${rowCls} ${o.active ? "" : "bg-stone-50/60 opacity-70"}`}>
+                        <td className={`${td} px-3`}>{c.position}</td>
+                        <td className={`${td} px-3`}>{c.holder}</td>
+                        <td className={`${td} px-3`}>{c.term}</td>
+                        <td className={`${td} px-2`}>{c.actions}</td>
                       </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                      {c.showing && (
+                        <tr className="border-t border-stone-100 bg-[#f8fbff]">
+                          <td colSpan={4} className="px-4 py-2.5">{c.history}</td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </section>
   );
 
