@@ -54,9 +54,8 @@ function InteractiveSigCell({ approval, label, canSign, onSign }: {
   const clickable = canSign && !approval;
   return (
     <td
-      className={`border border-black px-2 py-1 align-top transition-colors ${clickable ? "cursor-pointer hover:bg-indigo-50 group" : ""}`}
-      onClick={clickable ? onSign : undefined}
-      style={{ minWidth: 110 }}>
+      className={`hidden border border-black px-2 py-1 align-top transition-colors sm:table-cell sm:min-w-[110px] ${clickable ? "cursor-pointer hover:bg-indigo-50 group" : ""}`}
+      onClick={clickable ? onSign : undefined}>
       <div className="text-[10px] font-bold text-stone-700 mb-0.5 flex items-center justify-between">
         {label}
         {clickable && <span className="text-[9px] text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Click to sign</span>}
@@ -103,14 +102,14 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
   const sigClickable = canSignAsSig && !sigSigned;
 
   return (
-    <div style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111", minWidth: 560 }}
-      className="px-3 sm:px-10 py-4 sm:py-8 print:px-8 print:py-6">
+    <div style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}
+      className="px-3 py-4 sm:min-w-[560px] sm:px-10 sm:py-8 print:min-w-0 print:px-8 print:py-6">
 
       <div className="text-[11px] text-stone-500 mb-2 font-semibold">
         Attachment {idx + 1} — {pv.pv_no}
       </div>
 
-      <div className="flex items-start gap-4 mb-1">
+      <div className="mb-1 flex flex-wrap items-start gap-3 sm:gap-4">
         <div className="flex items-center gap-3 flex-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/lcm-logo.svg"
@@ -1294,7 +1293,7 @@ export default function BulkPVPage() {
           <div className="px-10 py-8 print:px-6 print:py-5" style={{ fontFamily: "Calibri, Arial, sans-serif", fontSize: 13, color: "#111" }}>
 
             {/* Header */}
-            <div className="flex items-start gap-4 mb-1">
+            <div className="mb-1 flex flex-wrap items-start gap-3 sm:gap-4">
               <div className="flex items-center gap-3 flex-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/lcm-logo.svg"
@@ -1322,29 +1321,30 @@ export default function BulkPVPage() {
             </div>
 
             {/* Batch info */}
-            <table className="w-full border-collapse text-[13px] mb-4" style={{ tableLayout: "fixed" }}>
-              <colgroup><col style={{ width: "15%" }} /><col style={{ width: "35%" }} /><col style={{ width: "15%" }} /><col style={{ width: "35%" }} /></colgroup>
-              <tbody>
-                <tr>
-                  <td className="font-bold py-1 pr-1">Group <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>组别</span>:</td>
-                  <td className="border-b border-black py-1 px-1 font-semibold">{grp.groupName}</td>
-                  <td className="font-bold py-1 px-1">Run Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</td>
-                  <td className="border-b border-black py-1 px-1">{fmtDate(run.run_date)}</td>
-                </tr>
-                <tr>
-                  <td className="font-bold py-1 pr-1">Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者</span>:</td>
-                  <td className="border-b border-black py-1 px-1">{run.run_by}</td>
-                  <td className="font-bold py-1 px-1">No. of PVs:</td>
-                  <td className="border-b border-black py-1 px-1 font-semibold">{grp.pvs.length} voucher{grp.pvs.length !== 1 ? "s" : ""}</td>
-                </tr>
-                {run.ministry && (
-                  <tr>
-                    <td className="font-bold py-1 pr-1">Ministry:</td>
-                    <td className="border-b border-black py-1 px-1" colSpan={3}>{run.ministry}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <dl className="mb-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+              <div className="flex gap-2 border-b border-black py-1">
+                <dt className="shrink-0 font-bold">Group <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>组别</span>:</dt>
+                <dd className="min-w-0 flex-1 font-semibold">{grp.groupName}</dd>
+              </div>
+              <div className="flex gap-2 border-b border-black py-1">
+                <dt className="shrink-0 font-bold">Run Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span>:</dt>
+                <dd className="min-w-0 flex-1">{fmtDate(run.run_date)}</dd>
+              </div>
+              <div className="flex gap-2 border-b border-black py-1">
+                <dt className="shrink-0 font-bold">Prepared by <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>制备者</span>:</dt>
+                <dd className="min-w-0 flex-1 break-all">{run.run_by}</dd>
+              </div>
+              <div className="flex gap-2 border-b border-black py-1">
+                <dt className="shrink-0 font-bold">No. of PVs:</dt>
+                <dd className="min-w-0 flex-1 font-semibold">{grp.pvs.length} voucher{grp.pvs.length !== 1 ? "s" : ""}</dd>
+              </div>
+              {run.ministry && (
+                <div className="flex gap-2 border-b border-black py-1 sm:col-span-2">
+                  <dt className="shrink-0 font-bold">Ministry:</dt>
+                  <dd className="min-w-0 flex-1">{run.ministry}</dd>
+                </div>
+              )}
+            </dl>
 
             {/* Section label */}
             <div className="font-bold text-[12px] mb-1">
@@ -1354,7 +1354,7 @@ export default function BulkPVPage() {
 
             {/* ── MASTER TABLE ── */}
             <div className="overflow-x-auto print:overflow-visible">
-              <table className="w-full border-collapse border border-black text-[12px]" style={{ minWidth: 900 }}>
+              <table className="w-full border-collapse border border-black text-[12px] sm:min-w-[900px]">
                 <colgroup>
                   <col style={{ width: "3%" }} />
                   <col style={{ width: "10%" }} />
@@ -1367,16 +1367,16 @@ export default function BulkPVPage() {
                 </colgroup>
                 <thead>
                   <tr className="bg-gray-100">
-                    <th className="border border-black px-1 py-2 text-center font-bold">#</th>
+                    <th className="border border-black px-1 py-2 text-center font-bold hidden sm:table-cell">#</th>
                     <th className="border border-black px-2 py-2 text-center font-bold">PV No.</th>
                     <th className="border border-black px-2 py-2 text-center font-bold">Payee <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>收款人</span></th>
-                    <th className="border border-black px-2 py-2 text-center font-bold">Bank <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>银行</span></th>
-                    <th className="border border-black px-2 py-2 text-center font-bold">A/C No. <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>账号</span></th>
+                    <th className="border border-black px-2 py-2 text-center font-bold hidden sm:table-cell">Bank <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>银行</span></th>
+                    <th className="border border-black px-2 py-2 text-center font-bold hidden sm:table-cell">A/C No. <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>账号</span></th>
                     <th className="border border-black px-2 py-2 text-center font-bold leading-tight">Amount<br />(RM)</th>
-                    <th className="border border-black px-2 py-2 text-center font-bold leading-tight bg-blue-50">
+                    <th className="border border-black px-2 py-2 text-center font-bold leading-tight bg-blue-50 hidden sm:table-cell">
                       Verified by<br /><span className="font-normal text-[11px]">General Manager</span>
                     </th>
-                    <th className="border border-black px-2 py-2 text-center font-bold leading-tight bg-purple-50">
+                    <th className="border border-black px-2 py-2 text-center font-bold leading-tight bg-purple-50 hidden sm:table-cell">
                       Approved by<br /><span className="font-normal text-[11px]">Signatory</span>
                     </th>
                   </tr>
@@ -1390,7 +1390,7 @@ export default function BulkPVPage() {
                     const userSigApproved = isSig && !!sigApproval;
                     return (
                       <tr key={pv.id}>
-                        <td className="border border-black px-1 py-2 text-center font-semibold">{i + 1}</td>
+                        <td className="border border-black px-1 py-2 text-center font-semibold hidden sm:table-cell">{i + 1}</td>
                         <td className="border border-black px-2 py-2">
                           <a href={`/my-pvs/${pv.id}`} className="text-[#4a6da7] font-semibold hover:underline print:text-black print:no-underline">
                             {pv.pv_no}
@@ -1406,8 +1406,8 @@ export default function BulkPVPage() {
                           </div>
                         </td>
                         <td className="border border-black px-2 py-2 font-semibold">{pv.payee_name}</td>
-                        <td className="border border-black px-2 py-2">{bankStr(pv)}</td>
-                        <td className="border border-black px-2 py-2">{acctStr(pv)}</td>
+                        <td className="border border-black px-2 py-2 hidden sm:table-cell">{bankStr(pv)}</td>
+                        <td className="border border-black px-2 py-2 hidden sm:table-cell">{acctStr(pv)}</td>
                         <td className="border border-black px-2 py-2 text-right tabular-nums font-medium">
                           {Number(pv.amount ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
                           {pv.status === "PAID" && (
@@ -1436,13 +1436,16 @@ export default function BulkPVPage() {
 
                   {/* Total row */}
                   <tr className="bg-gray-50 font-bold">
-                    <td className="border border-black px-2 py-2 text-right" colSpan={5}>
+                    <td className="hidden border border-black px-2 py-2 text-right sm:table-cell" colSpan={5}>
+                      Total <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>总数</span>:
+                    </td>
+                    <td className="border border-black px-2 py-2 text-right sm:hidden" colSpan={2}>
                       Total <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>总数</span>:
                     </td>
                     <td className="border border-black px-2 py-2 text-right tabular-nums text-[14px]">
                       {grp.total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
                     </td>
-                    <td className="border border-black px-2 py-2" colSpan={2} />
+                    <td className="hidden border border-black px-2 py-2 sm:table-cell" colSpan={2} />
                   </tr>
                 </tbody>
               </table>
