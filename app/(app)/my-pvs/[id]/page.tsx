@@ -862,17 +862,16 @@ export default function PVDetailPage() {
       {/* ── Sticky top bar ─────────────────────────────────────────── */}
       <div className="print:hidden sticky top-0 z-20 border-b border-[#dbe9fb] bg-white/90 px-5 py-3 backdrop-blur-xl">
         <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={() => router.back()} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500 shrink-0">
+          {/* The voucher number, the controls, then the status underneath.
+              They were all one wrapping row, so at 376px the number broke across
+              three lines to make room for a zoom control — the reference you
+              read the page by, shredded by a button you rarely touch. */}
+          <div className="flex items-center gap-2">
+            <button onClick={() => router.back()} className="shrink-0 rounded-lg p-1.5 text-stone-500 hover:bg-stone-100">
               <ArrowLeft size={18} />
             </button>
-            <div className="flex items-center gap-2 flex-1 flex-wrap min-w-0">
-              <span className="font-bold text-stone-800">{pv.pv_no}</span>
-              <StatusBadge status={computedBadgeStatus(pv)} />
-              {pv.payment_type === "ASSET_PURCHASE" && (
-                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">Asset Purchase</span>
-              )}
-            </div>
+            <span className="shrink-0 whitespace-nowrap font-bold text-stone-800">{pv.pv_no}</span>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
             {/* Zoom controls */}
             <div className="flex items-center gap-0.5 print:hidden">
               <button
@@ -888,6 +887,13 @@ export default function PVDetailPage() {
               >+</button>
             </div>
             <PVPdfDownload pv={pv} />
+            </div>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <StatusBadge status={computedBadgeStatus(pv)} />
+            {pv.payment_type === "ASSET_PURCHASE" && (
+              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">Asset Purchase</span>
+            )}
           </div>
           <WorkflowBar pv={pv} />
         </div>
