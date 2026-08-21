@@ -171,14 +171,13 @@ function PVVoucher({ pv, idx, finSigData, approverSigs, canSignAsGM, canSignAsSi
       </div>
 
       <div className="overflow-x-auto">
-      <table className="w-full border-collapse border border-black text-[13px]" style={{ tableLayout: "fixed", minWidth: 340 }}>
-        <colgroup><col style={{ width: "5%" }} /><col style={{ width: "14%" }} /><col style={{ width: "66%" }} /><col style={{ width: "15%" }} /></colgroup>
+      <table className="w-full border-collapse border border-black text-[13px]">
         <thead>
           <tr className="bg-gray-100">
             <th className="border border-black px-1 py-1.5 text-center font-bold">#</th>
             <th className="border border-black px-2 py-1.5 text-center font-bold">Date <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>日期</span></th>
             <th className="border border-black px-2 py-1.5 text-center font-bold uppercase">Particulars</th>
-            <th className="border border-black px-2 py-1.5 text-center font-bold leading-tight">Amount <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>数目</span><br />(RM)</th>
+            <th className="whitespace-nowrap border border-black px-2 py-1.5 text-center font-bold leading-tight">Amount <span style={{ fontFamily: "KaiTi, STKaiti, serif" }}>数目</span><br />(RM)</th>
           </tr>
         </thead>
         <tbody>
@@ -917,8 +916,8 @@ export default function BulkPVPage() {
                     <th className="py-2.5 px-3 text-left">Payment Category</th>
                     <th className="py-2.5 px-3 text-center w-24">No. of PVs</th>
                     <th className="py-2.5 px-3 text-right w-36">Total (RM)</th>
-                    <th className="py-2.5 px-4 text-center min-w-[210px] border-l border-stone-200">Verified by GM</th>
-                    <th className="py-2.5 px-4 text-center min-w-[210px] border-l border-stone-200">Approved by Signatory</th>
+                    <th className="py-2.5 px-4 text-center min-w-[210px] border-l border-stone-200 hidden sm:table-cell">Verified by GM</th>
+                    <th className="py-2.5 px-4 text-center min-w-[210px] border-l border-stone-200 hidden sm:table-cell">Approved by Signatory</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -932,7 +931,7 @@ export default function BulkPVPage() {
                       </td>
                       {/* GM sig cell — same signature for all rows */}
                       <td
-                        className={`py-3 px-4 border-l border-stone-100 ${isGM && !masterGMApproval ? "cursor-pointer hover:bg-indigo-50 group" : ""}`}
+                        className={`hidden py-3 px-4 border-l border-stone-100 sm:table-cell ${isGM && !masterGMApproval ? "cursor-pointer hover:bg-indigo-50 group" : ""}`}
                         onClick={isGM && !masterGMApproval ? () => openMasterSignModal("GM") : undefined}
                       >
                         <div className="text-[10px] text-stone-500 mb-1 flex items-center justify-between">
@@ -953,7 +952,7 @@ export default function BulkPVPage() {
                       </td>
                       {/* Signatory sig cell — same signature for all rows */}
                       <td
-                        className={`py-3 px-4 border-l border-stone-100 ${isSig && !masterSigApproval ? "cursor-pointer hover:bg-purple-50 group" : ""}`}
+                        className={`hidden py-3 px-4 border-l border-stone-100 sm:table-cell ${isSig && !masterSigApproval ? "cursor-pointer hover:bg-purple-50 group" : ""}`}
                         onClick={isSig && !masterSigApproval ? () => openMasterSignModal("SIG") : undefined}
                       >
                         <div className="text-[10px] text-stone-500 mb-1 flex items-center justify-between">
@@ -981,12 +980,57 @@ export default function BulkPVPage() {
                     <td className="py-2.5 px-3 text-right tabular-nums">
                       RM {pvGroups.reduce((s, g) => s + g.total, 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
                     </td>
-                    <td colSpan={2} className="py-2.5 px-4 text-xs font-normal text-stone-400">
+                    <td colSpan={2} className="hidden py-2.5 px-4 text-xs font-normal text-stone-400 sm:table-cell">
                       {pvGroups.reduce((s, g) => s + g.pvs.length, 0)} vouchers in total
                     </td>
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {/* Signatures, stated once, where the columns cannot fit — see note. */}
+            <div className="grid grid-cols-1 gap-2 border-t border-stone-100 px-5 py-3 sm:hidden">
+              <button type="button"
+                disabled={!(isGM && !masterGMApproval)}
+                onClick={isGM && !masterGMApproval ? () => openMasterSignModal("GM") : undefined}
+                className={`rounded-lg border p-2.5 text-left ${isGM && !masterGMApproval
+                  ? "border-dashed border-indigo-300 bg-indigo-50/40" : "border-stone-200"}`}>
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-stone-500">Verified by GM / 总经理</span>
+                  {isGM && !masterGMApproval && (
+                    <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">Tap to sign</span>
+                  )}
+                </div>
+                {masterGMApproval?.signature_data
+                  ? <img src={masterGMApproval.signature_data} className="h-7 object-contain object-left" alt="GM signature" />
+                  : <div className="h-7 border-b border-stone-200" />}
+                <div className="mt-1 text-[10px] text-stone-600">
+                  {masterGMApproval
+                    ? `${masterGMApproval.name} · ${fmtDate(masterGMApproval.timestamp)}`
+                    : "Not yet verified"}
+                </div>
+              </button>
+
+              <button type="button"
+                disabled={!(isSig && !masterSigApproval)}
+                onClick={isSig && !masterSigApproval ? () => openMasterSignModal("SIG") : undefined}
+                className={`rounded-lg border p-2.5 text-left ${isSig && !masterSigApproval
+                  ? "border-dashed border-purple-300 bg-purple-50/40" : "border-stone-200"}`}>
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-stone-500">Approved by Signatory</span>
+                  {isSig && !masterSigApproval && (
+                    <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700">Tap to sign</span>
+                  )}
+                </div>
+                {masterSigApproval?.signature_data
+                  ? <img src={masterSigApproval.signature_data} className="h-7 object-contain object-left" alt="Signatory signature" />
+                  : <div className="h-7 border-b border-stone-200" />}
+                <div className="mt-1 text-[10px] text-stone-600">
+                  {masterSigApproval
+                    ? `${masterSigApproval.name} · ${fmtDate(masterSigApproval.timestamp)}`
+                    : "Not yet approved"}
+                </div>
+              </button>
             </div>
 
             {/* Finance Executive signature */}
