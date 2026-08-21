@@ -1405,7 +1405,18 @@ export default function BulkPVPage() {
                             }`}>{pv.status?.replace(/_/g, " ")}</span>
                           </div>
                         </td>
-                        <td className="border border-black px-2 py-2 font-semibold">{pv.payee_name}</td>
+                        <td className="border border-black px-2 py-2 font-semibold">
+                          {pv.payee_name}
+                          {/* Folded in below sm, where the Bank and A/C columns
+                              stand down. Dropping them outright cost the one
+                              check worth making before signing — that the money
+                              is going to the right account. */}
+                          {(bankStr(pv) || acctStr(pv)) && (
+                            <div className="mt-0.5 text-[10.5px] font-normal leading-snug text-stone-600 sm:hidden">
+                              {[bankStr(pv), acctStr(pv)].filter(Boolean).join(" · ")}
+                            </div>
+                          )}
+                        </td>
                         <td className="border border-black px-2 py-2 hidden sm:table-cell">{bankStr(pv)}</td>
                         <td className="border border-black px-2 py-2 hidden sm:table-cell">{acctStr(pv)}</td>
                         <td className="border border-black px-2 py-2 text-right tabular-nums font-medium">
