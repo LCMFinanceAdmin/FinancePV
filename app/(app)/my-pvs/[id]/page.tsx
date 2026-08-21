@@ -284,8 +284,18 @@ export default function PVDetailPage() {
       setAutoScale(s);
       setNaturalHeight(inner.offsetHeight);
     }
+    // Observe the voucher itself, not only the box around it. The box's height
+    // is what this effect sets, so watching it alone meant the height was fixed
+    // at whatever the content measured on mount — and anything that changed
+    // afterwards (a signature image loading, fonts settling, an approval
+    // arriving) left the box sized for a document that no longer existed. That
+    // is the empty space under the signatures.
+    //
+    // No feedback loop: a ResizeObserver reports untransformed size, so the
+    // scale this applies does not change what it reports.
     const ro = new ResizeObserver(measure);
     if (voucherOuterRef.current) ro.observe(voucherOuterRef.current);
+    if (voucherInnerRef.current) ro.observe(voucherInnerRef.current);
     measure();
     return () => ro.disconnect();
   // eslint-disable-next-line react-hooks/exhaustive-deps
