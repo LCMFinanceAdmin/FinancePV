@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { PVSummary, PVGroupSummary } from "@/components/pv/pv-summary";
+import { BudgetImpact } from "@/components/budget/budget-impact";
 import { chipRow } from "@/lib/table-styles";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, roleLabel, computedBadgeStatus } from "@/lib/utils";
@@ -369,6 +370,16 @@ export default function SignatoryActivityPage() {
             dept={pv.dept}
             purpose={pv.purpose}
             date={pv.submitted_at}
+            budget={canAct ? (
+              <BudgetImpact
+                variant="chip"
+                ministry={pv.ministry}
+                projectName={null}
+                amount={pv.amount}
+                excludePvId={pv.id}
+                date={null}
+              />
+            ) : undefined}
             badge={<>
               <StatusBadge status={computedBadgeStatus(pv)} />
               {isPaid && pv.paid_at && (

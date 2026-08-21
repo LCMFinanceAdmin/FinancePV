@@ -510,6 +510,16 @@ export default function SignatoryPage() {
             purpose={pv.purpose}
             date={pv.submitted_at}
             badge={<StatusBadge status={computedBadgeStatus(pv)} />}
+            budget={isSignatoryUser && !userHasActed && isRelevantForRole ? (
+              <BudgetImpact
+                variant="chip"
+                ministry={pv.ministry}
+                projectName={(pv as PVWithBulk & { project?: string }).project ?? null}
+                amount={pv.amount ?? 0}
+                excludePvId={pv.id}
+                date={(pv as PVWithBulk & { date?: string }).date ?? null}
+              />
+            ) : undefined}
             onMinistryClick={pv.ministry
               ? () => openMinistryPopup(pv.ministry!, pv.amount ?? 0)
               : undefined}
@@ -533,21 +543,7 @@ export default function SignatoryPage() {
             </div>
           )}
 
-          {/* Budget check, shown only on PVs this user is about to decide on —
-              both because that's where it matters and to keep the queue from
-              firing a budget lookup for every row. */}
-          {isSignatoryUser && !userHasActed && isRelevantForRole && (
-            <div className="mt-2">
-              <BudgetImpact
-                variant="chip"
-                ministry={pv.ministry}
-                projectName={(pv as PVWithBulk & { project?: string }).project ?? null}
-                amount={pv.amount ?? 0}
-                excludePvId={pv.id}
-                date={(pv as PVWithBulk & { date?: string }).date ?? null}
-              />
-            </div>
-          )}
+
 
           {/* Action row: buttons (left) · status/view (right) */}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2.5"

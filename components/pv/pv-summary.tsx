@@ -34,72 +34,76 @@ export interface PVSummaryProps {
   onMinistryClick?: () => void;
   /** Page-specific controls, pinned to the card's last row beside the status. */
   footer?: React.ReactNode;
+  /** What this does to the budget — rendered by the caller, which knows whether
+      the lookup is worth making for this row. */
+  budget?: React.ReactNode;
 }
 
 export function PVSummary({
-  id, pvNo, payee, amount, ministry, dept, purpose, date, badge, onMinistryClick, footer,
+  id, pvNo, payee, amount, ministry, dept, purpose, date, badge, onMinistryClick, footer, budget,
 }: PVSummaryProps) {
   const scope = ministry || dept || null;
 
-  // Sized down about four points from where this started, so a queue shows
-  // roughly half as many again per screen. It can afford to be small because
-  // the page allows pinch-zoom (see the viewport in app/layout.tsx) — anyone
-  // who finds it tight magnifies it, rather than everyone paying for the
-  // largest reader on every card.
+  // Ordered by what an approver is deciding on: which ministry, against which
+  // budget, for what, how much, and to whom. That is not the order this card
+  // had — ministry was small grey text at the bottom next to the reference, and
+  // the budget sat outside the card entirely, below everything else.
   //
-  // Nothing here can overlap: every row is its own flex line with a gap, every
-  // text node that could run long is truncate or line-clamp, and the two halves
-  // of a row are min-w-0 (so they may shrink) or shrink-0 (so they may not).
-  // Overlap in the old card came from a wrapping paragraph sharing a line with
-  // absolutely nothing stopping the buttons beside it.
-  const body = (
+  // Amount stays top right because it anchors the row and every card in a
+  // column lines its figures up. Date and voucher number drop to the bottom:
+  // they identify the voucher, they do not decide it.
+  const head = (
     <>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate text-[10.5px] font-medium text-stone-500">
-          {date ? formatDate(date) : "—"}
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0">
+          {scope ? (
+            onMinistryClick ? (
+              <button onClick={e => { e.preventDefault(); e.stopPropagation(); onMinistryClick(); }}
+                className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 !text-[11px] !font-bold text-[#4a6da7] transition-colors hover:bg-[#4a6da7]/20">
+                <Wallet size={10} className="shrink-0" />
+                <span className="truncate">{scope}</span>
+              </button>
+            ) : (
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 text-[11px] font-bold text-[#4a6da7]">
+                <Wallet size={10} className="shrink-0" />
+                <span className="truncate">{scope}</span>
+              </span>
+            )
+          ) : (
+            <span className="text-[11px] font-medium text-stone-400">No ministry recorded</span>
+          )}
         </span>
         <span className="shrink-0 text-[14.5px] font-bold leading-none tabular-nums text-stone-900">
           {formatCurrency(amount)}
         </span>
       </div>
 
-      <div className="mt-1 truncate text-[12.5px] font-bold leading-tight text-stone-900">
+      <div className="mt-1.5 truncate text-[12.5px] font-bold leading-tight text-stone-900">
         {payee || "—"}
       </div>
 
       {purpose && (
-        <div className="mt-0.5 truncate text-[11px] leading-snug text-stone-600">{purpose}</div>
+        <div className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-stone-600">{purpose}</div>
       )}
     </>
   );
 
   return (
     <div className="min-w-0">
-      {id ? <Link href={`/my-pvs/${id}`} className="block min-w-0">{body}</Link> : body}
+      {id ? <Link href={`/my-pvs/${id}`} className="block min-w-0">{head}</Link> : head}
 
-      {(scope || pvNo) && (
-        <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-stone-400">
-          {scope && (
-            onMinistryClick ? (
-              <button onClick={e => { e.preventDefault(); e.stopPropagation(); onMinistryClick(); }}
-                className="inline-flex min-w-0 items-center gap-0.5 !text-[10px] !font-semibold text-[#4a6da7] hover:underline">
-                <Wallet size={9} className="shrink-0" />
-                <span className="truncate">{scope}</span>
-              </button>
-            ) : (
-              <span className="inline-flex min-w-0 items-center gap-0.5 font-semibold text-[#4a6da7]">
-                <Wallet size={9} className="shrink-0" />
-                <span className="truncate">{scope}</span>
-              </span>
-            )
-          )}
-          {scope && pvNo && <span className="shrink-0">·</span>}
-          {pvNo && <span className="shrink-0 font-mono">{pvNo}</span>}
+      {/* What it does to the budget it is drawn against — the second question
+          after which budget, and previously the last thing on the card. */}
+      {budget && <div className="mt-1.5">{budget}</div>}
+
+      {(date || pvNo) && (
+        <div className="mt-1.5 flex min-w-0 items-center gap-1 text-[10px] text-stone-400">
+          {date && <span className="shrink-0">{formatDate(date)}</span>}
+          {date && pvNo && <span className="shrink-0">·</span>}
+          {pvNo && <span className="truncate font-mono">{pvNo}</span>}
         </div>
       )}
 
-      {/* Status left, page controls right. Wraps as a whole rather than letting
-          one side ride over the other. */}
       {(badge || footer) && (
         <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-stone-100 pt-1.5">
           <span className="flex min-w-0 flex-wrap items-center gap-1">{badge}</span>
@@ -133,25 +137,30 @@ export function PVKeyFacts({
   const scope = ministry || dept || null;
   return (
     <div className="rounded-2xl border-2 border-[#dbe9fb] bg-white p-4 shadow-[0_2px_10px_rgba(41,87,149,0.06)]">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[12px] font-medium text-stone-500">
-          {date ? formatDate(date) : "—"}
+      {/* Same order as the queue card: which ministry, how much, to whom, for
+          what. The two are read by the same person minutes apart, so they had
+          better agree about what matters. */}
+      <div className="flex items-start justify-between gap-3">
+        <span className="min-w-0">
+          {scope ? (
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 text-[12px] font-bold text-[#4a6da7]">
+              <Wallet size={11} className="shrink-0" />
+              <span className="truncate">{scope}</span>
+            </span>
+          ) : (
+            <span className="text-[12px] font-medium text-stone-400">No ministry recorded</span>
+          )}
         </span>
         <span className="shrink-0 text-[22px] font-bold tabular-nums leading-none text-stone-900">
           {formatCurrency(amount)}
         </span>
       </div>
 
-      <div className="mt-1.5 text-[17px] font-bold leading-tight text-stone-900">{payee}</div>
+      <div className="mt-2 text-[17px] font-bold leading-tight text-stone-900">{payee}</div>
 
-      {scope && (
-        <span className="mt-1.5 inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 text-[11.5px] font-semibold text-[#4a6da7]">
-          <Wallet size={11} className="shrink-0" />
-          <span className="truncate">{scope}</span>
-        </span>
-      )}
+      {purpose && <p className="mt-1 text-[13px] leading-snug text-stone-700">{purpose}</p>}
 
-      {purpose && <p className="mt-2 text-[13px] leading-snug text-stone-700">{purpose}</p>}
+      <p className="mt-2 text-[11px] text-stone-400">{date ? formatDate(date) : "—"}</p>
 
       {rows && rows.length > 0 && (
         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-stone-100 pt-3">
