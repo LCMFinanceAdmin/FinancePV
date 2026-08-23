@@ -552,7 +552,8 @@ export default function SignatoryActivityPage() {
           Paid vouchers get their own view: they are never loaded with the
           rest, so they need their own search and their own month folders. */}
       {viewMode === "activity" && statusTab === "paid" ? (
-        <PaidArchive ministries={ministryList} />
+        <PaidArchive ministries={ministryList}
+          defaultGrouping={userRole === "FINANCE_ADMIN_2" ? "entity" : "month"} />
       ) : (
       <>
       {/* ── Search ───────────────────────────────────────────── */}

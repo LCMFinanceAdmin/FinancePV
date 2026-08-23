@@ -18,6 +18,31 @@ import {
 } from "lucide-react";
 
 interface MonthBucket { month: string; pv_count: number; total: number }
+/** One body's payments in one month — see migration 162. */
+interface EntityMonth {
+  entity: string; bank_name: string | null;
+  month: string; pv_count: number; total: number;
+}
+
+/**
+ * How the archive is grouped.
+ *
+ * Finance asks what the church paid in August. Accounts asks what BAM's Maybank
+ * account paid in August, because each body reconciles against its own bank
+ * statement — so the same archive has to answer both, and which one it opens on
+ * depends on whose job it is.
+ */
+export type PaidGrouping = "month" | "entity";
+
+/** Bodies are stored by their voucher prefix; these are what they are called. */
+const ENTITY_NAMES: Record<string, string> = {
+  LCM: "Lutheran Church in Malaysia",
+  BAM: "Building Asset Management",
+  LSC: "Luther Study Centre",
+  HLE: "Highlands Lakeview Enterprises",
+  LGB: "Lutheran Garden Berhad",
+};
+const entityLabel = (e: string) => ENTITY_NAMES[e] ?? e;
 interface PaidPV {
   id: string; pv_no: string; payee_name: string; amount: number;
   ministry: string | null; dept: string | null; project: string | null;
@@ -42,9 +67,16 @@ const yearOf = (iso: string) => new Date(iso + (iso.length === 10 ? "T00:00:00" 
 const inputCls =
   "w-full rounded-lg border-2 border-stone-800 bg-white px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
 
-export function PaidArchive({ ministries = [] }: { ministries?: string[] }) {
+export function PaidArchive({ ministries = [], defaultGrouping = "month" }: {
+  ministries?: string[];
+  /** Accounts opens on the organisation view; everyone else on months. */
+  defaultGrouping?: PaidGrouping;
+}) {
   const supabase = createClient();
 
+  const [grouping, setGrouping] = useState<PaidGrouping>(defaultGrouping);
+  const [entityMonths, setEntityMonths] = useState<EntityMonth[]>([]);
+  const [openEntities, setOpenEntities] = useState<Set<string>>(new Set());
   const [months, setMonths] = useState<MonthBucket[]>([]);
   const [loadingMonths, setLoadingMonths] = useState(true);
   const [openYears, setOpenYears] = useState<Set<number>>(new Set());
@@ -78,7 +110,48 @@ export function PaidArchive({ ministries = [] }: { ministries?: string[] }) {
       }
       setLoadingMonths(false);
     });
+
+    // Both shapes come from one aggregate each, so switching view costs nothing
+    // and neither fetches a voucher until a month is opened.
+    supabase.rpc("paid_pv_entity_months").then(({ data }) => {
+      const list = (data ?? []) as EntityMonth[];
+      setEntityMonths(list);
+      if (list.length > 0) setOpenEntities(new Set([list[0].entity]));
+    });
   }, [supabase]);
+
+  /**
+   * A month's vouchers for one body.
+   *
+   * Keyed by body and month together: August holds rows for several bodies, and
+   * caching them under the month alone would show LCM's payments inside BAM's
+   * folder for whichever was opened second.
+   */
+  const loadEntityMonth = useCallback(async (entity: string, month: string) => {
+    const key = `${entity}|${month}`;
+    if (monthRows[key]) return;
+    setLoadingMonth(key);
+    const start = month;
+    const end = new Date(new Date(month + "T00:00:00").setMonth(new Date(month + "T00:00:00").getMonth() + 1))
+      .toISOString().slice(0, 10);
+    const { data } = await supabase
+      .from("pvs").select(PV_COLS)
+      .eq("status", "PAID").eq("pv_type", entity)
+      .gte("paid_at", start).lt("paid_at", end)
+      .order("paid_at", { ascending: false });
+    setMonthRows(r => ({ ...r, [key]: (data ?? []) as PaidPV[] }));
+    setLoadingMonth(null);
+  }, [supabase, monthRows]);
+
+  function toggleEntityMonth(entity: string, month: string) {
+    const key = `${entity}|${month}`;
+    setOpenMonths(s => {
+      const next = new Set(s);
+      if (next.has(key)) next.delete(key);
+      else { next.add(key); loadEntityMonth(entity, month); }
+      return next;
+    });
+  }
 
   const loadMonth = useCallback(async (month: string) => {
     if (monthRows[month]) return;
@@ -149,6 +222,7 @@ export function PaidArchive({ ministries = [] }: { ministries?: string[] }) {
   }
 
   const years = [...new Set(months.map(m => yearOf(m.month)))];
+  const entities = [...new Set(entityMonths.map(e => e.entity))];
   const grandTotal = months.reduce((s, m) => s + Number(m.total), 0);
   const grandCount = months.reduce((s, m) => s + Number(m.pv_count), 0);
 
@@ -252,11 +326,85 @@ export function PaidArchive({ ministries = [] }: { ministries?: string[] }) {
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="px-1 text-xs text-stone-400">
-            {grandCount} paid voucher{grandCount === 1 ? "" : "s"} · {formatCurrency(grandTotal)} in total
-          </p>
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <p className="text-xs text-stone-400">
+              {grandCount} paid voucher{grandCount === 1 ? "" : "s"} · {formatCurrency(grandTotal)} in total
+            </p>
+            <div className="ml-auto flex overflow-hidden rounded-lg border border-stone-200">
+              {([["month", "By month"], ["entity", "By organisation"]] as [PaidGrouping, string][]).map(([k, label]) => (
+                <button key={k} onClick={() => setGrouping(k)}
+                  className={`px-2.5 py-1 !text-[11.5px] !font-bold transition-colors ${
+                    grouping === k ? "bg-[#4a6da7] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          {years.map(year => {
+          {grouping === "entity" ? entities.map(entity => {
+            const rowsFor = entityMonths.filter(e => e.entity === entity);
+            const bank = rowsFor[0]?.bank_name;
+            const total = rowsFor.reduce((s2, e) => s2 + Number(e.total), 0);
+            const count = rowsFor.reduce((s2, e) => s2 + Number(e.pv_count), 0);
+            const open = openEntities.has(entity);
+            return (
+              <div key={entity} className="overflow-hidden rounded-2xl border border-[#e4edf9] bg-white">
+                <button
+                  onClick={() => setOpenEntities(s2 => {
+                    const n = new Set(s2); if (n.has(entity)) n.delete(entity); else n.add(entity); return n;
+                  })}
+                  className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-[#f8fbff]">
+                  <ChevronRight size={15}
+                    className={`shrink-0 text-stone-300 transition-transform ${open ? "rotate-90" : ""}`} />
+                  {open ? <FolderOpen size={16} className="text-[#4a6da7]" /> : <Folder size={16} className="text-[#4a6da7]" />}
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-bold text-stone-800">
+                      {entity}{bank ? ` · ${bank}` : ""}
+                    </span>
+                    <span className="block truncate text-[11px] text-stone-400">{entityLabel(entity)}</span>
+                  </span>
+                  <span className="ml-auto shrink-0 text-right">
+                    <span className="block text-sm font-semibold text-stone-700">{formatCurrency(total)}</span>
+                    <span className="block text-[11px] text-stone-400">{count} PV{count === 1 ? "" : "s"}</span>
+                  </span>
+                </button>
+
+                {open && (
+                  <div className="border-t border-[#eaf1fb]">
+                    {rowsFor.map(em => {
+                      const key = `${entity}|${em.month}`;
+                      const mOpen = openMonths.has(key);
+                      const rows = monthRows[key];
+                      return (
+                        <div key={key} className="border-b border-[#f1f6fd] last:border-b-0">
+                          <button
+                            onClick={() => toggleEntityMonth(entity, em.month)}
+                            className="flex w-full items-center gap-2.5 py-2.5 pl-9 pr-4 text-left transition-colors hover:bg-[#f8fbff]">
+                            <ChevronRight size={13}
+                              className={`shrink-0 text-stone-300 transition-transform ${mOpen ? "rotate-90" : ""}`} />
+                            <span className="text-sm font-semibold text-stone-700">
+                              {monthLabel(em.month)} {yearOf(em.month)}
+                            </span>
+                            <span className="text-xs text-stone-400">{em.pv_count} PV{Number(em.pv_count) === 1 ? "" : "s"}</span>
+                            <span className="ml-auto text-sm text-stone-600">{formatCurrency(Number(em.total))}</span>
+                          </button>
+                          {mOpen && (
+                            <div className="space-y-1.5 bg-[#fbfdff] px-3 pb-3 pt-1">
+                              {loadingMonth === key && !rows ? (
+                                <p className="py-3 text-center text-xs text-stone-400">Loading…</p>
+                              ) : (
+                                (rows ?? []).map(pv => <PvRow key={pv.id} pv={pv} />)
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }) : years.map(year => {
             const yearMonths = months.filter(m => yearOf(m.month) === year);
             const yearTotal = yearMonths.reduce((s, m) => s + Number(m.total), 0);
             const yearCount = yearMonths.reduce((s, m) => s + Number(m.pv_count), 0);
