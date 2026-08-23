@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatDateTime, getLOATier, roleLabel, computedBadgeStatus } from "@/lib/utils";
 import { PVKeyFacts } from "@/components/pv/pv-summary";
+import { pvEntity } from "@/lib/entities";
 import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
@@ -2263,10 +2264,12 @@ export default function PVDetailPage() {
                     <span className="font-bold ml-1">{pv.pv_type !== "BAM" ? (pv.pv_label || "") : ""}</span>
                   </div>
                 </div>
-                {pv.pv_type === "BAM" && (
-                  <div className="border-2 border-black text-center" style={{ width: 100 }}>
-                    <div className="font-black text-2xl px-2 py-0.5">BAM</div>
-                    <div className="text-[10px] font-bold border-t border-black px-1 py-0.5">(MAYBANK)</div>
+                {pvEntity(pv.pv_type) && (
+                  <div className="border-2 border-black text-center" style={{ minWidth: 100 }}>
+                    <div className="px-2 py-0.5 text-2xl font-black">{pvEntity(pv.pv_type)!.code}</div>
+                    <div className="whitespace-nowrap border-t border-black px-1 py-0.5 text-[10px] font-bold">
+                      ({pvEntity(pv.pv_type)!.bank})
+                    </div>
                   </div>
                 )}
               </div>

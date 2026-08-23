@@ -1747,6 +1747,15 @@ export default function SubmitPVPage() {
                   <div className="text-[10px] font-bold text-stone-700 border-t border-stone-800 px-2 py-0.5">(MAYBANK)</div>
                 </div>
               )}
+              {/* LGB had a tab and a header line but no stamp, so the one place
+                  the voucher says which account it is drawn on was blank for it
+                  alone. */}
+              {pvType === "LGB" && (
+                <div className="border-2 border-stone-800 text-center min-w-[90px]">
+                  <div className="text-2xl font-black text-stone-900 px-3 py-1">LGB</div>
+                  <div className="whitespace-nowrap border-t border-stone-800 px-2 py-0.5 text-[10px] font-bold text-stone-700">(HONG LEONG)</div>
+                </div>
+              )}
             </div>
           </div>
 

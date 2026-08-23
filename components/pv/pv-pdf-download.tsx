@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, Eye } from "lucide-react";
 import type { PV, PVApproval } from "@/lib/types";
+import { pvEntity } from "@/lib/entities";
 import { getLOATier, roleLabel } from "@/lib/utils";
 import {
   pdf, Document, Page, Text, View, StyleSheet, Image,
@@ -187,10 +188,10 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
           </View>
           <View style={[s.border, { width: 140, padding: "5pt 8pt", alignItems: "center" }]}>
             <Text style={[s.bold, s.tiny, { borderBottom: "1pt solid #000", width: "100%", textAlign: "center", paddingBottom: 2, marginBottom: 3 }]}>FOR OFFICE USE ONLY</Text>
-            {pv.pv_type === "BAM" ? (
+            {pvEntity(pv.pv_type) ? (
               <View style={{ alignItems: "center" }}>
-                <Text style={[s.bold, { fontSize: 22, letterSpacing: 2 }]}>BAM</Text>
-                <Text style={[s.tiny, { borderTop: "1pt solid #000", width: "100%", textAlign: "center", paddingTop: 2, marginTop: 2 }]}>(MAYBANK)</Text>
+                <Text style={[s.bold, { fontSize: 22, letterSpacing: 2 }]}>{pvEntity(pv.pv_type)!.code}</Text>
+                <Text style={[s.tiny, { borderTop: "1pt solid #000", width: "100%", textAlign: "center", paddingTop: 2, marginTop: 2 }]}>({pvEntity(pv.pv_type)!.bank})</Text>
               </View>
             ) : pv.pv_label ? (
               <Text style={[s.bold, { fontSize: 18, letterSpacing: 1 }]}>{pv.pv_label.split(" - ")[0]}</Text>
