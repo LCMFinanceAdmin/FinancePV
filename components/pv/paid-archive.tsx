@@ -21,6 +21,8 @@ interface MonthBucket { month: string; pv_count: number; total: number }
 /** One body's payments in one month — see migration 162. */
 interface EntityMonth {
   entity: string; bank_name: string | null;
+  /** Set when the account is in another body's name — LGB banks under LCM. */
+  registered_to: string | null;
   month: string; pv_count: number; total: number;
 }
 
@@ -344,6 +346,7 @@ export function PaidArchive({ ministries = [], defaultGrouping = "month" }: {
           {grouping === "entity" ? entities.map(entity => {
             const rowsFor = entityMonths.filter(e => e.entity === entity);
             const bank = rowsFor[0]?.bank_name;
+            const registeredTo = rowsFor[0]?.registered_to;
             const total = rowsFor.reduce((s2, e) => s2 + Number(e.total), 0);
             const count = rowsFor.reduce((s2, e) => s2 + Number(e.pv_count), 0);
             const open = openEntities.has(entity);
@@ -361,7 +364,10 @@ export function PaidArchive({ ministries = [], defaultGrouping = "month" }: {
                     <span className="block truncate text-sm font-bold text-stone-800">
                       {entity}{bank ? ` · ${bank}` : ""}
                     </span>
-                    <span className="block truncate text-[11px] text-stone-400">{entityLabel(entity)}</span>
+                    <span className="block truncate text-[11px] text-stone-400">
+                      {entityLabel(entity)}
+                      {registeredTo && ` · account in ${registeredTo}'s name`}
+                    </span>
                   </span>
                   <span className="ml-auto shrink-0 text-right">
                     <span className="block text-sm font-semibold text-stone-700">{formatCurrency(total)}</span>
