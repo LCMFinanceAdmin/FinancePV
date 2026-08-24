@@ -157,8 +157,9 @@ export default function PayrollEmployeePage() {
   if (!emp) return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Employee not found.</div>;
 
   const current = salaries[0] ?? null;
-  const posting = emp.posting_type === "CHURCH" ? emp.church_name
-    : emp.posting_type === "OFFICE" ? emp.department : "—";
+  // "Other" is where a pastor sits until their congregation is recorded, so it
+  // falls back to the department rather than printing a dash beside the word.
+  const posting = emp.posting_type === "CHURCH" ? emp.church_name : emp.department;
 
   // Computed yearly grid: 12 months + 13th month, with increment timing & editable rates.
   // Current-year increment takes effect in Jan (joined before July) or July (joined after July).
