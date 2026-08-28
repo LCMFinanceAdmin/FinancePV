@@ -125,11 +125,9 @@ function MyLoansInner() {
     if (!agreedTerms) { showMsg("Please agree to the terms and conditions", false); return; }
 
     setSubmitting(true);
-    const { data: noData, error: noErr } = await supabase.rpc("next_loan_app_no");
-    if (noErr) { showMsg("Could not generate application number", false); setSubmitting(false); return; }
-
+    // Assigned by a trigger inside this insert (migration 173) — see my-leaves
+    // for why fetching it beforehand handed staff a number already in use.
     const { error } = await supabase.from("loan_applications").insert({
-      loan_app_no:           noData,
       applicant_email:       userEmail,
       applicant_name:        userName,
       amount,

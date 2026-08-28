@@ -50,6 +50,11 @@ function MyLeavesInner() {
   const [replacementDays,  setReplacementDays]  = useState<ReplacementDay[]>([]);
   const [loading,          setLoading]          = useState(true);
   const [tab,              setTab]              = useState<"balance"|"pending"|"history">("balance");
+  // Annual leave rises with service — 14 / 21 / 25 days, per the Terms and
+  // Conditions (A9.1, B8.1, C7.1). Worked out by the database, which is the
+  // only place that knows the start date, and returned per leave type.
+  const [entitlements,     setEntitlements]     = useState<Record<string, number>>({});
+  const [yearsOfService,   setYearsOfService]   = useState<number | null>(null);
   const [showApply,        setShowApply]        = useState(false);
   const [userEmail,        setUserEmail]        = useState("");
   const [userName,         setUserName]         = useState("");
@@ -83,7 +88,7 @@ function MyLeavesInner() {
     const email = session?.user?.email ?? "";
     setUserEmail(email);
 
-    const [{ data: lt }, { data: apps }, { data: rdays }, { data: profile }, { data: people }] = await Promise.all([
+    const [{ data: lt }, { data: apps }, { data: rdays }, { data: profile }, { data: people }, { data: ents }] = await Promise.all([
       supabase.from("leave_types").select("*").eq("active", true).order("sort_order"),
       supabase.from("leave_applications").select("*").eq("applicant_email", email)
         .order("applied_at", { ascending: false }),
@@ -91,7 +96,17 @@ function MyLeavesInner() {
         .gte("work_date", `${year}-01-01`).lte("work_date", `${year}-12-31`),
       supabase.from("user_roles").select("full_name,designation").eq("email", email).single(),
       supabase.from("user_roles").select("email,role"),
+      supabase.rpc("my_leave_entitlements"),
     ]);
+
+    const entMap: Record<string, number> = {};
+    let yrs: number | null = null;
+    for (const e of (ents ?? []) as { code: string; days: number; years_of_service: number | null }[]) {
+      entMap[e.code] = Number(e.days);
+      if (e.years_of_service != null) yrs = e.years_of_service;
+    }
+    setEntitlements(entMap);
+    setYearsOfService(yrs);
 
     setLeaveTypes(lt ?? []);
     setApplications(apps ?? []);
@@ -119,10 +134,11 @@ function MyLeavesInner() {
       const earned = replacementDays.reduce((s, r) => s + Number(r.days), 0);
       return { entitlement: earned, used: usedDays, remaining: Math.max(0, earned - usedDays) };
     }
+    const entitlement = entitlements[typeCode] ?? type.days_per_year;
     return {
-      entitlement: type.days_per_year,
+      entitlement,
       used: usedDays,
-      remaining: Math.max(0, type.days_per_year - usedDays),
+      remaining: Math.max(0, entitlement - usedDays),
     };
   }
 
@@ -228,11 +244,11 @@ function MyLeavesInner() {
     const balanceAnnual  = annualBalance;
     const balanceMedical = medicalBalance;
 
-    const { data: leaveNoData, error: noErr } = await supabase.rpc("next_leave_no");
-    if (noErr) { showMsg("Could not generate leave number", false); setSubmitting(false); return; }
-
+    // The number is assigned by a trigger inside this insert (migration 173).
+    // Fetching it first was two round trips with a gap between them, and the
+    // read could not see other people's applications anyway — which is why an
+    // ordinary member of staff was handed a number that already existed.
     const { data: created, error } = await supabase.from("leave_applications").insert({
-      leave_no:           leaveNoData,
       applicant_email:    userEmail,
       applicant_name:     userName,
       leave_type_code:    form.leave_type_code,
