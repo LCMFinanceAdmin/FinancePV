@@ -19,12 +19,19 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { StaffOnly } from "@/components/auth/staff-only";
-import { Wallet, Download, Loader2, TrendingUp, Landmark, HandCoins, Info } from "lucide-react";
+import { Wallet, Download, Loader2, TrendingUp, Landmark, HandCoins, Info, ReceiptText } from "lucide-react";
 import Link from "next/link";
 import type { PayrollEmployee, PayrollSalary } from "@/lib/types";
 
 interface Run {
   id: string; year: number; month: number; status: string; finalized_at: string | null;
+}
+interface Entitlement {
+  code: string; name: string; basis: string;
+  percent_covered: number; cap_amount: number | null;
+  used: number | null; remaining: number | null;
+  unit_rate: number | null; unit_label: string | null;
+  source: string | null; note: string | null;
 }
 interface Line {
   id: string; run_id: string; employee_id: string; employee_name: string;
@@ -55,6 +62,7 @@ function MySalaryInner() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [lines, setLines] = useState<Line[]>([]);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [entitlements, setEntitlements] = useState<Entitlement[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -77,6 +85,9 @@ function MySalaryInner() {
       ]);
       setSalaries((sal ?? []) as PayrollSalary[]);
       setLines((ln ?? []) as Line[]);
+
+      const { data: ents } = await supabase.rpc("my_claim_entitlements");
+      setEntitlements((ents ?? []) as Entitlement[]);
 
       const runIds = [...new Set((ln ?? []).map(l => l.run_id))];
       if (runIds.length) {
@@ -308,6 +319,62 @@ function MySalaryInner() {
           </div>
         )}
       </Card>
+
+      {/* ── What you may claim ──────────────────────────────────────────── */}
+      {entitlements.length > 0 && (
+        <Card className="mb-4">
+          <CardHeader className="flex items-center gap-2">
+            <ReceiptText size={15} className="text-[#4a6da7]" />
+            <span className="text-sm font-bold text-stone-800">What you may claim</span>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm tabular-nums">
+              <thead className="border-b border-[#e3edf9] bg-[#f5f9ff]">
+                <tr>
+                  <th className="px-5 py-2 text-left text-xs font-semibold uppercase tracking-wide text-stone-500">Claim</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-stone-500">Allowance</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-stone-500">Used</th>
+                  <th className="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-stone-500">Left</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entitlements.map(e => (
+                  <tr key={e.code} className="border-b border-[#eef4fc] last:border-0">
+                    <td className="px-5 py-2">
+                      <div className="font-medium text-stone-800">{e.name}</div>
+                      {e.note && <div className="text-[11px] text-stone-400">{e.note}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-stone-600">
+                      {e.unit_rate
+                        ? `${formatCurrency(e.unit_rate)} per ${e.unit_label ?? "unit"}`
+                        : e.basis === "YEARLY" ? `${formatCurrency(e.cap_amount ?? 0)} a year`
+                        : e.basis === "PER_EVENT" ? `${formatCurrency(e.cap_amount ?? 0)} per occasion`
+                        : "No ceiling"}
+                      {e.percent_covered < 100 && (
+                        <span className="text-stone-400"> · {e.percent_covered}% of the bill</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right text-stone-600">
+                      {e.used == null ? <span className="text-stone-300">&mdash;</span> : formatCurrency(e.used)}
+                    </td>
+                    <td className="px-5 py-2 text-right font-semibold text-stone-800">
+                      {e.remaining == null ? <span className="text-stone-300">&mdash;</span> : formatCurrency(e.remaining)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <CardBody className="pt-3">
+            <p className="text-xs leading-relaxed text-stone-500">
+              Counted from your own vouchers once they are approved or paid, so a claim still
+              working its way through the chain has not been taken off yet. Amounts without a
+              yearly ceiling, and those allowed per occasion rather than per year, show no
+              running total &mdash; the church has no way to tell which occasion a voucher belongs to.
+            </p>
+          </CardBody>
+        </Card>
+      )}
 
       {/* ── What the church holds about you ─────────────────────────────── */}
       <Card className="mb-4">

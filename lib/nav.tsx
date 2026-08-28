@@ -17,7 +17,7 @@ import {
   Settings, Activity, ClipboardCheck, PiggyBank, FlaskConical, ShoppingCart,
   ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
   Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle, Handshake, Hash, CalendarCheck,
-  FileSpreadsheet,
+  FileSpreadsheet, ReceiptText,
 } from "lucide-react";
 
 export interface NavItem {
@@ -274,6 +274,14 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/settings/lookups", label: "Lookups", desc: "Departments, ministries and projects",
         icon: <Settings size={size} />, show: financeNotAcct,
+      },
+      {
+        href: "/settings/claims", label: "Claim Entitlements",
+        desc: "What each category may claim, and the rates behind it",
+        // Read by anyone employed — knowing your own allowance is not a
+        // privilege. The page hides its controls from those who cannot save,
+        // and the policies refuse the write regardless.
+        icon: <ReceiptText size={size} />, show: (u) => isStaffMember(u),
       },
       {
         href: "/settings/payment-refs", label: "Payment References",

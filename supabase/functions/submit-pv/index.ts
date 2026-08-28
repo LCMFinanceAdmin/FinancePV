@@ -354,6 +354,11 @@ Deno.serve(async (req) => {
       dept:                  d.dept || "",
       ministry,
       project:               d.project || "",
+      // Which personal entitlement this claim draws on, if any. The column has
+      // existed unused since the table was created; migration 175 gives it a
+      // meaning, and what is claimed against an entitlement is counted from
+      // here rather than kept in a second ledger.
+      claim_category:        d.claim_category || null,
       dept_head_name:        deptData?.head_name || "",
       dept_head_email:       deptData?.head_email || "",
       head_verified:         excoAlreadyVerified ? "YES" : (hasDeptHead && !isApplicantHead ? "NO" : "N/A"),

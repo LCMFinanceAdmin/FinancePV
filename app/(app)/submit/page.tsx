@@ -74,6 +74,12 @@ interface FormData {
   payee_name: string; payment_method: string; payee_bank_name: string;
   payee_bank_acct: string; cheque_no: string; biller_code: string; ref_no: string; ref_no_2: string;
   ministry: string; project: string; purpose: string;
+  /**
+   * Which personal entitlement this claim draws on — dental, books, moving.
+   * Empty for the ordinary case, a payment to a supplier out of a ministry
+   * budget, which is not an entitlement at all.
+   */
+  claim_category: string;
   line_items: PVLineItem[];
   sig_applicant_name: string; sig_applicant_confirm: boolean;
   // An earlier voucher this one follows from — a correction, a top-up, a
@@ -88,11 +94,67 @@ const EMPTY_FORM: FormData = {
   payee_name: "", payment_method: "Online Transfer",
   payee_bank_name: "", payee_bank_acct: "",
   cheque_no: "", biller_code: "", ref_no: "", ref_no_2: "",
-  ministry: "", project: "", purpose: "",
+  ministry: "", project: "", purpose: "", claim_category: "",
   line_items: [{ description: "", amount: 0, date: "" }],
   sig_applicant_name: "", sig_applicant_confirm: false,
   reference_pv_no: "", reference_note: "",
 };
+
+/**
+ * What the chosen entitlement allows, and whether this claim fits inside it.
+ *
+ * Warns rather than blocks. The Terms and Conditions have exceptions, the
+ * approvers can see the same figures, and a form that refuses the claim only
+ * moves the conversation off the record.
+ */
+function ClaimEntitlementNote({ ent, amount }: { ent: ClaimEntitlement | null; amount: number }) {
+  if (!ent) return null;
+
+  const rm = (n: number) => `RM${n.toFixed(2)}`;
+  const parts: string[] = [];
+  if (ent.percent_covered < 100) parts.push(`${ent.percent_covered}% of the bill`);
+  if (ent.unit_rate) parts.push(`${rm(ent.unit_rate)} per ${ent.unit_label ?? "unit"}`);
+
+  const yearly = ent.basis === "YEARLY" && ent.cap_amount != null;
+  const over = yearly && ent.remaining != null && amount > ent.remaining;
+  const perEventOver = ent.basis === "PER_EVENT" && ent.cap_amount != null && amount > ent.cap_amount;
+
+  return (
+    <div className={`mt-1.5 rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${
+      over || perEventOver
+        ? "border-amber-300 bg-amber-50 text-amber-800"
+        : "border-[#dce9fb] bg-[#f5f9ff] text-stone-600"}`}>
+      {yearly && (
+        <>
+          <strong>{rm(ent.remaining ?? 0)}</strong> left of {rm(ent.cap_amount ?? 0)} this year
+          {ent.used ? <> · {rm(ent.used)} already claimed</> : null}
+        </>
+      )}
+      {ent.basis === "PER_EVENT" && (
+        <>Up to <strong>{rm(ent.cap_amount ?? 0)}</strong> per occasion</>
+      )}
+      {ent.basis === "UNLIMITED" && (
+        <>No yearly ceiling{parts.length ? <> — {parts.join(", ")}</> : null}</>
+      )}
+      {ent.basis !== "UNLIMITED" && parts.length > 0 && <> · {parts.join(", ")}</>}
+      {(over || perEventOver) && (
+        <div className="mt-1 font-semibold">
+          This claim of {rm(amount)} is above that. You can still submit it — your approvers
+          will see the same figures.
+        </div>
+      )}
+      {ent.note && <div className="mt-1 text-stone-400">{ent.note}{ent.source ? ` (${ent.source})` : ""}</div>}
+    </div>
+  );
+}
+
+interface ClaimEntitlement {
+  code: string; name: string; basis: string;
+  percent_covered: number; cap_amount: number | null;
+  used: number | null; remaining: number | null;
+  unit_rate: number | null; unit_label: string | null;
+  source: string | null; note: string | null;
+}
 
 interface EarlierPv {
   id: string; pv_no: string; payee_name: string;
@@ -243,6 +305,10 @@ export default function SubmitPVPage() {
   const supabase = createClient();
 
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
+  // What this person may claim personally, and what is left of it this year.
+  // Empty for anyone with no directory category — a vendor or a volunteer —
+  // and the picker then does not appear at all.
+  const [entitlements, setEntitlements] = useState<ClaimEntitlement[]>([]);
   const [pvType, setPvType] = useState<"LCM" | "BAM" | "LSC" | "HLE" | "LGB">(() => {
     if (typeof window === "undefined") return "LCM";
     const t = new URLSearchParams(window.location.search).get("type");
@@ -596,6 +662,21 @@ export default function SubmitPVPage() {
     (userMinistries.length > 0 && form.ministry !== "" && userMinistries.includes(form.ministry));
   const budgetManageUrl = `/budget?ministry=${encodeURIComponent(form.ministry)}`;
 
+  useEffect(() => {
+    (async () => {
+      // A failure here is not worth interrupting the form for: without
+      // entitlements the picker simply does not appear, and the voucher is
+      // still perfectly submittable.
+      try {
+        const { data } = await supabase.rpc("my_claim_entitlements");
+        setEntitlements((data ?? []) as ClaimEntitlement[]);
+      } catch { /* no picker */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const chosenEntitlement = entitlements.find(e => e.code === form.claim_category) ?? null;
+
   function setField<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm(f => ({ ...f, [key]: value }));
   }
@@ -808,6 +889,7 @@ export default function SubmitPVPage() {
           payment_type: isTravelClaim ? "TRAVEL_CLAIM" : "GENERAL",
           sig_applicant_name: form.sig_applicant_name,
           sig_applicant_confirm: form.sig_applicant_confirm,
+          claim_category: form.claim_category || null,
           attachment_urls: attachmentUrls,
           ...(isFinanceAdmin && finSigData ? { finance_signature_data: finSigData } : {}),
           ...(applicantSigData ? { applicant_signature_data: applicantSigData } : {}),
@@ -1266,6 +1348,17 @@ export default function SubmitPVPage() {
           onChange={e => setField("purpose", e.target.value)}
           placeholder="e.g. Monthly Cost of Living Allowance" />
       </div>
+      {entitlements.length > 0 && (
+        <div>
+          <label className={mLabel}>Claiming a personal entitlement?</label>
+          <select className={mInput} value={form.claim_category}
+            onChange={e => setField("claim_category", e.target.value)}>
+            <option value="">No — this is an ordinary payment</option>
+            {entitlements.map(e => <option key={e.code} value={e.code}>{e.name}</option>)}
+          </select>
+          <ClaimEntitlementNote ent={chosenEntitlement} amount={displayAmount} />
+        </div>
+      )}
       <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} compact />
     </div>,
 
@@ -1887,6 +1980,17 @@ export default function SubmitPVPage() {
               <input className={uline} value={form.purpose}
                 onChange={e => setField("purpose", e.target.value)} placeholder="e.g. Monthly Cost of Living Allowance" required />
             </Row>
+
+            {entitlements.length > 0 && (
+              <Row label="Personal entitlement" sublabel="Only if this claim draws on your own allowance">
+                <select className={uline} value={form.claim_category}
+                  onChange={e => setField("claim_category", e.target.value)}>
+                  <option value="">No — an ordinary payment from a ministry budget</option>
+                  {entitlements.map(e => <option key={e.code} value={e.code}>{e.name}</option>)}
+                </select>
+                <ClaimEntitlementNote ent={chosenEntitlement} amount={displayAmount} />
+              </Row>
+            )}
 
             <Row label="Relates to PV" sublabel="Only if this corrects or follows an earlier voucher">
               <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} />
