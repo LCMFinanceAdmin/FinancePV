@@ -140,6 +140,10 @@ svg{display:block;width:100%;height:auto;}
 
 @media print{
   @page{size:A4 portrait;margin:9mm;}
+  /* Chrome drops background colour when printing unless asked. Every button,
+     status pill and card fill in here carries meaning, so losing them would
+     turn the mockups into empty white boxes. */
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   body{background:#fff;font-size:9.6px;}
   .stack{width:100%;padding:0;gap:0;}
   .page{border:none;border-radius:0;box-shadow:none;padding:0;

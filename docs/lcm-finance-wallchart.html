@@ -102,6 +102,10 @@ footer{
 }
 
 @media print{
+  /* Chrome drops background colour when printing unless asked. Every button,
+     status pill and card fill in here carries meaning, so losing them would
+     turn the mockups into empty white boxes. */
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   /* Portrait, deliberately. Landscape was tried and is worse: the drawings
      scale to the width of the page, so a wider sheet makes them taller, and
      the measured height went from 959px to 1221 against less room. The spare

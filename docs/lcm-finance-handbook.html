@@ -328,6 +328,11 @@ footer{
 footer p{max-width:64ch;}
 
 @media print{
+  @page{size:A4 portrait;margin:14mm;}
+  /* Chrome drops background colour when printing unless asked. Every button,
+     status pill and card fill in here carries meaning, so losing them would
+     turn the mockups into empty white boxes. */
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   body{background:#fff;font-size:11pt;}
   .rail{display:none;}
   .layout{grid-template-columns:1fr;}
