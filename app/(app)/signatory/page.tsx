@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { NotificationsOptIn } from "@/components/notifications-optin";
 import { PVSummary, PVGroupSummary } from "@/components/pv/pv-summary";
+import { PaidArchive } from "@/components/pv/paid-archive";
 import { chipRow } from "@/lib/table-styles";
 
 
@@ -72,6 +73,9 @@ export default function SignatoryPage() {
   const [ministryFilter, setMinistryFilter] = useState("All Ministries");
   const [ministries, setMinistries] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<"pending" | "pending_signatory" | "approved" | "paid">("pending_signatory");
+  // Paid replaces the list entirely rather than filtering it, so several
+  // blocks below need to know.
+  const isPaidView = statusFilter === "paid";
 
   // Self-service approval-PIN management
   const [hasPin, setHasPin] = useState(false);
@@ -683,7 +687,10 @@ export default function SignatoryPage() {
 
       <ApprovalPath currentIndex={isGM ? 0 : 2} />
 
-      {/* Search + Ministry filter */}
+      {/* Search + Ministry filter. Hidden for Paid: the archive below brings
+          its own, and two search boxes on one screen is a question about which
+          one is live. */}
+      {!isPaidView && (
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
@@ -702,6 +709,7 @@ export default function SignatoryPage() {
           {ministries.map(m => <option key={m}>{m}</option>)}
         </select>
       </div>
+      )}
 
       {/* Role-aware status filter tabs */}
       <div className={chipRow}>
@@ -867,15 +875,20 @@ export default function SignatoryPage() {
         </div>
       )}
 
+      {/* Paid vouchers are the one set that only grows, so they get folders
+          rather than a list — the same component Finance Activity uses, which
+          fetches a month's rows only when its folder is opened. */}
+      {isPaidView && <PaidArchive ministries={ministries} defaultGrouping="month" />}
+
       {/* Count */}
-      {!loading && (
+      {!isPaidView && !loading && (
         <p className="text-xs text-stone-400">
           {filteredStandalones.length + filteredBulkGroups.reduce((s, g) => s + g.pvs.length, 0)} PVs
         </p>
       )}
 
       {/* List */}
-      {loading ? (
+      {isPaidView ? null : loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : (filteredStandalones.length === 0 && filteredBulkGroups.length === 0) ? (
         <div className="py-8 text-center text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
