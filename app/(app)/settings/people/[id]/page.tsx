@@ -330,6 +330,7 @@ export default function PersonProfilePage() {
               <Field label="IC number" value={person.ic_no} />
               <Field label="Passport" value={person.passport_no} />
               <Field label="Date of birth" value={person.dob ? `${fmtDate(person.dob)}${age(person.dob)}` : null} />
+              <Field label="Gender" value={person.gender} />
               <Field label="Marital status" value={titleCase(person.marital_status)} />
             </dl>
           </div>
@@ -806,6 +807,15 @@ function EditPersonModal({ person, congregations, districts, organisations, extC
             <input className={fieldClass} value={d.passport_no ?? ""} onChange={e => set("passport_no", e.target.value)} /></div>
           <div><label className={labelClass}>Date of birth</label>
             <input className={fieldClass} type="date" value={d.dob ?? ""} onChange={e => set("dob", e.target.value)} /></div>
+          <div><label className={labelClass}>Gender</label>
+            {/* Constrained to two values by migration 180. It decides who is
+                offered maternity and paternity leave, so a free-text "M" here
+                would silently match nothing. */}
+            <select className={fieldClass} value={d.gender ?? ""} onChange={e => set("gender", e.target.value || null)}>
+              <option value="">&mdash;</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select></div>
           <div><label className={labelClass}>Marital status</label>
             <select className={fieldClass} value={d.marital_status ?? ""} onChange={e => set("marital_status", e.target.value)}>
               <option value="">—</option>

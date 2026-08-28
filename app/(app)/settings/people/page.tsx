@@ -34,7 +34,7 @@ import { roleLabel, roleWithScope } from "@/lib/utils";
 interface Person {
   id: string; full_name: string; preferred_name: string | null;
   category: CategoryKey; status: string;
-  email: string | null; work_email: string | null; phone: string | null;
+  email: string | null; work_email: string | null; phone: string | null; gender: string | null;
   hq_department: string | null; district_id: string | null;
   company_name: string | null; vendor_service: string | null;
   organisation_id: string | null; org_role: string | null;
@@ -756,9 +756,9 @@ function MenuItem({ children, onClick, danger }: {
 /** The people shown, as a spreadsheet — the filters are the point of it. */
 function exportCsv(rows: Person[], involvementOf: (id: string) => TimelineRow[]) {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const head = ["Name", "Category", "Status", "LCM Email", "Personal Email", "Phone", "Department", "Involvement"];
+  const head = ["Name", "Category", "Status", "Gender", "LCM Email", "Personal Email", "Phone", "Department", "Involvement"];
   const body = rows.map(p => [
-    p.full_name, categoryOf(p.category).one, p.status, p.work_email ?? "", p.email ?? "", p.phone ?? "",
+    p.full_name, categoryOf(p.category).one, p.status, p.gender ?? "", p.work_email ?? "", p.email ?? "", p.phone ?? "",
     p.hq_department ?? "",
     involvementOf(p.id).map(r => `${r.title}${r.role ? ` (${r.role})` : ""} ${period(r.start_date, r.end_date)}`).join("; "),
   ].map(esc).join(","));
