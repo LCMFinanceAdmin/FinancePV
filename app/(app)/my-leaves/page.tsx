@@ -59,6 +59,13 @@ function MyLeavesInner() {
   // leave — Employment Act s60F. This maps a leave type to the other type whose
   // days also count against its ceiling.
   const [aggregateWith,    setAggregateWith]    = useState<Record<string, string>>({});
+  // How each entitlement is arrived at — BANDED, FIXED, EARNED or AS_NEEDED —
+  // and which rung of the service ladder this person is on. Zero means two
+  // different things (not yet qualified, versus no fixed allowance at all) and
+  // the card cannot tell them apart without this.
+  const [entMeta, setEntMeta] = useState<Record<string, {
+    kind: string; band: string | null; minMonths: number;
+  }>>({});
   const [showApply,        setShowApply]        = useState(false);
   const [userEmail,        setUserEmail]        = useState("");
   const [userName,         setUserName]         = useState("");
@@ -105,16 +112,22 @@ function MyLeavesInner() {
 
     const entMap: Record<string, number> = {};
     const aggMap: Record<string, string> = {};
+    const metaMap: Record<string, { kind: string; band: string | null; minMonths: number }> = {};
     let yrs: number | null = null;
     for (const e of (ents ?? []) as {
       code: string; days: number; years_of_service: number | null; aggregate_with: string | null;
+      kind: string; min_months_service: number; band_label: string | null;
     }[]) {
       entMap[e.code] = Number(e.days);
       if (e.aggregate_with) aggMap[e.code] = e.aggregate_with;
       if (e.years_of_service != null) yrs = e.years_of_service;
+      metaMap[e.code] = {
+        kind: e.kind, band: e.band_label, minMonths: Number(e.min_months_service ?? 0),
+      };
     }
     setEntitlements(entMap);
     setAggregateWith(aggMap);
+    setEntMeta(metaMap);
     setYearsOfService(yrs);
 
     setLeaveTypes(lt ?? []);
@@ -450,49 +463,101 @@ function MyLeavesInner() {
 
       {/* ── Balance tab ── */}
       {tab === "balance" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {leaveTypes.filter(t => t.active).map(type => {
-            const bal = getBalance(type.code, type);
-            const pct = bal.entitlement > 0 ? Math.min(100, (bal.used / bal.entitlement) * 100) : 0;
-            return (
-              <Card key={type.code}>
-                <CardBody>
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">{type.name}</p>
-                      {type.is_replacement ? (
-                        <p className="text-xs text-stone-400 mt-0.5">Earned from overtime days</p>
-                      ) : (
-                        <p className="text-xs text-stone-400 mt-0.5">{type.days_per_year} days / year</p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-[#4a6da7]">{bal.remaining}</p>
-                      <p className="text-xs text-stone-400">remaining</p>
-                    </div>
-                  </div>
-                  {bal.entitlement > 0 && (
-                    <div className="mt-2">
-                      <div className="h-1.5 bg-[#eaf3ff] rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-[#60a5fa] to-[#818cf8] rounded-full transition-all" style={{ width: `${pct}%` }} />
+        <>
+          {yearsOfService != null && (
+            <p className="mb-3 text-sm text-stone-500">
+              Worked out from your <strong className="text-stone-700">{yearsOfService} year{yearsOfService === 1 ? "" : "s"}</strong> of
+              completed service. Annual and sick leave both rise with it.
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {leaveTypes.filter(t => t.active).map(type => {
+              const bal = getBalance(type.code, type);
+              const meta = entMeta[type.code];
+              const kind = meta?.kind ?? (type.is_replacement ? "EARNED" : "FIXED");
+              const pct = bal.entitlement > 0 ? Math.min(100, (bal.used / bal.entitlement) * 100) : 0;
+
+              // No fixed allowance is not the same as none left, and the card
+              // has to say which. The two used to render identically as zero.
+              const asNeeded = kind === "AS_NEEDED";
+              const notYet = kind === "BANDED" && bal.entitlement === 0 && (meta?.minMonths ?? 0) > 0;
+
+              // numeric(x,1) from the database renders as "14.0"; nobody
+              // writes their leave balance with a decimal place.
+              const tidy = (n: number) => (Math.round(n * 10) / 10).toString().replace(/\.0$/, "");
+
+              const subtitle =
+                asNeeded ? "No fixed allowance — apply as the need arises"
+                : kind === "EARNED" ? "Only what you have earned working rest days"
+                : notYet ? `Starts after ${meta!.minMonths} months of service`
+                : kind === "BANDED" && meta?.band
+                  ? `${tidy(bal.entitlement)} days — ${meta.band} of service`
+                  : `${tidy(bal.entitlement)} days a year`;
+
+              return (
+                <Card key={type.code}>
+                  <CardBody>
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">{type.name}</p>
+                        <p className="mt-0.5 text-xs text-stone-400">{subtitle}</p>
                       </div>
-                      <div className="flex justify-between text-xs text-stone-400 mt-1">
-                        <span>{bal.used} used</span>
-                        <span>{bal.entitlement} total</span>
+                      <div className="shrink-0 text-right">
+                        {asNeeded ? (
+                          <p className="pt-1 text-sm font-semibold text-stone-400">as needed</p>
+                        ) : (
+                          <>
+                            <p className="text-2xl font-bold tabular-nums text-[#4a6da7]">{tidy(bal.remaining)}</p>
+                            <p className="text-xs text-stone-400">remaining</p>
+                          </>
+                        )}
                       </div>
                     </div>
-                  )}
-                  {type.is_replacement && bal.entitlement === 0 && (
-                    <p className="text-xs text-stone-400 mt-1">No replacement days earned yet</p>
-                  )}
-                  {type.requires_doc && (
-                    <p className="text-[10px] text-amber-600 mt-1.5">* Supporting document required</p>
-                  )}
-                </CardBody>
-              </Card>
-            );
-          })}
-        </div>
+
+                    {bal.entitlement > 0 && (
+                      <div className="mt-2">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-[#eaf3ff]">
+                          <div className="h-full rounded-full bg-gradient-to-r from-[#60a5fa] to-[#818cf8] transition-all"
+                            style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="mt-1 flex justify-between text-xs text-stone-400 tabular-nums">
+                          <span>{tidy(bal.used)} used</span>
+                          <span>{tidy(bal.entitlement)} total</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hospitalisation's ceiling is shared with sick leave, and
+                        somebody reading 60 without knowing that will plan on
+                        days they do not have. */}
+                    {aggregateWith[type.code] && (
+                      <p className="mt-1.5 text-[11px] leading-relaxed text-stone-500">
+                        These {tidy(bal.entitlement)} days include any{" "}
+                        {leaveTypes.find(t => t.code === aggregateWith[type.code])?.name.toLowerCase()
+                          ?? "sick leave"} you have taken — both draw on the same total.
+                      </p>
+                    )}
+
+                    {kind === "EARNED" && bal.entitlement === 0 && (
+                      <p className="mt-1 text-xs text-stone-400">No replacement days earned yet</p>
+                    )}
+
+                    {notYet && (
+                      <p className="mt-1 text-xs text-stone-400">
+                        You have {yearsOfService === 0 ? "under a year" : `${yearsOfService} years`} recorded.
+                      </p>
+                    )}
+
+                    {type.requires_doc && (
+                      <p className="mt-1.5 text-[10px] text-amber-600">* Supporting document required</p>
+                    )}
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {/* ── Pending tab ── */}
