@@ -58,10 +58,14 @@ export async function POST(req: NextRequest) {
         `${type?.name ?? leave.leave_type_code}: ${fmt(leave.start_date)} to ${fmt(leave.end_date)} (${leave.days} working day${Number(leave.days) === 1 ? "" : "s"}).`,
         ...(leave.reason ? [`Reason given: ${leave.reason}`] : []),
         approvers.length > 1
-          ? `This application needs all of: ${approvers.map(a => a.name).join(", ")}.`
+          ? `This application needs all of: ${approvers.map(a => a.name).join(", ")}. Each of you signs separately, and the order does not matter — you do not need to wait for the others.`
           : "",
       ].filter(Boolean),
-      path: "/leave-queue",
+      // Straight to the application itself rather than the queue's front page.
+      // An approver who has to find the right row before they can act is an
+      // approver who leaves it until later.
+      path: `/leave-queue?ref=${encodeURIComponent(leave.leave_no)}`,
+      cta: "Review this leave application",
     });
 
     return NextResponse.json({ ok: true, notified: result.recorded, emailed: result.emailed });

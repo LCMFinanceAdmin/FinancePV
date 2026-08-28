@@ -1,8 +1,15 @@
 import { cn } from "@/lib/utils";
 
-export function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+// ref is an ordinary prop under React 19 — no forwardRef needed. It is here so
+// a caller can scroll one card into view, which is what the leave approval
+// links rely on.
+export function Card({ children, className, ref }: {
+  children: React.ReactNode;
+  className?: string;
+  ref?: React.Ref<HTMLDivElement>;
+}) {
   return (
-    <div className={cn("cloudlight-card rounded-2xl", className)}>
+    <div ref={ref} className={cn("cloudlight-card rounded-2xl", className)}>
       {children}
     </div>
   );

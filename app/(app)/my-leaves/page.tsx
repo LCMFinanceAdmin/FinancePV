@@ -252,19 +252,30 @@ function MyLeavesInner() {
     // Tell the approvers it's waiting on them. Fire-and-forget: the
     // application is already saved, and a mail problem must not read as a
     // failed submission.
+    // Telling the approvers is the whole point of submitting: an application
+    // nobody is told about waits until the applicant chases it by hand. This
+    // used to be fired and forgotten, so a failure was invisible to everyone.
+    const warnings: string[] = [];
     if (created?.id) {
-      fetch("/api/leave-submitted", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leave_id: created.id }),
-      }).catch(() => {});
+      try {
+        const res = await fetch("/api/leave-submitted", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leave_id: created.id }),
+        });
+        if (!res.ok) {
+          const b = await res.json().catch(() => ({}));
+          warnings.push(b.error ?? "your approvers could not be notified");
+        }
+      } catch {
+        warnings.push("your approvers could not be notified");
+      }
     }
 
     // The church council President can't be notified in-app — they have no
     // account — so their link goes out by email straight away. A failure here
     // must not look like the application failed: it's already saved, and the
     // link can be resent from the pending card.
-    let linkWarning = "";
     if (created?.id && resolvedApprovers.some(a => a.external)) {
       const res = await fetch("/api/leave-council-invite", {
         method: "POST",
@@ -273,14 +284,16 @@ function MyLeavesInner() {
       });
       if (!res.ok) {
         const b = await res.json().catch(() => ({}));
-        linkWarning = b.error ?? "the approval link could not be emailed";
+        warnings.push(b.error ?? "the church council link could not be emailed");
       }
     }
 
     setSubmitting(false);
     closeApply();
-    if (linkWarning) {
-      showMsg(`Application submitted, but ${linkWarning} — use “Resend council link”.`, false);
+    if (warnings.length) {
+      // The application itself is saved either way, so say that first — the
+      // failure is in telling people, and it is fixable from the pending card.
+      showMsg(`Application submitted, but ${warnings.join(" and ")}. Use “Resend council link”, or tell your approvers directly.`, false);
     } else {
       showMsg("Leave application submitted");
     }

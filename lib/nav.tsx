@@ -244,9 +244,13 @@ export const NAV_GROUPS: NavGroup[] = [
         // people who raise the most, leaving them no way to their own list.
         show: () => true,
       },
-      // Leave and staff loans are employment entitlements, so they are for LCM
-      // staff only — a volunteer EXCO member has an @lcm.org.my address but no
-      // entitlement to either.
+      // Leave, pay and staff loans are employment entitlements, so they are for
+      // LCM staff only — a volunteer EXCO member has an @lcm.org.my address but
+      // no entitlement to any of them.
+      {
+        href: "/my-salary", label: "My Salary", desc: "Your pay, payslips and salary history",
+        icon: <Wallet size={size} />, show: (u) => isStaffMember(u),
+      },
       {
         href: "/my-leaves", label: "My Leave", desc: "Apply for leave and see your balance",
         icon: <CalendarDays size={size} />, show: (u) => isStaffMember(u),

@@ -22,6 +22,45 @@ const FINANCE_ADMIN_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_
 const SENIOR_ROLES = ["TREASURER", "GENERAL_MANAGER", "BISHOP", "SECRETARY"];
 const CAN_APPROVE_ROLES = [...FINANCE_ADMIN_ROLES, ...SENIOR_ROLES];
 
+// ── Statement presentation ──────────────────────────────────────────────────
+
+const stmtLabel = "mb-1 block text-[11px] font-semibold text-stone-600";
+
+const stmtInput =
+  "w-full rounded-lg border border-stone-300 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#2f5b9c]";
+
+const stmtTh =
+  "px-3 py-1.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4a6483]";
+
+/**
+ * Income first, then expenditure — the order a set of accounts is read in, and
+ * the reason the table no longer needs a "Type" column saying the same thing
+ * on every row.
+ */
+const SECTIONS: { key: "income" | "expense"; label: string }[] = [
+  { key: "income", label: "Income" },
+  { key: "expense", label: "Expenditure" },
+];
+
+/**
+ * A figure in a column of figures: grouped digits, two decimals, and a dash
+ * for nil. No currency prefix — it is named once in the caption, which is what
+ * lets the columns stay narrow and the digits stay aligned.
+ */
+function fig(n: number): string {
+  if (!n) return "\u2014";
+  return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/**
+ * Colour is reserved for the two states worth interrupting someone about.
+ * A healthy balance stays in the ordinary ink: colouring every row green
+ * costs the red rows the attention they are there to get.
+ */
+function toneOf(c?: "red" | "yellow" | "green"): string {
+  return c === "red" ? "text-red-600" : c === "yellow" ? "text-amber-600" : "text-stone-800";
+}
+
 interface BudgetItem {
   id: string;
   ministry: string;
@@ -399,16 +438,19 @@ function BudgetInner() {
         }
       } else {
         // Ministry Head: submit a change request instead of direct save
-        const { error } = await supabase.from("budget_change_requests").insert({
+        const { data: reqRow, error } = await supabase.from("budget_change_requests").insert({
           ministry: selectedMinistry,
           budget_item_id: itemModal?.mode === "edit" ? itemModal.item?.id ?? null : null,
           change_type: itemModal?.mode === "add" ? "add" : "edit",
           proposed_data: payload,
           requested_by: userEmail,
           status: "pending",
-        });
+        }).select("id").single();
         if (error) { showToast("Error submitting request: " + error.message, false); return; }
-        showToast("Change request submitted — awaiting Finance Executive approval");
+        const warn = reqRow?.id ? await notifyBoardOfRequest(reqRow.id) : "";
+        showToast(warn
+          ? `Change request submitted, but ${warn}.`
+          : "Change request submitted — the EXCO board has been notified", !warn);
       }
 
       setItemModal(null);
@@ -575,20 +617,54 @@ function BudgetInner() {
   // Deleting a budget line is destructive and the browser's own confirm()
   // gives no sense of what is being removed, so the confirmation shows the
   // line's figures and whether any spending is already booked against it.
+  /**
+   * Tell the EXCO board a change has been asked for.
+   *
+   * Deliberately after the insert and deliberately not awaited into the
+   * success message's critical path: the request is already recorded, and an
+   * unsent email is not a reason to tell the member their request failed. It
+   * does say so, though — silence here would leave them believing the board
+   * had been told.
+   */
+  async function notifyBoardOfRequest(requestId: string): Promise<string> {
+    try {
+      const res = await fetch("/api/budget-change-notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: requestId }),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        return b.error ?? "the EXCO board could not be notified";
+      }
+      const b = await res.json().catch(() => ({}));
+      return b.notified ? "" : "no board members have an address on file, so nobody was notified";
+    } catch {
+      return "the EXCO board could not be notified";
+    }
+  }
+
   async function confirmDeleteItem(item: BudgetItem) {
     setDeleting(true);
     try {
       if (!canDirectEdit) {
-        const { error } = await supabase.from("budget_change_requests").insert({
+        const { data: reqRow, error } = await supabase.from("budget_change_requests").insert({
           ministry: selectedMinistry,
           budget_item_id: item.id,
           change_type: "delete",
-          proposed_data: { project_name: item.project_name },
+          proposed_data: {
+            project_name: item.project_name,
+            estimated_expenses: item.estimated_expenses,
+            estimated_income: item.estimated_income,
+          },
           requested_by: userEmail,
           status: "pending",
-        });
+        }).select("id").single();
         if (error) { showToast("Error: " + error.message, false); return; }
-        showToast("Deletion request submitted for approval");
+        const warn = reqRow?.id ? await notifyBoardOfRequest(reqRow.id) : "";
+        showToast(warn
+          ? `Deletion request submitted, but ${warn}.`
+          : "Deletion request submitted — the EXCO board has been notified", !warn);
       } else {
         const { error } = await supabase.from("budget_items").delete().eq("id", item.id);
         if (error) { showToast("Error: " + error.message, false); return; }
@@ -651,6 +727,25 @@ function BudgetInner() {
 
   const pendingRequests = changeRequests.filter(r => r.status === "pending");
   const resolvedRequests = changeRequests.filter(r => r.status !== "pending");
+  /**
+   * One section's lines, each sub-project directly under its parent.
+   *
+   * The printed report already nested them; the screen did not, so a
+   * sub-project sat wherever the sort happened to put it and read as a project
+   * in its own right. A line whose parent is in the other section is shown at
+   * top level rather than dropped.
+   */
+  function orderedFor(type: "income" | "expense"): { item: BudgetItem; child: boolean }[] {
+    const rows = budgetItems.filter(i => i.project_type === type);
+    const byId = new Map(rows.map(r => [r.id, r]));
+    const out: { item: BudgetItem; child: boolean }[] = [];
+    for (const r of rows.filter(r => !r.parent_id || !byId.has(r.parent_id))) {
+      out.push({ item: r, child: false });
+      for (const c of rows.filter(c => c.parent_id === r.id)) out.push({ item: c, child: true });
+    }
+    return out;
+  }
+
   const totalBudget    = budgetItems.reduce((s, i) => s + (i.estimated_income || 0) + (i.estimated_expenses || 0), 0);
   const totalSpent     = budgetItems.reduce((s, i) => s + (i.spent    || 0), 0);
   const totalPending   = budgetItems.reduce((s, i) => s + (i.pending  || 0), 0);
@@ -874,7 +969,7 @@ function BudgetInner() {
                   <div key={req.id} className="flex items-center gap-2 text-sm text-blue-700">
                     <Clock size={11} className="shrink-0 opacity-70" />
                     <span>
-                      {req.change_type === "add" ? "Add" : req.change_type === "edit" ? "Edit" : "Delete"} &ldquo;{String(req.proposed_data?.project_name ?? "")}&rdquo; — awaiting Finance Executive approval
+                      {req.change_type === "add" ? "Add" : req.change_type === "edit" ? "Edit" : "Delete"} &ldquo;{String(req.proposed_data?.project_name ?? "")}&rdquo; — with the board, awaiting a decision
                     </span>
                   </div>
                 ))}
@@ -935,158 +1030,187 @@ function BudgetInner() {
               </div>
             ) : (
               <>
-                {/* Summary row */}
-                <div className="grid grid-cols-5 divide-x divide-[#e3edf9] border-b border-[#e3edf9] bg-[#f5f9ff]">
-                  <div className="px-4 py-3 text-center">
-                    <div className="text-xs text-stone-400 mb-0.5">Total Budget</div>
-                    <div className="text-sm font-bold text-stone-700">{formatCurrency(totalBudget)}</div>
-                  </div>
-                  <div className="px-4 py-3 text-center">
-                    <div className="text-xs text-stone-400 mb-0.5">Paid / Approved</div>
-                    <div className="text-sm font-bold text-orange-600">{formatCurrency(totalSpent)}</div>
-                  </div>
-                  <div className="px-4 py-3 text-center">
-                    <div className="text-xs text-stone-400 mb-0.5">PVs In Progress</div>
-                    <div className="text-sm font-bold text-amber-600">{formatCurrency(totalPending)}</div>
-                  </div>
-                  <div className="px-4 py-3 text-center">
-                    <div className="text-xs text-stone-400 mb-0.5">Current Balance</div>
-                    <div className={`text-sm font-bold ${totalBalance < 0 ? "text-red-600" : totalBalance <= 200 ? "text-amber-600" : "text-green-600"}`}>
-                      {formatCurrency(totalBalance)}
-                    </div>
-                  </div>
-                  <div className="px-4 py-3 text-center">
-                    <div className="text-xs text-stone-400 mb-0.5">Available Balance</div>
-                    <div className={`text-sm font-bold ${totalAvailable < 0 ? "text-red-600" : totalAvailable <= 200 ? "text-amber-600" : "text-green-600"}`}>
-                      {formatCurrency(totalAvailable)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Table */}
+                {/* ── The statement ─────────────────────────────────────
+                    Laid out the way a set of accounts is: income above
+                    expenditure, each line under its heading, subtotals on a
+                    rule and the totals under a double one. What kind of line
+                    it is gets said by where it sits rather than by a coloured
+                    pill repeated on every row — which is what had the old
+                    table carrying eight columns and three lines of height per
+                    project, so a ministry with a dozen lines did not fit on a
+                    screen. Figures are tabular and the currency is named once,
+                    in the caption, because a column of numbers is only
+                    readable when the digits line up. */}
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-stone-50 border-b border-stone-100">
-                      <tr>
-                        <th className="text-left px-5 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Project</th>
-                        <th className="text-left px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Type</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Budget</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Paid</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">PVs Raised</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Current Bal.</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Available Bal.</th>
-                        <th className="px-3 py-2.5 w-16"></th>
+                  <table className="w-full border-collapse text-[13px] tabular-nums">
+                    <caption className="px-4 pb-2 pt-3 text-left">
+                      <span className="text-sm font-bold text-stone-800">{selectedMinistry}</span>
+                      <span className="ml-2 text-[11px] text-stone-400">
+                        {selectedYear} · all figures in RM
+                      </span>
+                    </caption>
+                    <thead>
+                      <tr className="border-y border-[#cfe0f6] bg-[#f2f8ff]">
+                        <th className="px-4 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4a6483]">Line</th>
+                        <th className={stmtTh}>Budget</th>
+                        <th className={stmtTh}>Spent</th>
+                        <th className={stmtTh}>Committed</th>
+                        <th className={stmtTh}>Balance</th>
+                        <th className={stmtTh}>Available</th>
+                        <th className="w-[58px] px-2 py-1.5"></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-stone-50">
-                      {budgetItems.map(item => (
-                        <tr key={item.id} className="hover:bg-stone-50 transition-colors">
-                          <td className="px-5 py-3">
-                            <div className="font-medium text-stone-800">{item.project_name}</div>
-                            {item.description && (
-                              <div className="text-xs text-stone-400 mt-0.5 max-w-[180px] truncate">{item.description}</div>
-                            )}
-                            {item.document_url && (
-                              <a href={item.document_url} target="_blank" rel="noopener noreferrer"
-                                onClick={e => e.stopPropagation()}
-                                className="mt-0.5 inline-flex max-w-[180px] items-center gap-1 text-xs font-medium text-[#3a6db0] hover:underline"
-                                title={item.document_name ?? "Attached document"}>
-                                <Paperclip size={11} className="shrink-0" />
-                                <span className="truncate">{item.document_name || "Document"}</span>
-                              </a>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              item.project_type === "expense"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-green-100 text-green-700"
-                            }`}>
-                              {item.project_type === "expense" ? "Expense" : "Income"}
-                            </span>
-                          </td>
-                          <td className="text-right px-3 py-3 text-stone-600">
-                            {quickEdit?.id === item.id ? (
-                              <input
-                                autoFocus type="number" min="0" step="100"
-                                className="w-28 rounded-lg border-2 border-[#2f5b9c] px-2 py-1 text-right text-sm outline-none"
-                                value={quickEdit.value}
-                                onChange={e => setQuickEdit({ id: item.id, value: e.target.value })}
-                                onBlur={() => saveQuickAmount(item, quickEdit.value)}
-                                onKeyDown={e => {
-                                  if (e.key === "Enter") saveQuickAmount(item, quickEdit.value);
-                                  if (e.key === "Escape") setQuickEdit(null);
-                                }} />
-                            ) : (
-                              <button
-                                disabled={!canDirectEdit}
-                                onClick={() => setQuickEdit({
-                                  id: item.id,
-                                  value: String((item.estimated_income || 0) + (item.estimated_expenses || 0)),
-                                })}
-                                className={`rounded px-1 ${canDirectEdit
-                                  ? "hover:bg-[#eef4fd] hover:text-[#2f5b9c]" : "cursor-default"}`}
-                                title={canDirectEdit ? "Click to adjust" : undefined}>
-                                {formatCurrency((item.estimated_income || 0) + (item.estimated_expenses || 0))}
-                              </button>
-                            )}
-                            {((item.estimated_income || 0) + (item.estimated_expenses || 0)) === 0 && (
-                              <div className="mt-0.5 text-[10px] font-semibold text-amber-700">
-                                nothing can be approved
-                              </div>
-                            )}
-                          </td>
-                          <td className="text-right px-3 py-3 text-orange-600">
-                            {formatCurrency(item.spent || 0)}
-                          </td>
-                          <td className="text-right px-3 py-3">
-                            {(item.pendingCount || 0) > 0 ? (
-                              <div>
-                                <div className="text-amber-600 font-medium text-xs">{formatCurrency(item.pending || 0)}</div>
-                                <div className="text-[10px] text-stone-400">{item.pendingCount} PV{(item.pendingCount || 0) !== 1 ? "s" : ""}</div>
-                              </div>
-                            ) : (
-                              <span className="text-stone-300 text-xs">—</span>
-                            )}
-                          </td>
-                          <td className={`text-right px-3 py-3 font-semibold text-sm ${
-                            item.color === "red" ? "text-red-600"
-                            : item.color === "yellow" ? "text-amber-600"
-                            : "text-green-600"
-                          }`}>
-                            {formatCurrency(item.balance || 0)}
-                          </td>
-                          <td className={`text-right px-3 py-3 font-semibold text-sm ${
-                            item.availableColor === "red" ? "text-red-600"
-                            : item.availableColor === "yellow" ? "text-amber-600"
-                            : "text-green-600"
-                          }`}>
-                            {formatCurrency(item.availableBalance ?? item.balance ?? 0)}
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex gap-1 justify-end">
-                              <button
-                                onClick={() => openEditModal(item)}
-                                disabled={proposalLocked}
-                                className="p-1.5 rounded hover:bg-stone-200 text-stone-400 hover:text-stone-700 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
-                                title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canDirectEdit ? "Edit" : "Request edit"}
-                              >
-                                <Pencil size={13} />
-                              </button>
-                              <button
-                                onClick={() => setDeleteTarget(item)}
-                                disabled={proposalLocked}
-                                className="p-1.5 rounded hover:bg-red-100 text-stone-400 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
-                                title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canDirectEdit ? "Delete" : "Request deletion"}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
+
+                    {SECTIONS.map(sec => {
+                      const rows = orderedFor(sec.key);
+                      if (rows.length === 0) return null;
+                      const sum = (f: (i: BudgetItem) => number) =>
+                        rows.reduce((s, r) => s + f(r.item), 0);
+                      const secBudget = sum(i => (i.estimated_income || 0) + (i.estimated_expenses || 0));
+                      const secSpent  = sum(i => i.spent || 0);
+                      const secPend   = sum(i => i.pending || 0);
+
+                      return (
+                        <tbody key={sec.key}>
+                          <tr>
+                            <td colSpan={7}
+                              className="border-b border-[#e6eefa] bg-[#fafcff] px-4 pb-1 pt-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#3a5a86]">
+                              {sec.label}
+                            </td>
+                          </tr>
+
+                          {rows.map(({ item, child }) => {
+                            const budget = (item.estimated_income || 0) + (item.estimated_expenses || 0);
+                            return (
+                              <tr key={item.id} className="border-b border-[#f0f5fc] hover:bg-[#f7fbff]">
+                                <td className={`py-1.5 pr-3 ${child ? "pl-9" : "pl-4"}`}>
+                                  <span className={child ? "text-stone-600" : "font-medium text-stone-800"}>
+                                    {child && <span className="mr-1.5 text-stone-300">└</span>}
+                                    {item.project_name}
+                                  </span>
+                                  {item.document_url && (
+                                    <a href={item.document_url} target="_blank" rel="noopener noreferrer"
+                                      onClick={e => e.stopPropagation()}
+                                      className="ml-2 inline-flex items-center align-middle text-[#3a6db0] hover:text-[#2f5b9c]"
+                                      title={item.document_name ?? "Attached document"}>
+                                      <Paperclip size={11} />
+                                    </a>
+                                  )}
+                                  {budget === 0 && (
+                                    <span className="ml-2 align-middle text-[10px] font-semibold text-amber-700">
+                                      nothing can be approved
+                                    </span>
+                                  )}
+                                  {item.description && (
+                                    <div className="max-w-[280px] truncate text-[11px] text-stone-400">{item.description}</div>
+                                  )}
+                                </td>
+
+                                <td className="px-3 py-1.5 text-right text-stone-700">
+                                  {quickEdit?.id === item.id ? (
+                                    <input
+                                      autoFocus type="number" min="0" step="100"
+                                      className="w-24 rounded border border-[#2f5b9c] px-1.5 py-0.5 text-right text-[13px] tabular-nums outline-none"
+                                      value={quickEdit.value}
+                                      onChange={e => setQuickEdit({ id: item.id, value: e.target.value })}
+                                      onBlur={() => saveQuickAmount(item, quickEdit.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === "Enter") saveQuickAmount(item, quickEdit.value);
+                                        if (e.key === "Escape") setQuickEdit(null);
+                                      }} />
+                                  ) : (
+                                    <button
+                                      disabled={!canDirectEdit}
+                                      onClick={() => setQuickEdit({ id: item.id, value: String(budget) })}
+                                      className={`rounded px-1 tabular-nums ${canDirectEdit
+                                        ? "hover:bg-[#eef4fd] hover:text-[#2f5b9c]" : "cursor-default"}`}
+                                      title={canDirectEdit ? "Click to adjust" : undefined}>
+                                      {fig(budget)}
+                                    </button>
+                                  )}
+                                </td>
+
+                                <td className="px-3 py-1.5 text-right text-stone-600">{fig(item.spent || 0)}</td>
+                                <td className="px-3 py-1.5 text-right text-stone-600">
+                                  {fig(item.pending || 0)}
+                                  {(item.pendingCount || 0) > 0 && (
+                                    <span className="ml-1 text-[10px] text-stone-400">({item.pendingCount})</span>
+                                  )}
+                                </td>
+                                <td className={`px-3 py-1.5 text-right font-medium ${toneOf(item.color)}`}>
+                                  {fig(item.balance || 0)}
+                                </td>
+                                <td className={`px-3 py-1.5 text-right font-semibold ${toneOf(item.availableColor)}`}>
+                                  {fig(item.availableBalance ?? item.balance ?? 0)}
+                                </td>
+
+                                <td className="px-2 py-1.5">
+                                  <div className="flex justify-end gap-0.5">
+                                    <button
+                                      onClick={() => openEditModal(item)}
+                                      disabled={proposalLocked}
+                                      className="rounded p-1 text-stone-300 transition-colors hover:bg-stone-100 hover:text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                      title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canDirectEdit ? "Edit" : "Request edit"}>
+                                      <Pencil size={12} />
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteTarget(item)}
+                                      disabled={proposalLocked}
+                                      className="rounded p-1 text-stone-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                                      title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canDirectEdit ? "Delete" : "Request deletion"}>
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+
+                          <tr className="border-t border-[#c4d8f2]">
+                            <td className="py-1.5 pl-4 pr-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                              Total {sec.label.toLowerCase()}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-stone-800">{fig(secBudget)}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-stone-700">{fig(secSpent)}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-stone-700">{fig(secPend)}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-stone-800">{fig(secBudget - secSpent)}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-stone-800">{fig(secBudget - secSpent - secPend)}</td>
+                            <td />
+                          </tr>
+                        </tbody>
+                      );
+                    })}
+
+                    {/* The double rule is the accounting convention for a
+                        closing total, and it is doing real work here: it is
+                        the line the Treasurer reads first. */}
+                    <tfoot>
+                      <tr className="border-t-[3px] border-double border-[#7ba3d8] bg-[#f2f8ff]">
+                        <td className="py-2 pl-4 pr-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#173a72]">
+                          {selectedMinistry} total
+                        </td>
+                        <td className="px-3 py-2 text-right font-bold text-[#173a72]">{fig(totalBudget)}</td>
+                        <td className="px-3 py-2 text-right font-bold text-stone-700">{fig(totalSpent)}</td>
+                        <td className="px-3 py-2 text-right font-bold text-stone-700">{fig(totalPending)}</td>
+                        <td className={`px-3 py-2 text-right font-bold ${totalBalance < 0 ? "text-red-600" : "text-[#173a72]"}`}>
+                          {fig(totalBalance)}
+                        </td>
+                        <td className={`px-3 py-2 text-right font-bold ${totalAvailable < 0 ? "text-red-600" : "text-[#173a72]"}`}>
+                          {fig(totalAvailable)}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
+
+                  {/* Two balances is the one thing about this table people get
+                      wrong, so it is said here rather than left to be learned. */}
+                  <p className="px-4 py-2 text-[11px] leading-relaxed text-stone-400">
+                    <span className="font-semibold text-stone-500">Spent</span> is approved and paid vouchers.
+                    <span className="ml-2 font-semibold text-stone-500">Committed</span> is vouchers raised but not yet paid.
+                    <span className="ml-2 font-semibold text-stone-500">Balance</span> ignores those;
+                    <span className="ml-1 font-semibold text-stone-500">Available</span> subtracts them — use Available when deciding whether there is room for something new.
+                  </p>
                 </div>
               </>
             )}
@@ -1249,135 +1373,160 @@ function BudgetInner() {
       })()}
 
       {itemModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="bg-[#4a6da7] text-white p-5 flex items-center justify-between sticky top-0 rounded-t-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
+
+            <div className="sticky top-0 flex items-center justify-between rounded-t-xl border-b border-[#dce9fb] bg-white px-5 py-3">
               <div>
-                <h3 className="font-bold text-base">
+                <h3 className="text-sm font-bold text-stone-800">
                   {itemModal.mode === "add"
-                    ? (canDirectEdit ? "Add New Project" : "Request New Project")
-                    : (canDirectEdit ? "Edit Project" : "Request Edit")}
+                    ? (canDirectEdit ? "Add budget line" : "Request a new budget line")
+                    : (canDirectEdit ? "Edit budget line" : "Request a change")}
                 </h3>
-                <p className="text-blue-200 text-xs mt-0.5">Ministry: {selectedMinistry}</p>
+                <p className="text-[11px] text-stone-400">{selectedMinistry} · {selectedYear}</p>
               </div>
-              <button onClick={() => setItemModal(null)} className="hover:bg-white/20 p-1 rounded transition-colors">
-                <XIcon size={18} />
+              <button onClick={() => setItemModal(null)}
+                className="rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700">
+                <XIcon size={17} />
               </button>
             </div>
 
-            <div className="p-5 space-y-5">
-              {/* Project Type */}
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-2 uppercase tracking-wide">Type of Project</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setItemForm(f => ({ ...f, project_type: "expense" }))}
-                    className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${
-                      itemForm.project_type === "expense"
-                        ? "border-red-400 bg-red-50 text-red-700"
-                        : "border-stone-200 text-stone-500 hover:border-stone-300"
-                    }`}
-                  >
-                    💸 Expense
-                    <div className="text-xs font-normal mt-0.5">Budget for spending</div>
-                  </button>
-                  <button
-                    onClick={() => setItemForm(f => ({ ...f, project_type: "income" }))}
-                    className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${
-                      itemForm.project_type === "income"
-                        ? "border-green-400 bg-green-50 text-green-700"
-                        : "border-stone-200 text-stone-500 hover:border-stone-300"
-                    }`}
-                  >
-                    💰 Income
-                    <div className="text-xs font-normal mt-0.5">Grant / inflow expected</div>
-                  </button>
+            <div className="space-y-3 px-5 py-4">
+
+              {/* Two words, one control. It used to be two card-sized buttons
+                  with an emoji each, which took the height of three fields to
+                  ask a yes/no question. */}
+              <div className="flex items-center gap-3">
+                <label className={stmtLabel}>Kind</label>
+                <div className="flex overflow-hidden rounded-lg border border-stone-300">
+                  {(["expense", "income"] as const).map(k => (
+                    <button key={k}
+                      onClick={() => setItemForm(f => ({ ...f, project_type: k }))}
+                      className={`px-4 py-1.5 text-xs font-semibold transition-colors ${
+                        itemForm.project_type === k
+                          ? "bg-[#4a6da7] text-white"
+                          : "bg-white text-stone-500 hover:bg-stone-50"}`}>
+                      {k === "expense" ? "Expenditure" : "Income"}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Project Name */}
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">Project Name *</label>
-                <input
-                  type="text"
+                <label className={stmtLabel}>Line name *</label>
+                <input type="text" autoFocus
                   value={itemForm.project_name}
                   onChange={e => setItemForm(f => ({ ...f, project_name: e.target.value }))}
                   placeholder="e.g. Soup Kitchen 2026"
-                  className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
-                  autoFocus
-                />
+                  className={stmtInput} />
               </div>
 
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">Description</label>
-                <textarea
-                  value={itemForm.description}
-                  onChange={e => setItemForm(f => ({ ...f, description: e.target.value }))}
-                  rows={2}
-                  placeholder={itemForm.project_type === "expense" ? "What is this budget for?" : "Describe the grant or income source…"}
-                  className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c] resize-none"
-                />
-              </div>
-
-              {/* Amount — conditional on type */}
-              {itemForm.project_type === "expense" ? (
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">Budget Amount (RM) *</label>
-                  <input
-                    type="number" min="0" step="0.01"
-                    value={itemForm.estimated_expenses || ""}
-                    onChange={e => setItemForm(f => ({ ...f, estimated_expenses: parseFloat(e.target.value) || 0 }))}
-                    placeholder="0.00"
-                    className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
-                  />
-                  <p className="text-xs text-stone-400 mt-1">Total amount budgeted for expenses in this project</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {itemForm.project_type === "expense" ? (
                   <div>
-                    <label className="block text-xs font-bold text-stone-700 mb-1">Estimated Income (RM) *</label>
-                    <input
-                      type="number" min="0" step="0.01"
-                      value={itemForm.estimated_income || ""}
-                      onChange={e => setItemForm(f => ({ ...f, estimated_income: parseFloat(e.target.value) || 0 }))}
+                    <label className={stmtLabel}>Budget (RM) *</label>
+                    <input type="number" min="0" step="0.01"
+                      value={itemForm.estimated_expenses || ""}
+                      onChange={e => setItemForm(f => ({ ...f, estimated_expenses: parseFloat(e.target.value) || 0 }))}
                       placeholder="0.00"
-                      className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
-                    />
+                      className={`${stmtInput} text-right tabular-nums`} />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                ) : (
+                  <>
                     <div>
-                      <label className="block text-xs font-bold text-stone-700 mb-1">Contributions Received (RM)</label>
-                      <input
-                        type="number" min="0" step="0.01"
-                        value={itemForm.contributions_received || ""}
-                        onChange={e => setItemForm(f => ({ ...f, contributions_received: parseFloat(e.target.value) || 0 }))}
+                      <label className={stmtLabel}>Estimated income (RM) *</label>
+                      <input type="number" min="0" step="0.01"
+                        value={itemForm.estimated_income || ""}
+                        onChange={e => setItemForm(f => ({ ...f, estimated_income: parseFloat(e.target.value) || 0 }))}
                         placeholder="0.00"
-                        className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
-                      />
+                        className={`${stmtInput} text-right tabular-nums`} />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-stone-700 mb-1">Expected Contributions (RM)</label>
-                      <input
-                        type="number" min="0" step="0.01"
-                        value={itemForm.contributions_expected || ""}
-                        onChange={e => setItemForm(f => ({ ...f, contributions_expected: parseFloat(e.target.value) || 0 }))}
-                        placeholder="0.00"
-                        className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c]"
-                      />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={stmtLabel}>Received (RM)</label>
+                        <input type="number" min="0" step="0.01"
+                          value={itemForm.contributions_received || ""}
+                          onChange={e => setItemForm(f => ({ ...f, contributions_received: parseFloat(e.target.value) || 0 }))}
+                          placeholder="0.00"
+                          className={`${stmtInput} text-right tabular-nums`} />
+                      </div>
+                      <div>
+                        <label className={stmtLabel}>Expected (RM)</label>
+                        <input type="number" min="0" step="0.01"
+                          value={itemForm.contributions_expected || ""}
+                          onChange={e => setItemForm(f => ({ ...f, contributions_expected: parseFloat(e.target.value) || 0 }))}
+                          placeholder="0.00"
+                          className={`${stmtInput} text-right tabular-nums`} />
+                      </div>
                     </div>
+                  </>
+                )}
+
+                {itemForm.project_type === "expense" && (
+                  <div>
+                    <label className={stmtLabel}>Attachment</label>
+                    {itemForm.document_name ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-[#dce9fb] bg-[#f5f9ff] px-3 py-1.5">
+                        <Paperclip size={12} className="shrink-0 text-[#4a6da7]" />
+                        <span className="flex-1 truncate text-xs text-stone-600">{itemForm.document_name}</span>
+                        <button onClick={() => setItemForm(f => ({ ...f, document_url: "", document_name: "" }))}
+                          className="text-xs text-red-400 hover:text-red-600">Remove</button>
+                      </div>
+                    ) : (
+                      <label className={`flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 py-1.5 text-xs text-stone-400 transition-colors hover:border-[#4a6da7] ${uploadingDoc ? "pointer-events-none opacity-50" : ""}`}>
+                        <input type="file" className="hidden"
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                          disabled={uploadingDoc}
+                          onChange={e => { const f = e.target.files?.[0]; if (f) uploadDoc(f); }} />
+                        <Paperclip size={12} />
+                        {uploadingDoc ? "Uploading…" : "PDF, Word or image"}
+                      </label>
+                    )}
                   </div>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={stmtLabel}>Description</label>
+                  <textarea rows={2}
+                    value={itemForm.description}
+                    onChange={e => setItemForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder={itemForm.project_type === "expense" ? "What is this budget for?" : "Grant or income source"}
+                    className={`${stmtInput} resize-none`} />
+                </div>
+                <div>
+                  <label className={stmtLabel}>Notes</label>
+                  <textarea rows={2}
+                    value={itemForm.special_notes}
+                    onChange={e => setItemForm(f => ({ ...f, special_notes: e.target.value }))}
+                    placeholder="e.g. shared with Education, approved by Bishop"
+                    className={`${stmtInput} resize-none`} />
+                </div>
+              </div>
+
+              {itemForm.project_type === "income" && (
+                <div>
+                  <label className={stmtLabel}>Grant or agreement</label>
+                  {itemForm.document_name ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-[#dce9fb] bg-[#f5f9ff] px-3 py-1.5">
+                      <Paperclip size={12} className="shrink-0 text-[#4a6da7]" />
+                      <span className="flex-1 truncate text-xs text-stone-600">{itemForm.document_name}</span>
+                      <button onClick={() => setItemForm(f => ({ ...f, document_url: "", document_name: "" }))}
+                        className="text-xs text-red-400 hover:text-red-600">Remove</button>
+                    </div>
+                  ) : (
+                    <label className={`flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 py-1.5 text-xs text-stone-400 transition-colors hover:border-[#4a6da7] ${uploadingDoc ? "pointer-events-none opacity-50" : ""}`}>
+                      <input type="file" className="hidden"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                        disabled={uploadingDoc}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadDoc(f); }} />
+                      <Paperclip size={12} />
+                      {uploadingDoc ? "Uploading…" : "PDF, Word or image"}
+                    </label>
+                  )}
                 </div>
               )}
-
-              {/* Budget summary preview */}
-              <div className={`rounded-lg p-3 text-center ${itemForm.project_type === "expense" ? "bg-red-50 border border-red-100" : "bg-green-50 border border-green-100"}`}>
-                <div className="text-xs text-stone-500">{itemForm.project_type === "expense" ? "Budgeted Amount" : "Expected Income"}</div>
-                <div className={`text-xl font-bold mt-1 ${itemForm.project_type === "expense" ? "text-red-600" : "text-green-600"}`}>
-                  {formatCurrency(itemForm.project_type === "expense" ? (itemForm.estimated_expenses || 0) : (itemForm.estimated_income || 0))}
-                </div>
-              </div>
 
               {/* A budget of nothing is not the same as no budget, and the
                   difference runs the wrong way round from what people expect:
@@ -1386,86 +1535,41 @@ function BudgetInner() {
                   because this is the moment somebody creates one by leaving the
                   amount blank. */}
               {itemForm.project_type === "expense" && !(itemForm.estimated_expenses || 0) && (
-                <p className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  <strong>Zero budget.</strong> Every payment against this project will be refused and
+                <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                  <strong>Zero budget.</strong> Every payment against this line will be refused and
                   sent up to the body above. If you mean &ldquo;not decided yet&rdquo;, leave the
-                  project out until it is — spending then counts as unbudgeted rather than blocked.
+                  line out until it is — spending then counts as unbudgeted rather than blocked.
                 </p>
               )}
 
-              {/* Special notes */}
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">Special Arrangements / Notes</label>
-                <textarea
-                  value={itemForm.special_notes}
-                  onChange={e => setItemForm(f => ({ ...f, special_notes: e.target.value }))}
-                  rows={2}
-                  placeholder="e.g. Shared with Education ministry, approved by Bishop…"
-                  className="w-full border-2 border-stone-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#2f5b9c] resize-none"
-                />
-              </div>
-
-              {/* Document upload */}
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  {itemForm.project_type === "expense" ? "Attach Supporting Document" : "Attach Grant / Agreement"}
-                </label>
-                <p className="text-xs text-stone-400 mb-2">PDF, Word, or image files accepted</p>
-                {itemForm.document_name ? (
-                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <span className="text-green-700 text-sm flex-1 truncate">📄 {itemForm.document_name}</span>
-                    <button
-                      onClick={() => setItemForm(f => ({ ...f, document_url: "", document_name: "" }))}
-                      className="text-red-400 hover:text-red-600 text-xs"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-stone-300 rounded-lg py-4 cursor-pointer hover:border-[#4a6da7] transition-colors ${uploadingDoc ? "opacity-50 pointer-events-none" : ""}`}>
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                      disabled={uploadingDoc}
-                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadDoc(f); }}
-                    />
-                    <span className="text-stone-400 text-sm">{uploadingDoc ? "Uploading…" : "📎 Click to upload"}</span>
-                  </label>
-                )}
-              </div>
-
-              {/* Approval notice for Ministry Heads */}
               {!canDirectEdit && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                  ⚠️ This request will be reviewed by a Finance Executive before being applied to the budget.
-                </div>
+                <p className="rounded-lg border border-[#dce9fb] bg-[#f5f9ff] px-3 py-2 text-[11px] leading-relaxed text-stone-600">
+                  This is a <strong>request</strong>, not a change. The EXCO board is told it has been
+                  made, and it takes a decision from the Treasurer, General Manager, Bishop,
+                  Secretary or Finance Executive before the budget moves.
+                </p>
               )}
             </div>
 
-            {/* Footer */}
-            <div className="p-5 border-t border-stone-100 flex gap-3 sticky bottom-0 bg-white rounded-b-xl">
-              <button
-                onClick={() => setItemModal(null)}
-                className="flex-1 py-2.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-sm transition-colors"
-              >
+            <div className="sticky bottom-0 flex gap-2 rounded-b-xl border-t border-[#dce9fb] bg-white px-5 py-3">
+              <button onClick={() => setItemModal(null)}
+                className="flex-1 rounded-lg bg-stone-100 py-2 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-200">
                 Cancel
               </button>
-              <button
-                onClick={saveItem}
+              <button onClick={saveItem}
                 disabled={saving || !itemForm.project_name.trim() || uploadingDoc}
-                className="flex-1 py-2.5 rounded-lg bg-[#4a6da7] hover:bg-[#3d5a8f] disabled:bg-stone-300 text-white font-semibold text-sm transition-colors"
-              >
+                className="flex-1 rounded-lg bg-[#4a6da7] py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3d5a8f] disabled:bg-stone-300">
                 {saving
                   ? "Saving…"
                   : canDirectEdit
-                  ? (itemModal.mode === "add" ? "Add Project" : "Save Changes")
-                  : "Submit Request"}
+                  ? (itemModal.mode === "add" ? "Add line" : "Save changes")
+                  : "Submit request"}
               </button>
             </div>
           </div>
         </div>
       )}
+
 
       {/* ── Review Change Request Modal ── */}
       {reviewModal && (

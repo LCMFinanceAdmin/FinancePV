@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import { describeApprover as describe, type LabelledApprover } from "@/lib/approver-label";
@@ -29,7 +30,20 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 export default function LeaveQueuePage() {
+  return (
+    <Suspense>
+      <LeaveQueueInner />
+    </Suspense>
+  );
+}
+
+function LeaveQueueInner() {
   const supabase = createClient();
+  // The approval email links straight to one application. Without this an
+  // approver lands on a list and has to find the row the email was about,
+  // which is the moment most of them decide to deal with it later.
+  const highlightRef = useSearchParams().get("ref") ?? "";
+  const highlighted = useRef<HTMLDivElement | null>(null);
   const [leaves,      setLeaves]      = useState<LeaveApp[]>([]);
   const [leaveTypes,  setLeaveTypes]  = useState<LeaveType[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -45,6 +59,11 @@ export default function LeaveQueuePage() {
   // email → role, so a chain slot can be matched by the post rather than only
   // by the person who held it when the application was submitted.
   const [roleByEmail, setRoleByEmail] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!highlightRef || loading) return;
+    highlighted.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlightRef, loading]);
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok }); setTimeout(() => setToast({ msg: "", ok: true }), 3000);
@@ -102,7 +121,9 @@ export default function LeaveQueuePage() {
   const filled = (a: { email?: string; for_email?: string }, slot: string) =>
     norm(a.email) === norm(slot) || norm(a.for_email) === norm(slot);
 
-  const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l));
+  // The one the email was about goes to the top, so a long queue can't bury it.
+  const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l))
+    .sort((a, b) => Number(b.leave_no === highlightRef) - Number(a.leave_no === highlightRef));
   const awaitingOthers = myLeaves.filter(l => l.status === "PENDING" && iSigned(l));
   const history        = myLeaves.filter(l => l.status !== "PENDING");
 
@@ -252,7 +273,10 @@ export default function LeaveQueuePage() {
               <p className="text-sm">No pending leave applications</p>
             </div>
           ) : pending.map(app => (
-            <Card key={app.id}>
+            <Card key={app.id}
+              ref={app.leave_no === highlightRef ? highlighted : undefined}
+              className={app.leave_no === highlightRef
+                ? "ring-2 ring-[#2563eb] ring-offset-2 ring-offset-[#f5f9ff]" : undefined}>
               <CardBody className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>

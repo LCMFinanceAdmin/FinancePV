@@ -35,6 +35,12 @@ export interface NotifyInput {
   ref?: string;
   /** Adds a visible "urgent" marker to the email subject. */
   urgent?: boolean;
+  /**
+   * Words on the email's button. "Open LCM Finance" is true but says nothing
+   * about what is being asked, and a Dean who gets three of these a month
+   * should be able to tell them apart without opening any.
+   */
+  cta?: string;
 }
 
 function siteUrl() {
@@ -56,7 +62,7 @@ function mailer() {
  * big button. Anything cleverer risks being mangled by Outlook or unreadable
  * on a phone held at arm's length.
  */
-function emailHtml(subject: string, lines: string[], link: string, urgent: boolean) {
+function emailHtml(subject: string, lines: string[], link: string, urgent: boolean, cta?: string) {
   const body = lines.map(l =>
     `<p style="margin:0 0 14px;font-size:17px;line-height:1.55;color:#1f2937">${l}</p>`).join("");
   return `
@@ -67,7 +73,7 @@ function emailHtml(subject: string, lines: string[], link: string, urgent: boole
       ${body}
       <a href="${link}" style="display:inline-block;margin-top:8px;background:#1d4ed8;color:#fff;
          text-decoration:none;font-size:17px;font-weight:700;padding:14px 26px;border-radius:10px">
-        Open LCM Finance
+        ${cta ?? "Open LCM Finance"}
       </a>
       <p style="margin:22px 0 0;font-size:13px;color:#6b7280">
         You are receiving this because of your role in the LCM Finance system.
@@ -96,6 +102,7 @@ export async function sendNotificationEmails(
   lines: string[],
   path?: string,
   urgent?: boolean,
+  cta?: string,
 ): Promise<SendResult> {
   const recipients = to.filter(r => r.email?.includes("@"));
   if (recipients.length === 0) return { sent: 0, problem: "no valid recipients" };
@@ -122,11 +129,11 @@ export async function sendNotificationEmails(
         "",
         ...lines,
         "",
-        `Open the system: ${link}`,
+        `${cta ?? "Open the system"}: ${link}`,
         "",
         "Lutheran Church in Malaysia",
       ].join("\n"),
-      html: emailHtml(subject, lines, link, !!urgent),
+      html: emailHtml(subject, lines, link, !!urgent, cta),
     })));
 
   const sent = results.filter(r => r.status === "fulfilled").length;
@@ -145,7 +152,7 @@ export async function sendNotificationEmails(
  * user "emailed to 2 people" rather than guessing.
  */
 export async function notifyPeople(input: NotifyInput): Promise<{ recorded: number; emailed: number }> {
-  const { supabase, to, subject, lines, path, type, ref, urgent } = input;
+  const { supabase, to, subject, lines, path, type, ref, urgent, cta } = input;
 
   const recipients = to.filter(r => r.email?.includes("@"));
   if (recipients.length === 0) return { recorded: 0, emailed: 0 };
@@ -163,7 +170,7 @@ export async function notifyPeople(input: NotifyInput): Promise<{ recorded: numb
   if (!insErr) recorded = recipients.length;
 
   // 2. Email — the channel that reaches people who aren't in the app.
-  const result = await sendNotificationEmails(recipients, subject, lines, path, urgent);
+  const result = await sendNotificationEmails(recipients, subject, lines, path, urgent, cta);
   if (result.problem) console.error("[notify] email not sent:", result.problem);
 
   return { recorded, emailed: result.sent };

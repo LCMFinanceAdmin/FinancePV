@@ -80,16 +80,24 @@ export async function POST(req: NextRequest) {
 
       const link = `${origin}/leave-approval/${token}`;
 
+      const dates = `${fmt(leave.start_date)} to ${fmt(leave.end_date)}`;
+      const days = `${leave.days} day${Number(leave.days) === 1 ? "" : "s"}`;
+
       await transporter.sendMail({
         from: process.env.SMTP_FROM ?? `"Lutheran Church in Malaysia" <${process.env.SMTP_USER}>`,
         to: approver.email,
         subject: `Leave approval needed — ${leave.applicant_name} (${leave.leave_no})`,
+        html: councilEmailHtml({
+          approverName: approver.name ?? "",
+          applicantName: leave.applicant_name ?? "",
+          dates, days, ref: leave.leave_no ?? "", link, validDays: LINK_VALID_DAYS,
+        }),
         text: [
           `Dear ${approver.name || "Sir/Madam"},`,
           ``,
           `${leave.applicant_name} has applied for leave and, as church council President, your approval is needed.`,
           ``,
-          `  Dates:  ${fmt(leave.start_date)} to ${fmt(leave.end_date)} (${leave.days} day(s))`,
+          `  Dates:  ${dates} (${days})`,
           `  Ref:    ${leave.leave_no}`,
           ``,
           `Please open the link below to approve or decline. No account or password is needed — the link is personal to you and can be used once.`,
@@ -109,4 +117,66 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
+}
+
+
+/**
+ * The email the council Chairman actually sees.
+ *
+ * They are the one person in the chain with no account, no training and often
+ * no reason to have opened anything from LCM before — so the mail has to carry
+ * the whole decision on its face: who, when, how long, and one obvious button.
+ * Table layout and inline styles because Outlook still discards most of the
+ * rest, and the button is a table cell rather than a styled anchor for the
+ * same reason.
+ */
+function councilEmailHtml(o: {
+  approverName: string; applicantName: string; dates: string; days: string;
+  ref: string; link: string; validDays: number;
+}) {
+  const row = (label: string, value: string) => `
+    <tr>
+      <td style="padding:6px 14px 6px 0;font-size:15px;color:#6b7280;white-space:nowrap">${label}</td>
+      <td style="padding:6px 0;font-size:17px;color:#111827;font-weight:600">${value}</td>
+    </tr>`;
+
+  return `
+  <div style="font-family:Arial,Helvetica,sans-serif;background:#f4f9ff;padding:24px">
+    <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #dbe9fb;border-radius:14px;padding:28px">
+      <p style="margin:0 0 6px;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#4f7fc3">
+        Lutheran Church in Malaysia
+      </p>
+      <h1 style="margin:0 0 18px;font-size:22px;line-height:1.3;color:#173a72">
+        Leave approval needed
+      </h1>
+      <p style="margin:0 0 16px;font-size:17px;line-height:1.55;color:#1f2937">
+        Dear ${o.approverName || "Sir/Madam"}, as church council Chairman your approval is
+        needed for the leave below.
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0"
+             style="margin:0 0 22px;border-top:1px solid #e5edf8;border-bottom:1px solid #e5edf8;padding:6px 0">
+        ${row("Pastor", o.applicantName)}
+        ${row("Dates", o.dates)}
+        ${row("Length", o.days)}
+        ${row("Reference", o.ref)}
+      </table>
+      <table role="presentation" cellpadding="0" cellspacing="0">
+        <tr><td style="background:#1d4ed8;border-radius:10px">
+          <a href="${o.link}" style="display:inline-block;padding:16px 30px;font-size:18px;
+             font-weight:700;color:#ffffff;text-decoration:none">
+            Approve or decline
+          </a>
+        </td></tr>
+      </table>
+      <p style="margin:20px 0 0;font-size:15px;line-height:1.5;color:#4b5563">
+        No account or password is needed. The button opens a page showing this one
+        application, where you can approve it or decline it with a reason.
+      </p>
+      <p style="margin:14px 0 0;font-size:13px;color:#6b7280">
+        The link is personal to you and stays valid for ${o.validDays} days. If the
+        button does not work, copy this address into your browser:<br>
+        <span style="word-break:break-all;color:#1d4ed8">${o.link}</span>
+      </p>
+    </div>
+  </div>`;
 }
