@@ -114,24 +114,30 @@ footer{
   @page{size:A4 portrait;margin:10mm;}
   body{background:#fff;font-size:10px;}
   .sheet{width:100%;padding:0;}
-  header{padding-bottom:4px;margin-bottom:7px;}
+  header{padding-bottom:3px;margin-bottom:5px;}
   h1{font-size:18px;}
   h1 + p{font-size:8.8px;margin-top:2px;}
-  section{margin-bottom:6px;}
+  section{margin-bottom:4px;}
   h2{font-size:11px;margin-bottom:0;}
   h2 .num{width:13px;height:13px;line-height:13px;font-size:7.4px;margin-right:4px;}
-  figure{margin-top:4px;}
-  figcaption{font-size:7.8px;margin-top:2px;}
+  figure{margin-top:3px;}
+  /* The three drawings are 600 of the sheet's 1045 points, so capping their
+     width is the one lever that buys real room without touching a coordinate
+     or shrinking a table. They are wide diagrams; 8% narrower costs nothing
+     that can be seen, and leaves margin for a machine whose fonts differ
+     slightly from this one's. */
+  figure svg{max-width:690px;margin-inline:auto;}
+  figcaption{font-size:7.6px;margin-top:1px;}
   /* Four panels across rather than two-by-two. At A4 width that is the
      difference between one sheet and two — measured at 495px stacked
      against 250 in a single row. */
   .panels{grid-template-columns:repeat(4,1fr);gap:5px;}
-  .panel{border-color:#bbb;padding:5px 6px 6px;}
+  .panel{border-color:#bbb;padding:4px 6px 5px;}
   .panel h3{font-size:7.4px;margin-bottom:3px;}
   table{font-size:8.6px;}
   th,td{padding:1px 2px;}
   caption{font-size:7px;padding-top:2px;}
-  footer{margin-top:6px;padding-top:4px;font-size:8px;}
+  footer{margin-top:4px;padding-top:3px;font-size:8px;}
 }
 </style>
 
@@ -199,62 +205,70 @@ footer{
   <section>
     <h2><span class="num">2</span>Who signs your leave</h2>
     <figure>
-      <svg viewBox="0 0 880 296" role="img"
-        aria-label="Leave routing branches by who applies. A pastor's leave goes to three people at once — the head pastor, the church council chairman and the district dean — all of whom must sign, in any order. A dean's own leave goes to the Bishop alone. A staff member's goes to the Bishop, and also the General Manager if they report to both.">
+      <svg viewBox="0 0 880 380" role="img"
+        aria-label="Leave routing branches by who applies. The Bishop needs no approval at all: his leave is granted on submission and everyone is emailed that he is away. A pastor's leave goes to three people at once — the head pastor, the church council chairman and the district dean — all of whom must sign, in any order. A dean's own leave goes to the Bishop alone. A staff member's goes to the Bishop, and also the General Manager if they report to both.">
         <defs>
           <marker id="ar2" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto">
             <polygon points="0,0 10,4 0,8" fill="currentColor"/>
           </marker>
         </defs>
 
+        <!-- Band 0: the Bishop. No arrow, because there is no approver. -->
+        <rect class="box-start" x="20" y="8" width="156" height="44" rx="7"/>
+        <text class="lbl" x="98" y="28" text-anchor="middle">If you are the</text>
+        <text class="lbl" x="98" y="44" text-anchor="middle">BISHOP</text>
+        <rect class="box-go" x="256" y="12" width="584" height="36" rx="7"/>
+        <text class="lbl-go" x="272" y="27">Nobody signs &mdash; you inform, you do not ask</text>
+        <text class="who" x="272" y="40">granted the moment you submit it, and everyone is emailed that you are away</text>
+
         <!-- Band 1: pastor, a fan of three -->
         <g color="#4d6383">
-          <path class="edge" d="M 176 76 C 216 76 216 26 254 26" marker-end="url(#ar2)"/>
-          <path class="edge" d="M 176 76 L 254 76" marker-end="url(#ar2)"/>
-          <path class="edge" d="M 176 76 C 216 76 216 126 254 126" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 150 C 216 150 216 100 254 100" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 150 L 254 150" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 150 C 216 150 216 200 254 200" marker-end="url(#ar2)"/>
         </g>
-        <rect class="box-start" x="20" y="54" width="156" height="44" rx="7"/>
-        <text class="lbl" x="98" y="74" text-anchor="middle">If you are a</text>
-        <text class="lbl" x="98" y="90" text-anchor="middle">PASTOR</text>
+        <rect class="box-start" x="20" y="128" width="156" height="44" rx="7"/>
+        <text class="lbl" x="98" y="148" text-anchor="middle">If you are a</text>
+        <text class="lbl" x="98" y="164" text-anchor="middle">PASTOR</text>
 
-        <rect class="box-wait" x="256" y="8"   width="250" height="36" rx="7"/>
-        <rect class="box-wait" x="256" y="58"  width="250" height="36" rx="7"/>
-        <rect class="box-wait" x="256" y="108" width="250" height="36" rx="7"/>
-        <text class="lbl" x="272" y="31">Head pastor of your congregation</text>
-        <text class="lbl" x="272" y="76">Church council Chairman</text>
-        <text class="lbl" x="272" y="131">Your district Dean</text>
-        <text class="who" x="516" y="80">signs by emailed link &mdash; no account</text>
+        <rect class="box-wait" x="256" y="82"  width="250" height="36" rx="7"/>
+        <rect class="box-wait" x="256" y="132" width="250" height="36" rx="7"/>
+        <rect class="box-wait" x="256" y="182" width="250" height="36" rx="7"/>
+        <text class="lbl" x="272" y="105">Head pastor of your congregation</text>
+        <text class="lbl" x="272" y="155">Church council Chairman</text>
+        <text class="lbl" x="272" y="205">Your district Dean</text>
+        <text class="who" x="516" y="159">signs by emailed link &mdash; no account</text>
 
-        <text class="edge-lbl" x="640" y="31">all three must sign</text>
-        <text class="edge-lbl" x="640" y="131">order does not matter</text>
+        <text class="edge-lbl" x="640" y="105">all three must sign</text>
+        <text class="edge-lbl" x="640" y="205">order does not matter</text>
 
         <!-- Band 2: dean -->
         <g color="#4d6383">
-          <path class="edge" d="M 176 190 L 254 190" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 264 L 254 264" marker-end="url(#ar2)"/>
         </g>
-        <rect class="box-start" x="20" y="168" width="156" height="44" rx="7"/>
-        <text class="lbl" x="98" y="188" text-anchor="middle">If you are a</text>
-        <text class="lbl" x="98" y="204" text-anchor="middle">DEAN</text>
-        <rect class="box-wait" x="256" y="172" width="250" height="36" rx="7"/>
-        <text class="lbl" x="272" y="195">The Bishop, and only the Bishop</text>
-        <text class="who" x="516" y="195">a Dean never signs their own</text>
+        <rect class="box-start" x="20" y="242" width="156" height="44" rx="7"/>
+        <text class="lbl" x="98" y="262" text-anchor="middle">If you are a</text>
+        <text class="lbl" x="98" y="278" text-anchor="middle">DEAN</text>
+        <rect class="box-wait" x="256" y="246" width="250" height="36" rx="7"/>
+        <text class="lbl" x="272" y="269">The Bishop, and only the Bishop</text>
+        <text class="who" x="516" y="269">a Dean never signs their own</text>
 
         <!-- Band 3: staff -->
         <g color="#4d6383">
-          <path class="edge" d="M 176 262 C 216 262 216 240 254 240" marker-end="url(#ar2)"/>
-          <path class="edge" d="M 176 262 C 216 262 216 284 254 284" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 336 C 216 336 216 314 254 314" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 336 C 216 336 216 358 254 358" marker-end="url(#ar2)"/>
         </g>
-        <rect class="box-start" x="20" y="240" width="156" height="44" rx="7"/>
-        <text class="lbl" x="98" y="260" text-anchor="middle">If you are</text>
-        <text class="lbl" x="98" y="276" text-anchor="middle">STAFF</text>
-        <rect class="box-wait" x="256" y="222" width="250" height="36" rx="7"/>
-        <rect class="box"      x="256" y="266" width="250" height="36" rx="7"/>
-        <text class="lbl" x="272" y="245">The Bishop</text>
-        <text class="lbl" x="272" y="289">The General Manager</text>
-        <text class="who" x="516" y="289">only if you report to both</text>
+        <rect class="box-start" x="20" y="314" width="156" height="44" rx="7"/>
+        <text class="lbl" x="98" y="334" text-anchor="middle">If you are</text>
+        <text class="lbl" x="98" y="350" text-anchor="middle">STAFF</text>
+        <rect class="box-wait" x="256" y="296" width="250" height="36" rx="7"/>
+        <rect class="box"      x="256" y="340" width="250" height="36" rx="7"/>
+        <text class="lbl" x="272" y="319">The Bishop</text>
+        <text class="lbl" x="272" y="363">The General Manager</text>
+        <text class="who" x="516" y="363">only if you report to both</text>
       </svg>
       <figcaption>
-        A fan, not a chain — nobody waits for anybody else. Your congregation and district decide the routing,
+        A fan, not a chain — nobody waits for anybody else, except the Bishop, who waits for no one. Your congregation and district decide the routing,
         so if leave reaches the wrong people the church recorded against your name is usually why.
       </figcaption>
     </figure>
