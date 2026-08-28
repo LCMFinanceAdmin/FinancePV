@@ -1,4 +1,5 @@
--- 074: Employee maintenance file — documents with folders, expiry tracking and notes.
+-- 074a: Employee maintenance file — documents with folders, expiry tracking and notes.
+-- (numbered 074a on cleanup: 074 was used twice — see 074b)
 -- Run manually in the Supabase dashboard SQL editor.
 
 CREATE TABLE employee_documents (

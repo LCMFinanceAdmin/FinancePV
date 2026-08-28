@@ -1,4 +1,6 @@
--- 116: finish what 074 and 086 set out to do.
+-- 116: finish what 074b and 086 set out to do.
+-- (074 was renumbered 074b on cleanup; the filename here keeps its original
+--  spelling, because that is the name this migration has always had.)
 --
 -- Those migrations revoked EXECUTE on their SECURITY DEFINER functions FROM
 -- PUBLIC, which reads as though it closes the door. It does not, on Supabase:
@@ -6,7 +8,7 @@
 --
 --   =X/postgres | postgres=X | anon=X | authenticated=X | service_role=X
 --
--- and removing the first entry leaves the third. Every function 074 hardened
+-- and removing the first entry leaves the third. Every function 074b hardened
 -- has therefore been callable by anon ever since, with the anon key that ships
 -- in the browser bundle. 115 hit the same trap and was corrected before it ran.
 --

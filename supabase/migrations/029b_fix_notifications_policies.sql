@@ -1,4 +1,5 @@
--- 029: Fix notification RLS so client-side inserts work and all recipients
+-- 029b: Fix notification RLS so client-side inserts work and all recipients
+-- (numbered 029b on cleanup: written after 029a, which already held 029)
 -- can read their own notifications.
 
 -- Grant table-level permissions (PostgREST requires both GRANT + policy)

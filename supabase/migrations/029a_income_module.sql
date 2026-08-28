@@ -1,4 +1,5 @@
--- 029: Income & Collections — facility bookings + income records
+-- 029a: Income & Collections — facility bookings + income records
+-- (numbered 029a on cleanup: 029 was used twice — see 029b)
 
 CREATE TABLE facility_bookings (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

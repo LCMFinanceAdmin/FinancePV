@@ -13,7 +13,7 @@
 -- and dropping the first entry leaves the third doing exactly the same job.
 -- Both have to go. service_role keeps its grant: the edge functions run as it.
 --
--- Migration 074 established the fix (REVOKE ALL ... FROM PUBLIC, then grant to
+-- Migration 074b established the fix (REVOKE ALL ... FROM PUBLIC, then grant to
 -- the role that should have it) but only applied it to five functions. Twenty
 -- more have been added since without it, including three of my own in 114.
 --

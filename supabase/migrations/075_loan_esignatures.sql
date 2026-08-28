@@ -1,6 +1,6 @@
 -- 075: Employee loans — three-party e-signatures (Applicant / Bishop / Treasurer)
 -- and supporting attachment. Run manually in the Supabase dashboard SQL editor
--- AFTER 074 (attachments reuse the private employee-docs bucket).
+-- AFTER 074a (attachments reuse the private employee-docs bucket).
 
 ALTER TABLE employee_loans
   ADD COLUMN IF NOT EXISTS signatures JSONB NOT NULL DEFAULT '{}',

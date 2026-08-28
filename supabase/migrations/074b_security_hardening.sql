@@ -1,4 +1,5 @@
--- 074: Security hardening before payroll and employee-record activation.
+-- 074b: Security hardening before payroll and employee-record activation.
+-- (numbered 074b on cleanup: written after 074a, which already held 074)
 --
 -- This migration deliberately does not create payroll records. It protects the
 -- existing operational app first, moves signing/PIN credentials away from the

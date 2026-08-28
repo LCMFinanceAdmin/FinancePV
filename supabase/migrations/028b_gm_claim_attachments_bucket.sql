@@ -1,4 +1,5 @@
--- 028: Storage bucket for GM claim supporting documents
+-- 028b: Storage bucket for GM claim supporting documents
+-- (numbered 028b on cleanup: written after 028a, which already held 028)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'gm-claim-attachments',

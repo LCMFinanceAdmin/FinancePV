@@ -1,6 +1,6 @@
 -- 084: Unrestricted role switching for the test-admin accounts.
 --
--- 074 introduced role_switch_grants: switch_own_role() requires an explicit
+-- 074b introduced role_switch_grants: switch_own_role() requires an explicit
 -- grant row per role, and for MINISTRY_HEAD the chosen ministries must be a
 -- subset of that grant's ministries. Without a full set of rows the switcher
 -- fails with "No active role-switch grant for X" or "Ministry selection is
