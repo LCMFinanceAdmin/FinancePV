@@ -34,7 +34,7 @@ import { roleLabel, roleWithScope } from "@/lib/utils";
 interface Person {
   id: string; full_name: string; preferred_name: string | null;
   category: CategoryKey; status: string;
-  email: string | null; phone: string | null;
+  email: string | null; work_email: string | null; phone: string | null;
   hq_department: string | null; district_id: string | null;
   company_name: string | null; vendor_service: string | null;
   organisation_id: string | null; org_role: string | null;
@@ -182,7 +182,7 @@ export default function PeopleDirectoryPage() {
       if (!q) return true;
       return [
         p.full_name, withTitle(p.full_name, p.ordination),
-        p.preferred_name, p.email, p.phone, p.hq_department,
+        p.preferred_name, p.email, p.work_email, p.phone, p.hq_department,
         p.company_name, p.vendor_service, p.org_role,
         ...rows.map(r => r.title),
       ].some(f => (f ?? "").toLowerCase().includes(q));
@@ -477,8 +477,14 @@ export default function PeopleDirectoryPage() {
                 </div>
               </dl>
 
-              {(p.email || p.phone) && (
+              {(p.email || p.work_email || p.phone) && (
                 <div className="mt-2 space-y-0.5 border-t border-stone-100 pt-2">
+                  {p.work_email && (
+                    <a href={`mailto:${p.work_email}`} className="flex items-center gap-1.5 text-[12px] text-stone-700">
+                      <Mail size={11} className="shrink-0 text-[#4a6da7]" />
+                      <span className="truncate">{p.work_email}</span>
+                    </a>
+                  )}
                   {p.email && (
                     <a href={`mailto:${p.email}`} className="flex items-center gap-1.5 text-[12px] text-stone-600">
                       <Mail size={11} className="shrink-0 text-stone-400" />
@@ -580,6 +586,12 @@ export default function PeopleDirectoryPage() {
                     </td>
 
                     <td className={`${td} px-3`}>
+                      {p.work_email && (
+                        <div className="flex items-center gap-1.5 text-[12px] text-stone-700">
+                          <Mail size={11} className="shrink-0 text-[#4a6da7]" />
+                          <span className="truncate">{p.work_email}</span>
+                        </div>
+                      )}
                       {p.email && (
                         <div className="flex items-center gap-1.5 text-[12px] text-stone-600">
                           <Mail size={11} className="shrink-0 text-stone-400" />
@@ -592,7 +604,9 @@ export default function PeopleDirectoryPage() {
                           <span className="truncate">{p.phone}</span>
                         </div>
                       )}
-                      {!p.email && !p.phone && <span className="text-[12px] text-stone-300">No contact</span>}
+                      {!p.email && !p.work_email && !p.phone && (
+                        <span className="text-[12px] text-stone-300">No contact</span>
+                      )}
                     </td>
 
                     <td className={`${td} px-3`}>
@@ -742,9 +756,9 @@ function MenuItem({ children, onClick, danger }: {
 /** The people shown, as a spreadsheet — the filters are the point of it. */
 function exportCsv(rows: Person[], involvementOf: (id: string) => TimelineRow[]) {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const head = ["Name", "Category", "Status", "Email", "Phone", "Department", "Involvement"];
+  const head = ["Name", "Category", "Status", "LCM Email", "Personal Email", "Phone", "Department", "Involvement"];
   const body = rows.map(p => [
-    p.full_name, categoryOf(p.category).one, p.status, p.email ?? "", p.phone ?? "",
+    p.full_name, categoryOf(p.category).one, p.status, p.work_email ?? "", p.email ?? "", p.phone ?? "",
     p.hq_department ?? "",
     involvementOf(p.id).map(r => `${r.title}${r.role ? ` (${r.role})` : ""} ${period(r.start_date, r.end_date)}`).join("; "),
   ].map(esc).join(","));
