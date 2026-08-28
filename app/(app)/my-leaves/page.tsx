@@ -46,6 +46,7 @@ export default function MyLeavesPage() {
 function MyLeavesInner() {
   const supabase = createClient();
   const [leaveTypes,       setLeaveTypes]       = useState<LeaveType[]>([]);
+  const [offeredCodes,     setOfferedCodes]     = useState<Set<string>>(new Set());
   const [applications,     setApplications]     = useState<LeaveApp[]>([]);
   const [replacementDays,  setReplacementDays]  = useState<ReplacementDay[]>([]);
   const [loading,          setLoading]          = useState(true);
@@ -129,6 +130,21 @@ function MyLeavesInner() {
     setAggregateWith(aggMap);
     setEntMeta(metaMap);
     setYearsOfService(yrs);
+
+    // Which types are offered to me, as opposed to which exist. The entitlement
+    // function is the one place that knows a man is not offered maternity leave
+    // (181) — and its answer was being discarded here, so the restriction had
+    // no effect on anything anybody could see.
+    //
+    // Kept apart from leaveTypes because that list is also how an application
+    // gets its name for display. Filtering it would leave anybody who applied
+    // before the rule arrived looking at a bare code in their own history.
+    //
+    // Empty means the function told us nothing — an account it cannot place, or
+    // an error — and then everything is offered. That matches how the rule
+    // itself fails: better to offer a type somebody will not take than to hide
+    // one they are owed.
+    setOfferedCodes(new Set(Object.keys(entMap)));
 
     setLeaveTypes(lt ?? []);
     setApplications(apps ?? []);
@@ -401,6 +417,11 @@ function MyLeavesInner() {
   // The figures the printed form asks for, worked out once and reused both
   // here and on submission, so what the applicant sees is exactly what is
   // snapshotted onto the record.
+  // What I may actually apply for: active, and offered to me by name.
+  const offeredTypes = leaveTypes.filter(
+    t => t.active && (offeredCodes.size === 0 || offeredCodes.has(t.code)),
+  );
+
   const annualType   = leaveTypes.find(t => t.code === "ANNUAL");
   const medicalType  = leaveTypes.find(t => t.code === "MEDICAL");
   const annualBalance  = annualType  ? getBalance("ANNUAL", annualType).remaining   : null;
@@ -484,7 +505,7 @@ function MyLeavesInner() {
           )}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {leaveTypes.filter(t => t.active).map(type => {
+            {offeredTypes.map(type => {
               const bal = getBalance(type.code, type);
               const meta = entMeta[type.code];
               const kind = meta?.kind ?? (type.is_replacement ? "EARNED" : "FIXED");
@@ -714,7 +735,7 @@ function MyLeavesInner() {
                 Tick the type of leave <span className="text-red-500">*</span>
               </p>
               <div className="grid grid-cols-1 gap-px border border-stone-300 bg-stone-300 sm:grid-cols-3">
-                {leaveTypes.filter(t => t.active).map(t => {
+                {offeredTypes.map(t => {
                   const on = form.leave_type_code === t.code;
                   return (
                     <button key={t.code} type="button"

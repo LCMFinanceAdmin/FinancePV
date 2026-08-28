@@ -9,10 +9,14 @@
 // a page.
 //
 // Everything here is read through the employee's own session, so the row-level
-// policies are the access control and this page adds no rules of its own. The
-// one thing it must do is fail kindly: an account not yet linked to a payroll
-// record sees an explanation rather than an empty screen, because that is the
-// common case until Finance finishes adding logins.
+// policies are the access control and this page adds no rules of its own. It
+// still has to ask which record is its own, though: the policy admits a Finance
+// Executive or the GM to every row, so "whatever the policy leaves visible" is
+// only the right record for people who cannot see anybody else's.
+//
+// The other thing it must do is fail kindly: an account not yet linked to a
+// payroll record sees an explanation rather than an empty screen, because that
+// is the common case until Finance finishes adding logins.
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -67,12 +71,20 @@ function MySalaryInner() {
 
   useEffect(() => {
     (async () => {
-      // One row comes back if this login is linked to a payroll record, none
-      // if it isn't — the policy does the filtering, so there is no id to pass.
+      // Ask the database which record is mine, rather than assuming the policy
+      // narrows the table to it. It does for an ordinary employee, but a
+      // Finance Executive or the GM may read every row, so an unfiltered
+      // select returns eighty-odd of them and maybeSingle() fails — which read
+      // as "you have no payroll record" to exactly the people who can see all
+      // of them. The id is the same one the policy itself uses.
+      const { data: myId } = await supabase.rpc("my_payroll_employee_id");
+
+      if (!myId) { setLoading(false); return; }
+
       const { data: me } = await supabase
         .from("payroll_employees")
         .select("*")
-        .eq("status", "ACTIVE")
+        .eq("id", myId)
         .maybeSingle();
 
       if (!me) { setLoading(false); return; }
