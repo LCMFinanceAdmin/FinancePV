@@ -55,6 +55,10 @@ function MyLeavesInner() {
   // only place that knows the start date, and returned per leave type.
   const [entitlements,     setEntitlements]     = useState<Record<string, number>>({});
   const [yearsOfService,   setYearsOfService]   = useState<number | null>(null);
+  // Hospitalisation's 60 days are an aggregate that includes ordinary sick
+  // leave — Employment Act s60F. This maps a leave type to the other type whose
+  // days also count against its ceiling.
+  const [aggregateWith,    setAggregateWith]    = useState<Record<string, string>>({});
   const [showApply,        setShowApply]        = useState(false);
   const [userEmail,        setUserEmail]        = useState("");
   const [userName,         setUserName]         = useState("");
@@ -100,12 +104,17 @@ function MyLeavesInner() {
     ]);
 
     const entMap: Record<string, number> = {};
+    const aggMap: Record<string, string> = {};
     let yrs: number | null = null;
-    for (const e of (ents ?? []) as { code: string; days: number; years_of_service: number | null }[]) {
+    for (const e of (ents ?? []) as {
+      code: string; days: number; years_of_service: number | null; aggregate_with: string | null;
+    }[]) {
       entMap[e.code] = Number(e.days);
+      if (e.aggregate_with) aggMap[e.code] = e.aggregate_with;
       if (e.years_of_service != null) yrs = e.years_of_service;
     }
     setEntitlements(entMap);
+    setAggregateWith(aggMap);
     setYearsOfService(yrs);
 
     setLeaveTypes(lt ?? []);
@@ -135,10 +144,24 @@ function MyLeavesInner() {
       return { entitlement: earned, used: usedDays, remaining: Math.max(0, earned - usedDays) };
     }
     const entitlement = entitlements[typeCode] ?? type.days_per_year;
+
+    // Where a ceiling is shared, the other type's days come off it too, so
+    // eighteen days of ordinary sick leave leave forty-two of hospitalisation
+    // rather than sixty. Counting them separately would over-grant by the
+    // whole of the smaller entitlement.
+    const partner = aggregateWith[typeCode];
+    const partnerDays = partner
+      ? applications
+          .filter(a => a.leave_type_code === partner && a.status === "APPROVED"
+                    && new Date(a.start_date).getFullYear() === year)
+          .reduce((s, a) => s + Number(a.days), 0)
+      : 0;
+
+    const counted = usedDays + partnerDays;
     return {
       entitlement,
-      used: usedDays,
-      remaining: Math.max(0, entitlement - usedDays),
+      used: counted,
+      remaining: Math.max(0, entitlement - counted),
     };
   }
 
