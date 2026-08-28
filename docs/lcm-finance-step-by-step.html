@@ -1,319 +1,523 @@
 <title>LCM Finance Step by Step</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Source+Sans+3:wght@400;500;600;700&display=swap">
 
 <style>
+/* ── Tokens ─────────────────────────────────────────────────────────────────
+   The mockups below reproduce the app's real controls, so they use the app's
+   real values — #2563eb for a primary button, #edf6ff for the tab rail — and
+   not an approximation. A reader should recognise the button, not a drawing of
+   one. Because of that the mockups stay light in both themes: they are
+   pictures of a light-themed screen, and inverting them would make them
+   pictures of a screen nobody has.                                          */
 :root{
-  --ground:#f2f7ff; --surface:#ffffff; --surface-2:#eaf3ff;
-  --ink:#16335e; --ink-2:#4d6383; --ink-3:#7b8da7;
-  --line:#cfe0f6; --line-2:#a9c8ee;
-  --brand:#2563eb; --brand-deep:#173a72; --brand-wash:#e4eeff;
-  --go:#136c37; --go-bg:#e2f4e9; --go-line:#8fd0ac;
-  --wait:#9a4a06; --wait-bg:#fdf0dd; --wait-line:#e8bf83;
-  --stop:#a81d1d; --stop-bg:#fce9e9; --stop-line:#eeb4b4;
+  --ground:#f2f7ff; --paper:#ffffff; --ink:#16335e; --ink-2:#4d6383; --ink-3:#7b8da7;
+  --line:#cfe0f6; --line-2:#a9c8ee; --brand:#2563eb; --brand-deep:#173a72; --brand-wash:#e4eeff;
+  --go:#136c37; --go-bg:#e2f4e9; --wait:#9a4a06; --wait-bg:#fdf0dd;
+  --stop:#a81d1d; --stop-bg:#fce9e9;
   --shadow:0 8px 24px rgba(68,120,190,.08);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --ground:#0b1524; --surface:#122237; --surface-2:#1b3050;
-    --ink:#e6eefb; --ink-2:#a9bed9; --ink-3:#7e93b1;
-    --line:#2a4462; --line-2:#3d6087;
-    --brand:#82b1ff; --brand-deep:#b6d2ff; --brand-wash:#172c47;
-    --go:#77e0a8; --go-bg:#0f2b1d; --go-line:#2b6644;
-    --wait:#f3c273; --wait-bg:#2e2311; --wait-line:#5f4720;
-    --stop:#f6a1a1; --stop-bg:#2e1717; --stop-line:#5d2a2a;
+    --ground:#0b1524; --paper:#122237; --ink:#e6eefb; --ink-2:#a9bed9; --ink-3:#7e93b1;
+    --line:#2a4462; --line-2:#3d6087; --brand:#82b1ff; --brand-deep:#b6d2ff; --brand-wash:#172c47;
+    --go:#77e0a8; --go-bg:#0f2b1d; --wait:#f3c273; --wait-bg:#2e2311;
+    --stop:#f6a1a1; --stop-bg:#2e1717;
     --shadow:0 8px 24px rgba(0,0,0,.35);
   }
 }
 :root[data-theme="dark"]{
-  --ground:#0b1524; --surface:#122237; --surface-2:#1b3050;
-  --ink:#e6eefb; --ink-2:#a9bed9; --ink-3:#7e93b1;
-  --line:#2a4462; --line-2:#3d6087;
-  --brand:#82b1ff; --brand-deep:#b6d2ff; --brand-wash:#172c47;
-  --go:#77e0a8; --go-bg:#0f2b1d; --go-line:#2b6644;
-  --wait:#f3c273; --wait-bg:#2e2311; --wait-line:#5f4720;
-  --stop:#f6a1a1; --stop-bg:#2e1717; --stop-line:#5d2a2a;
+  --ground:#0b1524; --paper:#122237; --ink:#e6eefb; --ink-2:#a9bed9; --ink-3:#7e93b1;
+  --line:#2a4462; --line-2:#3d6087; --brand:#82b1ff; --brand-deep:#b6d2ff; --brand-wash:#172c47;
+  --go:#77e0a8; --go-bg:#0f2b1d; --wait:#f3c273; --wait-bg:#2e2311;
+  --stop:#f6a1a1; --stop-bg:#2e1717;
   --shadow:0 8px 24px rgba(0,0,0,.35);
 }
 
 *{box-sizing:border-box;}
-body{
-  margin:0;background:var(--ground);color:var(--ink);
-  font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif;
-  font-size:15px;line-height:1.48;
-}
-.stack{width:min(100%,940px);margin-inline:auto;padding:1.5rem clamp(.8rem,2vw,1.5rem) 3rem;
-  display:flex;flex-direction:column;gap:1.5rem;}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif;font-size:15px;line-height:1.45;}
+.stack{width:min(100%,980px);margin-inline:auto;padding:1.4rem clamp(.7rem,2vw,1.4rem) 3rem;
+  display:flex;flex-direction:column;gap:1.4rem;}
 
-/* Each sheet is one printed page. */
-.page{
-  background:var(--surface);border:1px solid var(--line);border-radius:14px;
-  padding:1.5rem clamp(1rem,2.5vw,1.9rem) 1.7rem;box-shadow:var(--shadow);
-}
-.page-head{
-  display:flex;align-items:baseline;justify-content:space-between;gap:1rem;
-  border-bottom:2px solid var(--ink);padding-bottom:.5rem;margin-bottom:.9rem;
-}
-.page-head h2{
-  font-family:Newsreader,Georgia,serif;font-weight:600;
-  font-size:clamp(1.35rem,2.8vw,1.75rem);margin:0;letter-spacing:-.015em;
-}
-.page-no{
-  font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
-  font-weight:700;color:var(--ink-3);white-space:nowrap;
-}
-.page > p.intro{margin:0 0 .9rem;color:var(--ink-2);font-size:.94rem;max-width:72ch;}
+.page{background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  padding:1.4rem clamp(.9rem,2.2vw,1.7rem) 1.5rem;box-shadow:var(--shadow);}
+.page-head{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;
+  border-bottom:2px solid var(--ink);padding-bottom:.45rem;margin-bottom:.8rem;}
+.page-head h2{font-family:Newsreader,Georgia,serif;font-weight:600;
+  font-size:clamp(1.3rem,2.6vw,1.65rem);margin:0;letter-spacing:-.015em;}
+.page-no{font-size:.64rem;letter-spacing:.16em;text-transform:uppercase;font-weight:700;
+  color:var(--ink-3);white-space:nowrap;}
+.intro{margin:0 0 .8rem;color:var(--ink-2);font-size:.9rem;max-width:74ch;}
+h3{font-family:Newsreader,Georgia,serif;font-weight:600;font-size:1.05rem;margin:1.1rem 0 .45rem;}
+h3:first-of-type{margin-top:.3rem;}
 
-h3{
-  font-family:Newsreader,Georgia,serif;font-weight:600;font-size:1.12rem;
-  margin:1.3rem 0 .2rem;
-}
-h3:first-of-type{margin-top:.4rem;}
-.where{
-  display:inline-block;margin:.15rem 0 .5rem;font-size:.82rem;
-  color:var(--brand-deep);background:var(--brand-wash);
-  border:1px solid var(--line-2);border-radius:6px;padding:.12rem .5rem;
-}
-.path{font-weight:700;color:var(--brand-deep);white-space:nowrap;}
+/* ── A step: words on the left, the actual screen on the right ─────────── */
+.step{display:grid;gap:.7rem;grid-template-columns:1fr;align-items:start;
+  padding:.55rem 0;border-top:1px solid var(--line);break-inside:avoid;}
+.step:first-of-type{border-top:none;}
+@media(min-width:680px){.step{grid-template-columns:1fr 1fr;gap:1.1rem;}}
+.step-txt{display:flex;gap:.55rem;}
+.step-n{flex:0 0 auto;width:1.3rem;height:1.3rem;border-radius:50%;background:var(--ink);
+  color:var(--paper);font-size:.7rem;font-weight:700;display:flex;align-items:center;
+  justify-content:center;margin-top:.1rem;}
+.step-txt b{font-weight:700;font-size:.92rem;}
+.step-txt p{margin:.1rem 0 0;color:var(--ink-2);font-size:.85rem;}
 
-ol.steps{list-style:none;counter-reset:s;margin:.3rem 0 0;padding:0;
-  display:flex;flex-direction:column;gap:.42rem;}
-ol.steps > li{counter-increment:s;position:relative;padding-left:1.85rem;max-width:74ch;font-size:.92rem;}
-ol.steps > li::before{
-  content:counter(s);position:absolute;left:0;top:.06rem;
-  width:1.35rem;height:1.35rem;border-radius:50%;
-  background:var(--ink);color:var(--surface);
-  display:flex;align-items:center;justify-content:center;
-  font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums;
-}
-ol.steps b{font-weight:700;}
-ol.steps .n{display:block;color:var(--ink-2);font-size:.855rem;}
+/* ── The mockup kit: the app's own controls, reproduced ────────────────── */
+.mock{background:#f7fbff;border:1px solid #dbe9fb;border-radius:10px;padding:.6rem;
+  color:#16335e;font-size:12px;line-height:1.35;}
+.mock-cap{display:block;margin:.25rem 0 0;font-size:.7rem;color:var(--ink-3);font-style:italic;}
 
-.tip{
-  border:1px solid var(--line);border-left:3px solid var(--brand);
-  background:var(--surface-2);border-radius:0 8px 8px 0;
-  padding:.5rem .75rem;margin:.7rem 0 0;font-size:.855rem;line-height:1.45;max-width:74ch;
-}
-.tip.warn{border-left-color:var(--wait);}
+.btn{display:inline-flex;align-items:center;gap:.35rem;background:#2563eb;color:#fff;
+  border-radius:11px;padding:.3rem .68rem;font-size:11.5px;font-weight:600;
+  box-shadow:0 6px 14px rgba(37,99,235,.22);}
+.btn.sec{background:#fff;color:#294a78;border:1px solid #d5e5fb;box-shadow:none;}
+.btn.danger{background:#f43f5e;color:#fff;box-shadow:0 6px 14px rgba(244,63,94,.18);}
+.btn.go{background:#16a34a;box-shadow:0 6px 14px rgba(22,163,74,.2);}
+
+.nav{background:#fff;border:1px solid #e3edf9;border-radius:8px;padding:.35rem;width:100%;max-width:230px;}
+.nav .brand{font-weight:700;font-size:11.5px;padding:.2rem .4rem .3rem;color:#16335e;}
+.nav .brand small{display:block;font-weight:400;font-size:9px;color:#7b8da7;}
+.nav i{display:block;padding:.24rem .45rem;border-radius:6px;font-size:11px;color:#4d6383;font-style:normal;}
+.nav i.on{background:#e4eeff;color:#173a72;font-weight:700;}
+.nav i.sub{padding-left:1.1rem;font-size:10.5px;}
+.nav i .badge{float:right;background:#ef4444;color:#fff;border-radius:99px;
+  padding:0 .3rem;font-size:8.5px;font-weight:700;}
+
+.tabs{display:inline-flex;gap:.2rem;border:1px solid #dbe9fb;background:#edf6ff;
+  border-radius:13px;padding:.22rem;}
+.tabs span{padding:.2rem .55rem;border-radius:9px;font-size:10.5px;font-weight:500;color:#4d6383;}
+.tabs span.on{background:#2563eb;color:#fff;font-weight:600;}
+
+.fld{margin-bottom:.4rem;}
+.fld label{display:block;font-size:9.5px;font-weight:700;color:#4d6383;margin-bottom:.1rem;}
+.fld .in{background:#fff;border:1px solid #cbd9ea;border-radius:6px;padding:.22rem .4rem;font-size:11px;color:#16335e;}
+.fld .in.ghost{color:#9db0c8;}
+.fld .in.sel::after{content:"\25be";float:right;color:#7b8da7;}
+
+.card{background:#fff;border:1px solid #dce9fb;border-radius:10px;padding:.5rem .6rem;
+  box-shadow:0 4px 10px rgba(68,120,190,.07);}
+.card + .card{margin-top:.4rem;}
+.card .lab{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#7b8da7;}
+.card .sub{font-size:9.5px;color:#9db0c8;}
+.card .big{font-size:19px;font-weight:700;color:#4a6da7;line-height:1;}
+.card .rem{font-size:8.5px;color:#9db0c8;}
+.bar{height:4px;background:#eaf3ff;border-radius:99px;margin:.3rem 0 .15rem;overflow:hidden;}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#60a5fa,#818cf8);border-radius:99px;}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;}
+.foot{display:flex;justify-content:space-between;font-size:8.5px;color:#9db0c8;}
+
+.pill{display:inline-block;border-radius:99px;padding:.05rem .4rem;font-size:9px;font-weight:700;}
+.pill.wait{background:#fdf0dd;color:#9a4a06;}
+.pill.go{background:#e2f4e9;color:#136c37;}
+.pill.stop{background:#fce9e9;color:#a81d1d;}
+.pill.sig{background:#ede9fe;color:#5b21b6;}
+
+.note{background:#f5f9ff;border:1px solid #dce9fb;border-radius:7px;padding:.3rem .45rem;
+  font-size:10px;color:#4d6383;margin-top:.3rem;}
+.note.warnb{background:#fdf0dd;border-color:#e8bf83;color:#7c3d05;}
+
+/* "press this, and this appears" */
+.then{display:flex;flex-direction:column;gap:.3rem;align-items:flex-start;}
+.then .arrow{align-self:center;color:#9db0c8;font-size:13px;line-height:1;}
+
+table.qt{border-collapse:collapse;width:100%;font-size:.83rem;margin-top:.4rem;}
+table.qt th,table.qt td{text-align:left;padding:.22rem .35rem;border-bottom:1px solid var(--line);vertical-align:top;}
+table.qt thead th{font-size:.63rem;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;}
+table.qt tbody th{font-weight:600;white-space:nowrap;}
+table.qt tr:last-child td,table.qt tr:last-child th{border-bottom:none;}
+
+.tip{border:1px solid var(--line);border-left:3px solid var(--brand);background:var(--brand-wash);
+  border-radius:0 8px 8px 0;padding:.42rem .7rem;margin:.6rem 0 0;font-size:.83rem;max-width:76ch;}
+.tip.warn{border-left-color:var(--wait);background:var(--wait-bg);color:#7c3d05;}
 .tip b{font-weight:700;}
 
-figure{margin:.8rem 0 0;}
-figcaption{margin-top:.3rem;font-size:.78rem;color:var(--ink-3);}
+figure{margin:.7rem 0 0;}
+figcaption{margin-top:.25rem;font-size:.75rem;color:var(--ink-3);}
 svg{display:block;width:100%;height:auto;}
-.box{fill:var(--surface);stroke:var(--line-2);stroke-width:1.5;}
-.box-wait{fill:var(--wait-bg);stroke:var(--wait-line);stroke-width:1.5;}
-.box-go{fill:var(--go-bg);stroke:var(--go-line);stroke-width:1.5;}
-.box-stop{fill:var(--stop-bg);stroke:var(--stop-line);stroke-width:1.5;}
-.box-start{fill:var(--surface-2);stroke:var(--line-2);stroke-width:1.5;}
-.lbl{fill:var(--ink);font-size:12px;font-weight:600;font-family:"Source Sans 3",sans-serif;}
-.lbl-go{fill:var(--go);font-size:12px;font-weight:700;font-family:"Source Sans 3",sans-serif;}
-.lbl-stop{fill:var(--stop);font-size:12px;font-weight:700;font-family:"Source Sans 3",sans-serif;}
-.who{fill:var(--ink-3);font-size:10px;font-family:"Source Sans 3",sans-serif;}
-.edge{stroke:var(--ink-2);stroke-width:1.4;fill:none;}
-.edge-alt{stroke:var(--ink-3);stroke-width:1.2;fill:none;stroke-dasharray:4 3;}
-.edge-lbl{fill:var(--ink-2);font-size:9.5px;font-style:italic;font-family:"Source Sans 3",sans-serif;}
-
-table{border-collapse:collapse;width:100%;font-size:.855rem;margin-top:.5rem;}
-th,td{text-align:left;padding:.24rem .4rem;border-bottom:1px solid var(--line);vertical-align:top;}
-thead th{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:700;}
-tbody th{font-weight:600;white-space:nowrap;}
-tr:last-child td,tr:last-child th{border-bottom:none;}
-
-.cols{display:grid;gap:1.2rem;grid-template-columns:1fr;}
-@media(min-width:720px){.cols{grid-template-columns:1fr 1fr;}}
 
 @media print{
-  @page{size:A4 portrait;margin:11mm;}
-  body{background:#fff;font-size:10px;}
+  @page{size:A4 portrait;margin:9mm;}
+  body{background:#fff;font-size:9.6px;}
   .stack{width:100%;padding:0;gap:0;}
-  .page{
-    border:none;border-radius:0;box-shadow:none;padding:0;
-    break-after:page;page-break-after:always;
-  }
+  .page{border:none;border-radius:0;box-shadow:none;padding:0;
+    break-after:page;page-break-after:always;}
   .page:last-child{break-after:auto;page-break-after:auto;}
-  .page-head h2{font-size:17px;}
-  h3{font-size:11.5px;margin-top:9px;}
-  ol.steps > li{font-size:9.4px;}
-  ol.steps .n{font-size:8.8px;}
-  .tip{font-size:8.8px;}
-  figcaption{font-size:8px;}
-  table{font-size:8.6px;}
+  .page-head h2{font-size:16px;}
+  h3{font-size:10.5px;margin:7px 0 3px;}
+  .step{padding:3px 0;grid-template-columns:1fr 1fr;gap:8px;}
+  .step-txt b{font-size:9.2px;} .step-txt p{font-size:8.4px;}
+  .mock{padding:4px;font-size:8px;}
+  .tip{font-size:8.2px;padding:3px 6px;}
+  table.qt{font-size:8.2px;}
+  figcaption{font-size:7.6px;}
 }
 </style>
 
 <div class="stack">
 
-<!-- ══════════════════ PAGE 1 ══════════════════ -->
+<!-- ═════════════════════════ PAGE 1 ═════════════════════════ -->
 <section class="page">
   <div class="page-head">
-    <h2>Claiming money back</h2>
-    <span class="page-no">Page 1 of 3</span>
+    <h2>Claiming money back</h2><span class="page-no">Page 1 of 3</span>
   </div>
-  <p class="intro">You paid for something and want the church to pay you back &mdash; petrol, refreshments, a repair. Anyone may do this: pastors, EXCO members, volunteers. You do not have to be on the payroll.</p>
+  <p class="intro">You paid for something and want it back. Anyone may do this &mdash; pastors, EXCO members, volunteers. You do not have to be on the payroll.</p>
 
-  <h3>Sending the claim</h3>
-  <span class="where">Left-hand menu &rarr; <span class="path">Submit PV</span></span>
-  <ol class="steps">
-    <li><b>Fill in who is being paid.</b><span class="n">If the money comes back to you, that is your own name, bank and account number. Check the account number twice &mdash; a wrong digit is the commonest reason a payment fails.</span></li>
-    <li><b>Choose the ministry, and the project if there is one.</b><span class="n">This decides whose budget it comes from. If you are unsure, ask your EXCO member before sending rather than guessing.</span></li>
-    <li><b>Write the purpose.</b><span class="n">One line. &ldquo;Petrol, Kajang visitation, 12&ndash;14 Aug&rdquo; is better than &ldquo;Claim&rdquo;.</span></li>
-    <li><b>If it is a personal allowance, say which.</b><span class="n">A picker sits under Purpose &mdash; dental, books, moving. It then tells you what is left of that allowance. Leave it alone for an ordinary payment from a ministry budget.</span></li>
-    <li><b>List what you spent, line by line.</b><span class="n">A date, a description and an amount for each. For travel use the mileage rows: from, to, and kilometres. It works out RM0.70 per km for you.</span></li>
-    <li><b>Attach the receipts.</b><span class="n">Photographs from your phone are fine. A claim with no receipts comes back to you.</span></li>
-    <li><b>Tick the confirmation, type your name, and submit.</b><span class="n">You get a voucher number &mdash; PV-2026-xxx. Write it down, or find it again under My Submissions.</span></li>
-  </ol>
+  <div class="step">
+    <div class="step-txt"><span class="step-n">1</span><div>
+      <b>Open Submit PV.</b>
+      <p>Second item in the left-hand menu, under Dashboard. It is there for everybody.</p>
+    </div></div>
+    <div class="mock">
+      <div class="nav">
+        <div class="brand">LCM Finance<small>Church finance, made clear</small></div>
+        <i>Dashboard</i>
+        <i class="on">Submit PV &nbsp;&larr; press this</i>
+        <i>Approvals</i>
+        <i>Payments</i>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-txt"><span class="step-n">2</span><div>
+      <b>Say who is being paid.</b>
+      <p>If the money comes back to you, that is your own name and your own account. Check the number twice &mdash; a wrong digit is the commonest reason a payment fails.</p>
+    </div></div>
+    <div class="mock">
+      <div class="fld"><label>Payable to 付给</label><div class="in">Jermaine Aaron</div></div>
+      <div class="fld"><label>Payment method 付款方式</label><div class="in sel">Online Transfer</div></div>
+      <div class="fld"><label>Payee Bank A/C No 收款人账户号码</label><div class="in">140370020164440</div></div>
+      <span class="mock-cap">The form is in English and Chinese, side by side.</span>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-txt"><span class="step-n">3</span><div>
+      <b>Choose the ministry, and the purpose.</b>
+      <p>The ministry decides whose budget it comes out of. Write a purpose someone else could understand.</p>
+    </div></div>
+    <div class="mock">
+      <div class="fld"><label>Ministry 事工</label><div class="in sel">Social Concern</div></div>
+      <div class="fld"><label>Purpose 用途</label><div class="in">Petrol, Kajang visitation, 12&ndash;14 Aug</div></div>
+      <div class="fld"><label>Purpose 用途</label><div class="in ghost">Claim</div></div>
+      <span class="mock-cap">The second one will be queried. The first will not.</span>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-txt"><span class="step-n">4</span><div>
+      <b>If it is one of your personal allowances, say which.</b>
+      <p>A picker sits under Purpose. Choose one and it tells you what is left. Leave it alone for an ordinary payment from a ministry budget &mdash; most claims are that.</p>
+    </div></div>
+    <div class="mock then">
+      <div class="fld" style="width:100%"><label>Personal entitlement</label><div class="in sel">Dental</div></div>
+      <span class="arrow">&darr;</span>
+      <div class="note" style="width:100%"><b>RM150.00</b> left of RM200.00 this year &middot; RM50.00 already claimed</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-txt"><span class="step-n">5</span><div>
+      <b>List what you spent, and attach the receipts.</b>
+      <p>A date, a description and an amount per line. Travel has its own rows &mdash; type where you went and the kilometres, and it works the money out at RM0.70 per km.</p>
+    </div></div>
+    <div class="mock">
+      <div class="fld"><label>Particulars of Claim / Payment</label></div>
+      <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr .8fr;gap:3px;font-size:9.5px;">
+        <span style="color:#7b8da7">From</span><span style="color:#7b8da7">To</span>
+        <span style="color:#7b8da7">km</span><span style="color:#7b8da7;text-align:right">Amount</span>
+        <span class="in" style="padding:2px 4px">Kajang</span><span class="in" style="padding:2px 4px">Semenyih</span>
+        <span class="in" style="padding:2px 4px">31</span>
+        <span class="in" style="padding:2px 4px;text-align:right">21.70</span>
+      </div>
+      <span class="mock-cap">31 km &times; RM0.70 &mdash; filled in for you.</span>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-txt"><span class="step-n">6</span><div>
+      <b>Tick, type your name, and send it.</b>
+      <p>You get a voucher number. Write it down, or find it later under My Submissions.</p>
+    </div></div>
+    <div class="mock then">
+      <span class="btn">Submit Payment Voucher</span>
+      <span class="arrow">&darr;</span>
+      <div class="note" style="width:100%">Submitted &mdash; <b>PV-2026-015</b></div>
+    </div>
+  </div>
 
   <h3>Following it afterwards</h3>
-  <span class="where">Left-hand menu &rarr; <span class="path">My Space &rarr; My Submissions</span></span>
+  <div class="step">
+    <div class="step-txt"><span class="step-n">7</span><div>
+      <b>Open My Space &rarr; My Submissions.</b>
+      <p>The tabs group everything you have sent. The coloured word on each row is exactly where it has got to.</p>
+    </div></div>
+    <div class="mock">
+      <div class="tabs" style="margin-bottom:.4rem">
+        <span class="on">In progress</span><span>Approved</span><span>Paid</span><span>Rejected</span>
+      </div>
+      <div class="card"><div class="row"><div>
+        <div class="lab">PV-2026-015 &middot; Social Concern</div>
+        <div class="sub">Petrol, Kajang visitation</div>
+      </div><span class="pill wait">Pending EXCO Review</span></div></div>
+      <div class="card"><div class="row"><div>
+        <div class="lab">PV-2026-011 &middot; Mission</div>
+        <div class="sub">Refreshments, youth camp</div>
+      </div><span class="pill sig">Pending Signatory</span></div></div>
+      <div class="card"><div class="row"><div>
+        <div class="lab">PV-2026-004 &middot; Education</div>
+        <div class="sub">Books for Sunday school</div>
+      </div><span class="pill go">Paid</span></div></div>
+    </div>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 860 116" role="img"
+      aria-label="A claim passes through pending EXCO review, pending Finance review and pending signatory, then approved and paid. A rejection at any point returns it to the person who raised it, with the reason.">
+      <defs><marker id="h1" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto">
+        <polygon points="0,0 10,4 0,8" fill="#4d6383"/></marker></defs>
+      <line x1="172" y1="34" x2="188" y2="34" stroke="#4d6383" stroke-width="1.4" marker-end="url(#h1)"/>
+      <line x1="340" y1="34" x2="356" y2="34" stroke="#4d6383" stroke-width="1.4" marker-end="url(#h1)"/>
+      <line x1="508" y1="34" x2="524" y2="34" stroke="#4d6383" stroke-width="1.4" marker-end="url(#h1)"/>
+      <line x1="656" y1="34" x2="672" y2="34" stroke="#4d6383" stroke-width="1.4" marker-end="url(#h1)"/>
+      <path d="M 440 56 L 440 92 L 60 92 L 60 56" stroke="#7b8da7" stroke-width="1.2" fill="none"
+        stroke-dasharray="4 3" marker-end="url(#h1)"/>
+      <rect x="20"  y="14" width="152" height="42" rx="7" fill="#fdf0dd" stroke="#e8bf83" stroke-width="1.4"/>
+      <rect x="188" y="14" width="152" height="42" rx="7" fill="#fdf0dd" stroke="#e8bf83" stroke-width="1.4"/>
+      <rect x="356" y="14" width="152" height="42" rx="7" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1.4"/>
+      <rect x="524" y="14" width="132" height="42" rx="7" fill="#e2f4e9" stroke="#8fd0ac" stroke-width="1.4"/>
+      <rect x="672" y="14" width="132" height="42" rx="7" fill="#e2f4e9" stroke="#8fd0ac" stroke-width="1.4"/>
+      <text x="96"  y="33" text-anchor="middle" font-size="12" font-weight="600" fill="#7c3d05" font-family="Source Sans 3,sans-serif">Pending EXCO</text>
+      <text x="264" y="33" text-anchor="middle" font-size="12" font-weight="600" fill="#7c3d05" font-family="Source Sans 3,sans-serif">Pending Finance</text>
+      <text x="432" y="33" text-anchor="middle" font-size="12" font-weight="600" fill="#5b21b6" font-family="Source Sans 3,sans-serif">Pending Signatory</text>
+      <text x="590" y="33" text-anchor="middle" font-size="12" font-weight="700" fill="#136c37" font-family="Source Sans 3,sans-serif">Approved</text>
+      <text x="738" y="33" text-anchor="middle" font-size="12" font-weight="700" fill="#136c37" font-family="Source Sans 3,sans-serif">Paid</text>
+      <text x="96"  y="48" text-anchor="middle" font-size="9.5" fill="#8a6a3a" font-family="Source Sans 3,sans-serif">your EXCO member</text>
+      <text x="264" y="48" text-anchor="middle" font-size="9.5" fill="#8a6a3a" font-family="Source Sans 3,sans-serif">Finance Executive</text>
+      <text x="432" y="48" text-anchor="middle" font-size="9.5" fill="#6d5aa8" font-family="Source Sans 3,sans-serif">Treasurer, +1 over RM30,000</text>
+      <text x="590" y="48" text-anchor="middle" font-size="9.5" fill="#3d7d58" font-family="Source Sans 3,sans-serif">signed</text>
+      <text x="738" y="48" text-anchor="middle" font-size="9.5" fill="#3d7d58" font-family="Source Sans 3,sans-serif">money sent</text>
+      <text x="250" y="88" text-anchor="middle" font-size="9.5" font-style="italic" fill="#4d6383" font-family="Source Sans 3,sans-serif">rejected &mdash; comes back to you with the reason</text>
+    </svg>
+    <figcaption>The colours match the pills on your own rows: amber is waiting on somebody, purple is with the signatories, green is settled.</figcaption>
+  </figure>
+
+  <div class="tip"><b>Stuck on one stage?</b> Open the voucher &mdash; it names the person it is waiting on. <b>Rejected is not cancelled:</b> it has come back for correction, and you send the same one again.</div>
+</section>
+
+<!-- ═════════════════════════ PAGE 2 ═════════════════════════ -->
+<section class="page">
+  <div class="page-head">
+    <h2>Leave, and your payslip</h2><span class="page-no">Page 2 of 3</span>
+  </div>
+  <p class="intro">Both are for people employed by LCM. If you are a volunteer they will not appear in your menu, and that is right rather than broken.</p>
+
+  <div class="step">
+    <div class="step-txt"><span class="step-n">1</span><div>
+      <b>Open My Space &rarr; My Leave, and read the Balance tab.</b>
+      <p>These figures are yours. Annual and sick leave both rise with your length of service, so your neighbour&rsquo;s card may say something different.</p>
+    </div></div>
+    <div class="mock">
+      <div class="tabs" style="margin-bottom:.4rem"><span class="on">Balance</span><span>Pending (2)</span><span>History</span></div>
+      <div class="card"><div class="row"><div>
+        <div class="lab">Annual Leave</div><div class="sub">14 days &mdash; up to 5 years of service</div>
+      </div><div style="text-align:right"><div class="big">14</div><div class="rem">remaining</div></div></div>
+        <div class="bar"><i style="width:0%"></i></div>
+        <div class="foot"><span>0 used</span><span>14 total</span></div>
+      </div>
+      <div class="card"><div class="row"><div>
+        <div class="lab">Medical Leave</div><div class="sub">18 days &mdash; 2 to 4 years of service</div>
+      </div><div style="text-align:right"><div class="big">18</div><div class="rem">remaining</div></div></div>
+        <div class="bar"><i style="width:0%"></i></div>
+        <div class="foot"><span>0 used</span><span>18 total</span></div>
+      </div>
+      <span class="mock-cap">The line under the name says why the number is what it is.</span>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-txt"><span class="step-n">2</span><div>
+      <b>Press Apply for Leave, top right.</b>
+      <p>Then pick the type. A star means a document is needed &mdash; a medical certificate, for instance.</p>
+    </div></div>
+    <div class="mock then">
+      <span class="btn">+ Apply for Leave</span>
+      <span class="arrow">&darr;</span>
+      <div style="width:100%">
+        <div class="fld"><label>Type of leave</label><div class="in sel">Medical Leave *</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+          <div class="fld"><label>First day</label><div class="in">18/09/2026</div></div>
+          <div class="fld"><label>Last day</label><div class="in">19/09/2026</div></div>
+        </div>
+        <div class="note"><b>2 working days.</b> Weekends are not counted.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-txt"><span class="step-n">3</span><div>
+      <b>Read who it is going to, then sign and send.</b>
+      <p>The form names them before you send. If it says no approver could be worked out, stop and ask Finance to check your record.</p>
+    </div></div>
+    <div class="mock">
+      <div class="note" style="margin-top:0">This will go to <b>Rev. Tan Hee Ming</b> (Head Pastor, Balakong),
+        <b>Mr Aw Jen Wai</b> (Council Chairman) and <b>Rev. Daniel Koo</b> (Dean, Central District 1).</div>
+      <div style="margin-top:.4rem"><span class="btn">Submit application</span></div>
+      <span class="mock-cap">Your balance at that moment is stored on the application, so they see what you saw.</span>
+    </div>
+  </div>
+
   <figure>
     <svg viewBox="0 0 860 128" role="img"
-      aria-label="A claim passes through five states: pending EXCO review, pending Finance review, pending signatory, approved, then paid. Rejection at any point returns it to you with the reason, and you may correct it and send it again.">
-      <defs><marker id="h1" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto">
-        <polygon points="0,0 10,4 0,8" fill="currentColor"/></marker></defs>
-      <g color="#4d6383">
-        <line class="edge" x1="172" y1="46" x2="188" y2="46" marker-end="url(#h1)"/>
-        <line class="edge" x1="340" y1="46" x2="356" y2="46" marker-end="url(#h1)"/>
-        <line class="edge" x1="508" y1="46" x2="524" y2="46" marker-end="url(#h1)"/>
-        <line class="edge" x1="656" y1="46" x2="672" y2="46" marker-end="url(#h1)"/>
-        <path class="edge-alt" d="M 440 68 L 440 104 L 60 104 L 60 68" marker-end="url(#h1)"/>
-      </g>
-      <rect class="box-wait" x="20"  y="26" width="152" height="42" rx="7"/>
-      <rect class="box-wait" x="188" y="26" width="152" height="42" rx="7"/>
-      <rect class="box-wait" x="356" y="26" width="152" height="42" rx="7"/>
-      <rect class="box-go"   x="524" y="26" width="132" height="42" rx="7"/>
-      <rect class="box-go"   x="672" y="26" width="132" height="42" rx="7"/>
-      <text class="lbl"    x="96"  y="45" text-anchor="middle">Pending EXCO</text>
-      <text class="lbl"    x="264" y="45" text-anchor="middle">Pending Finance</text>
-      <text class="lbl"    x="432" y="45" text-anchor="middle">Pending Signatory</text>
-      <text class="lbl-go" x="590" y="45" text-anchor="middle">Approved</text>
-      <text class="lbl-go" x="738" y="45" text-anchor="middle">Paid</text>
-      <text class="who" x="96"  y="60" text-anchor="middle">your EXCO member</text>
-      <text class="who" x="264" y="60" text-anchor="middle">Finance Executive</text>
-      <text class="who" x="432" y="60" text-anchor="middle">Treasurer, and a second if over RM30,000</text>
-      <text class="who" x="590" y="60" text-anchor="middle">signed</text>
-      <text class="who" x="738" y="60" text-anchor="middle">money sent</text>
-      <text class="edge-lbl" x="250" y="100" text-anchor="middle">rejected &mdash; comes back to you with the reason</text>
-    </svg>
-    <figcaption>These are the exact words shown against your voucher. The tabs at the top of My Submissions group them: In progress, Approved, Paid, Rejected.</figcaption>
-  </figure>
-
-  <div class="tip"><b>Stuck at one stage for a while?</b> Open the voucher &mdash; it names the person it is waiting on. Ask them directly. Nothing moves until they act.</div>
-  <div class="tip warn"><b>Rejected is not cancelled.</b> It has come back to you with a reason. Correct what was asked and submit it again; you do not start from nothing.</div>
-</section>
-
-<!-- ══════════════════ PAGE 2 ══════════════════ -->
-<section class="page">
-  <div class="page-head">
-    <h2>Leave, and your payslip</h2>
-    <span class="page-no">Page 2 of 3</span>
-  </div>
-  <p class="intro">Both of these are for people employed by LCM. If you are a volunteer these will not appear in your menu, and that is correct rather than broken.</p>
-
-  <h3>Applying for leave</h3>
-  <span class="where">Left-hand menu &rarr; <span class="path">My Space &rarr; My Leave</span></span>
-  <ol class="steps">
-    <li><b>Look at the Balance tab first.</b><span class="n">Every kind of leave, with what you have used and what is left. Annual and sick leave both rise with your length of service, so the figures are yours, not everybody&rsquo;s.</span></li>
-    <li><b>Press Apply for Leave and pick the type.</b><span class="n">A type marked with a star needs a supporting document &mdash; a medical certificate, for instance.</span></li>
-    <li><b>Enter the first and last day.</b><span class="n">The app counts the working days and ignores weekends. Check the number it shows before going on.</span></li>
-    <li><b>Give a reason, and attach the document if one is needed.</b></li>
-    <li><b>Read who it is going to.</b><span class="n">The form names them before you send. If it says no approver could be worked out, stop and ask Finance to check your record.</span></li>
-    <li><b>Sign and submit.</b><span class="n">Your balance at that moment is stored on the application, so your approvers see the same figures you saw.</span></li>
-    <li><b>Watch it under the Pending tab.</b><span class="n">It lists who has signed and who has not.</span></li>
-  </ol>
-
-  <figure>
-    <svg viewBox="0 0 860 132" role="img"
-      aria-label="Who signs your leave depends on who you are. A pastor's application goes to the head pastor, the church council chairman and the district dean, all three at once and in any order. A dean's own goes to the Bishop. A staff member's goes to the Bishop, and the General Manager as well if they report to both.">
+      aria-label="Who signs your leave depends on who you are. A pastor's goes to the head pastor, the council chairman and the district dean, all three at once and in any order. A dean's own goes to the Bishop. A staff member's goes to the Bishop, and the General Manager as well if they report to both.">
       <defs><marker id="h2" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto">
-        <polygon points="0,0 10,4 0,8" fill="currentColor"/></marker></defs>
-      <g color="#4d6383">
-        <path class="edge" d="M 150 30 L 250 30" marker-end="url(#h2)"/>
-        <path class="edge" d="M 150 76 L 250 76" marker-end="url(#h2)"/>
-        <path class="edge" d="M 150 112 L 250 112" marker-end="url(#h2)"/>
-      </g>
-      <rect class="box-start" x="20" y="14" width="130" height="32" rx="6"/>
-      <rect class="box-start" x="20" y="60" width="130" height="32" rx="6"/>
-      <rect class="box-start" x="20" y="96" width="130" height="32" rx="6"/>
-      <text class="lbl" x="85" y="34" text-anchor="middle">If a PASTOR</text>
-      <text class="lbl" x="85" y="80" text-anchor="middle">If a DEAN</text>
-      <text class="lbl" x="85" y="116" text-anchor="middle">If STAFF</text>
-
-      <rect class="box-wait" x="252" y="8"  width="196" height="28" rx="6"/>
-      <rect class="box-wait" x="458" y="8"  width="196" height="28" rx="6"/>
-      <rect class="box-wait" x="664" y="8"  width="176" height="28" rx="6"/>
-      <text class="lbl" x="264" y="27">Head pastor</text>
-      <text class="lbl" x="470" y="27">Council Chairman</text>
-      <text class="lbl" x="676" y="27">District Dean</text>
-      <text class="edge-lbl" x="252" y="50">all three at once &mdash; nobody waits for anybody else</text>
-
-      <rect class="box-wait" x="252" y="62" width="196" height="28" rx="6"/>
-      <text class="lbl" x="264" y="81">The Bishop only</text>
-
-      <rect class="box-wait" x="252" y="98" width="196" height="28" rx="6"/>
-      <rect class="box"      x="458" y="98" width="196" height="28" rx="6"/>
-      <text class="lbl" x="264" y="117">The Bishop</text>
-      <text class="lbl" x="470" y="117">The GM, if you report to both</text>
+        <polygon points="0,0 10,4 0,8" fill="#4d6383"/></marker></defs>
+      <line x1="150" y1="28" x2="248" y2="28" stroke="#4d6383" stroke-width="1.4" marker-end="url(#h2)"/>
+      <line x1="150" y1="74" x2="248" y2="74" stroke="#4d6383" stroke-width="1.4" marker-end="url(#h2)"/>
+      <line x1="150" y1="110" x2="248" y2="110" stroke="#4d6383" stroke-width="1.4" marker-end="url(#h2)"/>
+      <rect x="20" y="12" width="130" height="32" rx="6" fill="#eaf3ff" stroke="#a9c8ee" stroke-width="1.4"/>
+      <rect x="20" y="58" width="130" height="32" rx="6" fill="#eaf3ff" stroke="#a9c8ee" stroke-width="1.4"/>
+      <rect x="20" y="94" width="130" height="32" rx="6" fill="#eaf3ff" stroke="#a9c8ee" stroke-width="1.4"/>
+      <text x="85" y="32" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16335e" font-family="Source Sans 3,sans-serif">If a PASTOR</text>
+      <text x="85" y="78" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16335e" font-family="Source Sans 3,sans-serif">If a DEAN</text>
+      <text x="85" y="114" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16335e" font-family="Source Sans 3,sans-serif">If STAFF</text>
+      <rect x="250" y="6"  width="190" height="28" rx="6" fill="#fdf0dd" stroke="#e8bf83" stroke-width="1.4"/>
+      <rect x="450" y="6"  width="190" height="28" rx="6" fill="#fdf0dd" stroke="#e8bf83" stroke-width="1.4"/>
+      <rect x="650" y="6"  width="180" height="28" rx="6" fill="#fdf0dd" stroke="#e8bf83" stroke-width="1.4"/>
+      <text x="262" y="24" font-size="11.5" font-weight="600" fill="#7c3d05" font-family="Source Sans 3,sans-serif">Head pastor</text>
+      <text x="462" y="24" font-size="11.5" font-weight="600" fill="#7c3d05" font-family="Source Sans 3,sans-serif">Council Chairman</text>
+      <text x="662" y="24" font-size="11.5" font-weight="600" fill="#7c3d05" font-family="Source Sans 3,sans-serif">District Dean</text>
+      <text x="250" y="48" font-size="9.5" font-style="italic" fill="#4d6383" font-family="Source Sans 3,sans-serif">all three at once &mdash; nobody waits for anybody else</text>
+      <rect x="250" y="60" width="190" height="28" rx="6" fill="#fdf0dd" stroke="#e8bf83" stroke-width="1.4"/>
+      <text x="262" y="78" font-size="11.5" font-weight="600" fill="#7c3d05" font-family="Source Sans 3,sans-serif">The Bishop only</text>
+      <rect x="250" y="96" width="190" height="28" rx="6" fill="#fdf0dd" stroke="#e8bf83" stroke-width="1.4"/>
+      <rect x="450" y="96" width="190" height="28" rx="6" fill="#ffffff" stroke="#a9c8ee" stroke-width="1.4"/>
+      <text x="262" y="114" font-size="11.5" font-weight="600" fill="#7c3d05" font-family="Source Sans 3,sans-serif">The Bishop</text>
+      <text x="462" y="114" font-size="11.5" font-weight="600" fill="#16335e" font-family="Source Sans 3,sans-serif">The GM, if you report to both</text>
     </svg>
-    <figcaption>The Council Chairman has no login and does not need one &mdash; they get an email with a button that opens your application alone.</figcaption>
+    <figcaption>The Council Chairman has no login and needs none &mdash; they get an email with a button that opens your application and nothing else.</figcaption>
   </figure>
 
-  <div class="tip"><b>Seven days&rsquo; notice for annual leave.</b> Less than that shows a warning but does not stop you. Your approvers can see the dates and judge for themselves.</div>
+  <div class="tip"><b>Seven days&rsquo; notice for annual leave.</b> Less shows a warning but does not stop you. Your approvers see the dates and judge for themselves.</div>
 
-  <h3>Getting your payslip</h3>
-  <span class="where">Left-hand menu &rarr; <span class="path">My Space &rarr; My Salary</span></span>
-  <ol class="steps">
-    <li><b>Find the month under Payslips.</b><span class="n">One row per month, newest first, with the net and gross beside it.</span></li>
-    <li><b>Press Download.</b><span class="n">The PDF is built there and then. Past months stay available, so a lost payslip is never a problem.</span></li>
-    <li><b>While you are there, check Details on file.</b><span class="n">Your bank account number is on that page. It is the account your salary goes into.</span></li>
-  </ol>
-  <div class="tip warn"><b>A month missing?</b> It has not been finalised yet &mdash; figures still being prepared are held back on purpose. <b>The page says no payroll record is linked?</b> Your sign-in address has not been matched to your salary record; ask Finance, it is one edit for them.</div>
+  <h3>Your payslip</h3>
+  <div class="step">
+    <div class="step-txt"><span class="step-n">4</span><div>
+      <b>My Space &rarr; My Salary, then Download.</b>
+      <p>One row per month, newest first. The PDF is built as you press it, and past months stay there &mdash; a lost payslip is never a problem again.</p>
+    </div></div>
+    <div class="mock">
+      <div class="card"><div class="row">
+        <div><div class="lab">August 2026</div><div class="sub">Net RM4,111.60 &middot; gross RM4,340.00</div></div>
+        <span class="btn" style="padding:.2rem .5rem">&darr; Download</span>
+      </div></div>
+      <div class="card"><div class="row">
+        <div><div class="lab">July 2026</div><div class="sub">Net RM4,111.60 &middot; gross RM4,340.00</div></div>
+        <span class="btn" style="padding:.2rem .5rem">&darr; Download</span>
+      </div></div>
+      <div class="note warnb">A month missing? It has not been finalised yet &mdash; figures still being
+        prepared are held back on purpose.</div>
+    </div>
+  </div>
+
+  <div class="tip"><b>While you are there, check &ldquo;Details on file&rdquo;.</b> Your bank account number is on that page, and it is the account your salary goes into. Tell Finance if anything is wrong &mdash; the page is deliberately read-only.</div>
 </section>
 
-<!-- ══════════════════ PAGE 3 ══════════════════ -->
+<!-- ═════════════════════════ PAGE 3 ═════════════════════════ -->
 <section class="page">
   <div class="page-head">
-    <h2>If you approve things</h2>
-    <span class="page-no">Page 3 of 3</span>
+    <h2>If you approve things</h2><span class="page-no">Page 3 of 3</span>
   </div>
-  <p class="intro">Everything waiting on you sits under <span class="path">Approvals</span> in the left-hand menu. The number on a menu item is how many are waiting. Nothing moves until you act &mdash; there is no timeout and no automatic approval.</p>
+  <p class="intro">Everything waiting on you is under <b>Approvals</b>. The red number is how many. Nothing moves until you act &mdash; there is no timeout and no automatic approval.</p>
 
-  <h3>Which queue is yours</h3>
-  <table>
-    <thead><tr><th>If you are</th><th>Your queue</th><th>You decide</th></tr></thead>
+  <div class="step">
+    <div class="step-txt"><span class="step-n">1</span><div>
+      <b>Find your queue.</b>
+      <p>Which one you have depends on your role. A queue you do not have is a duty that is not yours.</p>
+    </div></div>
+    <div class="mock">
+      <div class="nav">
+        <div class="brand">LCM Finance<small>Church finance, made clear</small></div>
+        <i>Dashboard</i><i>Submit PV</i>
+        <i class="on">Approvals</i>
+        <i class="sub">GM Claims <span class="badge">2</span></i>
+        <i class="sub">EXCO Queue <span class="badge">3</span></i>
+        <i class="sub">Leave Queue <span class="badge">1</span></i>
+      </div>
+    </div>
+  </div>
+
+  <table class="qt">
+    <thead><tr><th>If you are</th><th>Your queue</th><th>You are deciding</th></tr></thead>
     <tbody>
-      <tr><th>An EXCO member</th><td><span class="path">EXCO Queue</span></td><td>Whether your ministry stands behind the spending</td></tr>
-      <tr><th>Bishop, Secretary or Treasurer</th><td><span class="path">Signatory Queue</span></td><td>Whether the church pays it</td></tr>
-      <tr><th>Head pastor, Dean, GM or Bishop</th><td><span class="path">Leave Queue</span></td><td>Whether the leave is granted</td></tr>
-      <tr><th>A church council Chairman</th><td>Your email</td><td>The same, by a link &mdash; no account needed</td></tr>
+      <tr><th>An EXCO member</th><td>EXCO Queue</td><td>Whether your ministry stands behind the spending</td></tr>
+      <tr><th>Bishop, Secretary, Treasurer</th><td>Signatory Queue</td><td>Whether the church pays it</td></tr>
+      <tr><th>Head pastor, Dean, GM, Bishop</th><td>Leave Queue</td><td>Whether the leave is granted</td></tr>
+      <tr><th>A council Chairman</th><td>Your email</td><td>The same, by a link &mdash; no account needed</td></tr>
     </tbody>
   </table>
 
   <h3>Verifying a claim &mdash; EXCO</h3>
-  <ol class="steps">
-    <li><b>Read the card without opening anything.</b><span class="n">The four things you need are on its face: the ministry, the amount, who is being paid, and what for. The budget line and what is left of it are there too.</span></li>
-    <li><b>Check the line can carry it.</b><span class="n">The card shows what has been spent and what is committed but unpaid. Use the lower figure.</span></li>
-    <li><b>Press Verify, or Reject with a reason.</b><span class="n">The reason is what the claimant sees, so write it for them. Verifying sends it on to Finance.</span></li>
-  </ol>
-  <div class="tip">You will never be asked to verify your own claim. One raised by the head of a ministry skips their own review and goes straight to Finance.</div>
+  <div class="step">
+    <div class="step-txt"><span class="step-n">2</span><div>
+      <b>Read the card, then Verify or Reject.</b>
+      <p>The four things you need are on its face &mdash; ministry, amount, payee, purpose &mdash; with the budget line beneath. Write the reason for a rejection: it is what the claimant sees.</p>
+    </div></div>
+    <div class="mock">
+      <div class="card">
+        <div class="row"><div><div class="lab">Social Concern</div>
+          <div class="sub">Jermaine Aaron &middot; Petrol, Kajang visitation</div></div>
+          <div style="text-align:right"><div class="big" style="font-size:15px">RM 21.70</div></div></div>
+        <div class="note" style="font-size:9px">Budget line <b>Outreach</b> &mdash; RM3,180 available of RM5,000</div>
+        <div style="margin-top:.35rem;display:flex;gap:.3rem">
+          <span class="btn go">&check; Verify</span><span class="btn danger">&times; Reject</span>
+        </div>
+      </div>
+      <span class="mock-cap">You are never asked to verify your own claim &mdash; it skips you.</span>
+    </div>
+  </div>
 
   <h3>Signing a voucher &mdash; Bishop, Secretary, Treasurer</h3>
-  <ol class="steps">
-    <li><b>Read the card.</b><span class="n">Ministry, amount, payee, purpose and the effect on the budget, without opening the voucher. On a phone these stack like banking approvals.</span></li>
-    <li><b>Open it if you want the detail.</b><span class="n">Every line, the receipts, and everyone who has already signed. The signing area is below the voucher, so you scroll through what you are signing.</span></li>
-    <li><b>Approve with the tick, or reject.</b><span class="n">You will be asked for your PIN. That PIN puts your name on the record &mdash; do not give it to anyone.</span></li>
-    <li><b>For a batch, use All.</b><span class="n">Or open and sign the individual vouchers inside it one at a time.</span></li>
-  </ol>
-  <div class="tip"><b>Why two signatures sometimes.</b> Up to RM30,000 the Treasurer signs alone. Above it, any two of the Bishop, Secretary and Treasurer. An asset over RM100,000 goes to EXCO. Set by the amount &mdash; nobody chooses it.</div>
+  <div class="step">
+    <div class="step-txt"><span class="step-n">3</span><div>
+      <b>Approve with the tick, then enter your PIN.</b>
+      <p>Open the voucher first if you want the detail &mdash; every line, the receipts, and who has already signed. The signing area sits below it, so you scroll through what you are signing.</p>
+    </div></div>
+    <div class="mock then">
+      <div style="display:flex;gap:.3rem"><span class="btn go">&check;</span><span class="btn danger">&times;</span>
+        <span class="btn sec">All</span></div>
+      <span class="arrow">&darr;</span>
+      <div style="width:100%">
+        <div class="fld"><label>Enter your PIN to sign</label><div class="in">&bull; &bull; &bull; &bull;</div></div>
+        <div class="note warnb">Your PIN puts your name on the record. Do not give it to anyone.</div>
+      </div>
+      <span class="mock-cap"><b>All</b> appears on a batch. You can still open and sign each voucher inside it.</span>
+    </div>
+  </div>
+  <div class="tip"><b>Why two signatures sometimes.</b> Up to RM30,000 the Treasurer signs alone; above it, any two of the Bishop, Secretary and Treasurer; an asset over RM100,000 goes to EXCO. Set by the amount &mdash; nobody chooses it.</div>
 
   <h3>Approving leave</h3>
-  <ol class="steps">
-    <li><b>Open the application.</b><span class="n">It shows the days, the dates, the reason, any document, and the applicant&rsquo;s annual and medical balance as it stood when they applied. You need not look anything up.</span></li>
-    <li><b>Sign to approve, or reject with remarks.</b></li>
-  </ol>
-  <div class="tip warn"><b>Everyone named must sign, and order does not matter.</b> If three people are listed, all three sign; whoever opens it first may sign first. Nobody is a rubber stamp, and nobody signs their own leave &mdash; if you would otherwise approve your own, you are removed and the others settle it.</div>
-
-  <div class="tip"><b>Nothing in your queue that you expected?</b> The menu is built from your role, so a missing queue is a duty that is not yours. If you believe that is wrong, ask Finance to check your record rather than assuming a fault.</div>
+  <div class="step">
+    <div class="step-txt"><span class="step-n">4</span><div>
+      <b>Everything you need is on the application.</b>
+      <p>Days, dates, reason, any document, and how much leave they had before asking. You need not look anything up.</p>
+    </div></div>
+    <div class="mock">
+      <div class="card">
+        <div class="row"><div><div class="lab">LV-2026-005 &middot; Medical Leave</div>
+          <div class="sub">Chan Siew Fun &middot; 18&ndash;19 Sep 2026</div></div>
+          <div style="text-align:right"><div class="big" style="font-size:15px">2d</div></div></div>
+        <div class="note" style="font-size:9px">Annual left <b>14 days</b> &middot; Medical left <b>18 days</b> &mdash; before this application</div>
+        <div style="margin-top:.35rem;display:flex;gap:.3rem">
+          <span class="btn go">&check; Approve</span><span class="btn danger">&times; Reject</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tip warn"><b>Everyone named must sign, and order does not matter.</b> If three people are listed, all three sign; whoever opens it first may sign first. Nobody signs their own leave &mdash; if you would otherwise approve your own, you are taken off and the others settle it.</div>
 </section>
 
 </div>
