@@ -277,31 +277,33 @@ function LeaveQueueInner() {
               ref={app.leave_no === highlightRef ? highlighted : undefined}
               className={app.leave_no === highlightRef
                 ? "ring-2 ring-[#2563eb] ring-offset-2 ring-offset-[#f5f9ff]" : undefined}>
-              <CardBody className="space-y-3">
+              <CardBody className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-[22px] font-semibold text-stone-500">{app.leave_no}</span>
-                      <span className={`text-[20px] font-semibold px-2 py-0.5 rounded-full ${TYPE_COLORS[app.leave_type_code] ?? "bg-stone-100 text-stone-600"}`}>
+                  <div className="min-w-0">
+                    <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[12px] font-semibold text-stone-500">{app.leave_no}</span>
+                      <span className={`rounded-full px-1.5 py-px text-[11px] font-semibold ${TYPE_COLORS[app.leave_type_code] ?? "bg-stone-100 text-stone-600"}`}>
                         {typeName(app.leave_type_code)}
                       </span>
-                      <span className="inline-flex items-center gap-1 text-[20px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
-                        <Clock size={16} /> PENDING
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-semibold text-amber-700">
+                        <Clock size={11} /> PENDING
                       </span>
                     </div>
-                    <p className="text-[24px] font-semibold leading-tight text-stone-800">{app.applicant_name}</p>
-                    <p className="text-[22px] text-stone-400">{app.applicant_email}</p>
+                    <p className="truncate text-[15px] font-semibold leading-tight text-stone-800">{app.applicant_name}</p>
+                    <p className="truncate text-[12px] text-stone-400">{app.applicant_email}</p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-2xl font-bold text-stone-800">{app.days}d</p>
-                    <p className="text-xs text-stone-400">days</p>
+                  {/* The day count stays big: it is the first thing an
+                      approver looks for, and the only figure worth a glance. */}
+                  <div className="shrink-0 text-right">
+                    <p className="text-lg font-bold leading-none text-stone-800">{app.days}d</p>
+                    <p className="text-[10px] text-stone-400">days</p>
                   </div>
                 </div>
 
-                <div className="rounded-xl bg-[#f4f9ff] p-4 space-y-1.5 text-[22px]">
+                <div className="space-y-0.5 rounded-lg bg-[#f4f9ff] p-2.5 text-[12px]">
                   <div className="flex gap-2">
-                    <span className="w-24 shrink-0 text-stone-400">Period</span>
-                    <span className="text-stone-700 font-medium">{formatDate(app.start_date)} → {formatDate(app.end_date)}</span>
+                    <span className="w-[104px] shrink-0 text-stone-400">Period</span>
+                    <span className="font-medium text-stone-700">{formatDate(app.start_date)} → {formatDate(app.end_date)}</span>
                   </div>
                   {/* What an approver actually needs to judge the request:
                       how much leave this person had left before asking. The
@@ -309,24 +311,22 @@ function LeaveQueueInner() {
                       matches the printed form exactly. */}
                   {app.balance_annual_before != null && (
                     <div className="flex gap-2">
-                      <span className="w-24 shrink-0 text-stone-400">Annual left</span>
+                      <span className="w-[104px] shrink-0 text-stone-400">Annual left, before</span>
                       <span className="font-medium text-stone-700">
                         {app.balance_annual_before} day{Number(app.balance_annual_before) === 1 ? "" : "s"}
-                        <span className="text-stone-400"> before this application</span>
                       </span>
                     </div>
                   )}
                   {app.balance_medical_before != null && (
                     <div className="flex gap-2">
-                      <span className="w-24 shrink-0 text-stone-400">Medical left</span>
+                      <span className="w-[104px] shrink-0 text-stone-400">Medical left, before</span>
                       <span className="font-medium text-stone-700">
                         {app.balance_medical_before} day{Number(app.balance_medical_before) === 1 ? "" : "s"}
-                        <span className="text-stone-400"> before this application</span>
                       </span>
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <span className="w-24 shrink-0 text-stone-400">Applied</span>
+                    <span className="w-[104px] shrink-0 text-stone-400">Applied</span>
                     <span className="text-stone-500">{formatDate(app.applied_at)}</span>
                   </div>
                 </div>
@@ -334,7 +334,7 @@ function LeaveQueueInner() {
                 {/* Approving doesn't grant the leave on its own when others
                     are named — say so before they click. */}
                 {stillToSign(app).length > 1 && (
-                  <p className="text-[20px] text-stone-400">
+                  <p className="text-[11.5px] leading-snug text-stone-400">
                     Also needs {stillToSign(app)
                       .filter(r => norm(r.email) !== norm(userEmail))
                       .map(r => describeApprover(r))
@@ -346,15 +346,15 @@ function LeaveQueueInner() {
                   <button
                     disabled={!!actioning}
                     onClick={() => { setSig(null); setApproveTarget(app); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors">
-                    <CheckCircle2 size={14} />
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
+                    <CheckCircle2 size={13} />
                     {actioning === app.id ? "Processing…" : "Approve"}
                   </button>
                   <button
                     disabled={!!actioning}
                     onClick={() => { setRemarks(""); setRejectTarget(app); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors">
-                    <XCircle size={14} /> Reject
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-600 disabled:opacity-50">
+                    <XCircle size={13} /> Reject
                   </button>
                 </div>
               </CardBody>
