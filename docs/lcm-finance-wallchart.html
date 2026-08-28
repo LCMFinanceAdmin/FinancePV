@@ -1,0 +1,377 @@
+<title>LCM Finance Wall Chart</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Source+Sans+3:wght@400;600;700&display=swap">
+
+<style>
+/* Tokens taken from the app's Cloudlight palette, so the chart and the screen
+   it describes look like the same system. */
+:root{
+  --ground:#f2f7ff; --surface:#ffffff; --surface-2:#eaf3ff;
+  --ink:#16335e; --ink-2:#4d6383; --ink-3:#7b8da7;
+  --line:#cfe0f6; --line-2:#a9c8ee;
+  --brand:#2563eb; --brand-deep:#173a72;
+  --go:#136c37; --go-bg:#e2f4e9; --go-line:#8fd0ac;
+  --wait:#9a4a06; --wait-bg:#fdf0dd; --wait-line:#e8bf83;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0b1524; --surface:#122237; --surface-2:#1b3050;
+    --ink:#e6eefb; --ink-2:#a9bed9; --ink-3:#7e93b1;
+    --line:#2a4462; --line-2:#3d6087;
+    --brand:#82b1ff; --brand-deep:#b6d2ff;
+    --go:#77e0a8; --go-bg:#0f2b1d; --go-line:#2b6644;
+    --wait:#f3c273; --wait-bg:#2e2311; --wait-line:#5f4720;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0b1524; --surface:#122237; --surface-2:#1b3050;
+  --ink:#e6eefb; --ink-2:#a9bed9; --ink-3:#7e93b1;
+  --line:#2a4462; --line-2:#3d6087;
+  --brand:#82b1ff; --brand-deep:#b6d2ff;
+  --go:#77e0a8; --go-bg:#0f2b1d; --go-line:#2b6644;
+  --wait:#f3c273; --wait-bg:#2e2311; --wait-line:#5f4720;
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  font-size:15px; line-height:1.45;
+}
+.sheet{width:min(100%,1080px);margin-inline:auto;padding:1.5rem clamp(1rem,2.5vw,2rem) 3rem;}
+
+header{border-bottom:2px solid var(--ink);padding-bottom:.6rem;margin-bottom:1.1rem;}
+.eyebrow{
+  margin:0 0 .2rem;font-size:.66rem;letter-spacing:.18em;text-transform:uppercase;
+  font-weight:700;color:var(--ink-3);
+}
+h1{
+  font-family:Newsreader,Georgia,serif;font-weight:600;
+  font-size:clamp(1.6rem,3.4vw,2.2rem);line-height:1.05;margin:0;letter-spacing:-.015em;
+}
+h1 + p{margin:.25rem 0 0;color:var(--ink-2);font-size:.92rem;max-width:70ch;}
+
+section{margin-bottom:1.4rem;break-inside:avoid;}
+h2{
+  font-family:Newsreader,Georgia,serif;font-weight:600;font-size:1.12rem;
+  margin:0 0 .1rem;letter-spacing:-.008em;
+}
+h2 .num{
+  display:inline-block;width:1.25rem;height:1.25rem;margin-right:.4rem;
+  border-radius:50%;background:var(--ink);color:var(--ground);
+  font-family:"Source Sans 3",sans-serif;font-size:.72rem;font-weight:700;
+  text-align:center;line-height:1.25rem;vertical-align:.08em;
+}
+figure{margin:.5rem 0 0;}
+figcaption{margin-top:.35rem;font-size:.8rem;color:var(--ink-3);max-width:78ch;}
+svg{display:block;width:100%;max-width:100%;height:auto;}
+
+/* SVG conventions, so the three drawings read as one notation. */
+.box{fill:var(--surface);stroke:var(--line-2);stroke-width:1.5;}
+.box-wait{fill:var(--wait-bg);stroke:var(--wait-line);stroke-width:1.5;}
+.box-go{fill:var(--go-bg);stroke:var(--go-line);stroke-width:1.5;}
+.box-start{fill:var(--surface-2);stroke:var(--line-2);stroke-width:1.5;}
+.lbl{fill:var(--ink);font-size:12.5px;font-weight:600;font-family:"Source Sans 3",sans-serif;}
+.lbl-go{fill:var(--go);font-size:12.5px;font-weight:700;font-family:"Source Sans 3",sans-serif;}
+.who{fill:var(--ink-3);font-size:10.5px;font-family:"Source Sans 3",sans-serif;}
+.edge{stroke:var(--ink-2);stroke-width:1.4;fill:none;}
+.edge-back{stroke:var(--ink-3);stroke-width:1.2;fill:none;stroke-dasharray:4 3;}
+.edge-lbl{fill:var(--ink-2);font-size:10px;font-style:italic;font-family:"Source Sans 3",sans-serif;}
+
+/* Reference panels */
+.panels{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));}
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .85rem .8rem;
+}
+.panel h3{
+  margin:0 0 .4rem;font-size:.68rem;letter-spacing:.13em;text-transform:uppercase;
+  font-weight:700;color:var(--ink-3);
+}
+table{border-collapse:collapse;width:100%;font-size:.85rem;font-variant-numeric:tabular-nums;}
+th,td{text-align:left;padding:.2rem .3rem;border-bottom:1px solid var(--line);}
+tr:last-child th,tr:last-child td{border-bottom:none;}
+td.n{text-align:right;font-weight:600;white-space:nowrap;}
+th{font-weight:400;color:var(--ink-2);}
+caption{caption-side:bottom;text-align:left;padding-top:.35rem;font-size:.72rem;color:var(--ink-3);}
+
+footer{
+  margin-top:1.2rem;padding-top:.6rem;border-top:1px solid var(--line);
+  font-size:.76rem;color:var(--ink-3);
+}
+
+@media print{
+  @page{size:A4 portrait;margin:10mm;}
+  body{background:#fff;font-size:10.5px;}
+  .sheet{width:100%;padding:0;}
+  section{margin-bottom:.7rem;}
+  h1{font-size:19px;}
+  h2{font-size:12px;}
+  .panel{border-color:#bbb;}
+  figcaption{font-size:8px;}
+  table{font-size:8.6px;}
+}
+</style>
+
+<div class="sheet">
+
+  <header>
+    <p class="eyebrow">Lutheran Church in Malaysia &middot; pin this up</p>
+    <h1>LCM Finance Wall Chart</h1>
+    <p>Where a claim goes, who signs your leave, how a budget changes — and the figures that decide each one.</p>
+  </header>
+
+  <!-- ═══ 1. A claim ═════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="num">1</span>Where your claim goes</h2>
+    <figure>
+      <svg viewBox="0 0 880 152" role="img"
+        aria-label="A claim moves through six stages: you submit it, your EXCO member verifies it, Finance checks it, a signatory signs it, it is approved, then paid. A rejection at any stage returns it to you with a reason.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <g color="#4d6383">
+          <line class="edge" x1="140" y1="58" x2="158" y2="58" marker-end="url(#ar)"/>
+          <line class="edge" x1="280" y1="58" x2="298" y2="58" marker-end="url(#ar)"/>
+          <line class="edge" x1="420" y1="58" x2="438" y2="58" marker-end="url(#ar)"/>
+          <line class="edge" x1="560" y1="58" x2="578" y2="58" marker-end="url(#ar)"/>
+          <line class="edge" x1="700" y1="58" x2="718" y2="58" marker-end="url(#ar)"/>
+          <path class="edge-back" d="M 500 82 L 500 122 L 70 122 L 70 82" marker-end="url(#ar)"/>
+        </g>
+
+        <rect class="box-start" x="20"  y="36" width="120" height="46" rx="7"/>
+        <rect class="box-wait"  x="160" y="36" width="120" height="46" rx="7"/>
+        <rect class="box-wait"  x="300" y="36" width="120" height="46" rx="7"/>
+        <rect class="box-wait"  x="440" y="36" width="120" height="46" rx="7"/>
+        <rect class="box-go"    x="580" y="36" width="120" height="46" rx="7"/>
+        <rect class="box-go"    x="720" y="36" width="120" height="46" rx="7"/>
+
+        <text class="lbl"    x="80"  y="57" text-anchor="middle">You submit</text>
+        <text class="lbl"    x="220" y="57" text-anchor="middle">Pending EXCO</text>
+        <text class="lbl"    x="360" y="57" text-anchor="middle">Pending Finance</text>
+        <text class="lbl"    x="500" y="57" text-anchor="middle">Pending Signatory</text>
+        <text class="lbl-go" x="640" y="57" text-anchor="middle">Approved</text>
+        <text class="lbl-go" x="780" y="57" text-anchor="middle">Paid</text>
+
+        <text class="who" x="80"  y="73" text-anchor="middle">with receipts</text>
+        <text class="who" x="220" y="73" text-anchor="middle">your EXCO member</text>
+        <text class="who" x="360" y="73" text-anchor="middle">Finance Executive</text>
+        <text class="who" x="500" y="73" text-anchor="middle">Treasurer &plusmn; a second</text>
+        <text class="who" x="640" y="73" text-anchor="middle">signed, not yet out</text>
+        <text class="who" x="780" y="73" text-anchor="middle">money has left</text>
+
+        <text class="edge-lbl" x="285" y="118" text-anchor="middle">rejected at any stage &mdash; back to you, with the reason</text>
+        <text class="who" x="220" y="24" text-anchor="middle">skipped if you are that member</text>
+      </svg>
+      <figcaption>
+        The words in the boxes are what you will see on screen under <strong>My Space &rarr; My Submissions</strong>.
+        Rejection is not cancellation: it returns to you to correct and send again.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ═══ 2. Leave ═══════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="num">2</span>Who signs your leave</h2>
+    <figure>
+      <svg viewBox="0 0 880 296" role="img"
+        aria-label="Leave routing branches by who applies. A pastor's leave goes to three people at once — the head pastor, the church council chairman and the district dean — all of whom must sign, in any order. A dean's own leave goes to the Bishop alone. A staff member's goes to the Bishop, and also the General Manager if they report to both.">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <!-- Band 1: pastor, a fan of three -->
+        <g color="#4d6383">
+          <path class="edge" d="M 176 76 C 216 76 216 26 254 26" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 76 L 254 76" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 76 C 216 76 216 126 254 126" marker-end="url(#ar2)"/>
+        </g>
+        <rect class="box-start" x="20" y="54" width="156" height="44" rx="7"/>
+        <text class="lbl" x="98" y="74" text-anchor="middle">If you are a</text>
+        <text class="lbl" x="98" y="90" text-anchor="middle">PASTOR</text>
+
+        <rect class="box-wait" x="256" y="8"   width="250" height="36" rx="7"/>
+        <rect class="box-wait" x="256" y="58"  width="250" height="36" rx="7"/>
+        <rect class="box-wait" x="256" y="108" width="250" height="36" rx="7"/>
+        <text class="lbl" x="272" y="31">Head pastor of your congregation</text>
+        <text class="lbl" x="272" y="76">Church council Chairman</text>
+        <text class="lbl" x="272" y="131">Your district Dean</text>
+        <text class="who" x="516" y="80">signs by emailed link &mdash; no account</text>
+
+        <text class="edge-lbl" x="640" y="31">all three must sign</text>
+        <text class="edge-lbl" x="640" y="131">order does not matter</text>
+
+        <!-- Band 2: dean -->
+        <g color="#4d6383">
+          <path class="edge" d="M 176 190 L 254 190" marker-end="url(#ar2)"/>
+        </g>
+        <rect class="box-start" x="20" y="168" width="156" height="44" rx="7"/>
+        <text class="lbl" x="98" y="188" text-anchor="middle">If you are a</text>
+        <text class="lbl" x="98" y="204" text-anchor="middle">DEAN</text>
+        <rect class="box-wait" x="256" y="172" width="250" height="36" rx="7"/>
+        <text class="lbl" x="272" y="195">The Bishop, and only the Bishop</text>
+        <text class="who" x="516" y="195">a Dean never signs their own</text>
+
+        <!-- Band 3: staff -->
+        <g color="#4d6383">
+          <path class="edge" d="M 176 262 C 216 262 216 240 254 240" marker-end="url(#ar2)"/>
+          <path class="edge" d="M 176 262 C 216 262 216 284 254 284" marker-end="url(#ar2)"/>
+        </g>
+        <rect class="box-start" x="20" y="240" width="156" height="44" rx="7"/>
+        <text class="lbl" x="98" y="260" text-anchor="middle">If you are</text>
+        <text class="lbl" x="98" y="276" text-anchor="middle">STAFF</text>
+        <rect class="box-wait" x="256" y="222" width="250" height="36" rx="7"/>
+        <rect class="box"      x="256" y="266" width="250" height="36" rx="7"/>
+        <text class="lbl" x="272" y="245">The Bishop</text>
+        <text class="lbl" x="272" y="289">The General Manager</text>
+        <text class="who" x="516" y="289">only if you report to both</text>
+      </svg>
+      <figcaption>
+        A fan, not a chain — nobody waits for anybody else. Your congregation and district decide the routing,
+        so if leave reaches the wrong people the church recorded against your name is usually why.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ═══ 3. Budget ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="num">3</span>The two budget routes</h2>
+    <figure>
+      <svg viewBox="0 0 880 176" role="img"
+        aria-label="Two budget routes. Setting the year's budget: EXCO drafts it, submits it, the budget locks while the Treasurer decides, and approval makes the lines live. Changing a budget already approved: EXCO requests the change, the whole EXCO board is emailed, a decider approves or rejects, and only then is the budget altered.">
+        <defs>
+          <marker id="ar3" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <text class="who" x="20" y="14">SETTING THE YEAR&rsquo;S BUDGET</text>
+        <g color="#4d6383">
+          <line class="edge" x1="212" y1="44" x2="230" y2="44" marker-end="url(#ar3)"/>
+          <line class="edge" x1="422" y1="44" x2="440" y2="44" marker-end="url(#ar3)"/>
+          <line class="edge" x1="632" y1="44" x2="650" y2="44" marker-end="url(#ar3)"/>
+        </g>
+        <rect class="box-start" x="20"  y="24" width="192" height="40" rx="7"/>
+        <rect class="box-wait"  x="232" y="24" width="190" height="40" rx="7"/>
+        <rect class="box-wait"  x="442" y="24" width="190" height="40" rx="7"/>
+        <rect class="box-go"    x="652" y="24" width="188" height="40" rx="7"/>
+        <text class="lbl"    x="116" y="42" text-anchor="middle">EXCO drafts the lines</text>
+        <text class="lbl"    x="327" y="42" text-anchor="middle">Submitted &mdash; and locked</text>
+        <text class="lbl"    x="537" y="42" text-anchor="middle">Treasurer decides</text>
+        <text class="lbl-go" x="746" y="42" text-anchor="middle">Lines go live</text>
+        <text class="who" x="116" y="58" text-anchor="middle">their own ministry</text>
+        <text class="who" x="327" y="58" text-anchor="middle">figures cannot move</text>
+        <text class="who" x="537" y="58" text-anchor="middle">Finance can, if away</text>
+        <text class="who" x="746" y="58" text-anchor="middle">claims may be charged</text>
+
+        <text class="who" x="20" y="106">CHANGING ONE ALREADY APPROVED</text>
+        <g color="#4d6383">
+          <line class="edge" x1="212" y1="136" x2="230" y2="136" marker-end="url(#ar3)"/>
+          <line class="edge" x1="422" y1="136" x2="440" y2="136" marker-end="url(#ar3)"/>
+          <line class="edge" x1="632" y1="136" x2="650" y2="136" marker-end="url(#ar3)"/>
+        </g>
+        <rect class="box-start" x="20"  y="116" width="192" height="40" rx="7"/>
+        <rect class="box"       x="232" y="116" width="190" height="40" rx="7"/>
+        <rect class="box-wait"  x="442" y="116" width="190" height="40" rx="7"/>
+        <rect class="box-go"    x="652" y="116" width="188" height="40" rx="7"/>
+        <text class="lbl"    x="116" y="134" text-anchor="middle">EXCO asks &mdash; cannot edit</text>
+        <text class="lbl"    x="327" y="134" text-anchor="middle">The board is emailed</text>
+        <text class="lbl"    x="537" y="134" text-anchor="middle">A decider rules on it</text>
+        <text class="lbl-go" x="746" y="134" text-anchor="middle">Budget altered</text>
+        <text class="who" x="116" y="150" text-anchor="middle">add, edit or delete</text>
+        <text class="who" x="327" y="150" text-anchor="middle">every portfolio holder</text>
+        <text class="who" x="537" y="150" text-anchor="middle">Treasurer, GM, Bishop&hellip;</text>
+        <text class="who" x="746" y="150" text-anchor="middle">not before this point</text>
+      </svg>
+      <figcaption>
+        An approved budget is a decision of the board, so changing one is a request rather than an edit —
+        and nothing moves in the figures until somebody with authority rules on it.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ═══ Numbers ════════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="num">4</span>The figures behind the arrows</h2>
+    <div class="panels">
+
+      <div class="panel">
+        <h3>Signatures a voucher needs</h3>
+        <table>
+          <tbody>
+            <tr><th>Up to RM30,000</th><td class="n">1 &mdash; Treasurer</td></tr>
+            <tr><th>Above RM30,000</th><td class="n">2 of 3 officers</td></tr>
+            <tr><th>Assets over RM100,000</th><td class="n">2, and EXCO</td></tr>
+          </tbody>
+          <caption>The three officers are the Bishop, Secretary and Treasurer. Set by the amount — nobody chooses it.</caption>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>Leave, by completed service</h3>
+        <table>
+          <thead>
+            <tr><th>Service</th><td class="n">Annual</td><td class="n">Sick</td></tr>
+          </thead>
+          <tbody>
+            <tr><th>Under 2 years</th><td class="n">14</td><td class="n">14</td></tr>
+            <tr><th>2 to under 5</th><td class="n">14</td><td class="n">18</td></tr>
+            <tr><th>5 years</th><td class="n">14</td><td class="n">22</td></tr>
+            <tr><th>6 to 10</th><td class="n">21</td><td class="n">22</td></tr>
+            <tr><th>11 and over</th><td class="n">25</td><td class="n">22</td></tr>
+          </tbody>
+          <caption>Hospitalisation is 60 days <em>including</em> sick leave taken, not on top. Annual leave starts after six months and is pro-rated in your first year; sick leave is not.</caption>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>What you may claim</h3>
+        <table>
+          <thead>
+            <tr><th>Allowance</th><td class="n">Pastor</td><td class="n">Parish</td><td class="n">Staff</td></tr>
+          </thead>
+          <tbody>
+            <tr><th>Travel, per km</th><td class="n" colspan="3">RM0.70 + tolls</td></tr>
+            <tr><th>Out-patient</th><td class="n">all</td><td class="n">half</td><td class="n">all</td></tr>
+            <tr><th>Dental, a year</th><td class="n">200</td><td class="n">200</td><td class="n">200</td></tr>
+            <tr><th>Books, a year</th><td class="n">800</td><td class="n">400</td><td class="n">200</td></tr>
+            <tr><th>Moving, each time</th><td class="n">1,000</td><td class="n">1,000</td><td class="n">500</td></tr>
+            <tr><th>Maternity, each birth</th><td class="n" colspan="3">half, max RM500</td></tr>
+          </tbody>
+          <caption>Pastors also have a specialist out-patient allowance (half, max RM80) and an annual blood test (RM100). Your own running totals are on My Salary.</caption>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>Where to click</h3>
+        <table>
+          <tbody>
+            <tr><th>Claim money back</th><td class="n">Submit PV</td></tr>
+            <tr><th>Track what you sent</th><td class="n">My Submissions</td></tr>
+            <tr><th>Pay, payslips, allowances</th><td class="n">My Salary</td></tr>
+            <tr><th>Apply for leave</th><td class="n">My Leave</td></tr>
+            <tr><th>Verify your ministry&rsquo;s claims</th><td class="n">EXCO Queue</td></tr>
+            <tr><th>Sign vouchers</th><td class="n">Signatory Queue</td></tr>
+            <tr><th>Approve leave</th><td class="n">Leave Queue</td></tr>
+            <tr><th>Budgets</th><td class="n">Ministry Budget</td></tr>
+          </tbody>
+          <caption>A page missing from your menu is a duty that is not yours — the menu is built from your role.</caption>
+        </table>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    Figures from the Terms and Conditions of Service (21 August 2013), except sick leave and
+    hospitalisation, which follow the Employment Act 1955 &mdash; the Terms are silent on those.
+    The fuller explanation of every step above is in the LCM Finance Handbook.
+  </footer>
+
+</div>
