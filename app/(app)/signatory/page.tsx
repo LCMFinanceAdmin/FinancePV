@@ -500,7 +500,7 @@ export default function SignatoryPage() {
 
     return (
       <div className={`bg-white ${compact ? "border-t border-stone-100" : "border border-stone-200 rounded-xl shadow-sm"} hover:border-[#4a6da7]/40 hover:shadow-sm transition-all`}>
-        <div className="px-3 py-2.5">
+        <div className="px-2.5 py-2">
           <PVSummary
             id={pv.id}
             pvNo={pv.pv_no}
@@ -528,7 +528,7 @@ export default function SignatoryPage() {
           {/* Why a second payment exists. Without this a correcting PV looks
               like a duplicate at exactly the moment someone is deciding. */}
           {pv.reference_pv_no && (
-            <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-[#eef4fd] px-2.5 py-1.5 text-[11px] text-stone-600">
+            <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-[#eef4fd] px-2 py-1 text-[10.5px] text-stone-600">
               <LinkIcon size={11} className="mt-0.5 shrink-0 text-[#4a6da7]" />
               <span>
                 Relates to{" "}
@@ -546,12 +546,12 @@ export default function SignatoryPage() {
 
 
           {/* Action row: buttons (left) · status/view (right) */}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2.5"
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2"
             onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
               {isSignatoryUser && userHasActed && (isRelevantForRole || canRetractApproved) && (
                 <>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
                     {userApproval!.action === "APPROVED" ? "✓ Approved" : "✕ Rejected"}
                   </span>
                   {canRevert && !isFinalised ? (
@@ -569,13 +569,13 @@ export default function SignatoryPage() {
                 <div className="flex flex-1 gap-2">
                   <button onClick={() => openPin([pv.id!], "APPROVED")}
                     aria-label="Approve" title="Approve"
-                    className="flex flex-1 items-center justify-center rounded-lg bg-green-600 px-3 py-1.5 text-white transition-colors hover:bg-green-700 sm:flex-none">
-                    <CheckCircle size={16} />
+                    className="flex flex-1 items-center justify-center rounded-lg bg-green-600 px-3 py-1 text-white transition-colors hover:bg-green-700 sm:flex-none">
+                    <CheckCircle size={14} />
                   </button>
                   <button onClick={() => openPin([pv.id!], "REJECTED")}
                     aria-label="Reject" title="Reject"
-                    className="flex flex-1 items-center justify-center rounded-lg bg-red-500 px-3 py-1.5 text-white transition-colors hover:bg-red-600 sm:flex-none">
-                    <XCircle size={16} />
+                    className="flex flex-1 items-center justify-center rounded-lg bg-red-500 px-3 py-1 text-white transition-colors hover:bg-red-600 sm:flex-none">
+                    <XCircle size={14} />
                   </button>
                 </div>
               )}
@@ -584,13 +584,13 @@ export default function SignatoryPage() {
             <div className="flex items-center gap-3 shrink-0">
               {pv.status === "PAID" ? (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Paid</span>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Paid</span>
                   {(pv as PVWithBulk & { paid_at?: string }).paid_at && (
                     <span className="text-[10px] text-stone-400 hidden sm:inline">{formatDate((pv as PVWithBulk & { paid_at?: string }).paid_at!)}</span>
                   )}
                 </div>
               ) : (
-                <div className="text-xs text-[#4a6da7] font-medium whitespace-nowrap">{signatoryApprovals.length}/{loa.required} signed</div>
+                <div className="text-[11px] text-[#4a6da7] font-medium whitespace-nowrap">{signatoryApprovals.length}/{loa.required} signed</div>
               )}
               <Link href={`/my-pvs/${pv.id}`}
                 className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-[#4a6da7] transition-colors whitespace-nowrap">

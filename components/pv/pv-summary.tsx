@@ -73,17 +73,17 @@ export function PVSummary({
             <span className="text-[11px] font-medium text-stone-400">No ministry recorded</span>
           )}
         </span>
-        <span className="shrink-0 text-[14.5px] font-bold leading-none tabular-nums text-stone-900">
+        <span className="shrink-0 text-[14px] font-bold leading-none tabular-nums text-stone-900">
           {formatCurrency(amount)}
         </span>
       </div>
 
-      <div className="mt-1.5 truncate text-[12.5px] font-bold leading-tight text-stone-900">
+      <div className="mt-1 truncate text-[12px] font-bold leading-tight text-stone-900">
         {payee || "—"}
       </div>
 
       {purpose && (
-        <div className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-stone-600">{purpose}</div>
+        <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-stone-600">{purpose}</div>
       )}
     </>
   );
@@ -97,7 +97,7 @@ export function PVSummary({
       {budget && <div className="mt-1.5">{budget}</div>}
 
       {(date || pvNo) && (
-        <div className="mt-1.5 flex min-w-0 items-center gap-1 text-[10px] text-stone-400">
+        <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-stone-400">
           {date && <span className="shrink-0">{formatDate(date)}</span>}
           {date && pvNo && <span className="shrink-0">·</span>}
           {pvNo && <span className="truncate font-mono">{pvNo}</span>}
