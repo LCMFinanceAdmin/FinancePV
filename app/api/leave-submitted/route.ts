@@ -41,10 +41,44 @@ export async function POST(req: NextRequest) {
 
     const approvers: RequiredApprover[] = (leave.required_approvers ?? [])
       .filter((a: RequiredApprover) => !a.external);
-    if (approvers.length === 0) return NextResponse.json({ ok: true, notified: 0 });
 
-    const { data: type } = await supabase
+    const { data: type0 } = await supabase
       .from("leave_types").select("name").eq("code", leave.leave_type_code).maybeSingle();
+    const period = `${fmt(leave.start_date)} to ${fmt(leave.end_date)}`;
+
+    // The Bishop's leave is an announcement, not a request — the church
+    // decided he informs rather than asks. It arrives already approved with
+    // nobody to sign it, so everyone with an account is told instead.
+    const { data: bishops } = await supabase
+      .from("user_roles").select("email").eq("role", "BISHOP");
+    const fromBishop = (bishops ?? []).some(
+      (b: { email: string }) => b.email.toLowerCase() === (leave.applicant_email ?? "").toLowerCase());
+
+    if (fromBishop && approvers.length === 0) {
+      const { data: everyone } = await supabase
+        .from("user_roles").select("email,full_name");
+      const to = (everyone ?? [])
+        .filter((u: { email: string }) => u.email.toLowerCase() !== leave.applicant_email.toLowerCase())
+        .map((u: { email: string; full_name: string }) => ({ email: u.email, name: u.full_name }));
+
+      const result = await notifyPeople({
+        supabase, to,
+        type: "BISHOP_ON_LEAVE",
+        ref: leave.leave_no,
+        urgent: false,
+        subject: `${leave.applicant_name} will be on leave — ${period}`,
+        lines: [
+          `${leave.applicant_name} will be away on ${type0?.name ?? "leave"} from ${period} (${leave.days} working day${Number(leave.days) === 1 ? "" : "s"}).`,
+          ...(leave.reason ? [`Note: ${leave.reason}`] : []),
+          "This is for your information. The Bishop's leave does not require approval.",
+        ],
+        path: "/dashboard",
+        cta: "Open LCM Finance",
+      });
+      return NextResponse.json({ ok: true, announced: result.recorded, emailed: result.emailed });
+    }
+
+    if (approvers.length === 0) return NextResponse.json({ ok: true, notified: 0 });
 
     const result = await notifyPeople({
       supabase,
@@ -55,7 +89,7 @@ export async function POST(req: NextRequest) {
       subject: `${leave.applicant_name} has applied for leave — ${leave.leave_no}`,
       lines: [
         `${leave.applicant_name} has applied for leave and needs your approval.`,
-        `${type?.name ?? leave.leave_type_code}: ${fmt(leave.start_date)} to ${fmt(leave.end_date)} (${leave.days} working day${Number(leave.days) === 1 ? "" : "s"}).`,
+        `${type0?.name ?? leave.leave_type_code}: ${fmt(leave.start_date)} to ${fmt(leave.end_date)} (${leave.days} working day${Number(leave.days) === 1 ? "" : "s"}).`,
         ...(leave.reason ? [`Reason given: ${leave.reason}`] : []),
         approvers.length > 1
           ? `This application needs all of: ${approvers.map(a => a.name).join(", ")}. Each of you signs separately, and the order does not matter — you do not need to wait for the others.`

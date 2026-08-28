@@ -43,10 +43,34 @@ export interface LeaveApprover {
 const eq = (a?: string | null, b?: string | null) =>
   !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
 
+/**
+ * How an application is to be handled, not merely who signs it.
+ *
+ * `notifyOnly` distinguishes the Bishop's leave — which needs no approval and
+ * is granted on submission — from an application whose chain could not be
+ * worked out, which is a fault and must be reported as one. Both have an empty
+ * `approvers`, and telling a person the wrong one of those two things is the
+ * difference between "you are on leave" and "nobody can approve this".
+ */
+export interface LeaveRouting {
+  approvers: LeaveApprover[];
+  notifyOnly: boolean;
+  /** Who to tell, when nobody has to sign. */
+  informEveryone: boolean;
+}
+
+/** The list alone, for callers that only render it. */
 export async function resolveLeaveApprovers(
   supabase: SupabaseClient,
   applicantEmail: string,
 ): Promise<LeaveApprover[]> {
+  return (await leaveRouting(supabase, applicantEmail)).approvers;
+}
+
+export async function leaveRouting(
+  supabase: SupabaseClient,
+  applicantEmail: string,
+): Promise<LeaveRouting> {
   // 1. Explicit override.
   const { data: custom } = await supabase
     .from("leave_approver_assignments")
@@ -54,12 +78,16 @@ export async function resolveLeaveApprovers(
     .eq("employee_email", applicantEmail)
     .order("sort_order");
   if (custom && custom.length > 0) {
-    return custom.map(a => ({
-      email: a.approver_email,
-      name: a.approver_name,
-      reason: "assigned approver",
-      position: "Assigned approver",
-    }));
+    return {
+      approvers: custom.map(a => ({
+        email: a.approver_email,
+        name: a.approver_name,
+        reason: "assigned approver",
+        position: "Assigned approver",
+      })),
+      notifyOnly: false,
+      informEveryone: false,
+    };
   }
 
   const { data: me } = await supabase
@@ -81,6 +109,15 @@ export async function resolveLeaveApprovers(
   const bishopChain: LeaveApprover[] = (bishops.data ?? [])
     .filter(b => !eq(b.email, applicantEmail))
     .map(b => ({ email: b.email, name: b.full_name, reason: "Bishop", position: "Bishop" }));
+
+  // The Bishop informs the church; he does not ask it. No approval, granted on
+  // submission, and everybody told — decided by the church, and placed here
+  // above the pastoral chain because he is a pastor too and would otherwise be
+  // routed to a congregation he does not serve.
+  const applicantIsBishop = (bishops.data ?? []).some(b => eq(b.email, applicantEmail));
+  if (applicantIsBishop) {
+    return { approvers: [], notifyOnly: true, informEveryone: true };
+  }
 
   // Dean is derived from the district record rather than a flag on the person,
   // so it can never contradict who Settings says leads the district.
@@ -127,7 +164,7 @@ export async function resolveLeaveApprovers(
     // A Dean's own leave goes to the Bishop — note 6(b) on the form. Checked
     // first, because a Dean is also a pastor and would otherwise be routed to
     // their own district.
-    if (isDean) return bishopChain;
+    if (isDean) return { approvers: bishopChain, notifyOnly: false, informEveryone: false };
 
     if (districtId) {
       const { data: district } = await supabase
@@ -161,7 +198,11 @@ export async function resolveLeaveApprovers(
     // district — the Bishop is the fallback, so an application is never left
     // with nobody able to act on it.
     const pastoral = [...headPastor, ...(council ? [council] : []), ...chain];
-    return pastoral.length > 0 ? pastoral : bishopChain;
+    return {
+      approvers: pastoral.length > 0 ? pastoral : bishopChain,
+      notifyOnly: false,
+      informEveryone: false,
+    };
   }
 
   // 3. Staff.
@@ -175,5 +216,5 @@ export async function resolveLeaveApprovers(
       }
     }
   }
-  return [...chain, ...bishopChain];
+  return { approvers: [...chain, ...bishopChain], notifyOnly: false, informEveryone: false };
 }

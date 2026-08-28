@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import { describeApprovers } from "@/lib/approver-label";
-import { resolveLeaveApprovers } from "@/lib/leave-approvers";
+import { leaveRouting, resolveLeaveApprovers } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { openLeaveForm } from "@/components/leave/leave-form-html";
@@ -262,7 +262,8 @@ function MyLeavesInner() {
 
     // Assigned approvers win; otherwise pastors route through their head pastor
     // or district Dean, and staff through the GM and/or Bishop per their record.
-    const resolved = await resolveLeaveApprovers(supabase, userEmail);
+    const routing = await leaveRouting(supabase, userEmail);
+    const resolved = routing.approvers;
     if (resolved.length === 0) {
       showMsg("No approver could be worked out for your account — ask Finance to check your record.", false);
       setSubmitting(false);
@@ -295,6 +296,9 @@ function MyLeavesInner() {
       attachment_url:     form.attachment_url || null,
       applicant_signature: applicantSig,
       required_approvers: resolvedApprovers,
+      // The Bishop's leave needs no approval, so it is not left sitting in a
+      // queue nobody can clear — it is granted here and announced below.
+      ...(routing.notifyOnly ? { status: "APPROVED" } : {}),
       balance_annual_before:  balanceAnnual,
       balance_medical_before: balanceMedical,
     }).select("id").single();
@@ -346,6 +350,8 @@ function MyLeavesInner() {
       // The application itself is saved either way, so say that first — the
       // failure is in telling people, and it is fixable from the pending card.
       showMsg(`Application submitted, but ${warnings.join(" and ")}. Use “Resend council link”, or tell your approvers directly.`, false);
+    } else if (routing.notifyOnly) {
+      showMsg("Leave recorded — the church has been notified. No approval is needed.");
     } else {
       showMsg("Leave application submitted");
     }
@@ -417,11 +423,17 @@ function MyLeavesInner() {
   useEffect(() => {
     if (!showApply || !userEmail) return;
     let cancelled = false;
-    resolveLeaveApprovers(supabase, userEmail).then(list => {
+    leaveRouting(supabase, userEmail).then(r => {
       if (cancelled) return;
-      setChainPreview(list.length
-        ? list.map(a => a.position ? `${a.name} (${a.position})` : a.name).join(" and ")
-        : "No approver could be worked out — ask Finance to check your record.");
+      // An empty list means two opposite things. Saying the wrong one tells
+      // the Bishop his leave is stuck, or tells somebody whose routing is
+      // broken that all is well.
+      setChainPreview(
+        r.notifyOnly
+          ? "No approval needed — the church will be notified that you are away."
+          : r.approvers.length
+            ? r.approvers.map(a => a.position ? `${a.name} (${a.position})` : a.name).join(" and ")
+            : "No approver could be worked out — ask Finance to check your record.");
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [showApply, userEmail, supabase]);
