@@ -1,4 +1,10 @@
--- 169: one directory record each for Jermaine and Eddie.
+-- 171: one directory record each for Jermaine and Eddie.
+--
+-- Written as 169 and renumbered on merge: 169 was taken by the contact-sheet
+-- import, which landed on master while this was being written. Both had already
+-- run against the database by then, so nothing is replayed here — it was only
+-- the file record that was ambiguous, and in this project the numbered file
+-- list is the only record there is.
 --
 -- Migrations 158 and 159 retired two personal Gmail logins — an account that
 -- could still sign in and act as the Bishop, and a second one that had never
@@ -98,12 +104,12 @@ END $$;
 INSERT INTO person_notes (person_id, body, tag, author_name)
 SELECT m.keep_id,
        'Retired login ' || m.drop_login || ' — the directory record for it ("'
-         || m.drop_name || '") was merged into this one by migration 169. The '
+         || m.drop_name || '") was merged into this one by migration 171. The '
          || 'account itself was removed by migration ' || m.retired_by || '.'
          || CASE WHEN COALESCE(TRIM(d.notes), '') = '' THEN ''
                  ELSE ' Note carried across: ' || TRIM(d.notes) END,
        'ADMIN',
-       'migration 169'
+       'migration 171'
   FROM merges m
   JOIN people d ON d.id = m.drop_id
  WHERE NOT EXISTS (
@@ -168,7 +174,7 @@ END $$;
 SELECT (SELECT count(*) FROM people WHERE full_name ILIKE 'Jermaine%') AS jermaine_rows,
        (SELECT count(*) FROM people WHERE full_name ILIKE 'Eddie%')    AS eddie_rows,
        (SELECT count(*) FROM people)                                   AS people_total,
-       (SELECT count(*) FROM person_notes WHERE author_name = 'migration 169')
+       (SELECT count(*) FROM person_notes WHERE author_name = 'migration 171')
                                                                        AS history_notes;
 
 COMMIT;
