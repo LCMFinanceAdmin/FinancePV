@@ -102,15 +102,32 @@ footer{
 }
 
 @media print{
+  /* Portrait, deliberately. Landscape was tried and is worse: the drawings
+     scale to the width of the page, so a wider sheet makes them taller, and
+     the measured height went from 959px to 1221 against less room. The spare
+     height portrait leaves is spent on the tables' type instead, which is
+     what an older reader actually needs. */
   @page{size:A4 portrait;margin:10mm;}
-  body{background:#fff;font-size:10.5px;}
+  body{background:#fff;font-size:10px;}
   .sheet{width:100%;padding:0;}
-  section{margin-bottom:.7rem;}
-  h1{font-size:19px;}
-  h2{font-size:12px;}
-  .panel{border-color:#bbb;}
-  figcaption{font-size:8px;}
+  header{padding-bottom:4px;margin-bottom:7px;}
+  h1{font-size:18px;}
+  h1 + p{font-size:8.8px;margin-top:2px;}
+  section{margin-bottom:6px;}
+  h2{font-size:11px;margin-bottom:0;}
+  h2 .num{width:13px;height:13px;line-height:13px;font-size:7.4px;margin-right:4px;}
+  figure{margin-top:4px;}
+  figcaption{font-size:7.8px;margin-top:2px;}
+  /* Four panels across rather than two-by-two. At A4 width that is the
+     difference between one sheet and two — measured at 495px stacked
+     against 250 in a single row. */
+  .panels{grid-template-columns:repeat(4,1fr);gap:5px;}
+  .panel{border-color:#bbb;padding:5px 6px 6px;}
+  .panel h3{font-size:7.4px;margin-bottom:3px;}
   table{font-size:8.6px;}
+  th,td{padding:1px 2px;}
+  caption{font-size:7px;padding-top:2px;}
+  footer{margin-top:6px;padding-top:4px;font-size:8px;}
 }
 </style>
 

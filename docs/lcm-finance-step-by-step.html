@@ -149,7 +149,20 @@ svg{display:block;width:100%;height:auto;}
   h3{font-size:10.5px;margin:7px 0 3px;}
   .step{padding:3px 0;grid-template-columns:1fr 1fr;gap:8px;}
   .step-txt b{font-size:9.2px;} .step-txt p{font-size:8.4px;}
-  .mock{padding:4px;font-size:8px;}
+  .mock{padding:3px;font-size:8px;}
+  .fld{margin-bottom:2px;}
+  .fld label{font-size:7.4px;}
+  .fld .in{padding:1px 3px;font-size:8.4px;}
+  .card{padding:3px 5px;}
+  .card + .card{margin-top:2px;}
+  .card .big{font-size:14px;}
+  .bar{margin:2px 0 1px;}
+  .nav i{padding:1px 4px;font-size:8.4px;}
+  .nav .brand{padding:1px 3px 2px;font-size:8.8px;}
+  .note{padding:2px 4px;font-size:7.8px;margin-top:2px;}
+  .btn{padding:2px 6px;font-size:8.4px;}
+  .mock-cap{font-size:7.2px;}
+  .intro{margin-bottom:5px;}
   .tip{font-size:8.2px;padding:3px 6px;}
   table.qt{font-size:8.2px;}
   figcaption{font-size:7.6px;}
@@ -176,39 +189,27 @@ svg{display:block;width:100%;height:auto;}
         <i>Dashboard</i>
         <i class="on">Submit PV &nbsp;&larr; press this</i>
         <i>Approvals</i>
-        <i>Payments</i>
       </div>
     </div>
   </div>
 
   <div class="step">
     <div class="step-txt"><span class="step-n">2</span><div>
-      <b>Say who is being paid.</b>
-      <p>If the money comes back to you, that is your own name and your own account. Check the number twice &mdash; a wrong digit is the commonest reason a payment fails.</p>
+      <b>Fill in who is paid, from which ministry, and what for.</b>
+      <p>If the money comes back to you, that is your own account &mdash; check the number twice, a wrong digit is the commonest reason a payment fails. The ministry decides whose budget it comes out of.</p>
     </div></div>
     <div class="mock">
       <div class="fld"><label>Payable to 付给</label><div class="in">Jermaine Aaron</div></div>
-      <div class="fld"><label>Payment method 付款方式</label><div class="in sel">Online Transfer</div></div>
       <div class="fld"><label>Payee Bank A/C No 收款人账户号码</label><div class="in">140370020164440</div></div>
-      <span class="mock-cap">The form is in English and Chinese, side by side.</span>
+      <div class="fld"><label>Ministry 事工</label><div class="in sel">Social Concern</div></div>
+      <div class="fld"><label>Purpose 用途</label><div class="in">Petrol, Kajang visitation, 12&ndash;14 Aug</div></div>
+      <span class="mock-cap">Bilingual labels, as on the real form. A purpose reading just
+        &ldquo;Claim&rdquo; will be queried; that one will not.</span>
     </div>
   </div>
 
   <div class="step">
     <div class="step-txt"><span class="step-n">3</span><div>
-      <b>Choose the ministry, and the purpose.</b>
-      <p>The ministry decides whose budget it comes out of. Write a purpose someone else could understand.</p>
-    </div></div>
-    <div class="mock">
-      <div class="fld"><label>Ministry 事工</label><div class="in sel">Social Concern</div></div>
-      <div class="fld"><label>Purpose 用途</label><div class="in">Petrol, Kajang visitation, 12&ndash;14 Aug</div></div>
-      <div class="fld"><label>Purpose 用途</label><div class="in ghost">Claim</div></div>
-      <span class="mock-cap">The second one will be queried. The first will not.</span>
-    </div>
-  </div>
-
-  <div class="step">
-    <div class="step-txt"><span class="step-n">4</span><div>
       <b>If it is one of your personal allowances, say which.</b>
       <p>A picker sits under Purpose. Choose one and it tells you what is left. Leave it alone for an ordinary payment from a ministry budget &mdash; most claims are that.</p>
     </div></div>
@@ -220,7 +221,7 @@ svg{display:block;width:100%;height:auto;}
   </div>
 
   <div class="step">
-    <div class="step-txt"><span class="step-n">5</span><div>
+    <div class="step-txt"><span class="step-n">4</span><div>
       <b>List what you spent, and attach the receipts.</b>
       <p>A date, a description and an amount per line. Travel has its own rows &mdash; type where you went and the kilometres, and it works the money out at RM0.70 per km.</p>
     </div></div>
@@ -238,7 +239,7 @@ svg{display:block;width:100%;height:auto;}
   </div>
 
   <div class="step">
-    <div class="step-txt"><span class="step-n">6</span><div>
+    <div class="step-txt"><span class="step-n">5</span><div>
       <b>Tick, type your name, and send it.</b>
       <p>You get a voucher number. Write it down, or find it later under My Submissions.</p>
     </div></div>
@@ -251,7 +252,7 @@ svg{display:block;width:100%;height:auto;}
 
   <h3>Following it afterwards</h3>
   <div class="step">
-    <div class="step-txt"><span class="step-n">7</span><div>
+    <div class="step-txt"><span class="step-n">6</span><div>
       <b>Open My Space &rarr; My Submissions.</b>
       <p>The tabs group everything you have sent. The coloured word on each row is exactly where it has got to.</p>
     </div></div>
@@ -269,7 +270,6 @@ svg{display:block;width:100%;height:auto;}
       </div><span class="pill sig">Pending Signatory</span></div></div>
       <div class="card"><div class="row"><div>
         <div class="lab">PV-2026-004 &middot; Education</div>
-        <div class="sub">Books for Sunday school</div>
       </div><span class="pill go">Paid</span></div></div>
     </div>
   </div>
