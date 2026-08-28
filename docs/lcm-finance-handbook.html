@@ -1,0 +1,890 @@
+<title>LCM Finance Handbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
+
+<style>
+/* ── Tokens ───────────────────────────────────────────────────────────────
+   Taken from the app's own Cloudlight palette (app/globals.css) so the guide
+   looks like the thing it documents. Light is the base; the two dark blocks
+   below redefine only the tokens.                                           */
+:root{
+  --ground:#f2f7ff;
+  --surface:#ffffff;
+  --surface-2:#e9f2ff;
+  --ink:#16335e;
+  --ink-2:#4d6383;
+  --ink-3:#7b8da7;
+  --line:#d6e6fb;
+  --line-2:#bcd6f6;
+  --brand:#2563eb;
+  --brand-deep:#173a72;
+  --brand-wash:#e4eeff;
+  --go:#136c37;      --go-bg:#e2f4e9;   --go-line:#a9dcbe;
+  --wait:#9a4a06;    --wait-bg:#fdf0dd;  --wait-line:#efcb96;
+  --stop:#a81d1d;    --stop-bg:#fce9e9;  --stop-line:#eeb4b4;
+  --shadow:0 10px 28px rgba(68,120,190,.09), 0 2px 6px rgba(68,120,190,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0b1524;
+    --surface:#122237;
+    --surface-2:#1a2f49;
+    --ink:#e6eefb;
+    --ink-2:#a9bed9;
+    --ink-3:#7e93b1;
+    --line:#243b55;
+    --line-2:#32506f;
+    --brand:#82b1ff;
+    --brand-deep:#b6d2ff;
+    --brand-wash:#172c47;
+    --go:#77e0a8;      --go-bg:#0e2a1c;   --go-line:#1f5638;
+    --wait:#f3c273;    --wait-bg:#2d2210;  --wait-line:#5c441c;
+    --stop:#f6a1a1;    --stop-bg:#2e1717;  --stop-line:#5d2a2a;
+    --shadow:0 10px 28px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0b1524;
+  --surface:#122237;
+  --surface-2:#1a2f49;
+  --ink:#e6eefb;
+  --ink-2:#a9bed9;
+  --ink-3:#7e93b1;
+  --line:#243b55;
+  --line-2:#32506f;
+  --brand:#82b1ff;
+  --brand-deep:#b6d2ff;
+  --brand-wash:#172c47;
+  --go:#77e0a8;      --go-bg:#0e2a1c;   --go-line:#1f5638;
+  --wait:#f3c273;    --wait-bg:#2d2210;  --wait-line:#5c441c;
+  --stop:#f6a1a1;    --stop-bg:#2e1717;  --stop-line:#5d2a2a;
+  --shadow:0 10px 28px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.25);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"Source Sans 3","Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:17.5px;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+.wrap{
+  width:min(100%,1180px);
+  margin-inline:auto;
+  padding:0 clamp(1.1rem,3vw,2.5rem) 5rem;
+}
+.masthead{
+  padding:clamp(2.6rem,6vw,4.4rem) 0 clamp(1.6rem,3vw,2.4rem);
+  border-bottom:1px solid var(--line);
+}
+.eyebrow{
+  font-size:.735rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  font-weight:600;
+  color:var(--ink-3);
+  margin:0 0 .85rem;
+}
+h1{
+  font-family:Newsreader,Georgia,"Times New Roman",serif;
+  font-weight:500;
+  font-size:clamp(2.3rem,5.6vw,3.5rem);
+  line-height:1.06;
+  letter-spacing:-.018em;
+  margin:0 0 .75rem;
+  text-wrap:balance;
+}
+.standfirst{
+  font-size:clamp(1.05rem,2.1vw,1.2rem);
+  color:var(--ink-2);
+  max-width:60ch;
+  margin:0;
+}
+.standfirst em{font-family:Newsreader,Georgia,serif;font-size:1.06em;}
+
+.layout{display:grid;grid-template-columns:1fr;gap:2.5rem;padding-top:2.5rem;}
+@media (min-width:1000px){
+  .layout{grid-template-columns:215px minmax(0,1fr);gap:3.5rem;align-items:start;}
+  .rail{position:sticky;top:1.75rem;max-height:calc(100vh - 3.5rem);overflow-y:auto;}
+}
+
+/* ── Contents rail ─────────────────────────────────────────────────────── */
+.rail h2{
+  font-family:"Source Sans 3",sans-serif;
+  font-size:.735rem;letter-spacing:.16em;text-transform:uppercase;
+  font-weight:600;color:var(--ink-3);margin:0 0 .7rem;
+}
+.rail ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.1rem;}
+.rail a{
+  display:block;padding:.32rem .55rem;border-radius:6px;
+  color:var(--ink-2);text-decoration:none;font-size:.925rem;line-height:1.35;
+  border-left:2px solid transparent;
+}
+.rail a:hover,.rail a:focus-visible{background:var(--surface-2);color:var(--ink);border-left-color:var(--brand);}
+.rail .sub{padding-left:1.15rem;font-size:.87rem;color:var(--ink-3);}
+
+/* ── Sections ──────────────────────────────────────────────────────────── */
+section{scroll-margin-top:1.5rem;}
+section + section{margin-top:3.4rem;}
+h2.head{
+  font-family:Newsreader,Georgia,serif;
+  font-weight:500;font-size:clamp(1.55rem,3.2vw,2.05rem);
+  line-height:1.18;letter-spacing:-.012em;
+  margin:0 0 .4rem;text-wrap:balance;
+}
+h3{
+  font-family:Newsreader,Georgia,serif;
+  font-weight:600;font-size:1.22rem;line-height:1.3;
+  margin:2.1rem 0 .5rem;text-wrap:balance;
+}
+h4{
+  font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;
+  font-weight:600;color:var(--ink-3);margin:1.6rem 0 .55rem;
+}
+p{margin:0 0 1rem;max-width:66ch;}
+.lede{color:var(--ink-2);max-width:64ch;margin-bottom:1.5rem;}
+a{color:var(--brand);text-decoration-thickness:1px;text-underline-offset:2px;}
+strong{font-weight:600;}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:3px;}
+
+/* Screen path, e.g. Payments → Payment Requests */
+.path{
+  font-weight:600;color:var(--brand-deep);
+  background:var(--brand-wash);
+  padding:.06em .42em;border-radius:5px;
+  white-space:nowrap;font-size:.95em;
+}
+
+/* ── Role router ───────────────────────────────────────────────────────── */
+.roles{
+  display:grid;gap:.85rem;
+  grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+  margin:1.4rem 0 0;padding:0;list-style:none;
+}
+.role{
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.05rem 1.05rem;box-shadow:var(--shadow);
+}
+.role b{display:block;font-family:Newsreader,Georgia,serif;font-size:1.12rem;font-weight:600;margin-bottom:.35rem;}
+.role ul{margin:.4rem 0 0;padding-left:1.05rem;font-size:.92rem;color:var(--ink-2);line-height:1.5;}
+.role li{margin-bottom:.18rem;}
+
+/* ── Numbered steps ────────────────────────────────────────────────────── */
+ol.steps{list-style:none;counter-reset:s;margin:1.1rem 0 0;padding:0;display:flex;flex-direction:column;gap:.95rem;}
+ol.steps > li{
+  counter-increment:s;position:relative;padding-left:2.9rem;max-width:64ch;
+}
+ol.steps > li::before{
+  content:counter(s);
+  position:absolute;left:0;top:-.05rem;
+  width:1.95rem;height:1.95rem;border-radius:50%;
+  background:var(--brand-wash);color:var(--brand-deep);
+  border:1px solid var(--line-2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.86rem;font-weight:700;font-variant-numeric:tabular-nums;
+}
+ol.steps b{font-weight:600;}
+ol.steps .note{display:block;color:var(--ink-2);font-size:.94rem;margin-top:.1rem;}
+
+/* ── Stage spine (the journey of a voucher / request) ──────────────────── */
+.spine{list-style:none;margin:1.3rem 0 0;padding:0 0 0 1.6rem;position:relative;}
+.spine::before{
+  content:"";position:absolute;left:.42rem;top:.75rem;bottom:.75rem;
+  width:2px;background:var(--line-2);
+}
+.spine > li{position:relative;padding:0 0 1.15rem .35rem;}
+.spine > li:last-child{padding-bottom:0;}
+.spine > li::before{
+  content:"";position:absolute;left:-1.42rem;top:.5rem;
+  width:.72rem;height:.72rem;border-radius:50%;
+  background:var(--surface);border:2px solid var(--line-2);
+}
+.spine > li.is-wait::before{border-color:var(--wait-line);background:var(--wait-bg);}
+.spine > li.is-go::before{border-color:var(--go-line);background:var(--go-bg);}
+.stage-name{
+  display:inline-block;font-weight:600;font-size:.905rem;
+  padding:.1rem .5rem;border-radius:5px;
+  background:var(--surface-2);border:1px solid var(--line);
+}
+.spine .is-wait .stage-name{background:var(--wait-bg);border-color:var(--wait-line);color:var(--wait);}
+.spine .is-go   .stage-name{background:var(--go-bg);border-color:var(--go-line);color:var(--go);}
+.stage-who{display:block;margin-top:.28rem;color:var(--ink-2);font-size:.94rem;max-width:56ch;}
+
+/* ── Threshold scale ───────────────────────────────────────────────────── */
+.scale{
+  display:grid;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  grid-template-columns:1fr;margin:1.25rem 0 .5rem;
+}
+@media (min-width:640px){.scale{grid-template-columns:repeat(3,1fr);}}
+.tier{background:var(--surface);padding:.95rem 1.05rem 1.05rem;}
+.tier .amt{
+  font-family:Newsreader,Georgia,serif;font-size:1.16rem;font-weight:600;
+  display:block;margin-bottom:.15rem;font-variant-numeric:tabular-nums;
+}
+.tier .sig{font-size:.92rem;color:var(--ink-2);}
+.tier .pips{display:flex;gap:.28rem;margin-top:.55rem;}
+.pip{width:1.5rem;height:.34rem;border-radius:99px;background:var(--brand);opacity:.85;}
+.pip.off{background:var(--line-2);opacity:1;}
+
+/* ── Branch cards (who signs your leave) ───────────────────────────────── */
+.branches{
+  display:grid;gap:.85rem;margin:1.3rem 0 .5rem;
+  grid-template-columns:repeat(auto-fit,minmax(235px,1fr));
+}
+.branch{
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem 1.1rem;box-shadow:var(--shadow);
+}
+.branch .if{
+  font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;
+  font-weight:600;color:var(--ink-3);display:block;margin-bottom:.45rem;
+}
+.branch b{font-family:Newsreader,Georgia,serif;font-size:1.1rem;font-weight:600;display:block;margin-bottom:.6rem;}
+.signers{list-style:none;margin:0;padding:0;counter-reset:g;display:flex;flex-direction:column;gap:.42rem;}
+.signers li{
+  counter-increment:g;position:relative;padding-left:1.7rem;
+  font-size:.945rem;line-height:1.42;
+}
+.signers li::before{
+  content:counter(g);position:absolute;left:0;top:.1rem;
+  width:1.2rem;height:1.2rem;border-radius:50%;
+  background:var(--brand-wash);color:var(--brand-deep);
+  border:1px solid var(--line-2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.68rem;font-weight:700;
+}
+.signers .ext{color:var(--ink-2);font-size:.87rem;display:block;}
+
+/* ── Callouts ──────────────────────────────────────────────────────────── */
+.note-box{
+  border:1px solid var(--line);border-left:3px solid var(--brand);
+  background:var(--surface);border-radius:0 10px 10px 0;
+  padding:.9rem 1.1rem;margin:1.3rem 0;max-width:64ch;box-shadow:var(--shadow);
+}
+.note-box.warn{border-left-color:var(--wait);}
+.note-box .t{
+  display:block;font-size:.755rem;letter-spacing:.12em;text-transform:uppercase;
+  font-weight:600;color:var(--ink-3);margin-bottom:.3rem;
+}
+.note-box p{margin:0;font-size:.96rem;}
+.note-box p + p{margin-top:.55rem;}
+
+/* ── Tables ────────────────────────────────────────────────────────────── */
+.tablewrap{overflow-x:auto;margin:1.3rem 0;border:1px solid var(--line);border-radius:11px;background:var(--surface);box-shadow:var(--shadow);}
+table{border-collapse:collapse;width:100%;font-size:.94rem;min-width:520px;}
+th,td{text-align:left;padding:.62rem .9rem;border-bottom:1px solid var(--line);vertical-align:top;}
+thead th{
+  background:var(--surface-2);color:var(--ink-2);
+  font-size:.735rem;letter-spacing:.09em;text-transform:uppercase;font-weight:600;
+  white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:none;}
+td.yes{color:var(--go);font-weight:600;}
+td.no{color:var(--ink-3);}
+tbody th{font-weight:600;white-space:nowrap;}
+
+/* ── Leave entitlement chips ───────────────────────────────────────────── */
+.chips{display:flex;flex-wrap:wrap;gap:.5rem;margin:1.15rem 0 .3rem;padding:0;list-style:none;}
+.chip{
+  background:var(--surface);border:1px solid var(--line);border-radius:9px;
+  padding:.5rem .75rem;box-shadow:var(--shadow);min-width:8.5rem;
+}
+.chip .d{
+  font-family:Newsreader,Georgia,serif;font-size:1.4rem;font-weight:600;
+  display:block;line-height:1.05;font-variant-numeric:tabular-nums;
+}
+.chip .n{font-size:.85rem;color:var(--ink-2);}
+.chip.earned .d{color:var(--brand);}
+
+/* ── FAQ ───────────────────────────────────────────────────────────────── */
+.faq{margin:1.3rem 0 0;border-top:1px solid var(--line);}
+.faq details{border-bottom:1px solid var(--line);}
+.faq summary{
+  cursor:pointer;list-style:none;padding:.85rem 2rem .85rem 0;position:relative;
+  font-weight:600;font-size:1.01rem;color:var(--ink);
+}
+.faq summary::-webkit-details-marker{display:none;}
+.faq summary::after{
+  content:"+";position:absolute;right:.35rem;top:.72rem;
+  font-size:1.25rem;font-weight:400;color:var(--ink-3);line-height:1;
+}
+.faq details[open] summary::after{content:"\2013";}
+.faq summary:hover{color:var(--brand-deep);}
+.faq .a{padding:0 0 1.1rem;color:var(--ink-2);}
+.faq .a p{margin:0 0 .7rem;font-size:.97rem;}
+.faq .a p:last-child{margin-bottom:0;}
+
+footer{
+  margin-top:4rem;padding-top:1.5rem;border-top:1px solid var(--line);
+  color:var(--ink-3);font-size:.88rem;
+}
+footer p{max-width:64ch;}
+
+@media print{
+  body{background:#fff;font-size:11pt;}
+  .rail{display:none;}
+  .layout{grid-template-columns:1fr;}
+  section{break-inside:avoid;}
+  .faq details{break-inside:avoid;}
+  .faq .a{display:block !important;}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important;}}
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Lutheran Church in Malaysia</p>
+    <h1>LCM Finance Handbook</h1>
+    <p class="standfirst">How to claim money back, get your payslip, apply for and approve leave, verify your ministry's claims, and handle the budget — <em>written for the people who do these things, not the people who built the system.</em></p>
+  </header>
+
+  <div class="layout">
+
+    <nav class="rail" aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#start">Where to start</a></li>
+        <li><a href="#claims">Claiming money back</a></li>
+        <li><a href="#track" class="sub">Tracking your claim</a></li>
+        <li><a href="#request" class="sub">Asking the church to pay</a></li>
+        <li><a href="#verify">Verifying your ministry's claims</a></li>
+        <li><a href="#sign">Signing vouchers</a></li>
+        <li><a href="#payslip">Your salary and payslips</a></li>
+        <li><a href="#leave">Applying for leave</a></li>
+        <li><a href="#leave-approve">Approving leave</a></li>
+        <li><a href="#budget">The annual budget</a></li>
+        <li><a href="#budget-read" class="sub">Reading the budget</a></li>
+        <li><a href="#budget-change" class="sub">Changing an approved budget</a></li>
+        <li><a href="#whosees">Who sees what</a></li>
+        <li><a href="#faq">Questions people ask</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="start">
+        <h2 class="head">Where to start</h2>
+        <p class="lede">Sign in at the church's app address with your <strong>@lcm.org.my</strong> account. What you see in the left-hand menu depends on who you are — so if a page named below isn't in your menu, that part isn't yours to do, and nothing is broken.</p>
+
+        <ul class="roles">
+          <li class="role">
+            <b>Pastor</b>
+            <ul>
+              <li>Claim money back</li>
+              <li>See your pay and download payslips</li>
+              <li>Apply for leave</li>
+              <li>Approve leave, if you are a head pastor</li>
+            </ul>
+          </li>
+          <li class="role">
+            <b>Dean</b>
+            <ul>
+              <li>Everything a pastor does</li>
+              <li>Sign the leave of pastors in your district</li>
+            </ul>
+          </li>
+          <li class="role">
+            <b>EXCO member</b>
+            <ul>
+              <li>Verify your ministry's claims</li>
+              <li>Propose the annual budget</li>
+              <li>Request changes to an approved budget</li>
+            </ul>
+          </li>
+          <li class="role">
+            <b>Treasurer</b>
+            <ul>
+              <li>Sign payment vouchers</li>
+              <li>Approve ministry budgets</li>
+              <li>Decide budget change requests</li>
+            </ul>
+          </li>
+          <li class="role">
+            <b>General Manager</b>
+            <ul>
+              <li>Approve payment requests</li>
+              <li>Approve staff leave</li>
+              <li>See every claim and every balance</li>
+            </ul>
+          </li>
+        </ul>
+
+        <div class="note-box">
+          <span class="t">One rule worth knowing first</span>
+          <p><strong>Anyone may claim money back</strong> — pastors, EXCO members, volunteers. Being owed money is not an employment matter. <strong>Leave and staff loans are different:</strong> they are employment entitlements, so they appear only for people actually employed by LCM. A volunteer EXCO member has an @lcm.org.my address but will not see <span class="path">My Leave</span>.</p>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="claims">
+        <h2 class="head">Claiming money back</h2>
+        <p class="lede">You paid for something out of your own pocket — petrol, refreshments, a repair — and you want the church to pay you back. Use <span class="path">Submit PV</span>, which sits at the top of the menu for everyone.</p>
+
+        <ol class="steps">
+          <li><b>Open <span class="path">Submit PV</span>.</b><span class="note">It is pinned to the top of the left-hand menu, under the Dashboard.</span></li>
+          <li><b>Fill in who is being paid.</b><span class="note">If the money is coming back to you, that is your own name, your own bank and your own account number. The form is in English and Chinese, side by side.</span></li>
+          <li><b>Choose the ministry and project.</b><span class="note">This decides whose budget the money comes out of, so it matters. If you are not sure, ask your EXCO member before submitting rather than guessing.</span></li>
+          <li><b>List what you spent, line by line.</b><span class="note">One line per item, each with a date, a description and an amount. For travel there is a separate mileage section with "from" and "to".</span></li>
+          <li><b>Attach your receipts.</b><span class="note">A claim without receipts will come back to you. Photographs from your phone are fine.</span></li>
+          <li><b>Sign and submit.</b><span class="note">Tick the confirmation and type your name. You will get a voucher number — write it down, or find it later under <span class="path">My Space → My Submissions</span>.</span></li>
+        </ol>
+
+        <h3 id="track">What happens next</h3>
+        <p>Your claim now travels through a fixed chain. You can watch it at any time under <span class="path">My Space → My Submissions</span>. These are the exact words you will see on the screen:</p>
+
+        <ol class="spine">
+          <li class="is-wait">
+            <span class="stage-name">Pending EXCO Review</span>
+            <span class="stage-who">Waiting for the EXCO member responsible for that ministry. This stage is skipped if the ministry has no head recorded, or if you <em>are</em> that head.</span>
+          </li>
+          <li class="is-wait">
+            <span class="stage-name">Pending Finance Review</span>
+            <span class="stage-who">With the Finance Executive, who checks the receipts, the budget line and the bank details.</span>
+          </li>
+          <li class="is-wait">
+            <span class="stage-name">Ministry Verified</span>
+            <span class="stage-who">Checked and ready for signature.</span>
+          </li>
+          <li class="is-wait">
+            <span class="stage-name">Pending Signatory</span>
+            <span class="stage-who">With the Treasurer — and with a second officer if the amount is above RM30,000. See below.</span>
+          </li>
+          <li class="is-go">
+            <span class="stage-name">Approved</span>
+            <span class="stage-who">Signed. Now waiting for Finance to actually make the payment.</span>
+          </li>
+          <li class="is-go">
+            <span class="stage-name">Paid</span>
+            <span class="stage-who">The money has gone out, and the payment reference is on the voucher.</span>
+          </li>
+        </ol>
+
+        <h3>How many signatures your claim needs</h3>
+        <p>This is set by the church's limits of authority, and the app applies it automatically from the amount. You do not choose it.</p>
+
+        <div class="scale">
+          <div class="tier">
+            <span class="amt">Up to RM30,000</span>
+            <span class="sig">One signature — the Treasurer.</span>
+            <div class="pips"><span class="pip"></span><span class="pip off"></span></div>
+          </div>
+          <div class="tier">
+            <span class="amt">Above RM30,000</span>
+            <span class="sig">Two signatures — any two of the Bishop, Secretary and Treasurer.</span>
+            <div class="pips"><span class="pip"></span><span class="pip"></span></div>
+          </div>
+          <div class="tier">
+            <span class="amt">Assets over RM100,000</span>
+            <span class="sig">Two signatures, and it goes to EXCO.</span>
+            <div class="pips"><span class="pip"></span><span class="pip"></span></div>
+          </div>
+        </div>
+
+        <h3 id="request">Asking the church to pay someone else</h3>
+        <p>If you have <em>not</em> spent the money yet and you want the church to pay a supplier from your ministry's budget, that is a different form: <span class="path">Payments → Payment Requests</span>. It goes to your own EXCO first, then to the General Manager, and Finance raises the voucher for you at the end.</p>
+
+        <ol class="spine">
+          <li class="is-wait"><span class="stage-name">Awaiting EXCO verification</span><span class="stage-who">Your ministry's own committee agrees the spending.</span></li>
+          <li class="is-wait"><span class="stage-name">With the General Manager</span><span class="stage-who">The GM approves and instructs Finance.</span></li>
+          <li class="is-wait"><span class="stage-name">Approved — Finance raising PV</span><span class="stage-who">Finance prepares the voucher.</span></li>
+          <li class="is-go"><span class="stage-name">PV raised</span><span class="stage-who">From here it follows the signature chain above. Because your EXCO has already verified it, it is not sent back to them a second time.</span></li>
+        </ol>
+
+        <div class="note-box">
+          <span class="t">Which form do I use?</span>
+          <p><strong>Money already spent, and you want it back</strong> — Submit PV.<br><strong>Money not yet spent, and the church should pay directly</strong> — Payment Request.</p>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="verify">
+        <h2 class="head">Verifying your ministry's claims</h2>
+        <p class="lede">For EXCO members and anyone appointed to verify on their behalf. Your committee's claims wait for you at <span class="path">Approvals → EXCO Queue</span>, and nothing moves until you act.</p>
+
+        <ol class="steps">
+          <li><b>Open <span class="path">Approvals → EXCO Queue</span>.</b><span class="note">Everything shown is waiting on you. The number on the menu item is the count.</span></li>
+          <li><b>Read the card before you open anything.</b><span class="note">Each card already shows the ministry, the amount, who is being paid, what it is for, and how much of the budget line is left. That is deliberate — the four things you need are on the card.</span></li>
+          <li><b>Check the budget line.</b><span class="note">The card shows what has been spent and what is still in flight. If a claim would take the line past its limit, that is your decision to make, not the app's.</span></li>
+          <li><b>Press <em>Verify</em> or <em>Reject</em>.</b><span class="note">Verifying sends it onward. Rejecting sends it back to the person who raised it — always give a reason, because the reason is what they see.</span></li>
+        </ol>
+
+        <div class="note-box warn">
+          <span class="t">You cannot verify your own claim</span>
+          <p>If you raise a claim for a ministry you head, it skips your own review and goes straight to Finance. Nobody verifies themselves.</p>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="sign">
+        <h2 class="head">Signing vouchers</h2>
+        <p class="lede">For the Bishop, Secretary and Treasurer. Vouchers waiting for your signature are at <span class="path">Approvals → Signatory Queue</span>.</p>
+
+        <ol class="steps">
+          <li><b>Open <span class="path">Approvals → Signatory Queue</span>.</b><span class="note">On a phone this is a stack of approval cards, one per voucher, in the style of a banking app.</span></li>
+          <li><b>Read the card.</b><span class="note">Ministry, amount, who is being paid, what it is for, and the effect on the budget — all on the face of the card, without opening the voucher.</span></li>
+          <li><b>Open the voucher if you want the detail.</b><span class="note">The full voucher shows every line, the receipts, and everyone who has already signed. The signing area sits below the voucher, so you scroll through what you are signing before you sign it.</span></li>
+          <li><b>Approve with the tick, or reject.</b><span class="note">You will be asked for your PIN. That PIN is what puts your name on the record, so do not give it to anyone.</span></li>
+          <li><b>For a batch, you can approve all at once.</b><span class="note">Bulk vouchers show an <em>All</em> button. You can still open and sign the individual vouchers inside a batch one by one if you prefer.</span></li>
+        </ol>
+
+        <p>Everything you have ever acted on stays under <span class="path">Payments → My Approvals</span>.</p>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="payslip">
+        <h2 class="head">Your salary and payslips</h2>
+        <p class="lede">Everything about your own pay is at <span class="path">My Space → My Salary</span>. You do not need to ask anybody, and you do not need to wait for an email.</p>
+
+        <ol class="steps">
+          <li><b>Open <span class="path">My Space → My Salary</span>.</b><span class="note">It shows only your own record. Nobody else's pay is visible to you, and yours is not visible to anyone except Finance and the General Manager.</span></li>
+          <li><b>Read your current monthly pay.</b><span class="note">Basic salary and each allowance separately, with the date it took effect.</span></li>
+          <li><b>Check the salary history.</b><span class="note">Every change ever made, with the date, the amount and the reason — so an increment can be checked rather than taken on trust.</span></li>
+          <li><b>Download any payslip.</b><span class="note">One line per month. Press Download and the PDF is built there and then. Past months stay available, so a lost payslip is never a problem again.</span></li>
+          <li><b>Check your bank account number under "Details on file".</b><span class="note">It is the account your salary is paid into, and a wrong digit is the commonest reason a payment fails.</span></li>
+        </ol>
+
+        <div class="note-box">
+          <span class="t">Why the page is read-only</span>
+          <p>You can see everything and change nothing. A change to your own pay details — your bank account above all — always passes through a Finance Executive. Tell them what needs correcting.</p>
+        </div>
+
+        <div class="note-box warn">
+          <span class="t">If the page says no payroll record is linked</span>
+          <p>Most people are now connected — 61 of the 81 on payroll. If you are one of the remaining twenty, it is because the church has no <strong>@lcm.org.my</strong> address on file for you, so there is nothing to recognise you by. Give a Finance Executive your LCM address and the page will work at your next sign-in.</p>
+        </div>
+
+        <p>A payslip only appears once Finance has finalised that month's payroll. A run still being prepared is deliberately hidden, because the figures in it are still moving.</p>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="leave">
+        <h2 class="head">Applying for leave</h2>
+        <p class="lede">Go to <span class="path">My Space → My Leave</span>. The page opens on your balance, and the button to apply is on the same screen.</p>
+
+        <h4>What you are entitled to each year</h4>
+        <ul class="chips">
+          <li class="chip"><span class="d">14</span><span class="n">Annual</span></li>
+          <li class="chip"><span class="d">14</span><span class="n">Medical</span></li>
+          <li class="chip"><span class="d">3</span><span class="n">Emergency</span></li>
+          <li class="chip"><span class="d">98</span><span class="n">Maternity</span></li>
+          <li class="chip"><span class="d">7</span><span class="n">Paternity</span></li>
+          <li class="chip earned"><span class="d">&mdash;</span><span class="n">Replacement (earned)</span></li>
+        </ul>
+        <p style="font-size:.94rem;color:var(--ink-2);">Hospitalisation, compassionate, study and unpaid leave are also available; they have no fixed yearly allowance. Replacement leave is only what you have earned by working on a rest day.</p>
+
+        <ol class="steps">
+          <li><b>Open <span class="path">My Space → My Leave</span>.</b><span class="note">The <em>Balance</em> tab shows each type of leave, how many days you have used and how many are left this year.</span></li>
+          <li><b>Press Apply and choose the type of leave.</b><span class="note">A type marked with an asterisk needs a supporting document — a medical certificate, for example.</span></li>
+          <li><b>Enter the first and last day.</b><span class="note">The app counts working days for you and ignores weekends. Check the number it shows before you continue.</span></li>
+          <li><b>Give a reason, and attach the document if one is needed.</b></li>
+          <li><b>Look at who it is going to.</b><span class="note">Before you send, the form names the people who will have to sign. If it says no approver could be worked out, stop and ask Finance to check your record.</span></li>
+          <li><b>Sign and submit.</b><span class="note">Your balance at that moment is stored on the application, so the approvers see the same figures you saw.</span></li>
+        </ol>
+
+        <div class="note-box warn">
+          <span class="t">Seven days' notice for annual leave</span>
+          <p>Applying for annual leave with less than seven days' notice shows a warning, but it does <strong>not</strong> stop you submitting. The rule has exceptions, and your approvers can see the dates and judge for themselves.</p>
+        </div>
+
+        <p>Track it under the <em>Pending</em> tab, which lists who has signed and who has not. Past applications stay under <em>History</em>.</p>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="leave-approve">
+        <h2 class="head">Approving leave</h2>
+        <p class="lede">Applications waiting on you are at <span class="path">Approvals → Leave Queue</span>. Who has to sign depends on who is applying — a pastor's leave is not routed like a staff member's.</p>
+
+        <div class="branches">
+          <div class="branch">
+            <span class="if">If the applicant is a</span>
+            <b>Pastor</b>
+            <ol class="signers">
+              <li>Head pastor of their congregation</li>
+              <li>Council Chairman or Representative<span class="ext">Not an LCM employee — signs through a one-time link sent to them by email</span></li>
+              <li>Their district Dean</li>
+            </ol>
+          </div>
+          <div class="branch">
+            <span class="if">If the applicant is a</span>
+            <b>Dean</b>
+            <ol class="signers">
+              <li>The Bishop</li>
+            </ol>
+            <p style="font-size:.9rem;color:var(--ink-2);margin:.7rem 0 0;">A Dean is also a pastor, but their own leave goes straight to the Bishop.</p>
+          </div>
+          <div class="branch">
+            <span class="if">If the applicant is</span>
+            <b>Staff</b>
+            <ol class="signers">
+              <li>The Bishop</li>
+              <li>The General Manager, if they report to both</li>
+            </ol>
+            <p style="font-size:.9rem;color:var(--ink-2);margin:.7rem 0 0;">Set per person, so it matches how each member of staff actually reports.</p>
+          </div>
+        </div>
+
+        <div class="note-box">
+          <span class="t">Where the routing comes from</span>
+          <p>Who signs a pastor’s leave is worked out from the church they serve and the district that church sits in. Both are now on record — 49 churches across six districts — which is what lets the chain resolve without anybody typing it in. If your leave goes to the wrong people, the cause is almost always the church recorded against your name; ask Finance or the Administrator to correct it rather than working around it.</p>
+        </div>
+
+        <div class="note-box">
+          <span class="t">How the request reaches you</span>
+          <p><strong>If you have a login</strong> — Dean, head pastor, GM, Bishop — you get an email with a button that opens that exact application, already at the top of your queue. You sign in as normal, because your approval is recorded against your identity.</p>
+          <p><strong>If you are the Council Chairman</strong>, your email carries the pastor's name, the dates and the length, and one button that opens a page showing that single application. No account, no password. The link is personal to you and lasts 30 days.</p>
+        </div>
+
+        <div class="note-box">
+          <span class="t">Two things that surprise people</span>
+          <p><strong>Everyone named must sign.</strong> Nobody on the list is a rubber stamp, and the order does not matter — whoever opens it first can sign first.</p>
+          <p><strong>Nobody ever signs their own leave.</strong> If the applicant would otherwise be one of their own approvers — a head pastor applying for their own leave, for instance — they are removed from the list, and the remaining signatories settle it.</p>
+        </div>
+
+        <h3>What you see when approving</h3>
+        <p>Each application in your queue shows the number of days, the dates, the reason, any document attached, and the applicant's <strong>annual and medical balance as it stood when they applied</strong>. You do not need to look their balance up separately.</p>
+
+        <div class="note-box">
+          <span class="t">Seeing everyone's balances</span>
+          <p>A full list of every person's balance, and who has yet to sign, is at <span class="path">Administration → Leave Overview</span> — available to the General Manager, the Administrator and the Finance Executive. Deans and head pastors see balances on the applications they are asked to sign.</p>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="budget">
+        <h2 class="head">The annual budget</h2>
+        <p class="lede">For EXCO members and the Treasurer. Everything is at <span class="path">Budget → Ministry Budget</span>. An EXCO member sees their own ministries; the Treasurer, GM, Bishop and Finance see them all.</p>
+
+        <h3 id="budget-read">Reading the budget</h3>
+        <p>The budget is set out the way a set of accounts is: income above expenditure, sub-projects indented under the project they belong to, a subtotal under each section on a rule, and the ministry’s total under a double rule. Five columns of figures, all in ringgit:</p>
+
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th scope="col">Column</th><th scope="col">What it counts</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Budget</th><td>What the line was given for the year.</td></tr>
+              <tr><th scope="row">Spent</th><td>Vouchers approved and paid.</td></tr>
+              <tr><th scope="row">Committed</th><td>Vouchers raised but not yet paid. The number in brackets is how many.</td></tr>
+              <tr><th scope="row">Balance</th><td>Budget less Spent. Ignores anything committed.</td></tr>
+              <tr><th scope="row">Available</th><td>Budget less Spent less Committed.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note-box">
+          <span class="t">Which balance to use</span>
+          <p>There are two on purpose. <strong>Use Available</strong> when deciding whether there is room for something new — the committed vouchers are still coming, and Balance does not know about them. Figures shown in red are over budget and in amber are close to it; a healthy line is left in ordinary ink so the ones needing attention are the ones that catch your eye.</p>
+        </div>
+        <h3>Proposing your ministry's budget — EXCO</h3>
+        <ol class="steps">
+          <li><b>Choose your ministry and the year.</b><span class="note">Lines you add for a future year belong to that year's proposal until the Treasurer approves them.</span></li>
+          <li><b>Add each project as a line.</b><span class="note">Name, whether it is income or expense, the estimated amount, and any notes. You can attach the supporting paper to the line.</span></li>
+          <li><b>Add sub-projects underneath a project if you need to.</b><span class="note">A line can sit under a parent line, so a large project can be broken down.</span></li>
+          <li><b>Submit the proposal.</b><span class="note">It goes to the Treasurer as a whole — you do not submit lines one at a time.</span></li>
+          <li><b>Wait. The budget is locked while it is with the Treasurer.</b><span class="note">This is intentional: it stops the figures moving underneath the person deciding on them.</span></li>
+        </ol>
+
+        <h3>Approving a budget — Treasurer</h3>
+        <ol class="steps">
+          <li><b>Open <span class="path">Budget → Ministry Budget</span>.</b><span class="note">Submitted proposals from every ministry are listed together, oldest first.</span></li>
+          <li><b>Read the ministry's lines and the papers attached to them.</b></li>
+          <li><b>Approve or reject, with a note.</b><span class="note">Approving makes the lines live, and claims can then be charged against them. Rejecting unlocks the budget so the ministry can revise it. Your note is what they see.</span></li>
+        </ol>
+        <p style="font-size:.94rem;color:var(--ink-2);">The Finance Executive can also decide a proposal. That is deliberate — it means a budget is never stuck if the Treasurer is away.</p>
+
+        <h3 id="budget-change">Changing a budget that is already approved</h3>
+        <p>Once a budget is approved, an EXCO member cannot simply edit it. You ask, and someone with authority decides. The three kinds of change — <strong>add a line</strong>, <strong>edit a line</strong>, <strong>delete a line</strong> — all work the same way.</p>
+
+        <ol class="spine">
+          <li class="is-wait">
+            <span class="stage-name">You make the change and save</span>
+            <span class="stage-who">You fill in the form exactly as if you were editing. Instead of saving, the app records it as a request and tells you so.</span>
+          </li>
+          <li class="is-wait">
+            <span class="stage-name">The EXCO board is told</span>
+            <span class="stage-who">Everyone holding an EXCO portfolio is emailed, along with the Treasurer, General Manager, Bishop, Secretary and Finance Executive. A change to an approved budget is the board's business, not a private exchange between your ministry and whoever opens the page next.</span>
+          </li>
+          <li class="is-wait">
+            <span class="stage-name">Pending</span>
+            <span class="stage-who">The request sits at the top of the budget page, visible to your ministry and to those who can decide it. Nothing has changed in the budget yet.</span>
+          </li>
+          <li class="is-go">
+            <span class="stage-name">Approved or rejected</span>
+            <span class="stage-who">Decided by the Finance Executive, Treasurer, General Manager, Bishop or Secretary. An approved change is applied to the budget immediately. A rejected one keeps its reason on the record.</span>
+          </li>
+        </ol>
+
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="whosees">
+        <h2 class="head">Who sees what</h2>
+        <p class="lede">If a page is not in your menu, you do not have that duty. This is the short version.</p>
+
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Page</th>
+                <th scope="col">Pastor</th>
+                <th scope="col">Dean</th>
+                <th scope="col">EXCO</th>
+                <th scope="col">Treasurer</th>
+                <th scope="col">GM</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Submit PV</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+              <tr><th scope="row">My Submissions</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+              <tr><th scope="row">Payment Requests</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+              <tr><th scope="row">My Salary</th><td class="yes">If employed</td><td class="yes">If employed</td><td class="yes">If employed</td><td class="yes">If employed</td><td class="yes">If employed</td></tr>
+              <tr><th scope="row">My Leave</th><td class="yes">If employed</td><td class="yes">If employed</td><td class="yes">If employed</td><td class="yes">If employed</td><td class="yes">If employed</td></tr>
+              <tr><th scope="row">EXCO Queue</th><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Yes</td><td class="no">&mdash;</td><td class="no">&mdash;</td></tr>
+              <tr><th scope="row">Signatory Queue</th><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Yes</td><td class="no">&mdash;</td></tr>
+              <tr><th scope="row">Leave Queue</th><td class="yes">Head pastors</td><td class="yes">Yes</td><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Yes</td></tr>
+              <tr><th scope="row">Ministry Budget</th><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Own ministries</td><td class="yes">All</td><td class="yes">All</td></tr>
+              <tr><th scope="row">Leave Overview</th><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Yes</td></tr>
+              <tr><th scope="row">People Directory</th><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+              <tr><th scope="row">GM Claims</th><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:.92rem;color:var(--ink-2);">The Bishop and Secretary see the Signatory Queue on the same terms as the Treasurer. Finance and the Administrator have their own pages, which are outside this guide.</p>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="faq">
+        <h2 class="head">Questions people ask</h2>
+
+        <div class="faq">
+
+          <details>
+            <summary>My claim has said "Pending EXCO Review" for two weeks. What do I do?</summary>
+            <div class="a"><p>It is sitting with the EXCO member for that ministry, and only they can move it. Open the voucher from <span class="path">My Space → My Submissions</span> — it names the person it is waiting on. Ask them directly. If nobody is named, ask Finance to check that the ministry has a head recorded.</p></div>
+          </details>
+
+          <details>
+            <summary>What is the difference between Submit PV and a Payment Request?</summary>
+            <div class="a"><p><strong>Submit PV</strong> is for money already spent, or a payment you know the full details of. It raises the voucher straight away.</p><p><strong>Payment Request</strong> is for money not yet spent — you are asking your ministry and then the GM to agree to it, and Finance raises the voucher afterwards.</p></div>
+          </details>
+
+          <details>
+            <summary>Why does my claim need two signatures when my colleague's needed one?</summary>
+            <div class="a"><p>The amount. Up to RM30,000 the Treasurer alone signs. Above RM30,000 it needs any two of the Bishop, Secretary and Treasurer. An asset purchase above RM100,000 goes to EXCO. The app works this out from the amount — nobody chooses it.</p></div>
+          </details>
+
+          <details>
+            <summary>My claim was rejected. Can I fix it and send it again?</summary>
+            <div class="a"><p>Yes. The rejection carries the reason the approver typed. Correct what they asked for and submit again. Rejection is not a cancellation — it is being sent back to you.</p></div>
+          </details>
+
+          <details>
+            <summary>How do I get my payslip?</summary>
+            <div class="a"><p>Download it yourself from <span class="path">My Space → My Salary</span>. Every finalised month is listed, and pressing Download builds the PDF on the spot. Finance can also still send it to you, but you no longer have to ask.</p></div>
+          </details>
+
+          <details>
+            <summary>My Salary says no payroll record is linked to my login.</summary>
+            <div class="a"><p>Your pay details exist — your sign-in address just hasn't been matched to them. Ask a Finance Executive to link your People Directory record to your payroll record. Until they do, the page is not permitted to show you anything, which is why it shows nothing rather than an error.</p></div>
+          </details>
+
+          <details>
+            <summary>Last month's payslip isn't in the list.</summary>
+            <div class="a"><p>That run has not been finalised yet. Figures in a run still being prepared can change, so they are held back rather than shown as though they were settled. It appears as soon as Finance closes the month.</p></div>
+          </details>
+
+          <details>
+            <summary>Why does my leave need three signatures?</summary>
+            <div class="a"><p>Because you are a pastor. Note 6(a) of the church's leave form requires the Council Chairman or Representative and the district Dean, and LCM practice adds the head pastor of your congregation. All three must sign, in any order.</p></div>
+          </details>
+
+          <details>
+            <summary>Our Council Chairman has no login. How can they sign?</summary>
+            <div class="a"><p>They do not need one. The Council Chairman holds a church council office, not an LCM post, so the app emails them a one-time link that lets them sign that single application and nothing else.</p></div>
+          </details>
+
+          <details>
+            <summary>I applied for annual leave with four days' notice. Will it be rejected automatically?</summary>
+            <div class="a"><p>No. You will see a warning about the seven-day rule, but the application still goes through. Your approvers can see the dates and decide. Nothing is blocked automatically.</p></div>
+          </details>
+
+          <details>
+            <summary>I am a Dean. Who approves my leave?</summary>
+            <div class="a"><p>The Bishop, and only the Bishop. You are a pastor too, but a Dean's own leave goes straight to the Bishop rather than round the congregation.</p></div>
+          </details>
+
+          <details>
+            <summary>How do I see how many days I have left?</summary>
+            <div class="a"><p><span class="path">My Space → My Leave</span> opens on the Balance tab, which shows every type of leave with days used and days remaining for the current year.</p></div>
+          </details>
+
+          <details>
+            <summary>Can I see everyone's leave balance?</summary>
+            <div class="a"><p>Only the General Manager, the Administrator and the Finance Executive have the full list, at <span class="path">Administration → Leave Overview</span>. If you approve leave, you see the applicant's annual and medical balance on the application itself, as it stood when they applied.</p></div>
+          </details>
+
+          <details>
+            <summary>Why can't I edit the budget directly? I am the EXCO member for that ministry.</summary>
+            <div class="a"><p>Because it is already approved. An approved budget is a decision of the church, so changing it is a request, not an edit. Fill in the change exactly as if editing — the app records it as a request, tells you it has done so, and emails the EXCO board that you have asked. The Treasurer, General Manager, Bishop, Secretary or Finance Executive then decides it.</p></div>
+          </details>
+
+          <details>
+            <summary>Our budget says it is locked and I cannot change anything.</summary>
+            <div class="a"><p>It has been submitted and is with the Treasurer. It unlocks when they approve or reject it. This is deliberate — the figures should not move while somebody is deciding on them.</p></div>
+          </details>
+
+          <details>
+            <summary>The budget shows two different balances. Which one do I use?</summary>
+            <div class="a"><p><strong>Balance</strong> counts only what has been approved and paid. <strong>Available</strong> also subtracts vouchers raised but not yet paid. Use Available — the lower one — when deciding whether there is room for new spending, because those vouchers are still coming.</p></div>
+          </details>
+
+          <details>
+            <summary>I am an EXCO member but not employed by LCM. Why is there no My Leave for me?</summary>
+            <div class="a"><p>Leave and staff loans are employment entitlements, so they only appear for people employed by the church. Claiming money back is not — you can still raise a voucher for anything you have paid for.</p></div>
+          </details>
+
+          <details>
+            <summary>Can I approve my own claim if I am the EXCO member for that ministry?</summary>
+            <div class="a"><p>No, and you will not be asked to. A claim raised by the head of a ministry skips their own review and goes straight to Finance.</p></div>
+          </details>
+
+          <details>
+            <summary>My name shows the wrong title — Rev. when I am a Pastor, or the other way round.</summary>
+            <div class="a"><p>The title is not typed anywhere; it comes from whether your record says you are ordained a Reverend or a Pastor. That was read from the church’s own contact list, which writes “Rev.” or “Ps.” in front of each name. If yours is wrong, the record is wrong — ask Finance or the Administrator to change the ordination on your directory entry and every screen follows.</p></div>
+          </details>
+
+          <details>
+            <summary>My church, or my district, is wrong.</summary>
+            <div class="a"><p>Ask Finance or the Administrator to correct it in the Church Directory. It is worth doing promptly: your church decides which head pastor and which Dean your leave goes to, so a wrong church quietly sends your applications to the wrong people.</p></div>
+          </details>
+
+          <details>
+            <summary>Which of my email addresses does the church use?</summary>
+            <div class="a"><p>Two are held. Your <strong>@lcm.org.my</strong> address is the one the app writes to — approval requests, payslips, notifications — and for most people it is also how you sign in. Your personal address is kept alongside it so you can still be reached if the LCM one is not working. Some officers sign in with a role address instead (secretary@, treasurer@, and so on); that is deliberate, because the role’s powers are attached to it.</p></div>
+          </details>
+
+          <details>
+            <summary>Nothing is in my menu that this guide mentions.</summary>
+            <div class="a"><p>Then that duty is not yours, which is normal — the menu is built from your role. If you believe you should have something and do not, ask Finance to check your record under Access &amp; Roles rather than assuming a fault.</p></div>
+          </details>
+
+        </div>
+      </section>
+
+      <footer>
+        <p>Prepared for the Lutheran Church in Malaysia. Everything here describes the app as it currently behaves. Where a rule has an exception — the seven days' notice for annual leave, for example — that is said plainly rather than left for you to discover.</p>
+      </footer>
+
+    </main>
+  </div>
+</div>
