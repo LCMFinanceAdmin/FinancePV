@@ -36,6 +36,9 @@ interface Entitlement {
   used: number | null; remaining: number | null;
   unit_rate: number | null; unit_label: string | null;
   source: string | null; note: string | null;
+  // CATEGORY for the ordinary terms of your category, PERSONAL where something
+  // was agreed for you alone.
+  scope: string | null;
 }
 interface Line {
   id: string; run_id: string; employee_id: string; employee_name: string;
@@ -353,7 +356,16 @@ function MySalaryInner() {
                 {entitlements.map(e => (
                   <tr key={e.code} className="border-b border-[#eef4fc] last:border-0">
                     <td className="px-5 py-2">
-                      <div className="font-medium text-stone-800">{e.name}</div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-medium text-stone-800">{e.name}</span>
+                        {/* Says why this line differs from a colleague's. Without
+                            it, an agreed allowance reads as an error in the table. */}
+                        {e.scope === "PERSONAL" && (
+                          <span className="rounded-full bg-[#eef4ff] px-1.5 py-[1px] text-[10px] font-semibold uppercase tracking-wide text-[#3d5a8f]">
+                            Agreed for you
+                          </span>
+                        )}
+                      </div>
                       {e.note && <div className="text-[11px] text-stone-400">{e.note}</div>}
                     </td>
                     <td className="px-3 py-2 text-stone-600">
