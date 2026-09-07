@@ -13,6 +13,7 @@ import { ShieldOff } from "lucide-react";
 export function StaffOnly({ feature, children }: { feature: string; children: React.ReactNode }) {
   const supabase = createClient();
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [employer, setEmployer] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -22,7 +23,16 @@ export function StaffOnly({ feature, children }: { feature: string; children: Re
         .from("user_roles").select("is_lcm_staff").eq("email", user.email!).maybeSingle();
       // Absent record means the column hasn't been populated for this account;
       // default to allowed so nothing breaks before the directory is filled in.
-      setAllowed(data?.is_lcm_staff ?? true);
+      const ok = data?.is_lcm_staff ?? true;
+      setAllowed(ok);
+
+      // Only asked when the answer matters. Someone turned away deserves the
+      // actual reason — "the Trustees employ you, not LCM" — rather than an
+      // absence they have to interpret.
+      if (!ok) {
+        const { data: emp } = await supabase.rpc("my_employer");
+        setEmployer(emp?.[0]?.name ?? null);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -38,9 +48,18 @@ export function StaffOnly({ feature, children }: { feature: string; children: Re
           <ShieldOff size={24} className="mx-auto mb-3 text-stone-300" />
           <h1 className="text-base font-bold text-stone-800">{feature} is for LCM staff</h1>
           <p className="mx-auto mt-1.5 max-w-md text-sm text-stone-500">
-            You are not on LCM&rsquo;s payroll, so LCM&rsquo;s leave, loans and claim entitlements
-            do not apply to you. Many people serve LCM without being employed by it &mdash; a
-            congregation may be your employer, or another body within the church.
+            {employer ? (
+              <>
+                Your employer is <strong className="text-stone-600">{employer}</strong>, not LCM
+                itself, so LCM&rsquo;s leave, loans and claim entitlements do not apply to you.
+              </>
+            ) : (
+              <>
+                You are not on LCM&rsquo;s payroll, so LCM&rsquo;s leave, loans and claim
+                entitlements do not apply to you. Many people serve LCM without being employed by
+                it &mdash; a congregation may be your employer, or another body within the church.
+              </>
+            )}
           </p>
           <p className="mx-auto mt-2 max-w-md text-sm text-stone-500">
             You can still claim for LCM work: submit it against the project it belongs to, and the
