@@ -8,7 +8,7 @@ import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import {
   CheckCircle2, XCircle, Clock, Search,
   Layers, CheckSquare, RotateCcw, BadgeCheck, Banknote, Hourglass, Plus,
-  SlidersHorizontal, ArrowUpDown,
+  SlidersHorizontal, ArrowUpDown, FastForward,
 } from "lucide-react";
 import Link from "next/link";
 import type { PV, PVApproval } from "@/lib/types";
@@ -345,6 +345,39 @@ export default function SignatoryActivityPage() {
       showMsg("Decision reverted — PV returned to pending queue");
     } catch (e) { showMsg((e as Error).message, false); }
     finally { setActioning(false); setRevertPinModal(null); setPin(""); }
+  }
+
+  // Send a voucher on without its ministry committee.
+  //
+  // The committees are volunteers and several are new to the system. A payment
+  // that waits on somebody learning where a button is, is a payment the church
+  // has not made. This does not discard the committee's say — they are told,
+  // and they can still sign it for the record afterwards.
+  async function releaseMinistry(pvId: string) {
+    const reason = window.prompt(
+      [
+        "Send this voucher to Finance without its ministry committee's verification?",
+        "",
+        "They will be told, and can still sign it for the record afterwards.",
+        "",
+        "Reason (optional, kept on the voucher):",
+      ].join("\n"), "");
+    if (reason === null) return;
+
+    setAdminReverting(pvId);
+    const { data: { session } } = await supabase.auth.getSession();
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pvId, action: "RELEASE_MINISTRY", reason }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not send it on");
+      setAllPvs(pvs => pvs.map(p => p.id !== pvId ? p : { ...p, status: "PENDING" }));
+      showMsg("Sent to Finance — the committee can still sign it for the record");
+    } catch (e) { showMsg((e as Error).message, false); }
+    finally { setAdminReverting(null); }
   }
 
   async function adminRevert(pvId: string) {
@@ -746,6 +779,15 @@ export default function SignatoryActivityPage() {
                   className="text-[12px] font-medium text-[#3d5a8f] hover:underline">
                   Open the full record &rarr;
                 </Link>
+                {isFinanceAdmin && activeRow.status === "PENDING_HEAD" && (
+                  <button onClick={() => releaseMinistry(activeRow.id)}
+                    disabled={adminReverting === activeRow.id}
+                    title="The committee is told, and can still sign it for the record"
+                    className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-[#cfe0f6] bg-[#f2f8ff] px-2.5 py-1 text-[11px] font-semibold text-[#3d5a8f] transition-colors hover:bg-[#e6f0fd] disabled:opacity-50">
+                    <FastForward size={11} />
+                    {adminReverting === activeRow.id ? "Sending…" : "Send on without the committee"}
+                  </button>
+                )}
                 {isFinanceAdmin && !isSignatory
                   && ["PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(activeRow.status) && (
                   <button onClick={() => adminRevert(activeRow.id)} disabled={adminReverting === activeRow.id}

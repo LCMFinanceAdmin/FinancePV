@@ -24,7 +24,33 @@ Deno.serve(async (req) => {
 
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
     if (!pv) return json({ error: "PV not found" }, 404);
-    if (pv.status !== "PENDING_HEAD") return json({ error: "PV is not pending ministry head review" }, 400);
+    // Verification is no longer a gate.
+    //
+    // The committees that verify are volunteers, and several are new to the
+    // system. Holding every payment until the right person finds the right
+    // button meant the church's bills waited on somebody learning software.
+    // So Finance can send a voucher on without this step (admin-action's
+    // RELEASE_MINISTRY), and the signature can be given afterwards instead —
+    // it lands on the voucher either way, which is what it is for.
+    //
+    // gating: this verification is what the voucher is waiting on, and
+    // approving it moves the voucher along, exactly as before.
+    // Otherwise the voucher has already gone; the signature is recorded and
+    // the status is left alone.
+    const gating = pv.status === "PENDING_HEAD";
+    const TOO_LATE = ["REJECTED", "REJECTED_HEAD", "CANCELLED"];
+    if (!gating && TOO_LATE.includes(pv.status)) {
+      return json({ error: "This voucher was rejected or cancelled, so there is nothing to sign." }, 400);
+    }
+    if (!gating && action === "REJECTED") {
+      // Refusing after the fact would be a decision nobody can act on: the
+      // voucher is with the signatories or already paid. Saying so is more
+      // use than a silent no-op.
+      return json({
+        error: "This voucher has already gone to Finance, so it can no longer be rejected here."
+             + " Ask Finance to send it back if it should not proceed.",
+      }, 400);
+    }
     // The portfolio holder, or somebody they have named to act for them —
     // for the whole ministry or for this budget line in particular.
     const { allowed, delegated } = await mayVerifyFor(
@@ -44,7 +70,12 @@ Deno.serve(async (req) => {
     // the body above. Rejecting stays open at any amount — a body can always
     // decline to spend, and making them escalate to say no would be an odd
     // rule.
-    if (action === "APPROVED") {
+    // Only when the verification is actually gating. A signature given after
+    // the money has gone is a record of who agreed with it, and refusing to
+    // record that because the line is now overspent would leave the voucher
+    // permanently unsignable — the breach is real, but this is not the control
+    // that catches it.
+    if (action === "APPROVED" && gating) {
       const [{ data: budgetGate }] = await Promise.all([
         db.rpc("budget_project_gate", {
           p_ministry: pv.ministry, p_project: pv.project ?? null,
@@ -96,7 +127,10 @@ Deno.serve(async (req) => {
       }, 403);
     }
 
-    const newStatus = action === "APPROVED" ? "PENDING" : "REJECTED_HEAD";
+    // Unchanged when the voucher has already moved on: signing it late must
+    // not drag it back to Finance's queue.
+    const newStatus = !gating ? pv.status
+      : action === "APPROVED" ? "PENDING" : "REJECTED_HEAD";
 
     // Who signed is part of the record. A delegate's name on the voucher is
     // the whole point of allowing one — "verified by the ministry" without
@@ -107,16 +141,24 @@ Deno.serve(async (req) => {
       name: profile.full_name || user.email,
       action: action === "APPROVED" ? "VERIFIED" : "REJECTED",
       timestamp: new Date().toISOString(),
-      remarks: delegated
-        ? `Verified on behalf of ${pv.ministry}${remarks ? ` — ${remarks}` : ""}`
-        : (remarks || ""),
+      remarks: [
+        delegated ? `Verified on behalf of ${pv.ministry}` : "",
+        gating ? "" : "Signed for the record after the voucher had moved on",
+        remarks || "",
+      ].filter(Boolean).join(" — "),
       ...(delegated ? { delegated: true } : {}),
+      ...(gating ? {} : { after_the_fact: true }),
     };
 
     await db.from("pvs").update({
       status: newStatus,
       head_verified: action === "APPROVED" ? "YES" : "NO",
       ministry_verified: action === "APPROVED" ? "YES" : "NO",
+      ministry_verified_by: action === "APPROVED"
+        ? (profile.full_name || user.email) : pv.ministry_verified_by,
+      ministry_verified_at: action === "APPROVED"
+        ? new Date().toISOString() : pv.ministry_verified_at,
+      ministry_verified_comment: remarks || pv.ministry_verified_comment,
       approvals: [...(pv.approvals ?? []), verifierEntry],
       updated_at: new Date().toISOString(),
     }).eq("id", pv_id);
@@ -127,9 +169,11 @@ Deno.serve(async (req) => {
       type: action === "APPROVED" ? "HEAD_VERIFIED" : "HEAD_REJECTED",
       pv_no: pv.pv_no,
       pv_id,
-      message: action === "APPROVED"
-        ? `Your PV ${pv.pv_no} has been verified by ministry head and sent to Finance`
-        : `Your PV ${pv.pv_no} was rejected by ministry head${remarks ? `: ${remarks}` : ""}`,
+      message: action !== "APPROVED"
+        ? `Your PV ${pv.pv_no} was rejected by ministry head${remarks ? `: ${remarks}` : ""}`
+        : gating
+          ? `Your PV ${pv.pv_no} has been verified by ministry head and sent to Finance`
+          : `PV ${pv.pv_no} has now been signed by the ministry head for the record`,
       read: false,
       created_at: new Date().toISOString(),
     });

@@ -100,6 +100,80 @@ Deno.serve(async (req) => {
       return json({ error: "Only the Finance Executive can review, reject, edit or send on a voucher" }, 403);
     }
 
+    // Send a voucher on without waiting for its ministry committee.
+    //
+    // The committees are volunteers and several are new to this. A payment
+    // that waits on somebody learning where a button is, is a payment the
+    // church has not made — so the verification stops being a gate. What
+    // matters is that the General Manager and the signatories approve; the
+    // committee's signature is still wanted, and can be given afterwards
+    // (ministry-action records a late one without disturbing the status).
+    //
+    // Explicit rather than automatic, and recorded. The four bypass columns
+    // have existed unused since the table was built; this is what they were
+    // for. A voucher that skipped its committee should say so on its own
+    // record, not be indistinguishable from one that was verified.
+    if (action === "RELEASE_MINISTRY") {
+      if (!canDecide) return json({ error: "Not permitted" }, 403);
+      if (pv.status !== "PENDING_HEAD") {
+        return json({ error: "This voucher is not waiting on its ministry committee." }, 400);
+      }
+
+      const now = new Date().toISOString();
+      const reason = (body.reason ?? "").trim();
+      const entry = {
+        role: profile?.role ?? "FINANCE_ADMIN",
+        email: user.email,
+        name: profile?.full_name || user.email,
+        action: "RELEASED",
+        timestamp: now,
+        remarks: reason
+          ? `Sent on without ${pv.ministry || "ministry"} verification — ${reason}`
+          : `Sent on without ${pv.ministry || "ministry"} verification`,
+      };
+
+      await db.from("pvs").update({
+        status: "PENDING",
+        // Deliberately NOT ministry_verified: nobody verified it. The voucher
+        // prints an empty committee box, which is the truth, and a later
+        // signature fills it in.
+        ministry_verify_bypassed: "YES",
+        ministry_bypass_by: profile?.full_name || user.email,
+        ministry_bypass_at: now,
+        ministry_bypass_reason: reason || null,
+        approvals: [...(pv.approvals ?? []), entry],
+        updated_at: now,
+      }).eq("id", pv_id);
+
+      // The committee is told, not bypassed silently. They can still sign it,
+      // and the message says so — this is the whole transition this supports.
+      const { data: heads } = await db.from("user_roles")
+        .select("email,ministries")
+        .contains("ministries", [pv.ministry ?? ""]);
+      const headEmails = (heads ?? []).map((h: { email: string }) => h.email);
+      if (headEmails.length) {
+        await db.from("notifications").insert(headEmails.map((email: string) => ({
+          recipient_email: email,
+          type: "MINISTRY_RELEASED",
+          pv_no: pv.pv_no,
+          pv_id,
+          message: `PV ${pv.pv_no} (${pv.ministry}) has gone to Finance without your verification.`
+                 + ` You can still sign it for the record.`,
+          read: false,
+          created_at: now,
+        })));
+        try {
+          await sendPushToEmails(db, headEmails, {
+            title: "Voucher sent on",
+            body: `${pv.pv_no} went to Finance without your verification — you can still sign it.`,
+            url: "/hod-activity",
+          });
+        } catch { /* push and email are best effort; the in-app notice is the record */ }
+      }
+
+      return json({ ok: true, status: "PENDING" });
+    }
+
     if (action === "REVIEW") {
       // BAM PV: FINANCE_REVIEW → GM_REVIEW
       if (pv.pv_type === "BAM" && pv.status === "FINANCE_REVIEW") {

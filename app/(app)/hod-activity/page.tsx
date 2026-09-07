@@ -206,6 +206,13 @@ export default function ExcoActivityPage() {
     }
     if ((isSeniorRole) && s === "PENDING_SIGNATORY") return { type: "signatory" } as const;
     if (isMH && s === "PENDING_HEAD")                return { type: "ministry"  } as const;
+    // Signing after the voucher has moved on. Verification is no longer a gate
+    // — Finance can send a voucher to the General Manager and the signatories
+    // without it — but the committee's signature still belongs on the record,
+    // and this is where they give it once they are ready to.
+    if (isMH && !pv.ministry_verified_at
+             && ["PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY", "APPROVED", "PAID"].includes(s))
+      return { type: "ministry_late" } as const;
     return null;
   }
 
@@ -392,6 +399,11 @@ export default function ExcoActivityPage() {
                               loading={actioning === pv.id}
                               onClick={() => { setRejectRemarks(""); setRejectCtx("ministry"); setRejectTarget(pv); }} />
                           </>
+                        )}
+                        {actions.type === "ministry_late" && (
+                          <Btn color="blue" icon={<CheckCircle2 size={10} />} label="Sign for the record"
+                            loading={actioning === pv.id}
+                            onClick={() => callMinistry(pv.id!, "APPROVED")} />
                         )}
                       </div>
                     )}
