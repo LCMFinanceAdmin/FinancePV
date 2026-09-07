@@ -599,7 +599,9 @@ export default function SignatoryActivityPage() {
           isOpen ? "border-l-[#4a6da7] bg-[#f2f8ff]" : "border-l-transparent hover:bg-[#f7fbff]"} ${
           nested ? "bg-stone-50/40" : ""}`}
       >
-        {/* Line 1 — who is being paid, and where it has got to. */}
+        {/* Line 1 — who is being paid, and nothing else on the line.
+            Sharing it with the status badge cost the payee a third of its
+            width, which is how "Tenaga Nasional Berhad" became "Tenaga Nas…". */}
         <div className="flex items-start gap-2">
           {canTick && (
             <span className="pt-0.5" onClick={e => e.stopPropagation()}>
@@ -612,16 +614,18 @@ export default function SignatoryActivityPage() {
                 className="h-3.5 w-3.5 cursor-pointer accent-[#4a6da7]" />
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-stone-800">
+          <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-stone-800">
             {pv.payee_name}
           </span>
-          <span className="shrink-0"><StatusBadge status={computedBadgeStatus(pv)} /></span>
         </div>
 
-        {/* Line 2 — what it is for. Project first, then the purpose, because
+        {/* Line 2 — where it has got to. */}
+        <div className="mt-1"><StatusBadge status={computedBadgeStatus(pv)} /></div>
+
+        {/* Line 3 — what it is for. Project first, then the purpose, because
             two vouchers to the same payee are told apart by the project. */}
         {(project || pv.purpose) && (
-          <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-stone-500">
+          <p className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-stone-500">
             {project && <span className="font-medium text-stone-600">{project}</span>}
             {project && pv.purpose ? " — " : ""}
             {pv.purpose}
@@ -656,6 +660,24 @@ export default function SignatoryActivityPage() {
           )}
         </div>
       </div>
+    );
+  }
+
+  /** A thing you can do to this voucher, with the reason you would. */
+  function ActionRow({ onClick, icon, label, hint, busy }: {
+    onClick: () => void; icon: React.ReactNode; label: string; hint: string; busy?: boolean;
+  }) {
+    return (
+      <button onClick={onClick} disabled={busy || actioning}
+        className="flex w-full items-start gap-2 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-left transition-colors hover:border-stone-300 hover:bg-stone-50 disabled:opacity-50">
+        <span className="mt-0.5 shrink-0">{icon}</span>
+        <span className="min-w-0">
+          <span className="block text-[12px] font-semibold leading-tight text-stone-700">
+            {busy ? "Working\u2026" : label}
+          </span>
+          <span className="mt-0.5 block text-[10.5px] leading-snug text-stone-400">{hint}</span>
+        </span>
+      </button>
     );
   }
 
@@ -796,7 +818,7 @@ export default function SignatoryActivityPage() {
            one on a narrow one. The list is the pane that must always be
            visible: on a phone the other two follow underneath rather than
            hiding behind a tab, so a reviewer scrolls instead of navigating. */
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(300px,1.05fr)_minmax(250px,0.65fr)_minmax(0,2.3fr)]">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(300px,0.95fr)_minmax(300px,0.85fr)_minmax(0,2.2fr)]">
           {/* The queue */}
           <div className="flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white 2xl:max-h-none 2xl:min-h-0">
             <div className="flex shrink-0 items-center justify-between border-b border-[#eef4fc] px-3 py-1.5">
@@ -889,46 +911,61 @@ export default function SignatoryActivityPage() {
                 amount={activeRow.amount} excludePvId={activeRow.id} date={null} />
             ) : undefined}
             extraActions={activeRow ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Link href={`/my-pvs/${activeRow.id}`}
-                  className="text-[12px] font-medium text-[#3d5a8f] hover:underline">
-                  Open the full record &rarr;
-                </Link>
+              <div className="space-y-2">
+                {/* Each of these was a bare button whose name did not say when
+                    to press it. "Send back to Finance" in particular reads as
+                    nonsense from Finance's own seat — it pulls a voucher back
+                    out of approval and clears the signatures on it, which is a
+                    thing worth being told before pressing. */}
                 {activeHasSigned && (
-                  <span className="flex items-center gap-1 text-[11px] font-semibold text-green-700">
-                    <CheckCircle2 size={11} /> You signed this
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-green-700">
+                      <CheckCircle2 size={11} /> You signed this
+                    </span>
+                    {activeCanRevert && (
+                      <button onClick={() => handleRevert(activeRow.id)} disabled={actioning}
+                        className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                        Undo my signature
+                      </button>
+                    )}
+                  </div>
                 )}
-                {activeCanRevert && (
-                  <button onClick={() => handleRevert(activeRow.id)} disabled={actioning}
-                    className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50">
-                    <RotateCcw size={10} /> Undo my decision
-                  </button>
-                )}
+
                 {isFinanceAdmin && !activePv?.ministry_verified_at
                   && !["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(activeRow.status) && (
-                  <button onClick={() => { setRecordWho(""); setRecordBasis(""); setRecordModal(activeRow); }}
-                    title="They approved in a meeting, by email, or on the paper form"
-                    className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-green-200 bg-green-50 px-2.5 py-1 text-[11px] font-semibold text-green-700 transition-colors hover:bg-green-100">
-                    <Stamp size={11} /> Record the committee&rsquo;s verification
-                  </button>
+                  <ActionRow
+                    onClick={() => { setRecordWho(""); setRecordBasis(""); setRecordModal(activeRow); }}
+                    icon={<Stamp size={13} className="text-green-700" />}
+                    label="Record the committee's verification"
+                    hint="They approved in a meeting, by email or on paper. Puts their name on the voucher." />
                 )}
+
                 {isFinanceAdmin && activeRow.status === "PENDING_HEAD" && (
-                  <button onClick={() => releaseMinistry(activeRow.id)}
-                    disabled={adminReverting === activeRow.id}
-                    title="The committee is told, and can still sign it for the record"
-                    className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-[#cfe0f6] bg-[#f2f8ff] px-2.5 py-1 text-[11px] font-semibold text-[#3d5a8f] transition-colors hover:bg-[#e6f0fd] disabled:opacity-50">
-                    <FastForward size={11} />
-                    {adminReverting === activeRow.id ? "Sending…" : "Send on without the committee"}
-                  </button>
+                  <ActionRow
+                    onClick={() => releaseMinistry(activeRow.id)}
+                    busy={adminReverting === activeRow.id}
+                    icon={<FastForward size={13} className="text-[#3d5a8f]" />}
+                    label="Send on without the committee"
+                    hint="Stops waiting for them. They are told, and can still sign it afterwards." />
                 )}
+
+                {/* Only where the server will actually accept it. PENDING was
+                    on this list and is not revertable — the button was offered
+                    on every voucher in the queue and failed on all of them. */}
                 {isFinanceAdmin && !isSignatory
-                  && ["PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(activeRow.status) && (
-                  <button onClick={() => adminRevert(activeRow.id)} disabled={adminReverting === activeRow.id}
-                    className="ml-auto flex items-center gap-1 whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50">
-                    <RotateCcw size={10} /> {adminReverting === activeRow.id ? "Reverting\u2026" : "Send back to Finance"}
-                  </button>
+                  && ["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(activeRow.status) && (
+                  <ActionRow
+                    onClick={() => adminRevert(activeRow.id)}
+                    busy={adminReverting === activeRow.id}
+                    icon={<RotateCcw size={13} className="text-amber-600" />}
+                    label="Pull it back for editing"
+                    hint="Undoes the review and any signatures given, and returns it to your queue." />
                 )}
+
+                <Link href={`/my-pvs/${activeRow.id}`}
+                  className="block pt-0.5 text-[11.5px] font-medium text-[#3d5a8f] hover:underline">
+                  Open the full record &rarr;
+                </Link>
               </div>
             ) : undefined}
           />

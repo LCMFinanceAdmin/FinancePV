@@ -19,11 +19,15 @@ import type { PV, PVApproval } from "@/lib/types";
 // The four stages every voucher passes through, in order. Statuses are mapped
 // onto them rather than shown raw, because the status vocabulary is an internal
 // one — PENDING_HEAD and PENDING are the same stage to everybody but the code.
+// Two labels each. The strip has four of them across a pane that can be
+// 300px wide, and "Finance Review" set nowrap was enough on its own to push a
+// horizontal scrollbar onto the whole pane. The long name is still what the
+// current step is called in the sentence underneath.
 const STEPS = [
-  { key: "submitted", label: "Submitted" },
-  { key: "review",    label: "Finance Review" },
-  { key: "approval",  label: "Approval" },
-  { key: "payment",   label: "Payment" },
+  { key: "submitted", label: "Submitted",      short: "Submitted" },
+  { key: "review",    label: "Finance Review", short: "Finance" },
+  { key: "approval",  label: "Approval",       short: "Approval" },
+  { key: "payment",   label: "Payment",        short: "Payment" },
 ] as const;
 
 function stageOf(status: string): number {
@@ -154,17 +158,18 @@ export function PVDetailPane({
               const current = !rejected && stage === i + 1;
               const last    = i === STEPS.length - 1;
               return (
-                <li key={step.key} className={`flex items-center ${last ? "" : "flex-1"}`}>
-                  <div className="flex flex-col items-center gap-1">
+                <li key={step.key} className={`flex min-w-0 items-center ${last ? "" : "flex-1"}`}>
+                  <div className="flex min-w-0 flex-col items-center gap-1">
                     <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
                       done    ? "border-green-500 bg-green-500 text-white"
                       : current ? "border-amber-400 bg-amber-400 text-white"
                       : "border-stone-200 bg-white"}`}>
                       {done ? <Check size={9} strokeWidth={3.5} /> : null}
                     </span>
-                    <span className={`whitespace-nowrap text-[9.5px] font-semibold uppercase tracking-wide ${
-                      current ? "text-amber-600" : done ? "text-stone-500" : "text-stone-300"}`}>
-                      {step.label}
+                    <span title={step.label}
+                      className={`truncate text-[9px] font-semibold uppercase tracking-wide ${
+                        current ? "text-amber-600" : done ? "text-stone-500" : "text-stone-300"}`}>
+                      {step.short}
                     </span>
                   </div>
                   {!last && (
