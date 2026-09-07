@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import { describeApprovers } from "@/lib/approver-label";
-import { leaveRouting, resolveLeaveApprovers } from "@/lib/leave-approvers";
+import { leaveRouting } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { openLeaveForm } from "@/components/leave/leave-form-html";
@@ -140,10 +140,14 @@ function MyLeavesInner() {
     // gets its name for display. Filtering it would leave anybody who applied
     // before the rule arrived looking at a bare code in their own history.
     //
-    // Empty means the function told us nothing — an account it cannot place, or
-    // an error — and then everything is offered. That matches how the rule
-    // itself fails: better to offer a type somebody will not take than to hide
-    // one they are owed.
+    // An empty answer used to mean "the function could not place you", and this
+    // showed everything rather than hide an entitlement over a blank field.
+    // Since 191 it means something else and stronger: no payroll, no LCM leave.
+    // An entitled person always gets rows back — annual leave at the least — so
+    // empty now means not entitled, and showing the full list to somebody who
+    // may apply for none of it is the worse error. StaffOnly turns those people
+    // away first, but it defaults to allowing an account with no directory
+    // record at all, and that is the gap this closes.
     setOfferedCodes(new Set(Object.keys(entMap)));
 
     setLeaveTypes(lt ?? []);
@@ -418,9 +422,7 @@ function MyLeavesInner() {
   // here and on submission, so what the applicant sees is exactly what is
   // snapshotted onto the record.
   // What I may actually apply for: active, and offered to me by name.
-  const offeredTypes = leaveTypes.filter(
-    t => t.active && (offeredCodes.size === 0 || offeredCodes.has(t.code)),
-  );
+  const offeredTypes = leaveTypes.filter(t => t.active && offeredCodes.has(t.code));
 
   const annualType   = leaveTypes.find(t => t.code === "ANNUAL");
   const medicalType  = leaveTypes.find(t => t.code === "MEDICAL");
@@ -502,6 +504,16 @@ function MyLeavesInner() {
               Worked out from your <strong className="text-stone-700">{yearsOfService} year{yearsOfService === 1 ? "" : "s"}</strong> of
               completed service. Annual and sick leave both rise with it.
             </p>
+          )}
+
+          {!loading && offeredTypes.length === 0 && (
+            <div className="rounded-2xl border border-[#e3edf9] bg-white px-6 py-10 text-center">
+              <p className="text-sm font-medium text-stone-600">No leave entitlement on this account</p>
+              <p className="mx-auto mt-1.5 max-w-md text-[13px] leading-relaxed text-stone-500">
+                LCM&rsquo;s leave belongs to LCM&rsquo;s payroll. If you believe LCM employs you,
+                ask a Finance Executive to check your payroll record &mdash; this follows it.
+              </p>
+            </div>
           )}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

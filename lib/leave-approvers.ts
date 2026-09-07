@@ -59,7 +59,6 @@ export interface LeaveRouting {
   informEveryone: boolean;
 }
 
-/** The list alone, for callers that only render it. */
 export async function resolveLeaveApprovers(
   supabase: SupabaseClient,
   applicantEmail: string,

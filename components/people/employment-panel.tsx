@@ -33,6 +33,11 @@ interface Loan {
 }
 interface EmployeeRow { id: string; emp_no: string; status: string; date_commenced: string | null }
 
+interface Employer {
+  id: string; code: string; name: string; short_name: string | null;
+  organisation_id: string | null;
+}
+
 export interface PersonForEmployment {
   id: string;
   full_name: string;
@@ -73,6 +78,12 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
   const [showHistory, setShowHistory] = useState(false);
   const [err, setErr] = useState("");
 
+  // Who employs them. LCM and the Trustees are separate payrolls with separate
+  // statutory registrations (194), and this panel used to assume there was only
+  // one — the column default would have made every hire an LCM hire.
+  const [employers, setEmployers] = useState<Employer[]>([]);
+  const [employerId, setEmployerId] = useState("");
+
   // Setting someone up for the first time.
   const [base, setBase] = useState("");
   const [allowance, setAllowance] = useState("");
@@ -103,6 +114,26 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
 
   useEffect(() => { load(); }, [load]);
 
+  // The directory already knows who employs this person — 193 recorded it on
+  // people.organisation_id — so the right employer is a lookup rather than a
+  // question. Offered as a choice anyway when there is more than one, because
+  // a directory record can be wrong and a payroll record is expensive to move.
+  useEffect(() => {
+    (async () => {
+      const [{ data: emps }, { data: who }] = await Promise.all([
+        supabase.from("payroll_employers").select("id,code,name,short_name,organisation_id")
+          .eq("active", true).order("sort_order"),
+        supabase.from("people").select("organisation_id").eq("id", person.id).maybeSingle(),
+      ]);
+      const list = (emps as Employer[]) ?? [];
+      setEmployers(list);
+      const byOrg = who?.organisation_id
+        ? list.find(e => e.organisation_id === who.organisation_id)
+        : undefined;
+      setEmployerId(cur => cur || byOrg?.id || list.find(e => e.code === "LCM")?.id || list[0]?.id || "");
+    })();
+  }, [supabase, person.id]);
+
   /**
    * Create the payroll record from what the directory already knows.
    *
@@ -118,11 +149,13 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
     setCreating(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { data: empNo } = await supabase.rpc("next_emp_no");
+      // With the employer, so the number carries that employer's prefix.
+      const { data: empNo } = await supabase.rpc("next_emp_no", { p_employer: employerId || null });
 
       const isPastorish = ["PASTOR", "PARISH_WORKER"].includes(person.category);
       const { data: emp, error: empErr } = await supabase.from("payroll_employees").insert({
         emp_no: empNo ?? `EMP-${Date.now()}`,
+        employer_id: employerId || undefined,
         full_name: person.full_name,
         ic_no: person.ic_no ?? "",
         dob: person.dob,
@@ -185,6 +218,22 @@ export function EmploymentPanel({ person, congregationName, onLinked }: {
         </p>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {employers.length > 1 && (
+            <div className="sm:col-span-3">
+              <label className={lbl}>Employer</label>
+              <select className={inp} value={employerId}
+                onChange={e => setEmployerId(e.target.value)}>
+                {employers.map(emp => (
+                  <option key={emp.id} value={emp.id}>{emp.short_name || emp.name}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-stone-400">
+                Taken from their directory record. It decides the employee number, which payroll
+                run pays them, and whose leave and claim terms apply &mdash; and it cannot be
+                changed afterwards without making them a leaver and a joiner.
+              </p>
+            </div>
+          )}
           <div>
             <label className={lbl}>Gross monthly salary (RM) *</label>
             <input type="number" step="0.01" min="0" className={inp} value={base}

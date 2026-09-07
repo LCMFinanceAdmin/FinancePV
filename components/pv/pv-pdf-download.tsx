@@ -10,21 +10,9 @@ import {
 } from "@react-pdf/renderer";
 import { PDFDocument } from "pdf-lib";
 import { pvPrintHtml, type PdfPageImages } from "@/components/pv/pv-html";
+import { svgToPngDataUri } from "@/lib/svg-to-png";
 
-export async function svgToPngDataUri(svgPath: string, size = 200): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = size; canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      if (ctx) { ctx.drawImage(img, 0, 0, size, size); }
-      resolve(canvas.toDataURL("image/png"));
-    };
-    img.onerror = () => resolve("");
-    img.src = svgPath;
-  });
-}
+export { svgToPngDataUri } from "@/lib/svg-to-png";
 
 const BANK_ABBR: Record<string, string> = {
   "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",

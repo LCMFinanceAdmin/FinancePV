@@ -16,16 +16,23 @@
 // Attachments become tabs beside it, so a supporting document is one click
 // away rather than a download.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText, Paperclip, Maximize2, Minimize2, Download, Loader2,
   ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { pvPrintHtml } from "@/components/pv/pv-html";
+import { svgToPngDataUri } from "@/lib/svg-to-png";
 import type { PV } from "@/lib/types";
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|heic|heif)(\?|$)/i;
 const PDF_RE = /\.pdf(\?|$)/i;
+
+// The voucher stylesheet caps its sheet at 820px and gives it a 20px margin.
+// The frame is laid out at that width whatever the pane is, and scaled — which
+// is what zooming a document means. Sizing the frame to the pane instead just
+// reflows the sheet, which is what the first version of this did.
+const SHEET_W = 880;
 
 /** "…/1712-EPF%20Summary.pdf" → "EPF Summary". */
 function attachmentLabel(url: string, i: number): string {
@@ -39,13 +46,64 @@ function attachmentLabel(url: string, i: number): string {
 }
 
 export function PVViewer({
-  pv, loading, logoDataUri = "",
-}: { pv: PV | null; loading?: boolean; logoDataUri?: string }) {
+  pv, loading,
+}: { pv: PV | null; loading?: boolean }) {
   const [tab, setTab] = useState(0);
-  const [zoom, setZoom] = useState(100);
+  // null means "fit the pane" — the sensible default, because the sheet is
+  // wider than the pane at every layout and a document opened already scrolled
+  // sideways reads as broken.
+  const [zoom, setZoom] = useState<number | null>(null);
   const [full, setFull] = useState(false);
+  const [paneW, setPaneW] = useState(0);
+  const [docH, setDocH] = useState(1123);
+  const [logo, setLogo] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const attachments = useMemo(() => (pv?.attachments ?? []).filter(Boolean), [pv]);
+
+  // The church logo, as the printed voucher has it. Loaded once and cheap; the
+  // preview claims to be the voucher, so it should not quietly omit the badge
+  // at the top of it.
+  useEffect(() => { svgToPngDataUri("/lcm-logo.svg", 200).then(setLogo); }, []);
+
+  // Fit-to-width has to react to the pane, which changes with the breakpoint
+  // and with going full screen.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setPaneW(e.contentRect.width));
+    ro.observe(el);
+    setPaneW(el.clientWidth);
+    return () => ro.disconnect();
+  }, [full]);
+
+  const fitZoom = paneW > 0 ? Math.min(100, Math.max(25, (paneW / SHEET_W) * 100)) : 100;
+  const z = zoom ?? fitZoom;
+
+  // load fires before the logo and any web font have settled, so measuring once
+  // there can cut the bottom off a voucher. Watching the document itself is the
+  // only version of this that stays right.
+  const innerRO = useRef<ResizeObserver | null>(null);
+  const measure = useCallback((el: HTMLIFrameElement | null) => {
+    innerRO.current?.disconnect();
+    if (!el) return;
+    try {
+      const d = el.contentDocument;
+      if (!d) return;
+      const apply = () => setDocH(Math.max(600, d.documentElement.scrollHeight + 8));
+      apply();
+      const win = el.contentWindow;
+      if (win && "ResizeObserver" in win) {
+        innerRO.current = new (win as unknown as { ResizeObserver: typeof ResizeObserver })
+          .ResizeObserver(apply);
+        innerRO.current.observe(d.documentElement);
+      }
+    } catch {
+      // Cross-origin, which srcDoc should never be. Keep the A4 default.
+    }
+  }, []);
+
+  useEffect(() => () => innerRO.current?.disconnect(), []);
 
   // Back to the voucher whenever a different PV is chosen: tab 3 of the last
   // one means nothing on this one. Adjusted during render rather than in an
@@ -55,7 +113,8 @@ export function PVViewer({
   if (pv?.id !== lastId) {
     setLastId(pv?.id);
     setTab(0);
-    setZoom(100);
+    setZoom(null);
+    setDocH(1123);
   }
 
   // Escape leaves full screen. Without it the only way out is the button,
@@ -69,9 +128,15 @@ export function PVViewer({
 
   // Built once per voucher. pvPrintHtml walks the line items and inlines the
   // logo, so it is not something to redo on every zoom click.
+  //
+  // Attachments are stripped here, and only here. pvPrintHtml appends every one
+  // of them to the voucher because that is right for printing — you want the
+  // receipts behind the voucher on paper. On screen they are the tabs beside
+  // it, and leaving them in meant the first tab contained all the others,
+  // inside a frame with its own scrollbar.
   const html = useMemo(
-    () => (pv ? pvPrintHtml(pv, logoDataUri) : ""),
-    [pv, logoDataUri],
+    () => (pv ? pvPrintHtml({ ...pv, attachments: [], payment_receipt_url: "" }, logo) : ""),
+    [pv, logo],
   );
 
   if (loading) {
@@ -145,15 +210,15 @@ export function PVViewer({
         )}
 
         <div className="ml-auto flex items-center gap-0.5">
-          <button onClick={() => setZoom(z => Math.max(50, z - 10))} disabled={zoom <= 50} title="Zoom out"
+          <button onClick={() => setZoom(Math.max(25, Math.round(z) - 10))} disabled={z <= 25} title="Zoom out"
             className="rounded p-1 text-stone-400 hover:bg-stone-50 hover:text-stone-700 disabled:opacity-30">
             <ZoomOut size={14} />
           </button>
-          <button onClick={() => setZoom(100)} title="Reset zoom"
-            className="min-w-[3rem] rounded px-1 py-0.5 text-[11px] font-semibold tabular-nums text-stone-600 hover:bg-stone-50">
-            {zoom}%
+          <button onClick={() => setZoom(null)} title="Fit to width"
+            className="min-w-[3.5rem] rounded px-1 py-0.5 text-[11px] font-semibold tabular-nums text-stone-600 hover:bg-stone-50">
+            {Math.round(z)}%{zoom === null ? "" : "\u00b7"}
           </button>
-          <button onClick={() => setZoom(z => Math.min(200, z + 10))} disabled={zoom >= 200} title="Zoom in"
+          <button onClick={() => setZoom(Math.min(250, Math.round(z) + 10))} disabled={z >= 250} title="Zoom in"
             className="rounded p-1 text-stone-400 hover:bg-stone-50 hover:text-stone-700 disabled:opacity-30">
             <ZoomIn size={14} />
           </button>
@@ -167,16 +232,26 @@ export function PVViewer({
       </div>
 
       {/* ── The document ───────────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-auto bg-[#f2f5fa] p-3">
-        <div style={{ width: `${zoom}%`, margin: "0 auto", transition: "width 120ms ease" }}>
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-[#f2f5fa] p-3">
+        <div style={tab === 0
+          ? { width: SHEET_W * (z / 100), height: docH * (z / 100), margin: "0 auto" }
+          : { width: `${z}%`, margin: "0 auto" }}>
           {tab === 0 ? (
             <iframe
               title={`Payment voucher ${pv.pv_no}`}
               srcDoc={html}
-              // Nothing in a voucher needs script or navigation; the sandbox
-              // says so rather than trusting that it stays that way.
-              sandbox=""
-              className="h-[1123px] w-full rounded-lg border border-stone-200 bg-white shadow-sm"
+              // allow-same-origin and nothing else: the frame is measured after
+              // it loads so the whole voucher scrolls in the pane rather than
+              // in a nested scrollbar, and that needs to read its own document.
+              // No allow-scripts, so there is nothing in there that can run.
+              sandbox="allow-same-origin"
+              onLoad={e => measure(e.currentTarget)}
+              style={{
+                width: SHEET_W, height: docH,
+                transform: `scale(${z / 100})`, transformOrigin: "top left",
+                border: 0,
+              }}
+              className="rounded-lg bg-white shadow-sm"
             />
           ) : current && IMAGE_RE.test(current) ? (
             /* eslint-disable-next-line @next/next/no-img-element */

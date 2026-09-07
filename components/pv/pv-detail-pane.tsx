@@ -166,10 +166,10 @@ export function PVDetailPane({
                       {done ? <Check size={11} strokeWidth={3} /> : null}
                     </span>
                     {!last && (
-                      <span className={`w-0.5 flex-1 ${done ? "bg-green-300" : "bg-stone-150 bg-stone-200"}`} />
+                      <span className={`w-0.5 flex-1 ${done ? "bg-green-300" : "bg-stone-200"}`} />
                     )}
                   </div>
-                  <div className={`pb-4 ${last ? "pb-0" : ""}`}>
+                  <div className={last ? "" : "pb-4"}>
                     <p className={`text-[13px] font-semibold ${
                       done || current ? "text-stone-800" : "text-stone-400"}`}>
                       {step.label}
@@ -204,10 +204,11 @@ export function PVDetailPane({
           Pinned to the bottom rather than scrolling away: the whole reason a
           reviewer opened this voucher is the decision, and on a long one the
           buttons would otherwise be below the fold. */}
-      {(canAct || extraActions) && !rejected && (
-        <div className="shrink-0 border-t border-[#eef4fc] bg-[#fffdf7] px-5 py-4">
-          {canAct ? null : extraActions}
-          {hasActed ? (
+      {(canAct || extraActions) && (
+        <div className={`shrink-0 border-t border-[#eef4fc] px-5 py-4 ${
+          canAct && !rejected ? "bg-[#fffdf7]" : "bg-white"}`}>
+          {canAct && !rejected ? null : extraActions}
+          {!canAct || rejected ? null : hasActed ? (
             <div className="flex flex-wrap items-center gap-3">
               <span className="flex items-center gap-1.5 text-[13px] font-semibold text-green-700">
                 <CheckCircle2 size={15} /> You have signed this
@@ -243,7 +244,7 @@ export function PVDetailPane({
               </div>
             </>
           )}
-          {canAct && extraActions && (
+          {canAct && !rejected && extraActions && (
             <div className="mt-3 border-t border-amber-100 pt-3">{extraActions}</div>
           )}
         </div>
