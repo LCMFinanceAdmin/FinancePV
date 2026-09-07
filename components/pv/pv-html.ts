@@ -168,9 +168,19 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
           pv.sig_applicant_name || pv.applicant_name || null,
           `Date: ${fmtDate(pv.submitted_at)}`)
       : "";
+    // When Finance recorded a decision the member made elsewhere, the member's
+    // name is still what belongs in the box — it was their decision — but the
+    // voucher has to say so, or it reads as a signature given in the system.
+    const recordedBy = pv.ministry_verified_on_behalf_by;
+    const excoSubLine = ministryVerified
+      ? `${pv.ministry}  Date: ${fmtDate(excoApproval?.timestamp ?? pv.ministry_verified_at ?? pv.head_verified_at)}`
+        + (recordedBy
+            ? `  —  recorded by ${esc(recordedBy)}${pv.ministry_verified_basis ? ` (${esc(pv.ministry_verified_basis)})` : ""}`
+            : "")
+      : null;
     const exco = sigCell("Verified by:", "(By EXCO Member / Dept Head in Charge)", excoApproval?.signature_data,
         ministryVerified ? (excoApproval?.name ?? pv.ministry_verified_by ?? pv.dept_head_name ?? "EXCO Member") : null,
-        ministryVerified ? `${pv.ministry}  Date: ${fmtDate(excoApproval?.timestamp ?? pv.ministry_verified_at ?? pv.head_verified_at)}` : null,
+        excoSubLine,
         "Name: _______________________  Date: ___________");
     // A lone signature box stops two thirds of the way across, with the rest
     // left blank and unbordered — a box stretched the full width reads as a

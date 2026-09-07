@@ -8,7 +8,7 @@ import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import {
   CheckCircle2, XCircle, Clock, Search,
   Layers, CheckSquare, RotateCcw, BadgeCheck, Banknote, Hourglass, Plus,
-  SlidersHorizontal, ArrowUpDown, FastForward,
+  SlidersHorizontal, ArrowUpDown, FastForward, Stamp,
 } from "lucide-react";
 import Link from "next/link";
 import type { PV, PVApproval } from "@/lib/types";
@@ -119,6 +119,12 @@ export default function SignatoryActivityPage() {
   const [adminReverting, setAdminReverting]   = useState<string | null>(null);
   const [pin, setPin]                         = useState("");
   const [rejectModal, setRejectModal]         = useState<{ pvIds: string[] } | null>(null);
+  // Recording a committee decision taken elsewhere: which voucher, who made
+  // the decision, and how it reached us.
+  const [recordModal, setRecordModal] = useState<PendingPV | null>(null);
+  const [recordWho, setRecordWho]     = useState("");
+  const [recordBasis, setRecordBasis] = useState("");
+  const [verifiers, setVerifiers]     = useState<{ email: string; full_name: string; ministries: string[] }[]>([]);
   const [rejectRemarks, setRejectRemarks]     = useState("");
   const [actioning, setActioning]             = useState(false);
   const [toast, setToast]                     = useState({ msg: "", ok: true });
@@ -236,6 +242,17 @@ export default function SignatoryActivityPage() {
     })();
     return () => { cancelled = true; };
   }, [activeId, supabase]);
+
+  // Everybody who sits on a committee, for the "who approved it" picker. Only
+  // fetched when Finance actually opens the dialog — it is a list nobody else
+  // on this page needs.
+  useEffect(() => {
+    if (!recordModal || verifiers.length > 0) return;
+    supabase.from("user_roles").select("email,full_name,ministries")
+      .not("ministries", "is", null)
+      .then(({ data }) => setVerifiers(
+        (data ?? []) as { email: string; full_name: string; ministries: string[] }[]));
+  }, [recordModal, verifiers.length, supabase]);
 
   // Ministries for the archive's filter — loaded once, only when the Paid tab
   // is actually opened.
@@ -378,6 +395,37 @@ export default function SignatoryActivityPage() {
       showMsg("Sent to Finance — the committee can still sign it for the record");
     } catch (e) { showMsg((e as Error).message, false); }
     finally { setAdminReverting(null); }
+  }
+
+  // The committee decided; it just did not happen in here.
+  //
+  // Distinct from releasing a voucher without them. That one says nobody
+  // verified it and leaves the box empty, which is the truth in that case.
+  // This one says a named member did, and puts their name in the box — with
+  // Finance's name beside it and the basis on the record, because a signature
+  // entered on somebody's behalf has to show whose word it rests on.
+  async function recordCommitteeVerification() {
+    if (!recordModal) return;
+    if (!recordWho || !recordBasis.trim()) return;
+
+    setActioning(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/ministry-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          pv_id: recordModal.id, action: "APPROVED",
+          on_behalf_of: recordWho, basis: recordBasis.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not record it");
+      setAllPvs(pvs => pvs.map(p => p.id !== recordModal.id ? p : { ...p, status: json.status ?? p.status }));
+      setRecordModal(null); setRecordWho(""); setRecordBasis("");
+      showMsg("Recorded — the voucher now carries the committee's verification");
+    } catch (e) { showMsg((e as Error).message, false); }
+    finally { setActioning(false); }
   }
 
   async function adminRevert(pvId: string) {
@@ -779,6 +827,14 @@ export default function SignatoryActivityPage() {
                   className="text-[12px] font-medium text-[#3d5a8f] hover:underline">
                   Open the full record &rarr;
                 </Link>
+                {isFinanceAdmin && !activePv?.ministry_verified_at
+                  && !["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(activeRow.status) && (
+                  <button onClick={() => { setRecordWho(""); setRecordBasis(""); setRecordModal(activeRow); }}
+                    title="They approved in a meeting, by email, or on the paper form"
+                    className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-green-200 bg-green-50 px-2.5 py-1 text-[11px] font-semibold text-green-700 transition-colors hover:bg-green-100">
+                    <Stamp size={11} /> Record the committee&rsquo;s verification
+                  </button>
+                )}
                 {isFinanceAdmin && activeRow.status === "PENDING_HEAD" && (
                   <button onClick={() => releaseMinistry(activeRow.id)}
                     disabled={adminReverting === activeRow.id}
@@ -847,6 +903,71 @@ export default function SignatoryActivityPage() {
               </button>
               <button onClick={() => { setPinModal(null); setPin(""); }}
                 className="flex-1 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Record the committee's verification ──────────── */}
+      {recordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
+            <div>
+              <h2 className="text-base font-bold text-stone-800">Record the committee&rsquo;s verification</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-stone-500">
+                For {recordModal.pv_no} &mdash; {recordModal.ministry || "no ministry"}. Use this when the
+                committee has already decided somewhere else: a meeting, an email, the signed paper form.
+                Their name goes on the voucher; yours goes beside it.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-stone-600">Who approved it</label>
+              <select value={recordWho} onChange={e => setRecordWho(e.target.value)}
+                className="w-full rounded-xl border-2 border-stone-800 px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]">
+                <option value="">Choose the committee member&hellip;</option>
+                {/* Everyone who sits on a committee, with what they cover, rather
+                    than a list pre-filtered to exact name matches. A sub-ministry
+                    representative verifies what its parent books — the Education
+                    Desk signs for Education — and an exact match here would hide
+                    exactly the person who should be picked. The server checks the
+                    same relationship properly and refuses a name with no standing,
+                    so a longer list costs nothing and a short one loses people. */}
+                {verifiers.map(v => (
+                  <option key={v.email} value={v.email}>
+                    {v.full_name || v.email}
+                    {(v.ministries ?? []).length ? ` — ${(v.ministries ?? []).join(", ")}` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-stone-400">
+                Their committee is shown beside each name. If they do not verify for{" "}
+                {recordModal.ministry || "this ministry"}, this will say so rather than record it.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-stone-600">
+                How you know &mdash; and where to find it
+              </label>
+              <input value={recordBasis} onChange={e => setRecordBasis(e.target.value)}
+                placeholder="e.g. EXCO meeting 12/2026, or email 3 Sep, or signed form on file"
+                className="w-full rounded-xl border-2 border-stone-800 px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]" />
+              <p className="mt-1 text-[11px] text-stone-400">
+                Specific enough that somebody could go and check it. This is kept on the voucher.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={recordCommitteeVerification}
+                disabled={!recordWho || !recordBasis.trim() || actioning}
+                className="flex-1 rounded-xl bg-green-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
+                {actioning ? "Recording\u2026" : "Record it"}
+              </button>
+              <button onClick={() => setRecordModal(null)}
+                className="flex-1 rounded-xl border border-stone-200 py-2.5 text-sm font-medium text-stone-600 hover:bg-stone-50">
                 Cancel
               </button>
             </div>

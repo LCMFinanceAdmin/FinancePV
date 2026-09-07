@@ -149,8 +149,15 @@ export interface PV {
   pv_type: PVType;
   admin_comment: string;
   ministry_verified: string;
+  /** Whose decision it was — the committee member, always. */
   ministry_verified_by: string;
   ministry_verified_at: string;
+  /** Who recorded it, when the member did not press the button themselves —
+   *  they approved in a meeting, by email, or on the paper form (196). Null
+   *  means the member did it here. */
+  ministry_verified_on_behalf_by?: string | null;
+  /** How that decision reached Finance, specific enough to go and check. */
+  ministry_verified_basis?: string | null;
   head_verified: string;
   head_verified_at: string;
   finance_verified_by: string;

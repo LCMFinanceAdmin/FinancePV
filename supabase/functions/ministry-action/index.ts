@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
     // hold is established below, against this particular voucher.
     if (!profile) return json({ error: "User not found in system" }, 403);
 
-    const { pv_id, action, remarks } = await req.json();
+    const { pv_id, action, remarks, on_behalf_of, basis } = await req.json();
     if (!["APPROVED", "REJECTED"].includes(action)) return json({ error: "Invalid action" }, 400);
 
     const { data: pv } = await db.from("pvs").select("*").eq("id", pv_id).single();
@@ -51,11 +51,70 @@ Deno.serve(async (req) => {
              + " Ask Finance to send it back if it should not proceed.",
       }, 400);
     }
+    // ── Recording somebody else's decision ────────────────────────────
+    // Most committee members are not in the system yet. They approve in a
+    // meeting, by email, or by signing the paper form, and the voucher then
+    // waits at PENDING_HEAD for a click that is never coming. The decision has
+    // been made; only the record is missing, and Finance can supply it.
+    //
+    // The member's name goes in the signature box, because it is their
+    // decision. Finance's name goes beside it, because somebody has to be
+    // accountable for the claim that the decision was made. Both, always —
+    // one person's name in a box on another's say-so, with nothing recording
+    // who said so, is the exact thing an audit trail exists to prevent.
+    const onBehalfEmail = (on_behalf_of ?? "").trim().toLowerCase();
+    const recording = onBehalfEmail.length > 0;
+    let verifierProfile = profile;
+
+    if (recording) {
+      const FINANCE = ["FINANCE_ADMIN", "FINANCE_ADMIN_3"];
+      if (!FINANCE.includes(profile.role)) {
+        return json({ error: "Only a Finance Executive may record a committee's verification." }, 403);
+      }
+      if (action !== "APPROVED") {
+        return json({ error: "A rejection has to come from the committee itself." }, 400);
+      }
+      if (!(basis ?? "").trim()) {
+        return json({
+          error: "Say how the committee's decision was received — a meeting, an email, a signed form."
+               + " Without it there is nothing for anybody to check.",
+        }, 400);
+      }
+
+      // ministries is what mayVerifyFor needs, and email is what the entry
+      // records; neither is in the default column set.
+      const named = await getProfileByEmail(db, onBehalfEmail, "role,full_name,ministries,email");
+      if (!named) return json({ error: "That person has no account here." }, 400);
+
+      // They must be somebody who could actually have verified this voucher.
+      // Recording a decision in the name of a person with no standing over the
+      // ministry would produce a signature that means nothing.
+      const { allowed: namedMay } = await mayVerifyFor(
+        db, onBehalfEmail, named.ministries, pv.ministry, pv.project,
+      );
+      if (!namedMay) {
+        return json({
+          error: `${named.full_name || onBehalfEmail} does not verify for ${pv.ministry},`
+               + " so their name cannot go on this voucher.",
+        }, 403);
+      }
+
+      // The self-approval rule follows the decision, not the typing.
+      const theirs = [pv.applicant_email, pv.submitted_by_email]
+        .some((e: string | null) => (e ?? "").trim().toLowerCase() === onBehalfEmail);
+      if (theirs) {
+        return json({
+          error: "This voucher is theirs, so another member of the committee has to verify it.",
+        }, 400);
+      }
+      verifierProfile = named;
+    }
+
     // The portfolio holder, or somebody they have named to act for them —
     // for the whole ministry or for this budget line in particular.
-    const { allowed, delegated } = await mayVerifyFor(
-      db, user.email!, profile.ministries, pv.ministry, pv.project,
-    );
+    const { allowed, delegated } = recording
+      ? { allowed: true, delegated: false }
+      : await mayVerifyFor(db, user.email!, profile.ministries, pv.ministry, pv.project);
     if (!allowed) return json({ error: "Not your ministry" }, 403);
 
     // What this body may commit.
@@ -119,7 +178,7 @@ Deno.serve(async (req) => {
     // whose ministry is yours reached your queue and you could verify it. The
     // guard belongs where the decision is taken, not only where it is routed.
     const me = (user.email ?? "").trim().toLowerCase();
-    const paysMe = [pv.applicant_email, pv.submitted_by_email]
+    const paysMe = !recording && [pv.applicant_email, pv.submitted_by_email]
       .some((e: string | null) => (e ?? "").trim().toLowerCase() === me);
     if (paysMe && action === "APPROVED") {
       return json({
@@ -137,12 +196,20 @@ Deno.serve(async (req) => {
     // saying which person would be worse than not delegating at all.
     const verifierEntry = {
       role: "MINISTRY_HEAD",
-      email: user.email,
-      name: profile.full_name || user.email,
+      email: recording ? onBehalfEmail : user.email,
+      name: verifierProfile.full_name || (recording ? onBehalfEmail : user.email),
+      ...(recording ? {
+        recorded_by: profile.full_name || user.email,
+        recorded_by_email: user.email,
+        basis: (basis ?? "").trim(),
+      } : {}),
       action: action === "APPROVED" ? "VERIFIED" : "REJECTED",
       timestamp: new Date().toISOString(),
       remarks: [
         delegated ? `Verified on behalf of ${pv.ministry}` : "",
+        recording
+          ? `Recorded by ${profile.full_name || user.email} — ${(basis ?? "").trim()}`
+          : "",
         gating ? "" : "Signed for the record after the voucher had moved on",
         remarks || "",
       ].filter(Boolean).join(" — "),
@@ -154,8 +221,14 @@ Deno.serve(async (req) => {
       status: newStatus,
       head_verified: action === "APPROVED" ? "YES" : "NO",
       ministry_verified: action === "APPROVED" ? "YES" : "NO",
+      // Whose decision it was, which is the named member when Finance is
+      // recording one made elsewhere.
       ministry_verified_by: action === "APPROVED"
-        ? (profile.full_name || user.email) : pv.ministry_verified_by,
+        ? (verifierProfile.full_name || verifierProfile.email) : pv.ministry_verified_by,
+      ministry_verified_on_behalf_by: recording
+        ? (profile.full_name || user.email) : pv.ministry_verified_on_behalf_by,
+      ministry_verified_basis: recording
+        ? (basis ?? "").trim() : pv.ministry_verified_basis,
       ministry_verified_at: action === "APPROVED"
         ? new Date().toISOString() : pv.ministry_verified_at,
       ministry_verified_comment: remarks || pv.ministry_verified_comment,
