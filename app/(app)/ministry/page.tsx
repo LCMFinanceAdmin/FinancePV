@@ -53,6 +53,9 @@ export default function ExcoPage() {
   // The portfolios this member holds themselves, versus what others have asked
   // them to cover. Kept apart because only the first can be delegated onwards,
   // and because a delegated row should say so on its face.
+  // Every ministry whose representatives this account may appoint. The same as
+  // myMinistries for a portfolio holder, and all of them for Finance and the GM.
+  const [manageableMinistries, setManageableMinistries] = useState<string[]>([]);
   const [myMinistries, setMyMinistries] = useState<string[]>([]);
   const [scopes, setScopes] = useState<VerifierScope[]>([]);
   const [myEmail, setMyEmail] = useState("");
@@ -94,6 +97,21 @@ export default function ExcoPage() {
       // where the spending is booked.
       const own: string[] = expandMinistries(profile?.ministries ?? []);
       setMyMinistries(profile?.ministries ?? []);
+
+      // Who may appoint a representative, as opposed to whose queue this is.
+      //
+      // The policy behind ministry_verifiers lets Finance and the General
+      // Manager manage delegates for every ministry — and the panel was being
+      // handed only the caller's own portfolios, which for a Finance Executive
+      // is none. So the people with the authority had nothing to act on, and
+      // the only way to change a delegation was through the database.
+      const myRole = (security as { role?: string } | null)?.role ?? "";
+      if (["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "GENERAL_MANAGER"].includes(myRole)) {
+        const { data: allMin } = await supabase.from("ministries").select("name").order("name");
+        setManageableMinistries((allMin ?? []).map((m: { name: string }) => m.name));
+      } else {
+        setManageableMinistries(profile?.ministries ?? []);
+      }
 
       // Widen the query to cover delegated ministries, then drop the rows the
       // delegation does not reach. A delegation can be a single budget line, so
@@ -228,7 +246,7 @@ export default function ExcoPage() {
 
       <ApprovalPath currentIndex={1} />
 
-      <VerifierPanel ministries={myMinistries} myEmail={myEmail} />
+      <VerifierPanel ministries={manageableMinistries} myEmail={myEmail} />
 
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
