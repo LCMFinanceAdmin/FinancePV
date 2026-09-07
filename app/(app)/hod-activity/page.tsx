@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
+import { formatCurrency, formatDate, computedBadgeStatus, isExcoRole } from "@/lib/utils";
 import { expandMinistries } from "@/lib/ministries";
 import type { PV } from "@/lib/types";
 import {
@@ -47,7 +47,13 @@ export default function ExcoActivityPage() {
 
   const isFinanceAdmin = FINANCE_ADMIN_ROLES.includes(userRole);
   const isSeniorRole   = SENIOR_ROLES.includes(userRole);
-  const isMinistryHead = userRole === "MINISTRY_HEAD";
+  // Eight portfolios, eight roles — EXCO_MISSION, EXCO_SWF and the rest — and
+  // MINISTRY_HEAD is only one of them. Comparing against that single key meant
+  // the actual EXCO members could not verify anything here, including the
+  // sign-for-the-record button. isExcoRole is the one definition of this and
+  // exists precisely so a ninth portfolio cannot quietly miss a call site;
+  // this page was written before it and never adopted it.
+  const isMinistryHead = isExcoRole(userRole);
   const needsPin       = ["BISHOP", "TREASURER", "SECRETARY"].includes(userRole);
 
   // PV list
