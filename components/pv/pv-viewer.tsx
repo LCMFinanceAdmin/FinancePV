@@ -1,0 +1,224 @@
+"use client";
+// The voucher itself, beside the record of it.
+//
+// Finance Activity used to be a list you read and a voucher you opened in
+// another tab. Reviewing meant leaving the queue, looking, coming back and
+// finding your place again — for every voucher in a run of thirty.
+//
+// The document shown here is the same HTML the Print and Download buttons
+// produce, from pvPrintHtml, rather than a second rendering built for the
+// screen. That matters more than it sounds: a reviewer signs off on what they
+// saw, and if the preview and the printed voucher were built by different code
+// they would eventually disagree about something that mattered. An iframe is
+// the cheap way to have one renderer — it also isolates the voucher's own CSS,
+// which is written for paper and would otherwise fight the app's stylesheet.
+//
+// Attachments become tabs beside it, so a supporting document is one click
+// away rather than a download.
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  FileText, Paperclip, Maximize2, Minimize2, Download, Loader2,
+  ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
+} from "lucide-react";
+import { pvPrintHtml } from "@/components/pv/pv-html";
+import type { PV } from "@/lib/types";
+
+const IMAGE_RE = /\.(png|jpe?g|gif|webp|heic|heif)(\?|$)/i;
+const PDF_RE = /\.pdf(\?|$)/i;
+
+/** "…/1712-EPF%20Summary.pdf" → "EPF Summary". */
+function attachmentLabel(url: string, i: number): string {
+  try {
+    const base = decodeURIComponent(url.split("?")[0].split("/").pop() ?? "");
+    const name = base.replace(/\.[a-z0-9]+$/i, "").replace(/^\d{6,}[-_]?/, "");
+    return name.trim() || `Attachment ${i + 1}`;
+  } catch {
+    return `Attachment ${i + 1}`;
+  }
+}
+
+export function PVViewer({
+  pv, loading, logoDataUri = "",
+}: { pv: PV | null; loading?: boolean; logoDataUri?: string }) {
+  const [tab, setTab] = useState(0);
+  const [zoom, setZoom] = useState(100);
+  const [full, setFull] = useState(false);
+
+  const attachments = useMemo(() => (pv?.attachments ?? []).filter(Boolean), [pv]);
+
+  // Back to the voucher whenever a different PV is chosen: tab 3 of the last
+  // one means nothing on this one. Adjusted during render rather than in an
+  // effect — an effect would paint the new voucher under the old voucher's tab
+  // for a frame first, and React rightly complains about the cascade.
+  const [lastId, setLastId] = useState(pv?.id);
+  if (pv?.id !== lastId) {
+    setLastId(pv?.id);
+    setTab(0);
+    setZoom(100);
+  }
+
+  // Escape leaves full screen. Without it the only way out is the button,
+  // which is off-screen on a small display.
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFull(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
+
+  // Built once per voucher. pvPrintHtml walks the line items and inlines the
+  // logo, so it is not something to redo on every zoom click.
+  const html = useMemo(
+    () => (pv ? pvPrintHtml(pv, logoDataUri) : ""),
+    [pv, logoDataUri],
+  );
+
+  if (loading) {
+    return (
+      <Shell>
+        <div className="flex h-full items-center justify-center gap-2 text-sm text-stone-400">
+          <Loader2 size={15} className="animate-spin" /> Opening the voucher…
+        </div>
+      </Shell>
+    );
+  }
+
+  if (!pv) {
+    return (
+      <Shell>
+        <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+          <FileText size={26} className="text-stone-200" />
+          <p className="text-sm font-medium text-stone-400">No voucher selected</p>
+          <p className="max-w-[15rem] text-xs text-stone-400">
+            Choose one from the list and it opens here, exactly as it prints.
+          </p>
+        </div>
+      </Shell>
+    );
+  }
+
+  const current = tab === 0 ? null : attachments[tab - 1];
+
+  return (
+    <div className={full
+      ? "fixed inset-0 z-50 flex flex-col bg-white"
+      : "flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white"}>
+
+      {/* ── Which document ─────────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#e3edf9] bg-[#fafcff] px-2">
+        <ViewerTab active={tab === 0} onClick={() => setTab(0)} icon={<FileText size={13} />}>
+          Payment Voucher
+        </ViewerTab>
+        {attachments.map((url, i) => (
+          <ViewerTab key={url} active={tab === i + 1} onClick={() => setTab(i + 1)}
+            icon={<Paperclip size={13} />}>
+            {attachmentLabel(url, i)}
+          </ViewerTab>
+        ))}
+        <div className="ml-auto flex items-center gap-1 pl-2">
+          <button onClick={() => setFull(f => !f)} title={full ? "Exit full screen (Esc)" : "Full screen"}
+            className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-white hover:text-stone-700">
+            {full ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Zoom and paging ────────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-[#eef4fc] px-3 py-1.5">
+        {attachments.length > 0 && (
+          <div className="flex items-center gap-0.5">
+            <button onClick={() => setTab(t => Math.max(0, t - 1))} disabled={tab === 0}
+              title="Previous document"
+              className="rounded p-1 text-stone-400 hover:bg-stone-50 hover:text-stone-700 disabled:opacity-30">
+              <ChevronLeft size={14} />
+            </button>
+            <span className="min-w-[3rem] text-center text-[11px] tabular-nums text-stone-500">
+              {tab + 1} / {attachments.length + 1}
+            </span>
+            <button onClick={() => setTab(t => Math.min(attachments.length, t + 1))}
+              disabled={tab === attachments.length} title="Next document"
+              className="rounded p-1 text-stone-400 hover:bg-stone-50 hover:text-stone-700 disabled:opacity-30">
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
+
+        <div className="ml-auto flex items-center gap-0.5">
+          <button onClick={() => setZoom(z => Math.max(50, z - 10))} disabled={zoom <= 50} title="Zoom out"
+            className="rounded p-1 text-stone-400 hover:bg-stone-50 hover:text-stone-700 disabled:opacity-30">
+            <ZoomOut size={14} />
+          </button>
+          <button onClick={() => setZoom(100)} title="Reset zoom"
+            className="min-w-[3rem] rounded px-1 py-0.5 text-[11px] font-semibold tabular-nums text-stone-600 hover:bg-stone-50">
+            {zoom}%
+          </button>
+          <button onClick={() => setZoom(z => Math.min(200, z + 10))} disabled={zoom >= 200} title="Zoom in"
+            className="rounded p-1 text-stone-400 hover:bg-stone-50 hover:text-stone-700 disabled:opacity-30">
+            <ZoomIn size={14} />
+          </button>
+          {current && (
+            <a href={current} target="_blank" rel="noopener noreferrer" title="Open this attachment"
+              className="ml-1 rounded p-1 text-stone-400 hover:bg-stone-50 hover:text-stone-700">
+              <Download size={14} />
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* ── The document ───────────────────────────────────────── */}
+      <div className="min-h-0 flex-1 overflow-auto bg-[#f2f5fa] p-3">
+        <div style={{ width: `${zoom}%`, margin: "0 auto", transition: "width 120ms ease" }}>
+          {tab === 0 ? (
+            <iframe
+              title={`Payment voucher ${pv.pv_no}`}
+              srcDoc={html}
+              // Nothing in a voucher needs script or navigation; the sandbox
+              // says so rather than trusting that it stays that way.
+              sandbox=""
+              className="h-[1123px] w-full rounded-lg border border-stone-200 bg-white shadow-sm"
+            />
+          ) : current && IMAGE_RE.test(current) ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={current} alt={attachmentLabel(current, tab - 1)}
+              className="w-full rounded-lg border border-stone-200 bg-white shadow-sm" />
+          ) : current && PDF_RE.test(current) ? (
+            <iframe title={attachmentLabel(current, tab - 1)} src={current}
+              className="h-[1123px] w-full rounded-lg border border-stone-200 bg-white shadow-sm" />
+          ) : (
+            <div className="rounded-lg border border-stone-200 bg-white p-8 text-center">
+              <Paperclip size={22} className="mx-auto mb-2 text-stone-300" />
+              <p className="text-sm text-stone-500">This attachment can&rsquo;t be shown here.</p>
+              <a href={current ?? "#"} target="_blank" rel="noopener noreferrer"
+                className="mt-2 inline-block text-sm font-medium text-[#3d5a8f] hover:underline">
+                Open it in a new tab
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white">
+      {children}
+    </div>
+  );
+}
+
+function ViewerTab({ active, onClick, icon, children }: {
+  active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode;
+}) {
+  return (
+    <button onClick={onClick}
+      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors ${
+        active
+          ? "border-[#4a6da7] text-[#3d5a8f]"
+          : "border-transparent text-stone-500 hover:text-stone-700"}`}>
+      {icon}{children}
+    </button>
+  );
+}

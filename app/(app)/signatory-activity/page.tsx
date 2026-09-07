@@ -1,24 +1,22 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { PVSummary, PVGroupSummary } from "@/components/pv/pv-summary";
+import { PVGroupSummary } from "@/components/pv/pv-summary";
 import { BudgetImpact } from "@/components/budget/budget-impact";
-import { chipRow } from "@/lib/table-styles";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate, roleLabel, computedBadgeStatus } from "@/lib/utils";
+import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import {
   CheckCircle2, XCircle, Clock, Search,
   Layers, CheckSquare, RotateCcw, BadgeCheck, Banknote, Hourglass, Plus,
+  SlidersHorizontal, ArrowUpDown,
 } from "lucide-react";
 import Link from "next/link";
-import type { PVApproval } from "@/lib/types";
+import type { PV, PVApproval } from "@/lib/types";
 import { PaidArchive } from "@/components/pv/paid-archive";
+import { PVDetailPane } from "@/components/pv/pv-detail-pane";
+import { PVViewer } from "@/components/pv/pv-viewer";
 
 const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
-
-function getRequiredSigs(loaRequired: number): string[] {
-  return loaRequired >= 2 ? ["BISHOP", "SECRETARY", "TREASURER"] : ["TREASURER"];
-}
 
 function matchesSearch(pv: PendingPV, search: string): boolean {
   if (!search) return true;
@@ -37,6 +35,28 @@ const TAB_STATUSES = {
 } as const;
 type StatusTab = keyof typeof TAB_STATUSES;
 type ViewMode = "activity" | "mine";
+
+type SortKey = "newest" | "oldest" | "amount_desc" | "amount_asc" | "payee";
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: "newest",      label: "Newest first" },
+  { key: "oldest",      label: "Oldest first" },
+  { key: "amount_desc", label: "Amount, high to low" },
+  { key: "amount_asc",  label: "Amount, low to high" },
+  { key: "payee",       label: "Payee A–Z" },
+];
+
+function sortPvs<T extends { amount: number; payee_name: string; submitted_at: string }>(
+  rows: T[], by: SortKey,
+): T[] {
+  const out = [...rows];
+  switch (by) {
+    case "oldest":      return out.sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
+    case "amount_desc": return out.sort((a, b) => b.amount - a.amount);
+    case "amount_asc":  return out.sort((a, b) => a.amount - b.amount);
+    case "payee":       return out.sort((a, b) => a.payee_name.localeCompare(b.payee_name));
+    default:            return out.sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
+  }
+}
 
 const TAB_CONFIG: {
   key: StatusTab; label: string;
@@ -81,6 +101,17 @@ export default function SignatoryActivityPage() {
   const [mineLoading, setMineLoading] = useState(false);
   const [selected, setSelected]       = useState<Set<string>>(new Set());
   const [expandedBulk, setExpandedBulk] = useState<Set<string>>(new Set());
+
+  // ── The voucher currently open in the reading panes ──────────
+  // Kept apart from `selected`, which is the tick-box set for approving a
+  // batch at once. Ticking three vouchers and reading a fourth is an ordinary
+  // thing to want, and one piece of state cannot express it.
+  const [activeId, setActiveId]       = useState<string | null>(null);
+  const [activePv, setActivePv]       = useState<PV | null>(null);
+  const [activeLoading, setActiveLoading] = useState(false);
+  const [sortBy, setSortBy]           = useState<SortKey>("newest");
+  const [filterMinistry, setFilterMinistry] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   // Action modals
   const [pinModal, setPinModal]               = useState<{ pvIds: string[]; action: "APPROVED" } | null>(null);
@@ -192,6 +223,20 @@ export default function SignatoryActivityPage() {
     })();
   }, [viewMode, userEmail, minePvs]);
 
+  // The whole row for whichever voucher is open. The list query deliberately
+  // selects a dozen columns — pulling line items and attachments for every PV
+  // to show one would be paying for the list what only the reader needs.
+  useEffect(() => {
+    if (!activeId) { setActivePv(null); return; }
+    let cancelled = false;
+    setActiveLoading(true);
+    (async () => {
+      const { data } = await supabase.from("pvs").select("*").eq("id", activeId).maybeSingle();
+      if (!cancelled) { setActivePv((data as PV) ?? null); setActiveLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeId, supabase]);
+
   // Ministries for the archive's filter — loaded once, only when the Paid tab
   // is actually opened.
   useEffect(() => {
@@ -218,12 +263,13 @@ export default function SignatoryActivityPage() {
   const { bulkGroups, standalones } = useMemo(() => {
     const activeStatuses = TAB_STATUSES[statusTab];
     const q = search.toLowerCase();
-    const visible = allPvs.filter(pv => {
+    const visible = sortPvs(allPvs.filter(pv => {
       if (!activeStatuses.includes(pv.status)) return false;
+      if (filterMinistry && pv.ministry !== filterMinistry) return false;
       if (!q) return true;
       return pv.pv_no.toLowerCase().includes(q) || pv.payee_name.toLowerCase().includes(q) ||
         (pv.ministry ?? "").toLowerCase().includes(q) || (pv.purpose ?? "").toLowerCase().includes(q);
-    });
+    }), sortBy);
     const groups: Record<string, { runId: string; groupName: string; pvs: PendingPV[]; masterRunId?: string; masterName?: string }> = {};
     const standalones: PendingPV[] = [];
     for (const pv of visible) {
@@ -233,7 +279,7 @@ export default function SignatoryActivityPage() {
       } else standalones.push(pv);
     }
     return { bulkGroups: Object.values(groups), standalones };
-  }, [allPvs, statusTab, search]);
+  }, [allPvs, statusTab, search, sortBy, filterMinistry]);
 
   // Roll child bulk batches up under their master (Master → Bulk → PVs).
   type SAGroup = typeof bulkGroups[number];
@@ -323,134 +369,57 @@ export default function SignatoryActivityPage() {
     return (pv.approvals ?? []).some(a => a.role === userRole);
   }
 
-  function ApprovalProgress({ pv }: { pv: PendingPV }) {
-    const required = pv.status === "PENDING_SIGNATORY" ? getRequiredSigs(pv.loa_required) : ["GENERAL_MANAGER"];
-    return (
-      <div className={chipRow}>
-        {required.map(role => {
-          const done     = (pv.approvals ?? []).find(a => a.role === role && a.action === "APPROVED");
-          const rejected = (pv.approvals ?? []).find(a => a.role === role && a.action === "REJECTED");
-          return (
-            <span key={role} className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-              done ? "bg-green-100 text-green-700" : rejected ? "bg-red-100 text-red-600" : "bg-stone-100 text-stone-500"
-            }`}>
-              {done ? <CheckCircle2 size={9} /> : rejected ? <XCircle size={9} /> : <Clock size={9} />}
-              {roleLabel(role)}
-            </span>
-          );
-        })}
-      </div>
-    );
-  }
-
-  function PVRow({ pv, compact = false }: { pv: PendingPV; compact?: boolean }) {
-    const canAct        = isSignatory && !hasSigned(pv);
-    const alreadySigned = isSignatory && hasSigned(pv);
-    const myApproval    = (pv.approvals ?? []).find(a => a.role === userRole);
-    const isSel         = selected.has(pv.id);
-    const canRevert     = alreadySigned && !["PAID", "CANCELLED", "APPROVED"].includes(pv.status);
-    const canAdminRevert = isFinanceAdmin && !isSignatory && ["PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(pv.status);
-    const isPaid        = pv.status === "PAID";
-    const isApproved    = pv.status === "APPROVED";
-
-    return (
-      <div className={`flex flex-col gap-1.5 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3 ${compact ? "bg-stone-50/60" : "bg-white border border-stone-200 rounded-xl hover:shadow-sm"} transition-all group`}>
-        {canAct && (
-          <input type="checkbox" checked={isSel} onChange={() => {
-            setSelected(s => { const n = new Set(s); n.has(pv.id) ? n.delete(pv.id) : n.add(pv.id); return n; });
-          }} className="w-3.5 h-3.5 accent-[#4a6da7] cursor-pointer shrink-0" />
-        )}
-        <div className="flex-1 min-w-0">
-          <PVSummary
-            id={pv.id}
-            pvNo={pv.pv_no}
-            payee={pv.payee_name}
-            amount={pv.amount}
-            ministry={pv.ministry}
-            dept={pv.dept}
-            purpose={pv.purpose}
-            date={pv.submitted_at}
-            budget={canAct ? (
-              <BudgetImpact
-                variant="chip"
-                ministry={pv.ministry}
-                projectName={null}
-                amount={pv.amount}
-                excludePvId={pv.id}
-                date={null}
-              />
-            ) : undefined}
-            badge={<>
-              <StatusBadge status={computedBadgeStatus(pv)} />
-              {isPaid && pv.paid_at && (
-                <span className="text-[10px] font-medium text-emerald-600">Paid {formatDate(pv.paid_at)}</span>
-              )}
-              {isApproved && (
-                <span className="rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
-                  ✓ Approved
-                </span>
-              )}
-            </>}
-          />
-          {!isPaid && !isApproved && (
-            <div className="mt-1"><ApprovalProgress pv={pv} /></div>
-          )}
-          {isApproved && (
-            <div className="mt-1">
-              <ApprovalProgress pv={pv} />
-            </div>
-          )}
-        </div>
-        <div className="shrink-0 text-right">
-          {canAct && (
-            <div className="mt-1.5 flex items-center justify-end gap-2">
-              <button onClick={() => handleApprove([pv.id])}
-                className="flex items-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-green-700">
-                <CheckCircle2 size={15} />
-              </button>
-              <button onClick={() => handleReject([pv.id])}
-                className="flex items-center gap-1.5 rounded-lg bg-red-500 px-2.5 py-1.5 !text-[11.5px] !font-bold text-white transition-colors hover:bg-red-600">
-                <XCircle size={15} />
-              </button>
-            </div>
-          )}
-          {canRevert && (
-            <div className="flex items-center gap-1 mt-1.5 justify-end">
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${myApproval?.action === "APPROVED" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
-                {myApproval?.action === "APPROVED" ? "✓ Approved" : "✗ Rejected"}
-              </span>
-              <button onClick={() => handleRevert(pv.id)} disabled={actioning}
-                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50">
-                <RotateCcw size={10} /> Revert
-              </button>
-            </div>
-          )}
-          {canAdminRevert && (
-            <div className="flex items-center gap-1.5 mt-1.5 justify-end">
-              <Link href={`/my-pvs/${pv.id}`} className="text-[11px] text-[#4a6da7] hover:underline font-medium">View →</Link>
-              <button onClick={() => adminRevert(pv.id)} disabled={adminReverting === pv.id}
-                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 whitespace-nowrap">
-                <RotateCcw size={10} /> {adminReverting === pv.id ? "Reverting…" : "Revert"}
-              </button>
-            </div>
-          )}
-          {(isPaid || (isApproved && !canAdminRevert)) && (
-            <Link href={`/my-pvs/${pv.id}`} className="text-[11px] text-[#4a6da7] hover:underline font-medium mt-1.5 block">View →</Link>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   const selectedArr = Array.from(selected);
-  const totalVisible = bulkGroups.reduce((s, g) => s + g.pvs.length, 0) + standalones.length;
 
-  // A single Bulk PV batch card (green) — individual PVs expand inside.
-  // Reused both standalone and nested inside a Master container.
+  // What "Submitted by me" is looking at, under the same search and sort.
+  const mineVisible = useMemo(
+    () => sortPvs((minePvs ?? []).filter(pv => matchesSearch(pv, search)
+                    && (!filterMinistry || pv.ministry === filterMinistry)), sortBy),
+    [minePvs, search, sortBy, filterMinistry],
+  );
+
+  // Every voucher on screen, in the order it is shown, so the reading panes can
+  // open the first one and know when the one they are showing has gone.
+  const flatVisible: PendingPV[] = viewMode === "mine"
+    ? mineVisible
+    : [
+        ...masterContainers.flatMap(mc => mc.groups.flatMap(g => g.pvs)),
+        ...orphanBulkGroups.flatMap(g => g.pvs),
+        ...standalones,
+      ];
+
+  // Open the first one rather than show three empty panes. Also recovers when
+  // the voucher being read leaves the tab: approving it removes it from the
+  // list, and a reader left staring at a voucher that is no longer there would
+  // have to work out for themselves that their own click caused it.
+  useEffect(() => {
+    if (flatVisible.length === 0) { if (activeId) setActiveId(null); return; }
+    if (!activeId || !flatVisible.some(p => p.id === activeId)) setActiveId(flatVisible[0].id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flatVisible.map(p => p.id).join(","), activeId]);
+
+  const activeRow = flatVisible.find(p => p.id === activeId) ?? null;
+  const activeCanAct = !!activeRow && isSignatory && !hasSigned(activeRow);
+  const activeHasSigned = !!activeRow && isSignatory && hasSigned(activeRow);
+  const activeCanRevert = activeHasSigned && !!activeRow
+    && !["PAID", "CANCELLED", "APPROVED"].includes(activeRow.status);
+
+  // Ministries actually present, for the filter — no point offering one that
+  // would empty the list.
+  const ministriesInView = useMemo(() => {
+    const set = new Set<string>();
+    for (const pv of (viewMode === "mine" ? (minePvs ?? []) : allPvs)) {
+      if (pv.ministry) set.add(pv.ministry);
+    }
+    return [...set].sort();
+  }, [allPvs, minePvs, viewMode]);
+
+  /** A Bulk PV batch. Its own vouchers expand inside it, and it can be signed
+   *  off whole — the point of batching thirty payments in the first place. */
   function renderBulkGroup(group: SAGroup) {
-    const expanded   = expandedBulk.has(group.runId);
+    const expanded    = expandedBulk.has(group.runId);
     const groupCanAct = group.pvs.some(pv => isSignatory && !hasSigned(pv));
-    const groupTotal  = group.pvs.reduce((s, p) => s + p.amount, 0);
+    const groupTotal  = group.pvs.reduce((sum, p) => sum + p.amount, 0);
     return (
       <PVGroupSummary
         key={group.runId}
@@ -459,8 +428,8 @@ export default function SignatoryActivityPage() {
         total={groupTotal}
         countLabel={`${group.pvs.length} PVs`}
         expanded={expanded}
-        onToggle={() => setExpandedBulk(s => {
-          const n = new Set(s);
+        onToggle={() => setExpandedBulk(st => {
+          const n = new Set(st);
           if (n.has(group.runId)) n.delete(group.runId); else n.add(group.runId);
           return n;
         })}
@@ -480,16 +449,61 @@ export default function SignatoryActivityPage() {
         ) : undefined}
       >
         {expanded && (
-          <div className="border-t border-stone-100 divide-y divide-stone-100">
-            {group.pvs.map(pv => <PVRow key={pv.id} pv={pv} compact />)}
+          <div className="divide-y divide-[#f0f5fc] border-t border-stone-100">
+            {group.pvs.map(pv => <ListRow key={pv.id} pv={pv} nested />)}
           </div>
         )}
       </PVGroupSummary>
     );
   }
 
+  /** One line in the queue. Scannable at a glance, and the whole row opens it. */
+  function ListRow({ pv, nested = false }: { pv: PendingPV; nested?: boolean }) {
+    const canTick = isSignatory && !hasSigned(pv);
+    const isOpen  = activeId === pv.id;
+    return (
+      <div
+        onClick={() => setActiveId(pv.id)}
+        role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveId(pv.id); } }}
+        className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 border-l-2 px-3 py-2 transition-colors @md:grid-cols-[auto_6rem_minmax(0,1fr)_4.5rem_5.25rem_auto] ${
+          isOpen ? "border-l-[#4a6da7] bg-[#f2f8ff]" : "border-l-transparent hover:bg-[#f7fbff]"} ${
+          nested ? "bg-stone-50/40" : ""}`}
+      >
+        <span className="col-start-1 row-span-2 row-start-1 flex w-4 justify-center @md:row-span-1" onClick={e => e.stopPropagation()}>
+          {canTick ? (
+            <input type="checkbox" checked={selected.has(pv.id)}
+              onChange={() => setSelected(sel => {
+                const n = new Set(sel);
+                if (n.has(pv.id)) n.delete(pv.id); else n.add(pv.id);
+                return n;
+              })}
+              className="h-3.5 w-3.5 cursor-pointer accent-[#4a6da7]" />
+          ) : null}
+        </span>
+        <span className="col-start-2 row-start-1 truncate text-[13px] font-semibold text-stone-800">
+          {pv.pv_no}
+        </span>
+        <span className="col-start-2 row-start-2 truncate text-[13px] text-stone-600 @md:col-start-3 @md:row-start-1">
+          {pv.payee_name}
+        </span>
+        <span className="hidden text-[12px] text-stone-400 @md:col-start-4 @md:row-start-1 @md:block">
+          {formatDate(pv.submitted_at)}
+        </span>
+        <span className="col-start-3 row-start-1 text-right text-[13px] font-semibold tabular-nums text-stone-800 @md:col-start-5">
+          {formatCurrency(pv.amount)}
+        </span>
+        <span className="col-start-3 row-start-2 flex min-w-0 justify-end @md:col-start-6 @md:row-start-1">
+          <StatusBadge status={computedBadgeStatus(pv)} />
+        </span>
+      </div>
+    );
+  }
+
+  const controlBtn = "flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-600 transition-colors hover:bg-stone-50";
+
   return (
-    <div className="p-5 max-w-5xl mx-auto space-y-4">
+    <div className="flex min-h-full flex-col gap-3 p-4 xl:p-5 2xl:h-full">
       {/* Toast */}
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white flex items-center gap-2 ${toast.ok ? "bg-green-600" : "bg-red-500"}`}>
@@ -497,177 +511,258 @@ export default function SignatoryActivityPage() {
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-stone-800">Finance Activity</h1>
+          <h1 className="text-2xl font-bold text-stone-800">Finance Activity</h1>
           <p className="text-sm text-stone-400">
             {isFinanceAdmin && viewMode === "mine" ? "Payment vouchers you submitted" : "Track payment vouchers across all stages"}
           </p>
         </div>
         {isFinanceAdmin && (
           <Link href="/submit"
-            className="flex items-center gap-1.5 shrink-0 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c96] transition-colors whitespace-nowrap">
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[#4a6da7] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#3d5c96]">
             <Plus size={15} /> Submit PV
           </Link>
         )}
       </div>
 
       {isFinanceAdmin && (
-        <div className="inline-flex rounded-lg border border-stone-200 overflow-hidden text-sm font-semibold bg-white">
+        <div className="inline-flex shrink-0 self-start overflow-hidden rounded-lg border border-stone-200 bg-white text-sm font-semibold">
           {([["activity", "Company Activity"], ["mine", "Submitted by me"]] as const).map(([val, label]) => (
-            <button key={val} onClick={() => { setViewMode(val); setSearch(""); setSelected(new Set()); }}
-              className={`px-3 py-1.5 transition-colors ${viewMode === val ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
+            <button key={val} onClick={() => { setViewMode(val); setSearch(""); setSelected(new Set()); setActiveId(null); }}
+              className={`px-3.5 py-2 transition-colors ${viewMode === val ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
               {label}
             </button>
           ))}
         </div>
       )}
 
-      {/* ── Colour pillar tabs ────────────────────────────────── */}
-      {viewMode === "activity" && (
-      <div className={chipRow}>
-        {TAB_CONFIG.map(tab => {
+      {/* Stage chips, then the tools that act on them. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {viewMode === "activity" && TAB_CONFIG.map(tab => {
           const active = statusTab === tab.key;
           const count  = tabCounts[tab.key];
           return (
             <button
               key={tab.key}
-              onClick={() => { setStatusTab(tab.key); setSearch(""); setSelected(new Set()); }}
-              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition-colors ${active ? tab.activeColor : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+              onClick={() => { setStatusTab(tab.key); setSearch(""); setSelected(new Set()); setActiveId(null); }}
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition-colors ${active ? tab.activeColor : "border-stone-200 bg-white text-stone-500 hover:bg-stone-50"}`}
             >
               {tab.icon}
               {tab.label}
               {count > 0 && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? "bg-white/25 text-white" : tab.inactiveDot}`}>
+                <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold ${active ? "bg-white/25 text-white" : tab.inactiveDot}`}>
                   {count}
                 </span>
               )}
             </button>
           );
         })}
+
+        {!(viewMode === "activity" && statusTab === "paid") && (
+          <div className="ml-auto flex flex-1 items-center gap-2 sm:flex-none">
+            <div className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+              <input
+                className="w-full rounded-xl border border-stone-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#2f5b9c]"
+                placeholder="Search PV no., payee, ministry&hellip;"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+            <button onClick={() => setShowFilters(f => !f)}
+              className={`${controlBtn} ${filterMinistry ? "border-[#4a6da7] text-[#3d5a8f]" : ""}`}>
+              <SlidersHorizontal size={14} /> Filter
+              {filterMinistry && <span className="h-1.5 w-1.5 rounded-full bg-[#4a6da7]" />}
+            </button>
+            <div className="relative">
+              <ArrowUpDown size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-500" />
+              <select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)}
+                aria-label="Sort"
+                className="appearance-none rounded-xl border border-stone-200 bg-white py-2 pl-8 pr-3 text-[13px] font-medium text-stone-600 outline-none focus:border-[#2f5b9c]">
+                {SORTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
+
+      {showFilters && !(viewMode === "activity" && statusTab === "paid") && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-[#e3edf9] bg-white px-3 py-2.5">
+          <span className="text-[12px] font-semibold text-stone-500">Ministry</span>
+          <button onClick={() => setFilterMinistry("")}
+            className={`rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+              !filterMinistry ? "border-transparent bg-[#4a6da7] text-white" : "border-stone-200 bg-white text-stone-500 hover:bg-stone-50"}`}>
+            All
+          </button>
+          {ministriesInView.map(m => (
+            <button key={m} onClick={() => setFilterMinistry(cur => cur === m ? "" : m)}
+              className={`rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                filterMinistry === m ? "border-transparent bg-[#4a6da7] text-white" : "border-stone-200 bg-white text-stone-500 hover:bg-stone-50"}`}>
+              {m}
+            </button>
+          ))}
+          {ministriesInView.length === 0 && (
+            <span className="text-[12px] text-stone-400">Nothing to filter by in this view.</span>
+          )}
+        </div>
       )}
 
-      {/* ── Paid archive ─────────────────────────────────────────
-          Paid vouchers get their own view: they are never loaded with the
-          rest, so they need their own search and their own month folders. */}
-      {viewMode === "activity" && statusTab === "paid" ? (
-        <PaidArchive ministries={ministryList}
-          defaultGrouping={userRole === "FINANCE_ADMIN_2" ? "entity" : "month"} />
-      ) : (
-      <>
-      {/* ── Search ───────────────────────────────────────────── */}
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-        <input
-          className="w-full pl-9 pr-3 py-2 border-2 border-stone-800 rounded-xl text-sm outline-none focus:border-[#2f5b9c] bg-white"
-          placeholder="Search PV no., payee, ministry…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-      </div>
-
-      {/* ── Bulk action bar (only when signatory has selections) ── */}
+      {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-[#4a6da7] rounded-xl text-white">
+        <div className="flex shrink-0 items-center gap-3 rounded-xl bg-[#4a6da7] p-3 text-white">
           <CheckSquare size={15} />
           <span className="flex-1 text-sm font-medium">{selected.size} PV{selected.size > 1 ? "s" : ""} selected</span>
           <button onClick={() => setSelected(new Set())} className="text-xs text-blue-200 hover:text-white">Clear</button>
           <button onClick={() => handleApprove(selectedArr)}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-500 text-white hover:bg-green-600 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg bg-green-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-600">
             <CheckCircle2 size={12} /> Approve All ({selected.size})
           </button>
           <button onClick={() => handleReject(selectedArr)}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-600">
             <XCircle size={12} /> Reject All ({selected.size})
           </button>
         </div>
       )}
 
-      {/* ── Count ───────────────────────────────────────────── */}
-      {viewMode === "activity" && !loading && (
-        <p className="text-xs text-stone-400">{totalVisible} PV{totalVisible !== 1 ? "s" : ""}</p>
-      )}
-
-      {/* ── PV List ─────────────────────────────────────────── */}
-      {viewMode === "activity" && (loading ? (
-        <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
-      ) : totalVisible === 0 ? (
-        <div className="text-center py-16 space-y-2">
-          <CheckCircle2 size={32} className="text-green-300 mx-auto" />
-          <p className="text-stone-400 text-sm font-medium">
-            {statusTab === "pending"         ? "No PVs pending verification" :
-             statusTab === "verified"        ? "No verified PVs" :
-             statusTab === "pending_approval"? "No PVs pending signatory approval" :
-             statusTab === "approved"        ? "No approved PVs" :
-                                              "No paid PVs"}
-          </p>
+      {/* Paid keeps its archive: month folders and its own search, because paid
+          vouchers are never loaded with the rest. */}
+      {viewMode === "activity" && statusTab === "paid" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <PaidArchive ministries={ministryList}
+            defaultGrouping={userRole === "FINANCE_ADMIN_2" ? "entity" : "month"} />
         </div>
       ) : (
-        <div className="space-y-2">
-          {/* Master containers (Master → Bulk PVs → individual PVs) */}
-          {masterContainers.map(mc => {
-            const expanded = expandedBulk.has(mc.masterRunId);
-            const masterTotal = mc.groups.reduce((s, g) => s + g.pvs.reduce((a, p) => a + p.amount, 0), 0);
-            const masterPvCount = mc.groups.reduce((s, g) => s + g.pvs.length, 0);
-            return (
-              <PVGroupSummary
-                key={mc.masterRunId}
-                kind="MASTER"
-                name={mc.masterName}
-                total={masterTotal}
-                countLabel={`${mc.groups.length} batches · ${masterPvCount} PVs`}
-                expanded={expanded}
-                onToggle={() => setExpandedBulk(s => {
-                  const n = new Set(s);
-                  if (n.has(mc.masterRunId)) n.delete(mc.masterRunId); else n.add(mc.masterRunId);
-                  return n;
-                })}
-                href={`/bulk-pvs/${mc.masterRunId}`}
-                hrefLabel="View master"
-              >
-                {expanded && (
-                  <div className="pl-4 pr-2 pb-2 pt-2 space-y-2 border-l-2 border-violet-200 ml-4">
-                    {mc.groups.map(group => renderBulkGroup(group))}
-                  </div>
+        /* Queue, voucher, document. Three panes on a wide screen, stacking to
+           one on a narrow one. The list is the pane that must always be
+           visible: on a phone the other two follow underneath rather than
+           hiding behind a tab, so a reviewer scrolls instead of navigating. */
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)_minmax(0,1.2fr)]">
+          {/* The queue */}
+          <div className="@container flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white 2xl:max-h-none 2xl:min-h-0">
+            <div className="flex shrink-0 items-center justify-between border-b border-[#eef4fc] px-4 py-2.5">
+              <span className="text-[13px] font-semibold text-stone-700">
+                {loading || (viewMode === "mine" && mineLoading)
+                  ? "Loading\u2026"
+                  : `${flatVisible.length} payment voucher${flatVisible.length === 1 ? "" : "s"}`}
+              </span>
+              {filterMinistry && (
+                <button onClick={() => setFilterMinistry("")}
+                  className="flex items-center gap-1 text-[11px] font-medium text-[#3d5a8f] hover:underline">
+                  {filterMinistry} <XCircle size={11} />
+                </button>
+              )}
+            </div>
+
+            {/* Column headings, when the pane is wide enough to have columns. */}
+            <div className="hidden shrink-0 grid-cols-[auto_6rem_minmax(0,1fr)_4.5rem_5.25rem_auto] items-center gap-x-2 border-b border-[#cfe0f6] bg-[#f2f8ff] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4a6483] @md:grid">
+              <span className="w-4" />
+              <span>PV No.</span>
+              <span>Payee</span>
+              <span>Date</span>
+              <span className="text-right">Amount</span>
+              <span className="text-right">Status</span>
+            </div>
+
+            <div className="min-h-0 flex-1 divide-y divide-[#f0f5fc] overflow-y-auto">
+              {(loading || (viewMode === "mine" && (mineLoading || minePvs === null))) ? (
+                <div className="py-12 text-center text-sm text-stone-400">Loading&hellip;</div>
+              ) : flatVisible.length === 0 ? (
+                <div className="space-y-2 py-16 text-center">
+                  {viewMode === "mine"
+                    ? <Layers size={28} className="mx-auto text-stone-300" />
+                    : <CheckCircle2 size={32} className="mx-auto text-green-300" />}
+                  <p className="text-sm font-medium text-stone-400">
+                    {viewMode === "mine"
+                      ? (search ? "No results match your search" : "You haven't submitted any payment vouchers yet")
+                      : statusTab === "pending"          ? "No PVs pending verification"
+                      : statusTab === "verified"         ? "No verified PVs"
+                      : statusTab === "pending_approval" ? "No PVs pending signatory approval"
+                      : statusTab === "approved"         ? "No approved PVs"
+                                                         : "No paid PVs"}
+                  </p>
+                </div>
+              ) : viewMode === "mine" ? (
+                mineVisible.map(pv => <ListRow key={pv.id} pv={pv} />)
+              ) : (
+                <>
+                  {/* Master -> Bulk -> PV. The hierarchy survives the redesign:
+                      flattening it would lose which batch a voucher belongs to,
+                      which is what makes a run of thirty reviewable at all. */}
+                  {masterContainers.map(mc => {
+                    const expanded = expandedBulk.has(mc.masterRunId);
+                    const masterTotal = mc.groups.reduce((sum, g) => sum + g.pvs.reduce((a, p) => a + p.amount, 0), 0);
+                    const masterPvCount = mc.groups.reduce((sum, g) => sum + g.pvs.length, 0);
+                    return (
+                      <PVGroupSummary
+                        key={mc.masterRunId}
+                        kind="MASTER"
+                        name={mc.masterName}
+                        total={masterTotal}
+                        countLabel={`${mc.groups.length} batches \u00b7 ${masterPvCount} PVs`}
+                        expanded={expanded}
+                        onToggle={() => setExpandedBulk(st => {
+                          const n = new Set(st);
+                          if (n.has(mc.masterRunId)) n.delete(mc.masterRunId); else n.add(mc.masterRunId);
+                          return n;
+                        })}
+                        href={`/bulk-pvs/${mc.masterRunId}`}
+                        hrefLabel="View master"
+                      >
+                        {expanded && (
+                          <div className="ml-3 space-y-1 border-l-2 border-violet-200 pb-2 pl-2 pr-1 pt-1">
+                            {mc.groups.map(group => renderBulkGroup(group))}
+                          </div>
+                        )}
+                      </PVGroupSummary>
+                    );
+                  })}
+                  {orphanBulkGroups.map(group => renderBulkGroup(group))}
+                  {standalones.map(pv => <ListRow key={pv.id} pv={pv} />)}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* The voucher, read closely */}
+          <div className="flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col 2xl:max-h-none 2xl:min-h-0">
+          <PVDetailPane
+            pv={activePv}
+            loading={activeLoading}
+            approvals={activeRow?.approvals}
+            canAct={activeCanAct}
+            hasActed={activeHasSigned}
+            acting={actioning}
+            budget={activeRow && activeCanAct ? (
+              <BudgetImpact variant="chip" ministry={activeRow.ministry} projectName={null}
+                amount={activeRow.amount} excludePvId={activeRow.id} date={null} />
+            ) : undefined}
+            onApprove={() => activeRow && handleApprove([activeRow.id])}
+            onReject={() => activeRow && handleReject([activeRow.id])}
+            onRevert={activeCanRevert ? () => activeRow && handleRevert(activeRow.id) : undefined}
+            extraActions={activeRow ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Link href={`/my-pvs/${activeRow.id}`}
+                  className="text-[12px] font-medium text-[#3d5a8f] hover:underline">
+                  Open the full record &rarr;
+                </Link>
+                {isFinanceAdmin && !isSignatory
+                  && ["PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(activeRow.status) && (
+                  <button onClick={() => adminRevert(activeRow.id)} disabled={adminReverting === activeRow.id}
+                    className="ml-auto flex items-center gap-1 whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50">
+                    <RotateCcw size={10} /> {adminReverting === activeRow.id ? "Reverting\u2026" : "Send back to Finance"}
+                  </button>
                 )}
-              </PVGroupSummary>
-            );
-          })}
+              </div>
+            ) : undefined}
+          />
+          </div>
 
-          {/* Standalone Bulk PV batches (not part of a master) */}
-          {orphanBulkGroups.map(group => renderBulkGroup(group))}
-
-          {/* Standalone PVs */}
-          {standalones.map(pv => <PVRow key={pv.id} pv={pv} />)}
+          {/* The document itself */}
+          <div className="min-h-[32rem] lg:col-span-2 2xl:col-span-1 2xl:min-h-0">
+            <PVViewer pv={activePv} loading={activeLoading} />
+          </div>
         </div>
-      ))}
-      </>
-      )}
-
-      {/* ── "Submitted by me" list ────────────────────────────── */}
-      {viewMode === "mine" && (
-        <>
-          {!mineLoading && (
-            <p className="text-xs text-stone-400">
-              {(minePvs ?? []).filter(pv => matchesSearch(pv, search)).length} PV{(minePvs ?? []).filter(pv => matchesSearch(pv, search)).length !== 1 ? "s" : ""}
-            </p>
-          )}
-          {mineLoading || minePvs === null ? (
-            <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
-          ) : minePvs.filter(pv => matchesSearch(pv, search)).length === 0 ? (
-            <div className="text-center py-16 space-y-2">
-              <Layers size={28} className="text-stone-300 mx-auto" />
-              <p className="text-stone-400 text-sm font-medium">
-                {search ? "No results match your search" : "You haven't submitted any payment vouchers yet"}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {minePvs.filter(pv => matchesSearch(pv, search)).map(pv => <PVRow key={pv.id} pv={pv} />)}
-            </div>
-          )}
-        </>
       )}
 
       {/* ── Revert PIN Modal ─────────────────────────────────── */}
