@@ -136,19 +136,22 @@ export function PVKeyFacts({
 }) {
   const scope = ministry || dept || null;
   return (
-    <div className="rounded-2xl border-2 border-[#dbe9fb] bg-white p-3 shadow-[0_2px_10px_rgba(41,87,149,0.06)]">
+    <div className="rounded-2xl border-2 border-[#dbe9fb] bg-white px-3 py-2.5 shadow-[0_2px_10px_rgba(41,87,149,0.06)]">
       {/* Same order as the queue card: which ministry, how much, to whom, for
           what. The two are read by the same person minutes apart, so they had
           better agree about what matters. */}
       <div className="flex items-start justify-between gap-3">
-        <span className="min-w-0">
+        <span className="flex min-w-0 items-center gap-2">
           {scope ? (
-            <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 text-[12px] font-bold text-[#4a6da7]">
+            <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 text-[12px] font-bold text-[#4a6da7]">
               <Wallet size={11} className="shrink-0" />
               <span className="truncate">{scope}</span>
             </span>
           ) : (
             <span className="text-[12px] font-medium text-stone-400">No ministry recorded</span>
+          )}
+          {date && (
+            <span className="shrink-0 text-[11px] text-stone-400">{formatDate(date)}</span>
           )}
         </span>
         <span className="shrink-0 text-[20px] font-bold tabular-nums leading-none text-stone-900">
@@ -156,14 +159,13 @@ export function PVKeyFacts({
         </span>
       </div>
 
-      <div className="mt-1.5 text-[16px] font-bold leading-tight text-stone-900">{payee}</div>
+      <div className="mt-1.5 text-[15px] font-bold leading-tight text-stone-900">{payee}</div>
 
       {purpose && <p className="mt-1 text-[12.5px] font-medium leading-snug text-stone-700">{purpose}</p>}
 
-      <p className="mt-1.5 text-[11px] text-stone-400">{date ? formatDate(date) : "—"}</p>
 
       {rows && rows.length > 0 && (
-        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-stone-100 pt-2">
+        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-stone-100 pt-1.5">
           {rows.map(r => (
             <div key={r.label} className="min-w-0">
               <dt className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{r.label}</dt>

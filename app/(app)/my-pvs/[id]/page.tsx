@@ -997,8 +997,8 @@ export default function PVDetailPage() {
       {/* ── Building Manager Action Panel (BAM PVs in BAM_REVIEW) ─────── */}
       {user?.isBuildingManager && pv.pv_type === "BAM" && pv.status === "BAM_REVIEW" && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl px-2.5 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
               <ShieldCheck size={16} className="text-orange-600" />
               <span className="text-sm font-semibold text-orange-800">Building Manager Review</span>
               <span className="ml-auto text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">BAM PV</span>
@@ -1009,7 +1009,7 @@ export default function PVDetailPage() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setShowRejectModal(true)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-[13px] rounded-lg font-medium hover:bg-red-700 transition-colors">
                 <XCircle size={14} /> Reject BAM PV
               </button>
             </div>
@@ -1020,8 +1020,8 @@ export default function PVDetailPage() {
       {/* ── BAM Committee PIC Verification Panel (BM-created BAM PVs) ───── */}
       {user?.isBamCommittee && pv.pv_type === "BAM" && pv.status === "BAM_COMMITTEE_REVIEW" && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl px-2.5 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
               <ShieldCheck size={16} className="text-orange-600" />
               <span className="text-sm font-semibold text-orange-800">BAM Committee Verification</span>
               <span className="ml-auto text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">BAM PV</span>
@@ -1032,7 +1032,7 @@ export default function PVDetailPage() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setShowRejectModal(true)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-[13px] rounded-lg font-medium hover:bg-red-700 transition-colors">
                 <XCircle size={14} /> Reject BAM PV
               </button>
             </div>
@@ -1046,10 +1046,10 @@ export default function PVDetailPage() {
           Executive. She records the payment and the accounting code below. */}
       {canDecide && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD", "BAM_COMMITTEE_REVIEW", "BAM_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-3">
-              <ShieldCheck size={16} className="text-blue-600" />
-              <span className="text-sm font-semibold text-blue-800">Finance Executive Actions</span>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-2.5 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <ShieldCheck size={14} className="text-blue-600" />
+              <span className="text-[12px] font-semibold text-blue-800">Finance Executive Actions</span>
               <span className="ml-auto text-xs text-stone-500">PV is <strong>{pv.status.replace(/_/g, " ")}</strong></span>
             </div>
 
@@ -1060,11 +1060,11 @@ export default function PVDetailPage() {
                 <button
                   onClick={() => callAdminAction("REVIEW")}
                   disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-[#4a6da7] text-white text-sm rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4a6da7] text-white text-[13px] rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
                   <CheckCircle2 size={14} /> Approve Finance Review → Send to GM
                 </button>
                 <button onClick={() => setShowRejectModal(true)} disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-[13px] rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
                   <XCircle size={14} /> Reject
                 </button>
               </div>
@@ -1082,7 +1082,7 @@ export default function PVDetailPage() {
                 }}
                 disabled={actionLoading || pv.status !== "PENDING"}
                 title={pv.status !== "PENDING" ? "Already reviewed — revert first to re-review" : ""}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] rounded-lg font-medium transition-colors ${
                   pv.status === "PENDING"
                     ? "bg-[#4a6da7] text-white hover:bg-[#3d5a8e] disabled:opacity-50"
                     : "bg-stone-200 text-stone-400 cursor-not-allowed"
@@ -1093,7 +1093,7 @@ export default function PVDetailPage() {
                 onClick={() => setShowRejectModal(true)}
                 disabled={actionLoading || pv.status !== "PENDING"}
                 title={pv.status !== "PENDING" ? "Already reviewed — revert first to reject" : ""}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] rounded-lg font-medium transition-colors ${
                   pv.status === "PENDING"
                     ? "bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                     : "bg-stone-200 text-stone-400 cursor-not-allowed"
@@ -1113,7 +1113,7 @@ export default function PVDetailPage() {
             {["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
               <div className="flex gap-2 flex-wrap mt-2">
                 <button onClick={() => callAdminAction("SEND_TO_SIGNATORY")} disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-[#4a6da7] text-white text-sm rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4a6da7] text-white text-[13px] rounded-lg font-medium hover:bg-[#3d5a8e] disabled:opacity-50 transition-colors">
                   <Send size={14} /> Send to Signatory
                 </button>
               </div>
@@ -1145,8 +1145,8 @@ export default function PVDetailPage() {
       {/* ── GM Verification Panel ────────────────────────────────── */}
       {gmCanAct && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
-          <div className="bg-green-50 border border-green-300 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="bg-green-50 border border-green-300 rounded-xl px-2.5 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
               <ShieldCheck size={16} className="text-green-700" />
               <span className="text-sm font-semibold text-green-800">GM Verification</span>
               <span className="ml-1 text-xs text-stone-500">Finance has reviewed — your sign-off is required before signatories</span>
@@ -1159,7 +1159,7 @@ export default function PVDetailPage() {
               </button>
               <button
                 onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-lg font-medium hover:bg-red-700 transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-[13px] rounded-lg font-medium hover:bg-red-700 transition-colors">
                 <XCircle size={14} /> Reject
               </button>
               <button
@@ -1180,8 +1180,8 @@ export default function PVDetailPage() {
       {/* ── Signatory Action Panel ────────────────────────────────── */}
       {user?.isSignatory && !user?.isGeneralManager && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-2.5 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
               <ShieldCheck size={16} className="text-indigo-600" />
               <span className="text-sm font-semibold text-indigo-800">Signatory Actions</span>
               {userHasActed && (
@@ -1195,14 +1195,14 @@ export default function PVDetailPage() {
                 onClick={() => { setSignAction("APPROVED"); setSigPin(""); setSigRemarks(""); setSignatureData(savedSig || ""); setSaveSigForNext(false); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"}`}>
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"}`}>
                 <CheckCircle size={14} /> Approve
               </button>
               <button
                 onClick={() => { setSignAction("REJECTED"); setSigPin(""); setSigRemarks(""); setSignatureData(""); setSigMode("draw"); setCanvasActive(false); setIsErasing(false); setShowSignModal(true); }}
                 disabled={userHasActed}
                 title={userHasActed ? "You have already acted — use Revert to undo" : undefined}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"}`}>
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] rounded-lg font-medium transition-colors ${userHasActed ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"}`}>
                 <XCircle size={14} /> Reject
               </button>
               <button onClick={() => { setCommentText(""); setEditingComment(false); setShowCommentModal(true); }}
@@ -1244,36 +1244,36 @@ export default function PVDetailPage() {
       {/* ── Finance Office Fields (Accounting Code + Ref) ────────── */}
       {user?.isFinanceAdmin && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
-          <div className="bg-stone-50 border border-stone-200 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="bg-stone-50 border border-stone-200 rounded-xl px-2.5 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
               <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">For Office Use</span>
               {officeSaved && <span className="text-xs text-green-600 font-medium">Saved</span>}
             </div>
             <div className="flex gap-3 flex-wrap items-end">
               <div className="flex-1 min-w-[140px]">
-                <label className="text-xs text-stone-500 font-medium block mb-1">Ref No</label>
+                <label className="text-[11px] text-stone-500 font-medium block mb-0.5">Ref No</label>
                 <input
                   type="text"
                   value={officeRef}
                   onChange={e => setOfficeRef(e.target.value)}
                   placeholder={pv.pv_no}
-                  className="w-full text-sm border-2 border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:border-[#2f5b9c] bg-white text-stone-900 font-medium placeholder:text-stone-300"
+                  className="w-full text-[13px] border-2 border-stone-800 rounded-lg px-2.5 py-1 outline-none focus:border-[#2f5b9c] bg-white text-stone-900 font-medium placeholder:text-stone-300"
                 />
               </div>
               <div className="flex-1 min-w-[140px]">
-                <label className="text-xs text-stone-500 font-medium block mb-1">Accounting Code</label>
+                <label className="text-[11px] text-stone-500 font-medium block mb-0.5">Accounting Code</label>
                 <input
                   type="text"
                   value={accountingCode}
                   onChange={e => setAccountingCode(e.target.value)}
                   placeholder="e.g. 6000-1234"
-                  className="w-full text-sm border-2 border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:border-[#2f5b9c] bg-white text-stone-900 font-medium placeholder:text-stone-300"
+                  className="w-full text-[13px] border-2 border-stone-800 rounded-lg px-2.5 py-1 outline-none focus:border-[#2f5b9c] bg-white text-stone-900 font-medium placeholder:text-stone-300"
                 />
               </div>
               <button
                 onClick={saveOfficeFields}
                 disabled={officeSaving}
-                className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-stone-800 text-white hover:bg-stone-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+                className="px-3 py-1 text-xs font-semibold rounded-lg bg-stone-800 text-white hover:bg-stone-700 disabled:opacity-50 transition-colors whitespace-nowrap"
               >
                 {officeSaving ? "Saving…" : "Save"}
               </button>
@@ -1369,20 +1369,20 @@ export default function PVDetailPage() {
               });
               setShowEditModal(true);
             }}
-              className="flex items-center gap-1.5 text-xs font-medium text-[#4a6da7] hover:text-[#3d5a8e] hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors">
+              className="flex items-center gap-1.5 text-xs font-medium text-[#4a6da7] hover:text-[#3d5a8e] hover:bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 transition-colors">
               <Pencil size={13} /> Edit PV
             </button>
           )}
           {/* Cancel / Withdraw */}
           <button onClick={() => { setCancelRemarks(""); setShowCancelModal(true); }}
-            className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors">
+            className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded-lg border border-red-200 transition-colors">
             <XIcon size={13} />
             {user?.email === pv.submitted_by_email && !canDecide ? "Withdraw PV" : "Cancel PV"}
           </button>
           {/* Hard Delete — Finance Executive only */}
           {canDecide && (
             <button onClick={() => setShowHardDeleteModal(true)}
-              className="flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 transition-colors">
+              className="flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 hover:bg-red-100 px-2.5 py-1 rounded-lg border border-red-300 bg-red-50 transition-colors">
               <Trash2 size={13} /> Delete Permanently
             </button>
           )}
@@ -1392,19 +1392,19 @@ export default function PVDetailPage() {
       {/* ── Attachments Panel ─────────────────────────────────────── */}
       {(user?.isFinanceAdmin || (pv.attachments ?? []).length > 0 || pv.payment_receipt_url) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
-          <div className="bg-white border border-stone-200 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-3">
-              <FileText size={15} className="text-stone-500" />
-              <span className="text-sm font-semibold text-stone-700">Supporting Documents</span>
+          <div className="bg-white border border-stone-200 rounded-xl px-2.5 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <FileText size={13} className="text-stone-500" />
+              <span className="text-[12px] font-semibold text-stone-700">Supporting Documents</span>
               {attachLoading && <span className="text-xs text-stone-400 ml-1">Saving…</span>}
             </div>
 
             {/* Existing supporting docs */}
             {(pv.attachments ?? []).length === 0 && !pv.payment_receipt_url && (
-              <p className="text-xs text-stone-400 mb-3">No documents attached yet.</p>
+              <p className="text-xs text-stone-400 mb-2">No documents attached yet.</p>
             )}
             {(pv.attachments ?? []).length > 0 && (
-              <div className="flex flex-wrap gap-2.5 mb-3">
+              <div className="flex flex-wrap gap-2 mb-2">
                 {(pv.attachments ?? []).map((url, i) => {
                   const filename = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? `Document ${i + 1}`);
                   const isImg = /\.(jpg|jpeg|png|webp|gif|svg|bmp)$/i.test(filename);
@@ -1418,13 +1418,13 @@ export default function PVDetailPage() {
                       ) : (
                         <a href={url} target="_blank" rel="noopener noreferrer" className="block">
                           {isImg ? (
-                            <div className="w-[88px] h-[88px] rounded-xl overflow-hidden border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50">
+                            <div className="w-[72px] h-[72px] rounded-xl overflow-hidden border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={url} alt={filename}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                             </div>
                           ) : (
-                            <div className="w-[88px] h-[88px] rounded-xl border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50 flex flex-col items-center justify-center gap-1 px-2 text-center">
+                            <div className="w-[72px] h-[72px] rounded-xl border border-stone-200 group-hover:border-[#4a6da7] transition-colors bg-stone-50 flex flex-col items-center justify-center gap-1 px-2 text-center">
                               <FileText size={22} className="text-stone-400 group-hover:text-[#4a6da7] transition-colors shrink-0" />
                               <span className="text-[10px] text-stone-500 leading-tight line-clamp-2 break-all">{filename}</span>
                             </div>
@@ -1778,7 +1778,7 @@ export default function PVDetailPage() {
       {showHardDeleteModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-1.5 mb-1.5">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
                 <Trash2 size={18} className="text-red-600" />
               </div>
@@ -1812,7 +1812,7 @@ export default function PVDetailPage() {
       {showCommentModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-1.5 mb-1.5">
               <MessageSquare size={18} className="text-indigo-600" />
               <h2 className="text-base font-bold text-stone-800">{editingComment ? "Edit Comment" : "Add Comment"}</h2>
             </div>
