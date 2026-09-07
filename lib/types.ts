@@ -410,6 +410,8 @@ export type PostingType = "CHURCH" | "OFFICE" | "OTHER";
 export type PayrollEmployeeStatus = "ACTIVE" | "RESIGNED";
 
 export interface PayrollEmployee {
+  // The body that employs them (194). Defaults to LCM.
+  employer_id: string;
   id: string;
   emp_no: string;
   /** The People Directory record this employee is — see migration 157. The
@@ -489,6 +491,9 @@ export type PayrollVoucherKind = "SALARY" | "EPF" | "PERKESO" | "PCB" | "SOCSO" 
 
 export interface PayrollRun {
   id: string;
+  // Which employer this run pays. LCM or the Trustees (194) — a period is now
+  // unique per employer, not per church.
+  employer_id: string;
   year: number;
   month: number; // 1-12, or 13 = 13th month
   status: PayrollRunStatus;

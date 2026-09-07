@@ -22,7 +22,6 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { StaffOnly } from "@/components/auth/staff-only";
 import { Wallet, Download, Loader2, TrendingUp, Landmark, HandCoins, Info, ReceiptText } from "lucide-react";
 import Link from "next/link";
 import type { PayrollEmployee, PayrollSalary } from "@/lib/types";
@@ -53,11 +52,14 @@ const MONTHS = ["", "January", "February", "March", "April", "May", "June",
 const monthLabel = (m: number) => (m === 13 ? "13th Month" : MONTHS[m] ?? String(m));
 
 export default function MySalaryPage() {
-  return (
-    <StaffOnly feature="My Salary">
-      <MySalaryInner />
-    </StaffOnly>
-  );
+  // Not StaffOnly, which asks whether LCM's *entitlements* apply to you. Your
+  // own pay is not an entitlement — it is a record of what you were paid, and
+  // the Trustees' employees (194) have one without having any claim on LCM's
+  // leave or allowances. The page already refuses anybody with no payroll
+  // record, kindly and by name, and the row-level policy refuses them the data
+  // regardless, so this gate would only have turned away the people it exists
+  // to serve.
+  return <MySalaryInner />;
 }
 
 function MySalaryInner() {

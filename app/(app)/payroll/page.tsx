@@ -7,6 +7,13 @@ import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
 
+// LCM and the Trustees of the Lutheran Church in Malaysia Registered (194).
+// Separate employers, separate EPF/SOCSO/LHDN registrations, separate runs.
+interface Employer {
+  id: string; code: string; name: string; short_name: string | null;
+  emp_no_prefix: string; active: boolean;
+}
+
 const MONTH_SHORT_DIR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
 function monthShortDir(m: number): string { return MONTH_SHORT_DIR[m - 1] ?? String(m); }
 
@@ -96,10 +103,26 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
    */
   const [personId, setPersonId] = useState<string | null>(existing?.person_id ?? null);
   const [directory, setDirectory] = useState<DirectoryPerson[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("payroll_employers")
+        .select("*").eq("active", true).order("sort_order");
+      const list = (data as Employer[]) ?? [];
+      setFormEmployers(list);
+      setEmployerId(cur => cur || list[0]?.id || "");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [icNo, setIcNo] = useState(existing?.ic_no ?? "");
   const [dob, setDob] = useState(existing?.dob ?? "");
   const [designation, setDesignation] = useState(existing?.designation ?? "");
   const [employmentType, setEmploymentType] = useState<EmploymentType>(existing?.employment_type ?? "PERMANENT");
+  // Who employs them. Immovable once set: changing it mid-life would detach the
+  // person from the runs that have already paid them, so a move between
+  // employers is a leaver and a joiner, as it is in real life.
+  const [formEmployers, setFormEmployers] = useState<Employer[]>([]);
+  const [employerId, setEmployerId] = useState<string>(existing?.employer_id ?? "");
   const [isPastor, setIsPastor] = useState(existing?.is_pastor ?? false);
   const [isStaff, setIsStaff] = useState(existing?.is_staff ?? false);
   const [priorExp, setPriorExp] = useState(String(existing?.prior_experience_years ?? 0));
@@ -325,6 +348,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         dob: dob || null,
         designation: designation.trim(),
         employment_type: employmentType,
+        employer_id: employerId,
         is_pastor: isPastor,
         is_staff: isStaff,
         prior_experience_years: parseInt(priorExp) || 0,
@@ -394,7 +418,9 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
           detail: status === "RESIGNED" ? `Record updated — status RESIGNED (${resignedDate || "no date"})` : "Record updated",
         });
       } else {
-        const { data: empNoRow } = await supabase.rpc("next_emp_no");
+        // Per employer: LCM numbers run EMP-001, the Trustees TRU-001, and the
+        // emp_no column is unique across both.
+        const { data: empNoRow } = await supabase.rpc("next_emp_no", { p_employer: employerId });
         const { data: created, error: e } = await supabase.from("payroll_employees")
           .insert({ ...payload, commencement_base: baseAmt, emp_no: empNoRow ?? `EMP-${Date.now()}`, created_by: user.email })
           .select("id").single();
@@ -485,6 +511,23 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                 <option value="7">July (override)</option>
               </select>
             </div>
+            {formEmployers.length > 1 && (
+              <div>
+                <label className={labelCls}>Employer</label>
+                <select className={inputCls} value={employerId} disabled={!!existing}
+                  onChange={e => setEmployerId(e.target.value)}>
+                  {formEmployers.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.short_name || emp.name}</option>
+                  ))}
+                </select>
+                {existing && (
+                  <p className="mt-1 text-[11px] text-stone-400">
+                    Set when the record was created. A move between employers is a leaver and a
+                    joiner &mdash; the runs that have already paid them belong to the old one.
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <label className={labelCls}>Employment Type</label>
               <select className={inputCls} value={employmentType} onChange={e => setEmploymentType(e.target.value as EmploymentType)}>
@@ -778,12 +821,15 @@ export default function PayrollPage() {
   const [search, setSearch] = useState("");
   const [showStatus, setShowStatus] = useState<"ACTIVE" | "RESIGNED" | "ALL">("ACTIVE");
   const [tagFilter, setTagFilter] = useState<"" | "PASTOR" | "STAFF" | "CONTRACT" | "OFFICE" | "CHURCH">("");
+  // More than one employer since 194 — LCM and the Trustees. Empty means "all".
+  const [employers, setEmployers] = useState<Employer[]>([]);
+  const [employerFilter, setEmployerFilter] = useState("");
   const [missingOnly, setMissingOnly] = useState(false);
   const [page, setPage] = useState(1);
 
   // Any change to what's being filtered should start from the first page,
   // otherwise a narrower result set can leave you on an empty page.
-  useEffect(() => { setPage(1); }, [search, showStatus, tagFilter, missingOnly]);
+  useEffect(() => { setPage(1); }, [search, showStatus, tagFilter, missingOnly, employerFilter]);
   const [runs, setRuns] = useState<PayrollRunLite[]>([]);
   const [lastRunCount, setLastRunCount] = useState<number | null>(null);
   const [modalEmp, setModalEmp] = useState<PayrollEmployee | null>(null);
@@ -812,9 +858,13 @@ export default function PayrollPage() {
 
   const loadEmployees = useCallback(async () => {
     setLoading(true);
-    const { data: emps } = await supabase.from("payroll_employees").select("*").order("emp_no");
+    const [{ data: emps }, { data: empr }] = await Promise.all([
+      supabase.from("payroll_employees").select("*").order("emp_no"),
+      supabase.from("payroll_employers").select("*").eq("active", true).order("sort_order"),
+    ]);
     const list = (emps as PayrollEmployee[]) ?? [];
     setEmployees(list);
+    setEmployers((empr as Employer[]) ?? []);
     // latest salary per employee → gross preview
     const { data: sal } = await supabase.from("payroll_salary")
       .select("employee_id,base_salary,stm_allowance,experience_bonus,family_allowance,increment_carried,increment_current,effective_from")
@@ -863,6 +913,7 @@ export default function PayrollPage() {
 
   const filtered = employees.filter(e => {
     if (showStatus !== "ALL" && e.status !== showStatus) return false;
+    if (employerFilter && e.employer_id !== employerFilter) return false;
     if (tagFilter === "PASTOR" && !e.is_pastor) return false;
     if (tagFilter === "STAFF" && !e.is_staff) return false;
     if (tagFilter === "CONTRACT" && e.employment_type !== "CONTRACT") return false;
@@ -972,6 +1023,15 @@ export default function PayrollPage() {
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
+          {employers.length > 1 && employers.map(emp => (
+            <button key={emp.id} onClick={() => setEmployerFilter(f => f === emp.id ? "" : emp.id)}
+              className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                employerFilter === emp.id
+                  ? "bg-[#7C4A0A] text-white border-transparent"
+                  : "bg-white text-stone-500 border-stone-200 hover:border-[#7C4A0A]/40"}`}>
+              {emp.short_name || emp.name}
+            </button>
+          ))}
           {([["PASTOR", "Pastor"], ["STAFF", "Staff"], ["CONTRACT", "Contract"], ["OFFICE", "Office"], ["CHURCH", "Church"]] as const).map(([val, label]) => (
             <button key={val} onClick={() => setTagFilter(t => t === val ? "" : val)}
               className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${

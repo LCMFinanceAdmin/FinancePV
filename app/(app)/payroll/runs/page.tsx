@@ -7,6 +7,11 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import type { UserProfile, PayrollRun } from "@/lib/types";
 
+// LCM is not the only employer here since 194: the Trustees of the Lutheran
+// Church in Malaysia Registered employ people too, and their payroll is a
+// separate set of runs with its own EPF, SOCSO and LHDN filings.
+interface Employer { id: string; code: string; name: string; short_name: string | null; active: boolean; }
+
 const MONTH_LABELS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "13th Month"];
 const STATUS_STYLE: Record<string, string> = {
   DRAFT: "bg-amber-100 text-amber-700",
@@ -19,6 +24,8 @@ export default function PayrollRunsPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [runs, setRuns] = useState<PayrollRun[]>([]);
+  const [employers, setEmployers] = useState<Employer[]>([]);
+  const [employerId, setEmployerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -47,8 +54,14 @@ export default function PayrollRunsPage() {
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("payroll_runs").select("*").order("year", { ascending: false }).order("month", { ascending: false });
+    const [{ data }, { data: emp }] = await Promise.all([
+      supabase.from("payroll_runs").select("*").order("year", { ascending: false }).order("month", { ascending: false }),
+      supabase.from("payroll_employers").select("*").eq("active", true).order("sort_order"),
+    ]);
     setRuns((data as PayrollRun[]) ?? []);
+    const list = (emp as Employer[]) ?? [];
+    setEmployers(list);
+    setEmployerId(cur => cur || list[0]?.id || "");
     setLoading(false);
   }, [supabase]);
 
@@ -58,17 +71,24 @@ export default function PayrollRunsPage() {
 
   // Reminder: salaries pay at month start, so prompt to create next month's run from the 18th.
   const upcoming = (() => { const d = new Date(now.getFullYear(), now.getMonth() + 1, 1); return { year: d.getFullYear(), month: d.getMonth() + 1 }; })();
-  const upcomingMissing = !runs.some(r => r.year === upcoming.year && r.month === upcoming.month);
+  const employerName = (id: string) => {
+    const e = employers.find(x => x.id === id);
+    return e ? (e.short_name || e.name) : "This employer";
+  };
+  const upcomingMissing = !runs.some(r => r.year === upcoming.year && r.month === upcoming.month
+                                       && r.employer_id === employerId);
   const showReminder = now.getDate() >= 18 && upcomingMissing;
 
   async function createRun() {
     setError(""); setCreating(true);
     try {
       const { data, error: e } = await supabase.from("payroll_runs")
-        .insert({ year: newYear, month: newMonth, status: "DRAFT", created_by: user?.email ?? "" })
+        .insert({ year: newYear, month: newMonth, status: "DRAFT",
+                  employer_id: employerId, created_by: user?.email ?? "" })
         .select("id").single();
       if (e) {
-        if (e.code === "23505") throw new Error(`A run for ${MONTH_LABELS[newMonth]} ${newYear} already exists.`);
+        if (e.code === "23505") throw new Error(
+          `${employerName(employerId)} already has a run for ${MONTH_LABELS[newMonth]} ${newYear}.`);
         throw new Error(e.message);
       }
       router.push(`/payroll/runs/${data!.id}`);
@@ -93,7 +113,8 @@ export default function PayrollRunsPage() {
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
           <p className="text-sm text-amber-800">
-            Reminder: the <span className="font-semibold">{MONTH_LABELS[upcoming.month]} {upcoming.year}</span> payroll run hasn&apos;t been created yet.
+            Reminder: {employers.length > 1 ? `${employerName(employerId)}'s ` : "the "}
+            <span className="font-semibold">{MONTH_LABELS[upcoming.month]} {upcoming.year}</span> payroll run hasn&apos;t been created yet.
             Salaries pay at the start of the month — create it now to allow time for approval.
           </p>
         </div>
@@ -104,6 +125,15 @@ export default function PayrollRunsPage() {
           <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">New Run</p>
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">{error}</div>}
           <div className="flex items-end gap-2 flex-wrap">
+            {employers.length > 1 && (
+              <div>
+                <label className="block text-xs font-semibold text-stone-600 mb-1">Employer</label>
+                <select value={employerId} onChange={e => setEmployerId(e.target.value)}
+                  className="border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]">
+                  {employers.map(e => <option key={e.id} value={e.id}>{e.short_name || e.name}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-semibold text-stone-600 mb-1">Year</label>
               <input type="number" value={newYear} onChange={e => setNewYear(parseInt(e.target.value) || now.getFullYear())}
@@ -137,6 +167,11 @@ export default function PayrollRunsPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-stone-800">{MONTH_LABELS[r.month]} {r.year}</span>
+                  {employers.length > 1 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-stone-100 text-stone-600">
+                      {employerName(r.employer_id)}
+                    </span>
+                  )}
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_STYLE[r.status]}`}>{r.status}</span>
                 </div>
                 <div className="text-xs text-stone-400 mt-0.5">Net {formatCurrency(r.total_net)} · Total LCM {formatCurrency(r.total_lcm)}</div>

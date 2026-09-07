@@ -95,7 +95,12 @@ export default function PayrollRunDetailPage() {
       // PERKESO's schedule for the year. calcLine uses it where it covers the
       // wage and falls back to the percentage where it does not.
       supabase.from("payroll_contribution_bands").select("*").eq("year", runRow.year).order("wage_from"),
-      supabase.from("payroll_employees").select("*").order("full_name"),
+      // This employer's people only. The table holds more than one employer's
+      // staff since 194, and an unfiltered read would put all 81 LCM employees
+      // into a Trustees run — a payroll paying the wrong body's staff, which
+      // nothing downstream would catch.
+      supabase.from("payroll_employees").select("*")
+        .eq("employer_id", runRow.employer_id).order("full_name"),
       supabase.from("payroll_salary").select("*").order("effective_from", { ascending: false }),
       supabase.from("employee_loans").select("*").eq("status", "ACTIVE"),
       // What has actually been repaid — the deduction is worked out from the
