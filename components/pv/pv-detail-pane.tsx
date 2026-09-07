@@ -12,7 +12,7 @@
 // outside Finance could read. Four steps, always all four, with the current one
 // marked: a voucher's position is then a picture rather than a vocabulary.
 
-import { CheckCircle2, XCircle, Clock, AlertCircle, Loader2, Check } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Loader2, Check } from "lucide-react";
 import { formatCurrency, formatDate, formatDateTime, roleLabel } from "@/lib/utils";
 import type { PV, PVApproval } from "@/lib/types";
 
@@ -50,26 +50,17 @@ const SUBTITLE: Record<string, string> = {
 };
 
 export function PVDetailPane({
-  pv, loading, approvals, canAct, hasActed, acting,
-  onApprove, onReject, onRevert, actionLabel = "Review & Sign", extraActions, budget,
+  pv, loading, approvals, extraActions, budget,
 }: {
   pv: PV | null;
   loading?: boolean;
   approvals?: PVApproval[];
-  /** Whether this viewer may sign or reject this voucher right now. */
-  canAct?: boolean;
-  /** They have already given their decision — offer to undo it instead. */
-  hasActed?: boolean;
-  acting?: boolean;
-  onApprove?: () => void;
-  onReject?: () => void;
-  onRevert?: () => void;
-  actionLabel?: string;
-  /** What approving this would do to the ministry's budget. Shown next to the
-   *  decision rather than in the list, which is where it is actually needed. */
+  /** What approving this would do to the ministry's budget. */
   budget?: React.ReactNode;
-  /** Anything else this viewer may do with this voucher — open the full
-   *  record, send it back to Finance. Shown whether or not they may sign. */
+  /** What this viewer may do with the voucher besides decide it — open the
+   *  full record, record the committee's verification, undo their own
+   *  signature. Approving and rejecting are not here: they sit on the card in
+   *  the queue, beside the amount, which is the fact they are weighed against. */
   extraActions?: React.ReactNode;
 }) {
   if (loading) {
@@ -208,52 +199,9 @@ export function PVDetailPane({
         </div>
       </div>
 
-      {/* ── What it wants from you ───────────────────────────────
-          Pinned to the bottom rather than scrolling away: the whole reason a
-          reviewer opened this voucher is the decision, and on a long one the
-          buttons would otherwise be below the fold. */}
-      {(canAct || extraActions) && (
-        <div className={`shrink-0 border-t px-3 py-2.5 ${
-          canAct && !rejected
-            ? "border-amber-200 bg-[#fffbeb]"
-            : "border-[#eef4fc] bg-white"}`}>
-          {canAct && !rejected ? null : extraActions}
-          {!canAct || rejected ? null : hasActed ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="flex items-center gap-1.5 text-[13px] font-semibold text-green-700">
-                <CheckCircle2 size={15} /> You have signed this
-              </span>
-              {onRevert && (
-                <button onClick={onRevert} disabled={acting}
-                  className="ml-auto rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-semibold text-stone-600 transition-colors hover:bg-white disabled:opacity-40">
-                  Undo my decision
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">
-                <AlertCircle size={11} /> Your action required
-              </p>
-              {/* Sized to be found, not to be tasteful. The reviewer opened this
-                  voucher to decide something, and the decision was previously a
-                  pair of buttons the same weight as everything around them. */}
-              <div className="flex gap-2">
-                <button onClick={onApprove} disabled={acting}
-                  className="flex flex-[2] items-center justify-center gap-1.5 rounded-lg bg-[#2f7d4f] px-3 py-2 text-[13px] font-bold text-white transition-colors hover:bg-[#25663f] disabled:opacity-40">
-                  {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                  {actionLabel}
-                </button>
-                <button onClick={onReject} disabled={acting}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-[13px] font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40">
-                  <XCircle size={14} /> Reject
-                </button>
-              </div>
-            </>
-          )}
-          {canAct && !rejected && extraActions && (
-            <div className="mt-3 border-t border-amber-100 pt-3">{extraActions}</div>
-          )}
+      {extraActions && (
+        <div className="shrink-0 border-t border-[#eef4fc] bg-white px-3 py-2.5">
+          {extraActions}
         </div>
       )}
     </Shell>

@@ -504,14 +504,9 @@ export default function SignatoryActivityPage() {
   }, [flatVisible.map(p => p.id).join(","), activeId]);
 
   const activeRow = flatVisible.find(p => p.id === activeId) ?? null;
-  // Two different decisions share the one prominent slot, because only one of
-  // them is ever available to a given person on a given voucher: a signatory
-  // signs a voucher awaiting signature, a Finance Executive reviews one
-  // awaiting review.
-  const activeFinanceReview = !!activeRow && isFinanceAdmin && !isSignatory
-    && activeRow.status === "PENDING";
-  const activeCanAct = !!activeRow
-    && ((isSignatory && !hasSigned(activeRow)) || activeFinanceReview);
+  // Whether this voucher can still be decided is decisionFor()'s job now, and
+  // it is asked per card. All the pane needs to know is whether the person
+  // reading it has already signed, so it can offer to undo that.
   const activeHasSigned = !!activeRow && isSignatory && hasSigned(activeRow);
   const activeCanRevert = activeHasSigned && !!activeRow
     && !["PAID", "CANCELLED", "APPROVED"].includes(activeRow.status);
@@ -569,45 +564,97 @@ export default function SignatoryActivityPage() {
     );
   }
 
-  /** One line in the queue. Scannable at a glance, and the whole row opens it. */
+  /** Can this viewer decide this voucher right now, and what is the decision
+   *  called? A signatory signs one awaiting signature; a Finance Executive
+   *  reviews one awaiting review. Never both, so one pair of buttons serves. */
+  function decisionFor(pv: PendingPV): { label: string; kind: "sign" | "review" } | null {
+    if (isSignatory && !hasSigned(pv)) return { label: "Approve", kind: "sign" };
+    if (isFinanceAdmin && !isSignatory && pv.status === "PENDING") {
+      return { label: "Review", kind: "review" };
+    }
+    return null;
+  }
+
+  /** One voucher in the queue.
+   *
+   *  A card rather than a table row. Six columns in a 300px pane truncated the
+   *  two things worth scanning — "Tenaga..." and "LCM-2..." — so the payee and
+   *  the project get a line each and the reference goes small underneath.
+   *  The decision sits beside the amount, because those are the two facts
+   *  somebody weighs against each other and there is no reason to make them
+   *  open the voucher to act on an obvious one. */
   function ListRow({ pv, nested = false }: { pv: PendingPV; nested?: boolean }) {
-    const canTick = isSignatory && !hasSigned(pv);
-    const isOpen  = activeId === pv.id;
+    const canTick   = isSignatory && !hasSigned(pv);
+    const isOpen    = activeId === pv.id;
+    const decision  = decisionFor(pv);
+    const project   = [pv.dept, pv.ministry].filter(Boolean).join(" / ");
+    const busy      = actioning || adminReverting === pv.id;
+
     return (
       <div
         onClick={() => setActiveId(pv.id)}
         role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveId(pv.id); } }}
-        className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 border-l-2 px-3 py-1.5 transition-colors @md:grid-cols-[auto_6rem_minmax(0,1fr)_4.5rem_5.25rem_auto] ${
+        className={`cursor-pointer border-l-[3px] px-3 py-2 transition-colors ${
           isOpen ? "border-l-[#4a6da7] bg-[#f2f8ff]" : "border-l-transparent hover:bg-[#f7fbff]"} ${
           nested ? "bg-stone-50/40" : ""}`}
       >
-        <span className="col-start-1 row-span-2 row-start-1 flex w-4 justify-center @md:row-span-1" onClick={e => e.stopPropagation()}>
-          {canTick ? (
-            <input type="checkbox" checked={selected.has(pv.id)}
-              onChange={() => setSelected(sel => {
-                const n = new Set(sel);
-                if (n.has(pv.id)) n.delete(pv.id); else n.add(pv.id);
-                return n;
-              })}
-              className="h-3.5 w-3.5 cursor-pointer accent-[#4a6da7]" />
-          ) : null}
-        </span>
-        <span className="col-start-2 row-start-1 truncate text-[13px] font-semibold text-stone-800">
-          {pv.pv_no}
-        </span>
-        <span className="col-start-2 row-start-2 truncate text-[13px] text-stone-600 @md:col-start-3 @md:row-start-1">
-          {pv.payee_name}
-        </span>
-        <span className="hidden text-[12px] text-stone-400 @md:col-start-4 @md:row-start-1 @md:block">
-          {formatDate(pv.submitted_at)}
-        </span>
-        <span className="col-start-3 row-start-1 text-right text-[13px] font-semibold tabular-nums text-stone-800 @md:col-start-5">
-          {formatCurrency(pv.amount)}
-        </span>
-        <span className="col-start-3 row-start-2 flex min-w-0 justify-end @md:col-start-6 @md:row-start-1">
-          <StatusBadge status={computedBadgeStatus(pv)} />
-        </span>
+        {/* Line 1 — who is being paid, and where it has got to. */}
+        <div className="flex items-start gap-2">
+          {canTick && (
+            <span className="pt-0.5" onClick={e => e.stopPropagation()}>
+              <input type="checkbox" checked={selected.has(pv.id)}
+                onChange={() => setSelected(sel => {
+                  const n = new Set(sel);
+                  if (n.has(pv.id)) n.delete(pv.id); else n.add(pv.id);
+                  return n;
+                })}
+                className="h-3.5 w-3.5 cursor-pointer accent-[#4a6da7]" />
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-stone-800">
+            {pv.payee_name}
+          </span>
+          <span className="shrink-0"><StatusBadge status={computedBadgeStatus(pv)} /></span>
+        </div>
+
+        {/* Line 2 — what it is for. Project first, then the purpose, because
+            two vouchers to the same payee are told apart by the project. */}
+        {(project || pv.purpose) && (
+          <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-stone-500">
+            {project && <span className="font-medium text-stone-600">{project}</span>}
+            {project && pv.purpose ? " — " : ""}
+            {pv.purpose}
+          </p>
+        )}
+
+        {/* Line 3 — the reference, then the amount with the decision beside it. */}
+        <div className="mt-1 flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[10.5px] text-stone-400">
+            {pv.pv_no} · {formatDate(pv.submitted_at)}
+          </span>
+          <span className="shrink-0 text-[13px] font-bold tabular-nums text-stone-900">
+            {formatCurrency(pv.amount)}
+          </span>
+          {decision && (
+            <span className="flex shrink-0 gap-1" onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => decision.kind === "review"
+                  ? financeReview(pv.id)
+                  : handleApprove([pv.id])}
+                disabled={busy} title={`${decision.label} this voucher`}
+                className="flex items-center gap-1 rounded-md bg-[#2f7d4f] px-1.5 py-1 text-[10.5px] font-bold text-white transition-colors hover:bg-[#25663f] disabled:opacity-40">
+                <CheckCircle2 size={11} /> {decision.label}
+              </button>
+              <button
+                onClick={() => handleReject([pv.id])}
+                disabled={busy} title="Reject this voucher"
+                className="flex items-center rounded-md border border-red-200 bg-white px-1.5 py-1 text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40">
+                <XCircle size={12} />
+              </button>
+            </span>
+          )}
+        </div>
       </div>
     );
   }
@@ -749,9 +796,9 @@ export default function SignatoryActivityPage() {
            one on a narrow one. The list is the pane that must always be
            visible: on a phone the other two follow underneath rather than
            hiding behind a tab, so a reviewer scrolls instead of navigating. */
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(280px,0.85fr)_minmax(290px,0.8fr)_minmax(0,2.35fr)]">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(300px,1.05fr)_minmax(250px,0.65fr)_minmax(0,2.3fr)]">
           {/* The queue */}
-          <div className="@container flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white 2xl:max-h-none 2xl:min-h-0">
+          <div className="flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white 2xl:max-h-none 2xl:min-h-0">
             <div className="flex shrink-0 items-center justify-between border-b border-[#eef4fc] px-3 py-1.5">
               <span className="text-[12px] font-semibold text-stone-600">
                 {loading || (viewMode === "mine" && mineLoading)
@@ -764,16 +811,6 @@ export default function SignatoryActivityPage() {
                   {filterMinistry} <XCircle size={11} />
                 </button>
               )}
-            </div>
-
-            {/* Column headings, when the pane is wide enough to have columns. */}
-            <div className="hidden shrink-0 grid-cols-[auto_6rem_minmax(0,1fr)_4.5rem_5.25rem_auto] items-center gap-x-2 border-b border-[#cfe0f6] bg-[#f2f8ff] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4a6483] @md:grid">
-              <span className="w-4" />
-              <span>PV No.</span>
-              <span>Payee</span>
-              <span>Date</span>
-              <span className="text-right">Amount</span>
-              <span className="text-right">Status</span>
             </div>
 
             <div className="min-h-0 flex-1 divide-y divide-[#f0f5fc] overflow-y-auto">
@@ -842,25 +879,32 @@ export default function SignatoryActivityPage() {
             pv={activePv}
             loading={activeLoading}
             approvals={activeRow?.approvals}
-            canAct={activeCanAct}
-            hasActed={activeHasSigned}
-            acting={actioning}
-            budget={activeRow && activeCanAct ? (
+            // The decision lives on the card in the queue now. Repeating it
+            // here, at three times the size, made it the biggest thing on the
+            // pane and the least useful: you have already decided by the time
+            // you are reading the voucher, or you are reading it to decide, and
+            // either way the button is one column to the left.
+            budget={activeRow && decisionFor(activeRow) ? (
               <BudgetImpact variant="chip" ministry={activeRow.ministry} projectName={null}
                 amount={activeRow.amount} excludePvId={activeRow.id} date={null} />
             ) : undefined}
-            actionLabel={activeFinanceReview ? "Review & Sign" : "Approve & Sign"}
-            onApprove={() => activeRow && (activeFinanceReview
-              ? financeReview(activeRow.id)
-              : handleApprove([activeRow.id]))}
-            onReject={() => activeRow && handleReject([activeRow.id])}
-            onRevert={activeCanRevert ? () => activeRow && handleRevert(activeRow.id) : undefined}
             extraActions={activeRow ? (
               <div className="flex flex-wrap items-center gap-2">
                 <Link href={`/my-pvs/${activeRow.id}`}
                   className="text-[12px] font-medium text-[#3d5a8f] hover:underline">
                   Open the full record &rarr;
                 </Link>
+                {activeHasSigned && (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-green-700">
+                    <CheckCircle2 size={11} /> You signed this
+                  </span>
+                )}
+                {activeCanRevert && (
+                  <button onClick={() => handleRevert(activeRow.id)} disabled={actioning}
+                    className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50">
+                    <RotateCcw size={10} /> Undo my decision
+                  </button>
+                )}
                 {isFinanceAdmin && !activePv?.ministry_verified_at
                   && !["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(activeRow.status) && (
                   <button onClick={() => { setRecordWho(""); setRecordBasis(""); setRecordModal(activeRow); }}
