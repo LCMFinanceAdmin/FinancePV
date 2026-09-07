@@ -38,8 +38,14 @@ export function StaffOnly({ feature, children }: { feature: string; children: Re
           <ShieldOff size={24} className="mx-auto mb-3 text-stone-300" />
           <h1 className="text-base font-bold text-stone-800">{feature} is for LCM staff</h1>
           <p className="mx-auto mt-1.5 max-w-md text-sm text-stone-500">
-            Your account isn&apos;t recorded as employed by LCM, so this doesn&apos;t apply to you.
-            If that&apos;s wrong, ask a Finance Executive to update your record.
+            You are not on LCM&rsquo;s payroll, so LCM&rsquo;s leave, loans and claim entitlements
+            do not apply to you. Many people serve LCM without being employed by it &mdash; a
+            congregation may be your employer, or another body within the church.
+          </p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-stone-500">
+            You can still claim for LCM work: submit it against the project it belongs to, and the
+            EXCO records the resolution that authorises it. If you believe LCM does employ you,
+            ask a Finance Executive &mdash; this follows your payroll record.
           </p>
           <Link href="/dashboard"
             className="mt-4 inline-block rounded-xl border border-stone-200 px-4 py-2 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50">

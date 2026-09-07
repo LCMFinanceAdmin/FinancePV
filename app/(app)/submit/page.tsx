@@ -1348,7 +1348,7 @@ export default function SubmitPVPage() {
           onChange={e => setField("purpose", e.target.value)}
           placeholder="e.g. Monthly Cost of Living Allowance" />
       </div>
-      {entitlements.length > 0 && (
+      {entitlements.length > 0 ? (
         <div>
           <label className={mLabel}>Claiming a personal entitlement?</label>
           <select className={mInput} value={form.claim_category}
@@ -1357,6 +1357,19 @@ export default function SubmitPVPage() {
             {entitlements.map(e => <option key={e.code} value={e.code}>{e.name}</option>)}
           </select>
           <ClaimEntitlementNote ent={chosenEntitlement} amount={displayAmount} />
+        </div>
+      ) : (
+        // An empty list means LCM does not employ you — pastors and parish
+        // workers employed by their own congregation, former pastors, people
+        // under another organisation within LCM. Saying nothing here would read
+        // as a missing feature, and the honest answer is short.
+        <div className="rounded-xl border border-[#dce9fb] bg-[#f5f9ff] px-3.5 py-2.5">
+          <p className="text-[11px] leading-relaxed text-stone-600">
+            <strong className="text-stone-700">You have no personal claim entitlement.</strong>{" "}
+            Those belong to LCM&rsquo;s own payroll. This does not stop you claiming for LCM work
+            &mdash; put it under the project it belongs to above, and the EXCO records the
+            resolution that authorises it. Ask Finance if you are not sure which project.
+          </p>
         </div>
       )}
       <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} compact />
