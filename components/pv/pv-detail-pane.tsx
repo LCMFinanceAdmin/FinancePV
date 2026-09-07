@@ -118,7 +118,7 @@ export function PVDetailPane({
             </span>
           </div>
           {pv.purpose && (
-            <p className="mt-1.5 text-[12px] leading-snug text-stone-600">{pv.purpose}</p>
+            <p className="mt-1.5 text-[12.5px] font-semibold leading-snug text-stone-700">{pv.purpose}</p>
           )}
           <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
             rejected            ? "bg-red-100 text-red-700"
@@ -136,10 +136,8 @@ export function PVDetailPane({
             the purpose is above rather than repeated here, and a reference
             number equal to the PV number is not a second fact. */}
         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-4 py-3">
-          <Row label="Project" value={[pv.dept, pv.ministry].filter(Boolean).join(" / ")} />
+          <Row label="Project" strong value={[pv.dept, pv.ministry].filter(Boolean).join(" / ")} />
           <Row label="Code" value={pv.accounting_code} />
-          <Row label="Submitted by" value={pv.submitted_by} />
-          <Row label="On" value={pv.submitted_at ? formatDateTime(pv.submitted_at) : null} />
           {pv.ref_no && pv.ref_no !== pv.pv_no && <Row label="Ref" value={pv.ref_no} />}
         </div>
 
@@ -248,11 +246,14 @@ function stepNote(
 
 /** Label over value. Side by side needs a fixed label column wide enough for
  *  the longest one, which in two columns leaves the values almost no room. */
-function Row({ label, value }: { label: string; value?: string | null }) {
+function Row({ label, value, strong }: {
+  label: string; value?: string | null; strong?: boolean;
+}) {
   return (
     <div className="min-w-0">
       <dt className="text-[9.5px] font-semibold uppercase tracking-wide text-stone-400">{label}</dt>
-      <dd className="truncate text-[12px] text-stone-700" title={value ?? undefined}>
+      <dd className={`truncate text-[12px] ${strong ? "font-semibold text-stone-800" : "text-stone-700"}`}
+        title={value ?? undefined}>
         {value?.trim() ? value : "—"}
       </dd>
     </div>

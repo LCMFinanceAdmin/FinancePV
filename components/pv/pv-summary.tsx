@@ -136,7 +136,7 @@ export function PVKeyFacts({
 }) {
   const scope = ministry || dept || null;
   return (
-    <div className="rounded-2xl border-2 border-[#dbe9fb] bg-white p-4 shadow-[0_2px_10px_rgba(41,87,149,0.06)]">
+    <div className="rounded-2xl border-2 border-[#dbe9fb] bg-white p-3 shadow-[0_2px_10px_rgba(41,87,149,0.06)]">
       {/* Same order as the queue card: which ministry, how much, to whom, for
           what. The two are read by the same person minutes apart, so they had
           better agree about what matters. */}
@@ -151,19 +151,19 @@ export function PVKeyFacts({
             <span className="text-[12px] font-medium text-stone-400">No ministry recorded</span>
           )}
         </span>
-        <span className="shrink-0 text-[22px] font-bold tabular-nums leading-none text-stone-900">
+        <span className="shrink-0 text-[20px] font-bold tabular-nums leading-none text-stone-900">
           {formatCurrency(amount)}
         </span>
       </div>
 
-      <div className="mt-2 text-[17px] font-bold leading-tight text-stone-900">{payee}</div>
+      <div className="mt-1.5 text-[16px] font-bold leading-tight text-stone-900">{payee}</div>
 
-      {purpose && <p className="mt-1 text-[13px] leading-snug text-stone-700">{purpose}</p>}
+      {purpose && <p className="mt-1 text-[12.5px] font-medium leading-snug text-stone-700">{purpose}</p>}
 
-      <p className="mt-2 text-[11px] text-stone-400">{date ? formatDate(date) : "—"}</p>
+      <p className="mt-1.5 text-[11px] text-stone-400">{date ? formatDate(date) : "—"}</p>
 
       {rows && rows.length > 0 && (
-        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-stone-100 pt-3">
+        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-stone-100 pt-2">
           {rows.map(r => (
             <div key={r.label} className="min-w-0">
               <dt className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{r.label}</dt>

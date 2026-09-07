@@ -70,27 +70,27 @@ function WorkflowBar({ pv }: { pv: PV }) {
       : (pv.head_verified === "N/A" ? WORKFLOW_STEPS.filter(s => s.key !== "PENDING_HEAD") : WORKFLOW_STEPS).findIndex(s => s.key === pv.status);
 
   return (
-    <div className="flex items-center gap-0 mt-3 print:hidden">
+    <div className="flex items-center gap-0 mt-2 print:hidden">
       {steps.map((label, i) => {
         const done = !isRejected && currentIdx > i;
         const active = !isRejected && currentIdx === i;
         return (
           <div key={label} className="flex items-center flex-1 min-w-0">
             <div className="flex flex-col items-center flex-1 min-w-0">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors ${
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-colors ${
                 done ? "bg-green-500 border-green-500 text-white"
                 : active ? "bg-[#4a6da7] border-[#4a6da7] text-white"
                 : isRejected ? "bg-red-50 border-red-300 text-red-400"
                 : "bg-white border-stone-300 text-stone-400"
               }`}>
-                {done ? <CheckCircle2 size={13} /> : i + 1}
+                {done ? <CheckCircle2 size={12} /> : i + 1}
               </div>
-              <span className={`text-[12px] mt-1 font-medium truncate text-center ${
+              <span className={`text-[11px] mt-0.5 font-medium truncate text-center ${
                 done ? "text-green-600" : active ? "text-[#4a6da7]" : "text-stone-400"
               }`}>{label}</span>
             </div>
             {i < steps.length - 1 && (
-              <div className={`h-0.5 flex-1 mx-1 mb-4 ${done ? "bg-green-400" : "bg-stone-200"}`} />
+              <div className={`h-0.5 flex-1 mx-1 mb-3.5 ${done ? "bg-green-400" : "bg-stone-200"}`} />
             )}
           </div>
         );
@@ -861,7 +861,7 @@ export default function PVDetailPage() {
       <style>{`@media print { .voucher-inner { width: auto !important; transform: none !important; } .voucher-clip { height: auto !important; overflow: visible !important; } }`}</style>
 
       {/* ── Sticky top bar ─────────────────────────────────────────── */}
-      <div className="print:hidden sticky top-0 z-20 border-b border-[#dbe9fb] bg-white/90 px-5 py-3 backdrop-blur-xl">
+      <div className="print:hidden sticky top-0 z-20 border-b border-[#dbe9fb] bg-white/90 px-5 py-2 backdrop-blur-xl">
         <div className="max-w-4xl mx-auto">
           {/* The voucher number, the controls, then the status underneath.
               They were all one wrapping row, so at 376px the number broke across
@@ -890,7 +890,7 @@ export default function PVDetailPage() {
             <PVPdfDownload pv={pv} />
             </div>
           </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <StatusBadge status={computedBadgeStatus(pv)} />
             {pv.payment_type === "ASSET_PURCHASE" && (
               <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">Asset Purchase</span>
@@ -907,7 +907,7 @@ export default function PVDetailPage() {
         somewhere inside a page you have to pan around to find. The answer goes
         first; the form becomes something to consult rather than mine.
       */}
-      <div className="print:hidden mx-auto mt-4 max-w-4xl px-4">
+      <div className="print:hidden mx-auto mt-2.5 max-w-4xl px-4">
         <PVKeyFacts
           payee={pv.payee_name}
           amount={pv.amount ?? 0}
@@ -924,7 +924,7 @@ export default function PVDetailPage() {
 
       {/* ── GM Instruction banner ─────────────────────────────────── */}
       {gmClaim && (
-        <div className="print:hidden max-w-4xl mx-auto mt-4 px-4">
+        <div className="print:hidden max-w-4xl mx-auto mt-2.5 px-4">
           <div className="flex gap-3 p-3.5 bg-[#4a6da7]/8 border border-[#4a6da7]/30 rounded-xl">
             <div className="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-[#4a6da7]/15 flex items-center justify-center">
               <MessageSquare size={14} className="text-[#4a6da7]" />
@@ -955,7 +955,7 @@ export default function PVDetailPage() {
 
       {/* ── Rejection banner ───────────────────────────────────────── */}
       {isRejected && (
-        <div className="print:hidden max-w-4xl mx-auto mt-4 px-4">
+        <div className="print:hidden max-w-4xl mx-auto mt-2.5 px-4">
           <div className="flex gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" />
             <div>
@@ -970,7 +970,7 @@ export default function PVDetailPage() {
 
       {/* ── PAID Stamp ────────────────────────────────────────────── */}
       {pv.status === "PAID" && (
-        <div className="print:hidden max-w-4xl mx-auto mt-4 px-4">
+        <div className="print:hidden max-w-4xl mx-auto mt-2.5 px-4">
           <div className="flex items-center gap-3 p-4 bg-emerald-50 border-2 border-emerald-500 rounded-xl">
             <div className="shrink-0 border-4 border-emerald-600 rounded-lg px-4 py-2 rotate-[-8deg]">
               <div className="text-2xl font-black text-emerald-600 tracking-widest leading-none">PAID</div>
@@ -996,8 +996,8 @@ export default function PVDetailPage() {
 
       {/* ── Building Manager Action Panel (BAM PVs in BAM_REVIEW) ─────── */}
       {user?.isBuildingManager && pv.pv_type === "BAM" && pv.status === "BAM_REVIEW" && (
-        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-orange-600" />
               <span className="text-sm font-semibold text-orange-800">Building Manager Review</span>
@@ -1019,8 +1019,8 @@ export default function PVDetailPage() {
 
       {/* ── BAM Committee PIC Verification Panel (BM-created BAM PVs) ───── */}
       {user?.isBamCommittee && pv.pv_type === "BAM" && pv.status === "BAM_COMMITTEE_REVIEW" && (
-        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-orange-600" />
               <span className="text-sm font-semibold text-orange-800">BAM Committee Verification</span>
@@ -1045,8 +1045,8 @@ export default function PVDetailPage() {
           about it: reviewing, rejecting and cancelling belong to the Finance
           Executive. She records the payment and the accounting code below. */}
       {canDecide && !["PAID", "CANCELLED", "REJECTED", "REJECTED_HEAD", "PENDING_HEAD", "BAM_COMMITTEE_REVIEW", "BAM_REVIEW", "GM_REVIEW", "PENDING_SIGNATORY"].includes(pv.status) && (
-        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-blue-600" />
               <span className="text-sm font-semibold text-blue-800">Finance Executive Actions</span>
@@ -1144,8 +1144,8 @@ export default function PVDetailPage() {
 
       {/* ── GM Verification Panel ────────────────────────────────── */}
       {gmCanAct && (
-        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
-          <div className="bg-green-50 border border-green-300 rounded-xl p-4">
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
+          <div className="bg-green-50 border border-green-300 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-green-700" />
               <span className="text-sm font-semibold text-green-800">GM Verification</span>
@@ -1179,8 +1179,8 @@ export default function PVDetailPage() {
 
       {/* ── Signatory Action Panel ────────────────────────────────── */}
       {user?.isSignatory && !user?.isGeneralManager && ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status) && (
-        <div className="print:hidden max-w-4xl mx-auto px-4 mt-4">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+        <div className="print:hidden max-w-4xl mx-auto px-4 mt-2.5">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck size={16} className="text-indigo-600" />
               <span className="text-sm font-semibold text-indigo-800">Signatory Actions</span>
@@ -1244,7 +1244,7 @@ export default function PVDetailPage() {
       {/* ── Finance Office Fields (Accounting Code + Ref) ────────── */}
       {user?.isFinanceAdmin && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
-          <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">For Office Use</span>
               {officeSaved && <span className="text-xs text-green-600 font-medium">Saved</span>}
@@ -1392,7 +1392,7 @@ export default function PVDetailPage() {
       {/* ── Attachments Panel ─────────────────────────────────────── */}
       {(user?.isFinanceAdmin || (pv.attachments ?? []).length > 0 || pv.payment_receipt_url) && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
-          <div className="bg-white border border-stone-200 rounded-xl p-4">
+          <div className="bg-white border border-stone-200 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-3">
               <FileText size={15} className="text-stone-500" />
               <span className="text-sm font-semibold text-stone-700">Supporting Documents</span>
