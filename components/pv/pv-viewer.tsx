@@ -57,7 +57,6 @@ export function PVViewer({
   const [paneW, setPaneW] = useState(0);
   const [docH, setDocH] = useState(1123);
   const [logo, setLogo] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const attachments = useMemo(() => (pv?.attachments ?? []).filter(Boolean), [pv]);
 
@@ -66,18 +65,30 @@ export function PVViewer({
   // at the top of it.
   useEffect(() => { svgToPngDataUri("/lcm-logo.svg", 200).then(setLogo); }, []);
 
-  // Fit-to-width has to react to the pane, which changes with the breakpoint
-  // and with going full screen.
-  useEffect(() => {
-    const el = scrollRef.current;
+  // Fit-to-width, measured by a callback ref rather than an effect.
+  //
+  // As an effect it never ran. The component returns early while it is loading
+  // and while nothing is selected, so on the mount that the effect fired on
+  // there was no scroll container to observe — and by the time one existed the
+  // dependencies had not changed, so it never fired again. paneW stayed 0, the
+  // fit fell back to 100%, and every voucher opened wider than its pane with
+  // scrollbars on two sides. A callback ref runs when the node actually
+  // appears, which is the thing being waited for.
+  const paneRO = useRef<ResizeObserver | null>(null);
+  const attachScroll = useCallback((el: HTMLDivElement | null) => {
+    paneRO.current?.disconnect();
     if (!el) return;
     const ro = new ResizeObserver(([e]) => setPaneW(e.contentRect.width));
     ro.observe(el);
-    setPaneW(el.clientWidth);
-    return () => ro.disconnect();
-  }, [full]);
+    paneRO.current = ro;
+  }, []);
 
-  const fitZoom = paneW > 0 ? Math.min(100, Math.max(25, (paneW / SHEET_W) * 100)) : 100;
+  useEffect(() => () => paneRO.current?.disconnect(), []);
+
+  // Capped at 140 rather than 100: on a wide pane the sheet would otherwise
+  // float in the middle of a grey field at its paper size, which wastes exactly
+  // the room the pane was widened to provide.
+  const fitZoom = paneW > 0 ? Math.min(140, Math.max(25, (paneW / SHEET_W) * 100)) : 100;
   const z = zoom ?? fitZoom;
 
   // load fires before the logo and any web font have settled, so measuring once
@@ -232,7 +243,7 @@ export function PVViewer({
       </div>
 
       {/* ── The document ───────────────────────────────────────── */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-[#f2f5fa] p-2">
+      <div ref={attachScroll} className="min-h-0 flex-1 overflow-auto bg-[#f2f5fa] p-2">
         <div style={tab === 0
           ? { width: SHEET_W * (z / 100), height: docH * (z / 100), margin: "0 auto" }
           : { width: `${z}%`, margin: "0 auto" }}>

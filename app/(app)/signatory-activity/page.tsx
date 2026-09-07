@@ -749,7 +749,7 @@ export default function SignatoryActivityPage() {
            one on a narrow one. The list is the pane that must always be
            visible: on a phone the other two follow underneath rather than
            hiding behind a tab, so a reviewer scrolls instead of navigating. */
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)_minmax(0,1.2fr)]">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(280px,0.85fr)_minmax(290px,0.8fr)_minmax(0,2.35fr)]">
           {/* The queue */}
           <div className="@container flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white 2xl:max-h-none 2xl:min-h-0">
             <div className="flex shrink-0 items-center justify-between border-b border-[#eef4fc] px-3 py-1.5">

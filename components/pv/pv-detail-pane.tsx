@@ -213,7 +213,7 @@ export function PVDetailPane({
           reviewer opened this voucher is the decision, and on a long one the
           buttons would otherwise be below the fold. */}
       {(canAct || extraActions) && (
-        <div className={`shrink-0 border-t px-4 py-3 ${
+        <div className={`shrink-0 border-t px-3 py-2.5 ${
           canAct && !rejected
             ? "border-amber-200 bg-[#fffbeb]"
             : "border-[#eef4fc] bg-white"}`}>
@@ -232,21 +232,21 @@ export function PVDetailPane({
             </div>
           ) : (
             <>
-              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-700">
-                <AlertCircle size={13} /> Your action required
+              <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                <AlertCircle size={11} /> Your action required
               </p>
               {/* Sized to be found, not to be tasteful. The reviewer opened this
                   voucher to decide something, and the decision was previously a
                   pair of buttons the same weight as everything around them. */}
               <div className="flex gap-2">
                 <button onClick={onApprove} disabled={acting}
-                  className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-[#2f7d4f] px-4 py-3 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-[#25663f] disabled:opacity-40">
-                  {acting ? <Loader2 size={17} className="animate-spin" /> : <CheckCircle2 size={17} />}
+                  className="flex flex-[2] items-center justify-center gap-1.5 rounded-lg bg-[#2f7d4f] px-3 py-2 text-[13px] font-bold text-white transition-colors hover:bg-[#25663f] disabled:opacity-40">
+                  {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                   {actionLabel}
                 </button>
                 <button onClick={onReject} disabled={acting}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-red-200 bg-white px-3 py-3 text-[15px] font-bold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40">
-                  <XCircle size={16} /> Reject
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-[13px] font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40">
+                  <XCircle size={14} /> Reject
                 </button>
               </div>
             </>
