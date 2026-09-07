@@ -428,6 +428,30 @@ export default function SignatoryActivityPage() {
     finally { setActioning(false); }
   }
 
+  // Finance's own step: PENDING -> REVIEWED, signed with their saved signature.
+  //
+  // The page had no primary action for a Finance Executive at all. Every button
+  // on a pending voucher was a secondary one — send it on, record somebody
+  // else's decision, hand it back — so the queue they live in offered them
+  // everything except the thing they were there to do, and they had to go to
+  // another page to do it.
+  async function financeReview(pvId: string) {
+    setActioning(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pv_id: pvId, action: "REVIEW" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not review it");
+      setAllPvs(pvs => pvs.map(p => p.id !== pvId ? p : { ...p, status: "REVIEWED" }));
+      showMsg("Reviewed — it moves on for approval");
+    } catch (e) { showMsg((e as Error).message, false); }
+    finally { setActioning(false); }
+  }
+
   async function adminRevert(pvId: string) {
     setAdminReverting(pvId);
     const { data: { session } } = await supabase.auth.getSession();
@@ -480,7 +504,14 @@ export default function SignatoryActivityPage() {
   }, [flatVisible.map(p => p.id).join(","), activeId]);
 
   const activeRow = flatVisible.find(p => p.id === activeId) ?? null;
-  const activeCanAct = !!activeRow && isSignatory && !hasSigned(activeRow);
+  // Two different decisions share the one prominent slot, because only one of
+  // them is ever available to a given person on a given voucher: a signatory
+  // signs a voucher awaiting signature, a Finance Executive reviews one
+  // awaiting review.
+  const activeFinanceReview = !!activeRow && isFinanceAdmin && !isSignatory
+    && activeRow.status === "PENDING";
+  const activeCanAct = !!activeRow
+    && ((isSignatory && !hasSigned(activeRow)) || activeFinanceReview);
   const activeHasSigned = !!activeRow && isSignatory && hasSigned(activeRow);
   const activeCanRevert = activeHasSigned && !!activeRow
     && !["PAID", "CANCELLED", "APPROVED"].includes(activeRow.status);
@@ -547,7 +578,7 @@ export default function SignatoryActivityPage() {
         onClick={() => setActiveId(pv.id)}
         role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveId(pv.id); } }}
-        className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 border-l-2 px-3 py-2 transition-colors @md:grid-cols-[auto_6rem_minmax(0,1fr)_4.5rem_5.25rem_auto] ${
+        className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 border-l-2 px-3 py-1.5 transition-colors @md:grid-cols-[auto_6rem_minmax(0,1fr)_4.5rem_5.25rem_auto] ${
           isOpen ? "border-l-[#4a6da7] bg-[#f2f8ff]" : "border-l-transparent hover:bg-[#f7fbff]"} ${
           nested ? "bg-stone-50/40" : ""}`}
       >
@@ -581,10 +612,10 @@ export default function SignatoryActivityPage() {
     );
   }
 
-  const controlBtn = "flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-600 transition-colors hover:bg-stone-50";
+  const controlBtn = "flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-stone-600 transition-colors hover:bg-stone-50";
 
   return (
-    <div className="flex min-h-full flex-col gap-3 p-4 xl:p-5 2xl:h-full">
+    <div className="flex min-h-full flex-col gap-2.5 p-3 xl:p-4 2xl:h-full">
       {/* Toast */}
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white flex items-center gap-2 ${toast.ok ? "bg-green-600" : "bg-red-500"}`}>
@@ -594,24 +625,24 @@ export default function SignatoryActivityPage() {
 
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-stone-800">Finance Activity</h1>
-          <p className="text-sm text-stone-400">
+          <h1 className="text-lg font-bold leading-tight text-stone-800">Finance Activity</h1>
+          <p className="text-[12px] text-stone-400">
             {isFinanceAdmin && viewMode === "mine" ? "Payment vouchers you submitted" : "Track payment vouchers across all stages"}
           </p>
         </div>
         {isFinanceAdmin && (
           <Link href="/submit"
-            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[#4a6da7] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#3d5c96]">
-            <Plus size={15} /> Submit PV
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#4a6da7] px-3 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#3d5c96]">
+            <Plus size={14} /> Submit PV
           </Link>
         )}
       </div>
 
       {isFinanceAdmin && (
-        <div className="inline-flex shrink-0 self-start overflow-hidden rounded-lg border border-stone-200 bg-white text-sm font-semibold">
+        <div className="inline-flex shrink-0 self-start overflow-hidden rounded-lg border border-stone-200 bg-white text-[12px] font-semibold">
           {([["activity", "Company Activity"], ["mine", "Submitted by me"]] as const).map(([val, label]) => (
             <button key={val} onClick={() => { setViewMode(val); setSearch(""); setSelected(new Set()); setActiveId(null); }}
-              className={`px-3.5 py-2 transition-colors ${viewMode === val ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
+              className={`px-3 py-1 transition-colors ${viewMode === val ? "bg-[#4a6da7] text-white" : "text-stone-500 hover:bg-stone-50"}`}>
               {label}
             </button>
           ))}
@@ -627,12 +658,12 @@ export default function SignatoryActivityPage() {
             <button
               key={tab.key}
               onClick={() => { setStatusTab(tab.key); setSearch(""); setSelected(new Set()); setActiveId(null); }}
-              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition-colors ${active ? tab.activeColor : "border-stone-200 bg-white text-stone-500 hover:bg-stone-50"}`}
+              className={`flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[12px] font-semibold transition-colors ${active ? tab.activeColor : "border-stone-200 bg-white text-stone-500 hover:bg-stone-50"}`}
             >
               {tab.icon}
               {tab.label}
               {count > 0 && (
-                <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold ${active ? "bg-white/25 text-white" : tab.inactiveDot}`}>
+                <span className={`rounded-full px-1.5 text-[11px] font-semibold ${active ? "bg-white/25 text-white" : tab.inactiveDot}`}>
                   {count}
                 </span>
               )}
@@ -642,10 +673,10 @@ export default function SignatoryActivityPage() {
 
         {!(viewMode === "activity" && statusTab === "paid") && (
           <div className="ml-auto flex flex-1 items-center gap-2 sm:flex-none">
-            <div className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+            <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
               <input
-                className="w-full rounded-xl border border-stone-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#2f5b9c]"
+                className="w-full rounded-lg border border-stone-200 bg-white py-1.5 pl-8 pr-2.5 text-[13px] outline-none focus:border-[#2f5b9c]"
                 placeholder="Search PV no., payee, ministry&hellip;"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
@@ -657,10 +688,10 @@ export default function SignatoryActivityPage() {
               {filterMinistry && <span className="h-1.5 w-1.5 rounded-full bg-[#4a6da7]" />}
             </button>
             <div className="relative">
-              <ArrowUpDown size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-500" />
+              <ArrowUpDown size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500" />
               <select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)}
                 aria-label="Sort"
-                className="appearance-none rounded-xl border border-stone-200 bg-white py-2 pl-8 pr-3 text-[13px] font-medium text-stone-600 outline-none focus:border-[#2f5b9c]">
+                className="appearance-none rounded-lg border border-stone-200 bg-white py-1.5 pl-7 pr-2.5 text-[12px] font-medium text-stone-600 outline-none focus:border-[#2f5b9c]">
                 {SORTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
               </select>
             </div>
@@ -721,8 +752,8 @@ export default function SignatoryActivityPage() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)_minmax(0,1.2fr)]">
           {/* The queue */}
           <div className="@container flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white 2xl:max-h-none 2xl:min-h-0">
-            <div className="flex shrink-0 items-center justify-between border-b border-[#eef4fc] px-4 py-2.5">
-              <span className="text-[13px] font-semibold text-stone-700">
+            <div className="flex shrink-0 items-center justify-between border-b border-[#eef4fc] px-3 py-1.5">
+              <span className="text-[12px] font-semibold text-stone-600">
                 {loading || (viewMode === "mine" && mineLoading)
                   ? "Loading\u2026"
                   : `${flatVisible.length} payment voucher${flatVisible.length === 1 ? "" : "s"}`}
@@ -818,7 +849,10 @@ export default function SignatoryActivityPage() {
               <BudgetImpact variant="chip" ministry={activeRow.ministry} projectName={null}
                 amount={activeRow.amount} excludePvId={activeRow.id} date={null} />
             ) : undefined}
-            onApprove={() => activeRow && handleApprove([activeRow.id])}
+            actionLabel={activeFinanceReview ? "Review & Sign" : "Approve & Sign"}
+            onApprove={() => activeRow && (activeFinanceReview
+              ? financeReview(activeRow.id)
+              : handleApprove([activeRow.id]))}
             onReject={() => activeRow && handleReject([activeRow.id])}
             onRevert={activeCanRevert ? () => activeRow && handleRevert(activeRow.id) : undefined}
             extraActions={activeRow ? (

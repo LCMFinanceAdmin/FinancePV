@@ -190,7 +190,7 @@ export function PVViewer({
       </div>
 
       {/* ── Zoom and paging ────────────────────────────────────── */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-[#eef4fc] px-3 py-1.5">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[#eef4fc] px-2 py-1">
         {attachments.length > 0 && (
           <div className="flex items-center gap-0.5">
             <button onClick={() => setTab(t => Math.max(0, t - 1))} disabled={tab === 0}
@@ -232,7 +232,7 @@ export function PVViewer({
       </div>
 
       {/* ── The document ───────────────────────────────────────── */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-[#f2f5fa] p-3">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-[#f2f5fa] p-2">
         <div style={tab === 0
           ? { width: SHEET_W * (z / 100), height: docH * (z / 100), margin: "0 auto" }
           : { width: `${z}%`, margin: "0 auto" }}>
@@ -289,7 +289,7 @@ function ViewerTab({ active, onClick, icon, children }: {
 }) {
   return (
     <button onClick={onClick}
-      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors ${
+      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
         active
           ? "border-[#4a6da7] text-[#3d5a8f]"
           : "border-transparent text-stone-500 hover:text-stone-700"}`}>
