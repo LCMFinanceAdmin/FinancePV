@@ -28,10 +28,12 @@ import type { PV } from "@/lib/types";
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|heic|heif)(\?|$)/i;
 const PDF_RE = /\.pdf(\?|$)/i;
 
-// The voucher stylesheet caps its sheet at 820px and gives it a 20px margin.
-// The frame is laid out at that width whatever the pane is, and scaled — which
-// is what zooming a document means. Sizing the frame to the pane instead just
-// reflows the sheet, which is what the first version of this did.
+// The width the frame is laid out at before anything has been measured. The
+// voucher stylesheet caps its sheet at 820px inside a 20px margin, so this is
+// the right first guess — but only a guess, and the document is measured as
+// soon as it loads. Laying out at a fixed width and scaling is what zooming a
+// document means; sizing the frame to the pane instead reflows the sheet, which
+// is a different document from the one that prints.
 const SHEET_W = 880;
 
 /** "…/1712-EPF%20Summary.pdf" → "EPF Summary". */
@@ -56,6 +58,12 @@ export function PVViewer({
   const [full, setFull] = useState(false);
   const [paneW, setPaneW] = useState(0);
   const [docH, setDocH] = useState(1123);
+  // What the voucher actually needs, read from the loaded document rather than
+  // assumed. A long unbroken payee, a wide attachment table, a stylesheet
+  // change — any of them makes the real width something other than SHEET_W, and
+  // the frame then clips the voucher with a scrollbar of its own inside a pane
+  // that already has one.
+  const [docW, setDocW] = useState(SHEET_W);
   const [logo, setLogo] = useState("");
 
   const attachments = useMemo(() => (pv?.attachments ?? []).filter(Boolean), [pv]);
@@ -85,10 +93,12 @@ export function PVViewer({
 
   useEffect(() => () => paneRO.current?.disconnect(), []);
 
-  // Capped at 140 rather than 100: on a wide pane the sheet would otherwise
-  // float in the middle of a grey field at its paper size, which wastes exactly
-  // the room the pane was widened to provide.
-  const fitZoom = paneW > 0 ? Math.min(140, Math.max(25, (paneW / SHEET_W) * 100)) : 100;
+  // Fit means the whole width, always. Measured against the document's own
+  // width, so a voucher wider than the default frame is scaled down to fit
+  // rather than clipped. Capped at 140 going the other way: on a pane wider
+  // than the sheet the voucher would otherwise float at paper size in a grey
+  // field, wasting the room the pane was widened to provide.
+  const fitZoom = paneW > 0 ? Math.min(140, Math.max(20, (paneW / docW) * 100)) : 100;
   const z = zoom ?? fitZoom;
 
   // load fires before the logo and any web font have settled, so measuring once
@@ -101,7 +111,14 @@ export function PVViewer({
     try {
       const d = el.contentDocument;
       if (!d) return;
-      const apply = () => setDocH(Math.max(600, d.documentElement.scrollHeight + 8));
+      const apply = () => {
+        setDocH(Math.max(600, d.documentElement.scrollHeight + 8));
+        // Only ever grows within one voucher, so the frame settles instead of
+        // oscillating: widening it can only reduce what the content needs, and
+        // a narrower measurement afterwards would just start the loop again.
+        // Reset per voucher, where the previous one's width means nothing.
+        setDocW(prev => Math.max(prev, d.documentElement.scrollWidth));
+      };
       apply();
       const win = el.contentWindow;
       if (win && "ResizeObserver" in win) {
@@ -126,6 +143,7 @@ export function PVViewer({
     setTab(0);
     setZoom(null);
     setDocH(1123);
+    setDocW(SHEET_W);
   }
 
   // Escape leaves full screen. Without it the only way out is the button,
@@ -244,8 +262,16 @@ export function PVViewer({
 
       {/* ── The document ───────────────────────────────────────── */}
       <div ref={attachScroll} className="min-h-0 flex-1 overflow-auto bg-[#f2f5fa] p-2">
+        {/* overflow hidden, and it is load-bearing.
+            transform: scale() changes what is painted, never the layout box —
+            the frame still occupies its full unscaled width, so a voucher shown
+            at 57% was laid out as though it were at 100% and pushed a
+            horizontal scrollbar onto the pane no matter how well the painted
+            document fitted. Clipping the wrapper to the scaled size removes the
+            phantom overflow; nothing visible is lost, because the painted
+            content is exactly the size of the box. */}
         <div style={tab === 0
-          ? { width: SHEET_W * (z / 100), height: docH * (z / 100), margin: "0 auto" }
+          ? { width: docW * (z / 100), height: docH * (z / 100), margin: "0 auto", overflow: "hidden" }
           : { width: `${z}%`, margin: "0 auto" }}>
           {tab === 0 ? (
             <iframe
@@ -258,7 +284,7 @@ export function PVViewer({
               sandbox="allow-same-origin"
               onLoad={e => measure(e.currentTarget)}
               style={{
-                width: SHEET_W, height: docH,
+                width: docW, height: docH,
                 transform: `scale(${z / 100})`, transformOrigin: "top left",
                 border: 0,
               }}
