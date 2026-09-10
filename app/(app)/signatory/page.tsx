@@ -713,13 +713,18 @@ export default function SignatoryPage() {
 
       {/* Role-aware status filter tabs */}
       <div className={chipRow}>
+        {/* The General Manager had two tabs side by side both labelled
+            "Pending", which is the whole of the question people keep asking.
+            One is the voucher waiting on them; the other is the one they have
+            already approved, now with the signing officers. Same word, opposite
+            meanings, and no way to tell without clicking. */}
         {(isGM ? [
-          { key: "pending",           label: "Pending",                   count: pendingPvsAll.length,          activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
-          { key: "pending_signatory", label: "Pending", count: pendingSignatoryPvsAll.length, activeColor: "bg-orange-500 text-white border-transparent", dot: "bg-orange-100 text-orange-700" },
+          { key: "pending",           label: "Needs your approval",       count: pendingPvsAll.length,          activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
+          { key: "pending_signatory", label: "With the signatories", count: pendingSignatoryPvsAll.length, activeColor: "bg-orange-500 text-white border-transparent", dot: "bg-orange-100 text-orange-700" },
           { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
           { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
         ] : [
-          { key: "pending_signatory", label: "Pending", count: pendingSignatoryPvsAll.length, activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
+          { key: "pending_signatory", label: "Needs your signature", count: pendingSignatoryPvsAll.length, activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
           { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
           { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
         ] as { key: "pending" | "pending_signatory" | "approved" | "paid"; label: string; count: number; activeColor: string; dot: string }[]).map(tab => {

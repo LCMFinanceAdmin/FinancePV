@@ -96,7 +96,7 @@ export const NAV_GROUPS: NavGroup[] = [
         show: (u) => u.isGeneralManager || u.isFinanceAdmin || u.isSignatory,
       },
       {
-        href: "/signatory", label: "Signatory Queue", desc: "Vouchers awaiting your signature",
+        href: "/signatory", label: "Signatory Queue", desc: "Vouchers waiting on you to approve or sign",
         icon: <Users size={size} />, show: (u) => u.isSignatory,
       },
       {
@@ -128,7 +128,7 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: <Activity size={size} />, show: (u) => u.isFinanceAdmin,
       },
       {
-        href: "/hod-activity", label: "My Approvals", desc: "Vouchers you've acted on",
+        href: "/hod-activity", label: "My Approvals", desc: "Look up any voucher and its approval status",
         icon: <ClipboardCheck size={size} />, show: (u) => u.isSignatory,
       },
       {
