@@ -2,6 +2,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
 import { mayVerifyFor } from "../_shared/verifiers.ts";
+import { coveringMinistries } from "../_shared/ministries.ts";
 import { isExcoRole, EXCO_APPROVAL_ROLE } from "../_shared/roles.ts";
 
 // Payment Request state machine.
@@ -65,9 +66,33 @@ Deno.serve(async (req) => {
     const stageOwnerIsExco = pr.status === "SUBMITTED";
     const stageOwnerIsGM   = pr.status === "EXCO_VERIFIED";
 
+    // ── An empty seat, as opposed to a slow one ────────────────────────────
+    //
+    // Twelve of the fourteen ministries have no EXCO member and no named
+    // representative. A request booked to one of them waits at SUBMITTED for
+    // somebody who does not exist: it never becomes a GM Claim, so Finance is
+    // never told, and nobody has refused it — it just never arrives.
+    //
+    // So the General Manager may take the stage himself, and only then. A
+    // ministry that has somebody still goes through them; asked of a vacancy
+    // this is coping, asked of a staffed committee it would be a general power
+    // to skip verification, which is a different thing entirely.
+    //
+    // The family goes to the database rather than the name: whoever covers
+    // Education covers Education Desk, in both directions.
+    const stageHasNobody = stageOwnerIsExco && !(await db
+      .rpc("ministry_has_verifier", { p_ministries: coveringMinistries(pr.ministry ?? "") })
+      .then((r: { data: boolean | null }) => r.data === true));
+    const gmActingForVacancy = isGM && stageHasNobody;
+
     // ── REJECT — only the authority that currently holds the request ───────
     if (action === "REJECT") {
-      const mayReject = (stageOwnerIsExco && isMinistryExco) || (stageOwnerIsGM && isGM);
+      // Rejecting is included deliberately. A request the GM may approve but
+      // never decline is a worse trap than one nobody can touch: it would
+      // leave "approve it or leave it stuck" as the only two options.
+      const mayReject = (stageOwnerIsExco && isMinistryExco)
+        || (stageOwnerIsGM && isGM)
+        || gmActingForVacancy;
       if (!mayReject) {
         return json({ error: "You are not the approving authority for this request at its current stage" }, 403);
       }
@@ -180,13 +205,27 @@ Deno.serve(async (req) => {
 
     // ── GM_APPROVE — the GM instructs Finance to raise the PV ──────────────
     if (!isGM) return json({ error: "Only the General Manager can approve at this stage" }, 403);
-    if (pr.status !== "EXCO_VERIFIED") {
-      return json({ error: `This request must be verified by ${pr.ministry} EXCO first (currently ${pr.status})` }, 400);
+    if (pr.status !== "EXCO_VERIFIED" && !gmActingForVacancy) {
+      return json({
+        error: pr.status === "SUBMITTED"
+          ? `${pr.ministry} has an EXCO member, so this needs their verification first.`
+          : `This request must be verified by ${pr.ministry} EXCO first (currently ${pr.status})`,
+      }, 400);
     }
 
     const approvals = [...(pr.approvals || []), {
       role: "GENERAL_MANAGER", email: user.email, name: actorName,
-      action: "APPROVED", timestamp: now, remarks: remarks || "",
+      action: "APPROVED", timestamp: now,
+      // Says which of the two things happened. A request approved because the
+      // committee verified it and one approved because there was no committee
+      // are different events, and the record should not read the same for both.
+      remarks: [
+        gmActingForVacancy
+          ? `Approved without ${pr.ministry || "ministry"} EXCO verification — no member in office`
+          : "",
+        remarks || "",
+      ].filter(Boolean).join(" — "),
+      ...(gmActingForVacancy ? { no_exco_in_office: true } : {}),
     }];
 
     // The claim already exists — EXCO verification created it. Accepting it is
@@ -211,7 +250,11 @@ Deno.serve(async (req) => {
         gm_status: "ACCEPTED",
         gm_approved_by: actorName,
         gm_verified_at: now.slice(0, 10),
-        notes: `Auto-created from Payment Request ${pr.request_no} on GM acceptance.`,
+        notes: gmActingForVacancy
+          ? `Auto-created from Payment Request ${pr.request_no} on GM acceptance.`
+            + ` ${pr.ministry || "The ministry"} has no EXCO member in office, so the General Manager`
+            + ` approved it without that verification — the committee's box is unsigned.`
+          : `Auto-created from Payment Request ${pr.request_no} on GM acceptance.`,
       }).select().single();
       if (claimErr) return json({ error: `Approved, but the GM Claim could not be created: ${claimErr.message}` }, 500);
       claimNo = generated;
@@ -305,7 +348,15 @@ function claimFromRequest(
     request_id: pr.id,
     exco_signature: pr.exco_signature || excoSignature || null,
     exco_verified_by: pr.exco_verified_by || excoName || null,
-    exco_verified_at: pr.exco_verified_at || now,
+    // Only when somebody actually verified. This used to fall back to `now`,
+    // which was harmless while the only route here was EXCO verification —
+    // there was always a verifier. Now that the General Manager can approve a
+    // vacant ministry's request, the fallback would stamp a verification date
+    // against a blank verifier, and a date in that column is exactly what a
+    // reader takes as proof the committee signed.
+    exco_verified_at: (pr.exco_verified_by || excoName)
+      ? (pr.exco_verified_at || now)
+      : null,
     created_by_email: createdByEmail,
     received_at: now,
   };
