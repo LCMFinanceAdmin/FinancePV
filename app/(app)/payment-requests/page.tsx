@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { PurchaseRequest, PRStatus } from "@/lib/types";
 import {
-  Plus, FileText, ExternalLink, ChevronDown, ChevronUp, Check, RefreshCw, ShieldCheck,
+  Plus, FileText, ExternalLink, ChevronDown, ChevronUp, Check, RefreshCw, ShieldCheck, BellRing,
 } from "lucide-react";
 
 // "My Payment Requests" — the applicant's tracker. The request itself is now
@@ -43,6 +43,38 @@ function stageIndex(status: PRStatus): number {
 }
 
 export default function PaymentRequestsPage() {
+  // Asking the verifier again.
+  //
+  // Submission tells the ministry's EXCO once and nothing ever tells them
+  // again, so a request can sit at SUBMITTED for weeks with everybody assuming
+  // it is with somebody else. There was no way to ask twice — not for the
+  // person who raised it, not for Finance, not for the GM.
+  const [reminding, setReminding] = useState<string | null>(null);
+  const [reminderMsg, setReminderMsg] = useState({ id: "", text: "", ok: true });
+
+  async function remind(prId: string) {
+    setReminding(prId);
+    const sb = createClient();
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/pr-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ pr_id: prId, action: "REMIND" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not send the reminder");
+      setReminderMsg({
+        id: prId, ok: true,
+        text: `Reminder sent to ${(json.reminded ?? []).join(", ")}`,
+      });
+    } catch (e) {
+      setReminderMsg({ id: prId, ok: false, text: (e as Error).message });
+    } finally {
+      setReminding(null);
+    }
+  }
+
   const supabase = createClient();
   const [prs, setPrs] = useState<PurchaseRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,8 +158,22 @@ export default function PaymentRequestsPage() {
                     <div className="text-right shrink-0">
                       <div className="text-base font-bold text-stone-800">{formatCurrency(pr.estimated_amount)}</div>
                       {pr.project && <div className="text-xs text-stone-400 mt-0.5">{pr.project}</div>}
+                      {pr.status === "SUBMITTED" && (
+                        <button onClick={() => remind(pr.id)} disabled={reminding === pr.id}
+                          title="Notify the ministry's EXCO again — in the app, by push and by email"
+                          className="mt-1.5 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50">
+                          <BellRing size={11} /> {reminding === pr.id ? "Sending…" : "Remind EXCO"}
+                        </button>
+                      )}
                     </div>
                   </div>
+
+                  {reminderMsg.id === pr.id && reminderMsg.text && (
+                    <p className={`mt-2 text-[11px] font-medium ${
+                      reminderMsg.ok ? "text-green-700" : "text-red-600"}`}>
+                      {reminderMsg.text}
+                    </p>
+                  )}
 
                   {/* Where it has got to */}
                   {idx >= 0 && (

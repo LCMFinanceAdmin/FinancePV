@@ -3,7 +3,7 @@ import { getServiceClient, getUserClient, getProfileByEmail } from "../_shared/s
 import { sendPushToRoles, sendPushToEmails } from "../_shared/push.ts";
 import { mayVerifyFor } from "../_shared/verifiers.ts";
 import { coveringMinistries } from "../_shared/ministries.ts";
-import { isExcoRole, EXCO_APPROVAL_ROLE } from "../_shared/roles.ts";
+import { isExcoRole, EXCO_APPROVAL_ROLE, EXCO_ROLE_FILTER } from "../_shared/roles.ts";
 
 // Payment Request state machine.
 //
@@ -61,6 +61,10 @@ Deno.serve(async (req) => {
     const isMinistryExco =
       right.allowed && (right.delegated || isExcoRole(profile.role));
     const isGM = profile.role === "GENERAL_MANAGER";
+    // Finance does not decide a request, but it does chase one: they are the
+    // people who notice a payment has not happened.
+    const isFinance = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"]
+      .includes(profile.role);
 
     // Who owns the stage the request is currently sitting at?
     const stageOwnerIsExco = pr.status === "SUBMITTED";
@@ -84,6 +88,79 @@ Deno.serve(async (req) => {
       .rpc("ministry_has_verifier", { p_ministries: coveringMinistries(pr.ministry ?? "") })
       .then((r: { data: boolean | null }) => r.data === true));
     const gmActingForVacancy = isGM && stageHasNobody;
+
+    // ── REMIND — ask the verifier again ───────────────────────────────────
+    //
+    // Submission notifies the ministry's EXCO once and nothing ever notifies
+    // them again. A request can therefore sit at SUBMITTED indefinitely with
+    // everybody assuming it is with somebody else — which is exactly what
+    // happened to PR-2026-002, unread since August.
+    //
+    // Goes down the same path as every other notification rather than writing
+    // a row directly, so it reaches the phone and the inbox and not only the
+    // bell in a page nobody has opened.
+    if (action === "REMIND") {
+      if (pr.status !== "SUBMITTED") {
+        return json({ error: `This request is already ${pr.status} — there is nobody left to remind.` }, 400);
+      }
+      const mayRemind = isGM || isFinance
+        || (pr.submitted_by_email ?? "").toLowerCase() === (user.email ?? "").toLowerCase();
+      if (!mayRemind) {
+        return json({ error: "Only the person who raised this, Finance or the General Manager can send a reminder." }, 403);
+      }
+
+      // Once a day. A reminder that can be sent five times in a minute stops
+      // being a reminder and becomes a reason to mute the sender.
+      const priorReminders = (pr.approvals || []).filter((a: { action?: string }) => a.action === "REMINDED");
+      const lastAt = priorReminders.length
+        ? priorReminders[priorReminders.length - 1].timestamp as string
+        : null;
+      if (lastAt && Date.now() - new Date(lastAt).getTime() < 20 * 60 * 60 * 1000) {
+        return json({
+          error: `A reminder was already sent ${new Date(lastAt).toLocaleDateString("en-MY")}. One a day is the limit.`,
+        }, 429);
+      }
+
+      const { data: excoMembers } = await db
+        .from("user_roles")
+        .select("email")
+        .or(EXCO_ROLE_FILTER)
+        .overlaps("ministries", coveringMinistries(pr.ministry ?? ""));
+
+      const emails = (excoMembers ?? []).map((m: { email: string }) => m.email);
+      if (!emails.length) {
+        return json({
+          error: `${pr.ministry || "This ministry"} has no EXCO member to remind.`
+               + " As General Manager you can approve it directly instead.",
+        }, 400);
+      }
+
+      const amountLabel = formatRM(Number(pr.estimated_amount || 0));
+      await db.from("notifications").insert(emails.map((email: string) => ({
+        recipient_email: email,
+        type: "PR_REMINDER", pv_no: pr.request_no, pv_id: pr.id,
+        message: `Reminder from ${actorName}: Payment Request ${pr.request_no} — ${pr.title}`
+               + ` (${amountLabel}) for ${pr.ministry} is still waiting on your verification.`,
+        read: false, created_at: now,
+      })));
+      await sendPushToEmails(db, emails, {
+        title: "Still waiting on your verification",
+        urgent: true,
+        body: `${pr.request_no} — ${pr.title} (${amountLabel})`,
+        url: "/ministry",
+      });
+
+      await db.from("purchase_requests").update({
+        approvals: [...(pr.approvals || []), {
+          role: profile.role, email: user.email, name: actorName,
+          action: "REMINDED", timestamp: now,
+          remarks: `Reminder sent to ${emails.join(", ")}`,
+        }],
+        updated_at: now,
+      }).eq("id", pr_id);
+
+      return json({ ok: true, status: pr.status, reminded: emails });
+    }
 
     // ── REJECT — only the authority that currently holds the request ───────
     if (action === "REJECT") {
