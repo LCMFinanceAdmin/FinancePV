@@ -243,9 +243,22 @@ Deno.serve(async (req) => {
       return json({ ok: true, status: "PENDING_SIGNATORY" });
     }
 
-    const allowedStatuses = isGM
-      ? ["PENDING", "REVIEWED", "PENDING_SIGNATORY", "MINISTRY_VERIFIED"]
-      : ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED"];
+    // PENDING is not on this list, and its absence is the point.
+    //
+    // The General Manager used to be allowed to act on it, which meant the
+    // General Manager could approve a voucher Finance had not reviewed — and
+    // because a GM approval sets the status straight to PENDING_SIGNATORY, the
+    // review step was not deferred but skipped. No screen ever offered it and
+    // no voucher was ever put through it: of the five carrying a GM approval,
+    // all five went the ordinary way. It was reachable only by calling this
+    // endpoint directly, which is exactly the kind of gap that stays open
+    // because nothing visible is broken by it.
+    //
+    // One list now, because with PENDING gone the two roles allow the same
+    // three statuses. What still differs between them is further down, where
+    // it belongs: a GM approval gates the voucher to the officers, an
+    // officer's counts towards the signatures the amount requires.
+    const allowedStatuses = ["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"];
     if (!allowedStatuses.includes(pv.status)) return json({ error: `Cannot act on PV with status ${pv.status}` }, 400);
 
     // The office being paid is taken out of the count, so the remaining two
