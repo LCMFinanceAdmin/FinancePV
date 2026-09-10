@@ -84,8 +84,19 @@ Deno.serve(async (req) => {
     //
     // The family goes to the database rather than the name: whoever covers
     // Education covers Education Desk, in both directions.
+    //
+    // The budget line goes too, because a verifier can be scoped to one. Chan
+    // Mun Kwan covers Education, but only its Education Desk Project line. Ask
+    // "does Education have anybody" and the answer is yes; ask it of a request
+    // booked to Lay Leaders Training and the honest answer is no. Without the
+    // line, that request was refused the General Manager's approval on the
+    // strength of a verifier who could not have touched it — stuck, and stuck
+    // by the check that exists to stop things being stuck.
     const stageHasNobody = stageOwnerIsExco && !(await db
-      .rpc("ministry_has_verifier", { p_ministries: coveringMinistries(pr.ministry ?? "") })
+      .rpc("ministry_has_verifier", {
+        p_ministries: coveringMinistries(pr.ministry ?? ""),
+        p_project: pr.project || null,
+      })
       .then((r: { data: boolean | null }) => r.data === true));
     const gmActingForVacancy = isGM && stageHasNobody;
 
