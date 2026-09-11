@@ -21,9 +21,22 @@ export async function getProfileByEmail(
   db: ReturnType<typeof getServiceClient>,
   email: string,
   columns = "role,full_name",
-) {
+  // Set on the one retry below, so a directory fault can never loop.
+  aliased = false,
+): Promise<Record<string, unknown> | null> {
   const { data } = await db.from("user_roles").select(columns).eq("email", email).limit(1);
   const profile = data?.[0];
+
+  // An office account and a personal address can belong to the same person, and
+  // only one of them carries the role. Signing in with the other found nothing
+  // here and came back as a 403 — indistinguishable, from the outside, from not
+  // being allowed to do the thing.
+  if (!profile && !aliased) {
+    const { data: alias } = await db.rpc("resolve_role_email", { p_login: email });
+    if (typeof alias === "string" && alias && alias.toLowerCase() !== email.toLowerCase()) {
+      return await getProfileByEmail(db, alias, columns, true);
+    }
+  }
   if (!profile) return null;
 
   // PIN hashes and reusable signatures intentionally live outside the broadly

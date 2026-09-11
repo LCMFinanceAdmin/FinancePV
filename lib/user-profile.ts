@@ -18,10 +18,22 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // Somebody may have been issued an office account — mission@lcm.org.my — as
+  // well as their own address, and we do not always know which one they will
+  // use. Sign in with the wrong one and the old lookup found nothing, which
+  // does not read as "wrong address": it reads as being told you have no role.
+  //
+  // The account stays single and the directory maps the other addresses to it,
+  // so the answer is the same either way. Everything below uses the resolved
+  // address rather than the one typed at the login screen, so an approval is
+  // recorded against one person however they arrived.
+  const { data: resolved } = await supabase.rpc("resolve_role_email", { p_login: user.email });
+  const email = (resolved as string | null) || user.email!;
+
   const { data: profile } = await supabase
     .from("user_roles")
     .select("*")
-    .eq("email", user.email)
+    .eq("email", email)
     .single();
 
   const role = profile?.role ?? "STAFF";
@@ -38,7 +50,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
           .select("name, districts(name)")
           .eq("id", profile.congregation_id).maybeSingle()
       : Promise.resolve({ data: null }),
-    supabase.from("districts").select("name").eq("dean_email", user.email!).maybeSingle(),
+    supabase.from("districts").select("name").eq("dean_email", email).maybeSingle(),
     // Verifying for an EXCO member who has asked you to. It carries no portfolio
     // and no role — but without it the queue holding that work is missing from
     // the nav, and the delegation is invisible to the person given it.
@@ -48,8 +60,8 @@ export async function getUserProfile(): Promise<UserProfile | null> {
 
   return {
     id: user.id,
-    email: user.email!,
-    full_name: profile?.full_name ?? user.user_metadata?.full_name ?? user.email!,
+    email,
+    full_name: profile?.full_name ?? user.user_metadata?.full_name ?? email,
     role,
     ministries,
     isFinanceAdmin: ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role),
@@ -65,7 +77,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     isBamCommittee: false,
     // Keeps the people directory. Not a finance role — no approving, no payments.
     isAdministrator: role === "ADMINISTRATOR",
-    isTestAdmin: TEST_ADMIN_EMAILS.includes(user.email!),
+    isTestAdmin: TEST_ADMIN_EMAILS.includes(email),
     isTestAccount: profile?.is_test_account === true,
     // Defaults to true so an account with no directory record behaves exactly
     // as it did before this was introduced.
