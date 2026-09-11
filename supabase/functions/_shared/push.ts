@@ -102,6 +102,9 @@ export async function sendPushToMinistryHeads(db: DB, ministry: string, payload:
     .from("user_roles")
     .select("email")
     .or(EXCO_ROLE_FILTER)
+    // A test fixture is not a member of the committee. One carries Education,
+    // so every Education push was addressed to a domain that does not resolve.
+    .not("is_test_account", "is", true)
     .overlaps("ministries", coveringMinistries(ministry));
   const emails = (users ?? []).map((u: { email: string }) => u.email);
   await sendPushToEmails(db, emails, payload);

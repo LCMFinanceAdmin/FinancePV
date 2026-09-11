@@ -136,6 +136,7 @@ Deno.serve(async (req) => {
         .from("user_roles")
         .select("email")
         .or(EXCO_ROLE_FILTER)
+        .not("is_test_account", "is", true)
         .overlaps("ministries", coveringMinistries(pr.ministry ?? ""));
 
       const emails = (excoMembers ?? []).map((m: { email: string }) => m.email);
