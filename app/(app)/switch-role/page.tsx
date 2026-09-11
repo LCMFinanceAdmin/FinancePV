@@ -44,6 +44,11 @@ export default function SwitchRolePage() {
   const supabase = createClient();
   const router = useRouter();
   const [currentRole, setCurrentRole] = useState("");
+  // The role this account actually holds. Switching overwrites `role`, so
+  // without this there is nothing to come back to — which is how the Finance
+  // Executive account spent weeks sitting as a second General Manager.
+  const [defaultRole, setDefaultRole] = useState("");
+  const [reverting, setReverting] = useState(false);
   const [email, setEmail] = useState("");
   const [ministries, setMinistries] = useState<string[]>([]);
   const [selectedRole, setSelectedRole] = useState("");
@@ -76,10 +81,12 @@ export default function SwitchRolePage() {
         }
         setEmail(user.email ?? "");
 
-        const [{ data: security }, { data: mins }] = await Promise.all([
+        const [{ data: security }, { data: mins }, { data: home }] = await Promise.all([
           supabase.rpc("get_my_security_context").single(),
           supabase.from("ministries").select("name").order("name"),
+          supabase.from("user_roles").select("default_role").eq("email", user.email).maybeSingle(),
         ]);
+        setDefaultRole((home as { default_role?: string } | null)?.default_role ?? "");
 
         const securityContext = security as {
           role?: Role;
@@ -153,6 +160,18 @@ export default function SwitchRolePage() {
     }
   }
 
+  async function revert() {
+    setReverting(true);
+    try {
+      const { error } = await supabase.rpc("revert_to_default_role");
+      if (error) { showToast(error.message ?? "Could not switch back", false); setReverting(false); return; }
+      showToast("Back to your own role");
+      setTimeout(() => window.location.reload(), 600);
+    } catch {
+      setReverting(false);
+    }
+  }
+
   if (loading) return <div className="p-8 text-center text-stone-400 text-sm">Loading…</div>;
 
   const currentLabel = ROLES.find(r => r.value === currentRole)?.label ?? currentRole;
@@ -176,7 +195,25 @@ export default function SwitchRolePage() {
             {hasPin && <span className="ml-2 text-xs text-green-600 font-medium">✓ PIN set</span>}
           </p>
         </div>
+
+        {/* Leaving a switch in place is silent: nothing else in the app says
+            you are wearing somebody else's role, and the account simply looks
+            like it holds it. The way back belongs next to the way out. */}
+        {defaultRole && defaultRole !== currentRole && (
+          <button onClick={revert} disabled={reverting}
+            className="ml-auto shrink-0 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50">
+            {reverting ? "Switching back…" : `← Back to ${ROLES.find(r => r.value === defaultRole)?.label ?? defaultRole}`}
+          </button>
+        )}
       </div>
+
+      {defaultRole && defaultRole !== currentRole && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-3.5 py-2.5 text-[13px] text-amber-900">
+          You are testing as <strong>{currentLabel}</strong>. This account really holds{" "}
+          <strong>{ROLES.find(r => r.value === defaultRole)?.label ?? defaultRole}</strong> — everything
+          else in the app, and anyone auditing it, sees the role you are wearing.
+        </div>
+      )}
 
       {/* Role grid */}
       <div className="grid grid-cols-2 gap-2">
