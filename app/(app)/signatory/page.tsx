@@ -505,7 +505,7 @@ export default function SignatoryPage() {
 
     return (
       <div className={`bg-white ${compact ? "border-t border-stone-100" : "border border-stone-200 rounded-xl shadow-sm"} hover:border-[#4a6da7]/40 hover:shadow-sm transition-all`}>
-        <div className="px-4 py-3.5">
+        <div className="px-3 py-2.5">
           <PVSummary
             id={pv.id}
             pvNo={pv.pv_no}
@@ -518,7 +518,7 @@ export default function SignatoryPage() {
             budget={isSignatoryUser && !userHasActed && isRelevantForRole ? (
               <BudgetImpact
                 variant="chip"
-                className="!px-2.5 !py-1 !text-[14px]"
+                className="!px-2 !py-0.5 !text-[12px]"
                 ministry={pv.ministry}
                 projectName={(pv as PVWithBulk & { project?: string }).project ?? null}
                 amount={pv.amount ?? 0}
@@ -552,7 +552,7 @@ export default function SignatoryPage() {
 
 
           {/* Action row: buttons (left) · status/view (right) */}
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2"
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-1.5"
             onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
             {/* On a phone the approve/reject pair takes the full width for
                 thumb reach, which leaves nothing for the signed count beside
@@ -561,7 +561,7 @@ export default function SignatoryPage() {
             <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:flex-1">
               {isSignatoryUser && userHasActed && (isRelevantForRole || canRetractApproved) && (
                 <>
-                  <span className={`text-[13px] font-semibold px-2.5 py-1 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
                     {userApproval!.action === "APPROVED" ? "✓ Approved" : "✕ Rejected"}
                   </span>
                   {canRevert && !isFinalised ? (
@@ -579,13 +579,13 @@ export default function SignatoryPage() {
                 <div className="flex flex-1 gap-2">
                   <button onClick={() => openPin([pv.id!], "APPROVED")}
                     aria-label="Approve" title="Approve"
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-4 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-green-700 sm:flex-none">
-                    <CheckCircle size={16} /> Approve
+                    className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-green-700 sm:flex-none">
+                    <CheckCircle size={14} /> Approve
                   </button>
                   <button onClick={() => openPin([pv.id!], "REJECTED")}
                     aria-label="Reject" title="Reject"
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-4 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-red-600 sm:flex-none">
-                    <XCircle size={16} /> Reject
+                    className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-red-500 px-3 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-red-600 sm:flex-none">
+                    <XCircle size={14} /> Reject
                   </button>
                 </div>
               )}
@@ -594,17 +594,17 @@ export default function SignatoryPage() {
             <div className="flex w-full shrink-0 items-center justify-between gap-3 sm:w-auto sm:justify-end">
               {pv.status === "PAID" ? (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[13px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">✓ Paid</span>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Paid</span>
                   {(pv as PVWithBulk & { paid_at?: string }).paid_at && (
                     <span className="text-[10px] text-stone-400 hidden sm:inline">{formatDate((pv as PVWithBulk & { paid_at?: string }).paid_at!)}</span>
                   )}
                 </div>
               ) : (
-                <div className="text-[13px] text-[#4a6da7] font-semibold whitespace-nowrap">{signatoryApprovals.length}/{loa.required} signed</div>
+                <div className="text-[11px] text-[#4a6da7] font-semibold whitespace-nowrap">{signatoryApprovals.length}/{loa.required} signed</div>
               )}
               <Link href={`/my-pvs/${pv.id}`}
-                className="flex items-center gap-1 text-[13px] text-stone-400 hover:text-[#4a6da7] transition-colors whitespace-nowrap">
-                <ExternalLink size={12} /> <span className="hidden sm:inline">View full PV</span><span className="sm:hidden">View</span>
+                className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-[#4a6da7] transition-colors whitespace-nowrap">
+                <ExternalLink size={11} /> <span className="hidden sm:inline">View full PV</span><span className="sm:hidden">View</span>
               </Link>
             </div>
           </div>

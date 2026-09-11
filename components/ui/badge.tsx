@@ -5,7 +5,7 @@ export function StatusBadge({ status, size = "sm" }: { status: PVStatus; size?: 
   return (
     <span className={cn(
       "inline-flex items-center rounded-full font-semibold whitespace-nowrap border border-current/10 shadow-[0_2px_5px_rgba(58,110,184,.08)]",
-      size === "lg" ? "px-3 py-1 text-[14px]" : "px-2.5 py-1 text-xs",
+      size === "lg" ? "px-2.5 py-0.5 text-[12px]" : "px-2.5 py-1 text-xs",
       STATUS_COLORS[status])}>
       {STATUS_LABELS[status] ?? status}
     </span>

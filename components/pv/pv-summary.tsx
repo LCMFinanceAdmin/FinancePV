@@ -59,31 +59,31 @@ export function PVSummary({
           {scope ? (
             onMinistryClick ? (
               <button onClick={e => { e.preventDefault(); e.stopPropagation(); onMinistryClick(); }}
-                className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2.5 py-1 !text-[14px] !font-bold text-[#4a6da7] transition-colors hover:bg-[#4a6da7]/20">
-                <Wallet size={13} className="shrink-0" />
+                className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 !text-[12px] !font-bold text-[#4a6da7] transition-colors hover:bg-[#4a6da7]/20">
+                <Wallet size={11} className="shrink-0" />
                 <span className="truncate">{scope}</span>
               </button>
             ) : (
-              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2.5 py-1 text-[14px] font-bold text-[#4a6da7]">
-                <Wallet size={13} className="shrink-0" />
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#4a6da7]/10 px-2 py-0.5 text-[12px] font-bold text-[#4a6da7]">
+                <Wallet size={11} className="shrink-0" />
                 <span className="truncate">{scope}</span>
               </span>
             )
           ) : (
-            <span className="text-[14px] font-medium text-stone-400">No ministry recorded</span>
+            <span className="text-[12px] font-medium text-stone-400">No ministry recorded</span>
           )}
         </span>
-        <span className="shrink-0 text-[21px] font-bold leading-none tabular-nums text-stone-900">
+        <span className="shrink-0 text-[19px] font-bold leading-none tabular-nums text-stone-900">
           {formatCurrency(amount)}
         </span>
       </div>
 
-      <div className="mt-1.5 truncate text-[19px] font-bold leading-tight text-stone-900">
+      <div className="mt-1 truncate text-[17px] font-bold leading-tight text-stone-900">
         {payee || "—"}
       </div>
 
       {purpose && (
-        <div className="mt-1 line-clamp-2 text-[16px] leading-snug text-stone-600">{purpose}</div>
+        <div className="mt-0.5 line-clamp-2 text-[14px] leading-snug text-stone-600">{purpose}</div>
       )}
     </>
   );
@@ -94,10 +94,10 @@ export function PVSummary({
 
       {/* What it does to the budget it is drawn against — the second question
           after which budget, and previously the last thing on the card. */}
-      {budget && <div className="mt-2">{budget}</div>}
+      {budget && <div className="mt-1.5">{budget}</div>}
 
       {(date || pvNo) && (
-        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[13px] text-stone-400">
+        <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-stone-400">
           {date && <span className="shrink-0">{formatDate(date)}</span>}
           {date && pvNo && <span className="shrink-0">·</span>}
           {pvNo && <span className="truncate font-mono">{pvNo}</span>}
@@ -105,7 +105,7 @@ export function PVSummary({
       )}
 
       {(badge || footer) && (
-        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-stone-100 pt-2.5">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-stone-100 pt-2">
           <span className="flex min-w-0 flex-wrap items-center gap-1">{badge}</span>
           {footer && <span className="flex shrink-0 items-center gap-1.5">{footer}</span>}
         </div>
