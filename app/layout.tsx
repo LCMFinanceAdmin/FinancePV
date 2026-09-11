@@ -3,8 +3,23 @@ import "./globals.css";
 import { NotificationSound } from "@/components/NotificationSound";
 
 export const metadata: Metadata = {
+  // A link pasted into WhatsApp or an email previews from these. Without them
+  // the card was a bare vercel.app URL, which is not what you want to send to
+  // the Bishop when you are asking him to sign in to the church's finances.
+  //
+  // metadataBase makes the icon path absolute in that card. It follows
+  // NEXT_PUBLIC_SITE_URL so a custom domain needs no code change here.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://finance-pv.vercel.app"),
   title: "LCM Finance",
-  description: "LCM Payment Voucher System",
+  description: "Payment vouchers, budgets, payroll and leave for the Lutheran Church in Malaysia.",
+  applicationName: "LCM Finance",
+  openGraph: {
+    type: "website",
+    siteName: "Lutheran Church in Malaysia",
+    title: "LCM Finance",
+    description: "Payment vouchers, budgets, payroll and leave for the Lutheran Church in Malaysia.",
+    images: [{ url: "/icons/icon-512.png", width: 512, height: 512, alt: "LCM Finance" }],
+  },
   manifest: "/manifest.json",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "LCM Finance" },
 };
