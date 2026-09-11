@@ -111,10 +111,16 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
                 .eq("is_active", true)
                 .order("sort_order")
             : Promise.resolve({ data: null }),
+          // Recurring expenses are their own table. This asked pvs for
+          // is_recurring and next_due_date, neither of which exists there —
+          // next_due_date exists nowhere in the schema — so PostgREST returned
+          // 400 every time the dashboard loaded. The count came back null, the
+          // guard below skipped the setter, and the tile read "0 scheduled
+          // expenses" against 53 of them. A failed query and an empty one look
+          // identical from the outside, which is why it survived this long.
           isFinAdmin
-            ? supabase.from("pvs").select("id", { count: "exact", head: true })
-                .eq("is_recurring", true)
-                .not("next_due_date", "is", null)
+            ? supabase.from("recurring_pvs").select("id", { count: "exact", head: true })
+                .eq("active", true)
             : Promise.resolve({ count: null }),
         ]);
 
