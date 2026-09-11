@@ -5,10 +5,10 @@ import { useState, useEffect } from "react";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2,
-  FlaskConical, X, ClipboardList, Activity, PiggyBank, Menu, LogOut, Hammer,
+  FlaskConical, X, ClipboardList, Activity, PiggyBank, LogOut, Hammer,
   CalendarDays, Inbox,
 } from "lucide-react";
-import { cn, switchableRoleOptions, ROLE_LABELS as ROLE_LABELS_SHARED } from "@/lib/utils";
+import { cn, switchableRoleOptions, personInitials, ROLE_LABELS as ROLE_LABELS_SHARED } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { excoAssignableMinistries } from "@/lib/ministries";
@@ -101,7 +101,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     ...visibleGroups(user).map(g => ({ label: g.label, items: g.items })),
   ];
 
-  const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const initials = personInitials(user.full_name);
   const roleLabel = ROLE_LABELS_SHARED[user.role] ?? user.role;
 
   return (
@@ -320,8 +320,13 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
                 style={{ background: SIDEBAR_GRADIENT }}
               />
             )}
-            <span className={cn("transition-colors", showMore ? "text-[#3a5a9f]" : "text-stone-400")}>
-              <Menu size={21} />
+            {/* Their own initials rather than a generic hamburger. The drawer
+                behind it holds the account, so the tab may as well say whose —
+                and it costs no height, unlike anything on the page itself. */}
+            <span className={cn(
+              "grid h-[21px] w-[21px] place-items-center rounded-lg text-[9px] font-bold transition-colors",
+              showMore ? "bg-[#3a5a9f] text-white" : "bg-[#dbeafe] text-[#1d4ed8]")}>
+              {initials}
             </span>
             <span className={cn(
               "text-[9.5px] font-medium transition-colors",

@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import { excoAssignableMinistries } from "@/lib/ministries";
 import { LogOut, ChevronRight, ChevronDown, FlaskConical } from "lucide-react";
-import { cn, switchableRoleOptions } from "@/lib/utils";
+import { cn, switchableRoleOptions, personInitials } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 import { visibleGroups, visiblePinned, groupForPath, activeHref } from "@/lib/nav";
 import { PushToggle } from "@/components/layout/push-toggle";
@@ -207,7 +207,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
       <div className="p-3 border-t border-[#e1edfb] space-y-2">
         <div className="rounded-2xl border border-[#deebfb] bg-[linear-gradient(135deg,#f6fbff,#f8f5ff)] p-3">
           <div className="flex items-center gap-2.5">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#dbeafe] text-xs font-bold text-[#1d4ed8]">{user.full_name.slice(0, 2).toUpperCase()}</div>
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#dbeafe] text-xs font-bold text-[#1d4ed8]">{personInitials(user.full_name)}</div>
             <div className="min-w-0">
               <div className="text-sm font-semibold text-[#274569] truncate">{user.full_name}</div>
               <div className="text-[11px] text-[#758ba7] truncate">{user.email}</div>

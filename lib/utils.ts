@@ -136,6 +136,28 @@ export function isExcoRole(role?: string | null): boolean {
  */
 export const EXCO_APPROVAL_ROLE = "MINISTRY_HEAD";
 
+/**
+ * The two letters that stand for a person.
+ *
+ * Naive first-two-words gives "Rev Reena Lew" → RR and "Rt. Rev Bishop Thomas
+ * Low" → RR as well, so the clergy all end up sharing one badge — which is the
+ * opposite of what an avatar is for. Titles are dropped first; if nothing but
+ * titles remains, the original words are used rather than returning nothing.
+ */
+const HONORIFICS = new Set([
+  "rev", "revd", "rt", "very", "most", "bishop", "pr", "ps", "pastor",
+  "dr", "mr", "mrs", "ms", "miss", "sr", "br", "elder", "deacon",
+]);
+
+export function personInitials(fullName?: string | null): string {
+  const words = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  const strip = (w: string) => w.replace(/[.,]/g, "").toLowerCase();
+  const named = words.filter(w => !HONORIFICS.has(strip(w)));
+  const use = named.length ? named : words;
+  return use.map(w => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
 export function roleLabel(role?: string | null): string {
   if (!role) return "";
   return ROLE_LABEL_OVERRIDES[role] ?? ROLE_LABELS[role] ?? role.replace(/_/g, " ");
