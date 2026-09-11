@@ -13,6 +13,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     supabase.from("ministries").select("name").order("name"),
   ]);
   if (!user) redirect("/login");
+  // Authenticated is not the same as known. Anyone who can receive email can
+  // get a magic link and a session; only somebody the church has given a role
+  // gets the app.
+  if (!user.hasRoleRow) redirect("/no-access");
   const ministryList = (ministriesData ?? []).map((m: { name: string }) => m.name);
 
   return (

@@ -76,6 +76,15 @@ export interface UserProfile {
   // without the directory join. Treat an absent isLcmStaff as employed (see
   // isStaffMember below) so nothing is locked out before the directory is
   // filled in; absent isPastor/isDean simply grant nothing extra.
+  /**
+   * Whether a user_roles row actually exists for this login.
+   *
+   * Sign-up is self-serve — the login page will send a magic link to any
+   * address — so being authenticated says only that somebody controls an
+   * inbox. Without this the profile fell back to STAFF, and STAFF may submit
+   * payment vouchers.
+   */
+  hasRoleRow?: boolean;
   isLcmStaff?: boolean;  // employed by LCM — gates leave, staff loans, payroll
   isPastor?: boolean;
   isDean?: boolean;      // derived: leads a district

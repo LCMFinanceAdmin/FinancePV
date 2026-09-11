@@ -30,12 +30,21 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   const { data: resolved } = await supabase.rpc("resolve_role_email", { p_login: user.email });
   const email = (resolved as string | null) || user.email!;
 
-  const { data: profile } = await supabase
+  // limit(1) rather than single(): single() returns null for *two* rows as
+  // readily as for none, and now that a missing profile means "denied", a
+  // duplicated row would lock a real person out of the app entirely. The edge
+  // helper has tolerated this for the same reason since migration 111.
+  const { data: profiles } = await supabase
     .from("user_roles")
     .select("*")
     .eq("email", email)
-    .single();
+    .limit(1);
+  const profile = profiles?.[0] ?? null;
 
+  // Falling back to STAFF was the problem: an address nobody has ever heard of
+  // authenticated, defaulted to STAFF, and STAFF may raise payment vouchers.
+  // The fallback stays so nothing downstream has to cope with a null role —
+  // the layout turns the session away before any of it is reached.
   const role = profile?.role ?? "STAFF";
   const ministries: string[] = profile?.ministries ?? [];
   const signatoryRoles = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
@@ -78,6 +87,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     // Keeps the people directory. Not a finance role — no approving, no payments.
     isAdministrator: role === "ADMINISTRATOR",
     isTestAdmin: TEST_ADMIN_EMAILS.includes(email),
+    hasRoleRow: !!profile,
     isTestAccount: profile?.is_test_account === true,
     // Defaults to true so an account with no directory record behaves exactly
     // as it did before this was introduced.
