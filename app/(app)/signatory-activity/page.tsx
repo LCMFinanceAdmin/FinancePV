@@ -8,13 +8,14 @@ import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import {
   CheckCircle2, XCircle, Clock, Search,
   Layers, CheckSquare, RotateCcw, BadgeCheck, Banknote, Hourglass, Plus,
-  SlidersHorizontal, ArrowUpDown, FastForward, Stamp,
+  SlidersHorizontal, ArrowUpDown, FastForward, Stamp, ChevronUp,
 } from "lucide-react";
 import Link from "next/link";
 import type { PV, PVApproval } from "@/lib/types";
 import { PaidArchive } from "@/components/pv/paid-archive";
 import { PVDetailPane } from "@/components/pv/pv-detail-pane";
 import { PVViewer } from "@/components/pv/pv-viewer";
+import { useWideLayout } from "@/lib/use-wide-layout";
 
 const SIGNATORY_ROLES = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER"];
 
@@ -107,6 +108,9 @@ export default function SignatoryActivityPage() {
   // batch at once. Ticking three vouchers and reading a fourth is an ordinary
   // thing to want, and one piece of state cannot express it.
   const [activeId, setActiveId]       = useState<string | null>(null);
+  // Wide enough to put the voucher beside the queue, or narrow enough that
+  // the card has to open in place. null until mounted.
+  const wide = useWideLayout();
   const [activePv, setActivePv]       = useState<PV | null>(null);
   const [activeLoading, setActiveLoading] = useState(false);
   const [sortBy, setSortBy]           = useState<SortKey>("newest");
@@ -499,9 +503,17 @@ export default function SignatoryActivityPage() {
   // have to work out for themselves that their own click caused it.
   useEffect(() => {
     if (flatVisible.length === 0) { if (activeId) setActiveId(null); return; }
+    // Opening the first voucher for you makes sense when it lands in the pane
+    // beside the list. When the card expands in place it would mean arriving to
+    // find one already open and the rest pushed down, which is an answer to a
+    // question nobody asked — so on a narrow screen nothing opens until tapped.
+    if (wide !== true) {
+      if (activeId && !flatVisible.some(p => p.id === activeId)) setActiveId(null);
+      return;
+    }
     if (!activeId || !flatVisible.some(p => p.id === activeId)) setActiveId(flatVisible[0].id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flatVisible.map(p => p.id).join(","), activeId]);
+  }, [flatVisible.map(p => p.id).join(","), activeId, wide]);
 
   const activeRow = flatVisible.find(p => p.id === activeId) ?? null;
   // Whether this voucher can still be decided is decisionFor()'s job now, and
@@ -592,9 +604,14 @@ export default function SignatoryActivityPage() {
 
     return (
       <div
-        onClick={() => setActiveId(pv.id)}
-        role="button" tabIndex={0}
-        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveId(pv.id); } }}
+        onClick={() => setActiveId(isOpen && wide === false ? null : pv.id)}
+        role="button" tabIndex={0} aria-expanded={wide === false ? isOpen : undefined}
+        onKeyDown={e => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setActiveId(isOpen && wide === false ? null : pv.id);
+          }
+        }}
         className={`cursor-pointer border-l-[3px] px-3 py-2 transition-colors ${
           isOpen ? "border-l-[#4a6da7] bg-[#f2f8ff]" : "border-l-transparent hover:bg-[#f7fbff]"} ${
           nested ? "bg-stone-50/40" : ""}`}
@@ -659,6 +676,30 @@ export default function SignatoryActivityPage() {
             </span>
           )}
         </div>
+
+        {/* On a narrow screen the voucher opens here rather than in a pane
+            below the whole list, pushing the cards after it down. The panes
+            are the same ones; only one branch mounts, so the document and its
+            attachments are fetched once.
+
+            Clicks stop here: inside is a record with its own buttons, and the
+            card behind it is a toggle that would close under them. */}
+        {isOpen && wide === false && (
+          <div className="mt-2 cursor-default space-y-2 border-t border-[#e3edf9] pt-2"
+            onClick={e => e.stopPropagation()}>
+            {detailPane}
+
+            {/* Tall enough to read the voucher at a glance rather than to
+                confirm one exists. It scrolls and zooms within itself. */}
+            <div className="h-[62vh] min-h-[20rem]">{documentPane}</div>
+
+            <button
+              onClick={() => setActiveId(null)}
+              className="flex w-full items-center justify-center gap-1 rounded-lg border border-stone-200 bg-white py-1.5 text-[11.5px] font-semibold text-stone-500 transition-colors hover:bg-stone-50">
+              <ChevronUp size={13} /> Close this voucher
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -682,6 +723,88 @@ export default function SignatoryActivityPage() {
   }
 
   const controlBtn = "flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-stone-600 transition-colors hover:bg-stone-50";
+
+  // One definition, rendered either beside the queue or inside the open
+  // card. Built as a value rather than duplicated in both branches: only
+  // the branch in use mounts, so the document and its attachments are
+  // fetched once.
+  const detailPane = (
+        <PVDetailPane
+          pv={activePv}
+          loading={activeLoading}
+          approvals={activeRow?.approvals}
+          // The decision lives on the card in the queue now. Repeating it
+          // here, at three times the size, made it the biggest thing on the
+          // pane and the least useful: you have already decided by the time
+          // you are reading the voucher, or you are reading it to decide, and
+          // either way the button is one column to the left.
+          budget={activeRow && decisionFor(activeRow) ? (
+            <BudgetImpact variant="chip" ministry={activeRow.ministry} projectName={null}
+              amount={activeRow.amount} excludePvId={activeRow.id} date={null} />
+          ) : undefined}
+          extraActions={activeRow ? (
+            <div className="space-y-2">
+              {/* Each of these was a bare button whose name did not say when
+                  to press it. "Send back to Finance" in particular reads as
+                  nonsense from Finance's own seat — it pulls a voucher back
+                  out of approval and clears the signatures on it, which is a
+                  thing worth being told before pressing. */}
+              {activeHasSigned && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-green-700">
+                    <CheckCircle2 size={11} /> You signed this
+                  </span>
+                  {activeCanRevert && (
+                    <button onClick={() => handleRevert(activeRow.id)} disabled={actioning}
+                      className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                      Undo my signature
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {isFinanceAdmin && !activePv?.ministry_verified_at
+                && !["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(activeRow.status) && (
+                <ActionRow
+                  onClick={() => { setRecordWho(""); setRecordBasis(""); setRecordModal(activeRow); }}
+                  icon={<Stamp size={13} className="text-green-700" />}
+                  label="Record the committee's verification"
+                  hint="They approved in a meeting, by email or on paper. Puts their name on the voucher." />
+              )}
+
+              {isFinanceAdmin && activeRow.status === "PENDING_HEAD" && (
+                <ActionRow
+                  onClick={() => releaseMinistry(activeRow.id)}
+                  busy={adminReverting === activeRow.id}
+                  icon={<FastForward size={13} className="text-[#3d5a8f]" />}
+                  label="Send on without the committee"
+                  hint="Stops waiting for them. They are told, and can still sign it afterwards." />
+              )}
+
+              {/* Only where the server will actually accept it. PENDING was
+                  on this list and is not revertable — the button was offered
+                  on every voucher in the queue and failed on all of them. */}
+              {isFinanceAdmin && !isSignatory
+                && ["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(activeRow.status) && (
+                <ActionRow
+                  onClick={() => adminRevert(activeRow.id)}
+                  busy={adminReverting === activeRow.id}
+                  icon={<RotateCcw size={13} className="text-amber-600" />}
+                  label="Pull it back for editing"
+                  hint="Undoes the review and any signatures given, and returns it to your queue." />
+              )}
+
+              <Link href={`/my-pvs/${activeRow.id}`}
+                className="block pt-0.5 text-[11.5px] font-medium text-[#3d5a8f] hover:underline">
+                Open the full record &rarr;
+              </Link>
+            </div>
+          ) : undefined}
+        />
+  );
+
+  const documentPane = <PVViewer pv={activePv} loading={activeLoading} />;
+
 
   return (
     <div className="flex min-h-full flex-col gap-2.5 p-3 xl:p-4 2xl:h-full">
@@ -895,86 +1018,18 @@ export default function SignatoryActivityPage() {
             </div>
           </div>
 
-          {/* The voucher, read closely */}
+          {/* Wide screens only. Below lg these two are rendered inside the
+              open card instead — see detailPane / documentPane above. */}
+          {wide === true && (<>
           <div className="flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col 2xl:max-h-none 2xl:min-h-0">
-          <PVDetailPane
-            pv={activePv}
-            loading={activeLoading}
-            approvals={activeRow?.approvals}
-            // The decision lives on the card in the queue now. Repeating it
-            // here, at three times the size, made it the biggest thing on the
-            // pane and the least useful: you have already decided by the time
-            // you are reading the voucher, or you are reading it to decide, and
-            // either way the button is one column to the left.
-            budget={activeRow && decisionFor(activeRow) ? (
-              <BudgetImpact variant="chip" ministry={activeRow.ministry} projectName={null}
-                amount={activeRow.amount} excludePvId={activeRow.id} date={null} />
-            ) : undefined}
-            extraActions={activeRow ? (
-              <div className="space-y-2">
-                {/* Each of these was a bare button whose name did not say when
-                    to press it. "Send back to Finance" in particular reads as
-                    nonsense from Finance's own seat — it pulls a voucher back
-                    out of approval and clears the signatures on it, which is a
-                    thing worth being told before pressing. */}
-                {activeHasSigned && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="flex items-center gap-1 text-[11px] font-semibold text-green-700">
-                      <CheckCircle2 size={11} /> You signed this
-                    </span>
-                    {activeCanRevert && (
-                      <button onClick={() => handleRevert(activeRow.id)} disabled={actioning}
-                        className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">
-                        Undo my signature
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {isFinanceAdmin && !activePv?.ministry_verified_at
-                  && !["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(activeRow.status) && (
-                  <ActionRow
-                    onClick={() => { setRecordWho(""); setRecordBasis(""); setRecordModal(activeRow); }}
-                    icon={<Stamp size={13} className="text-green-700" />}
-                    label="Record the committee's verification"
-                    hint="They approved in a meeting, by email or on paper. Puts their name on the voucher." />
-                )}
-
-                {isFinanceAdmin && activeRow.status === "PENDING_HEAD" && (
-                  <ActionRow
-                    onClick={() => releaseMinistry(activeRow.id)}
-                    busy={adminReverting === activeRow.id}
-                    icon={<FastForward size={13} className="text-[#3d5a8f]" />}
-                    label="Send on without the committee"
-                    hint="Stops waiting for them. They are told, and can still sign it afterwards." />
-                )}
-
-                {/* Only where the server will actually accept it. PENDING was
-                    on this list and is not revertable — the button was offered
-                    on every voucher in the queue and failed on all of them. */}
-                {isFinanceAdmin && !isSignatory
-                  && ["REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"].includes(activeRow.status) && (
-                  <ActionRow
-                    onClick={() => adminRevert(activeRow.id)}
-                    busy={adminReverting === activeRow.id}
-                    icon={<RotateCcw size={13} className="text-amber-600" />}
-                    label="Pull it back for editing"
-                    hint="Undoes the review and any signatures given, and returns it to your queue." />
-                )}
-
-                <Link href={`/my-pvs/${activeRow.id}`}
-                  className="block pt-0.5 text-[11.5px] font-medium text-[#3d5a8f] hover:underline">
-                  Open the full record &rarr;
-                </Link>
-              </div>
-            ) : undefined}
-          />
+          {detailPane}
           </div>
 
           {/* The document itself */}
           <div className="min-h-[32rem] lg:col-span-2 2xl:col-span-1 2xl:min-h-0">
-            <PVViewer pv={activePv} loading={activeLoading} />
+            {documentPane}
           </div>
+          </>)}
         </div>
       )}
 
