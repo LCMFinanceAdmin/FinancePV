@@ -137,6 +137,49 @@ export function isExcoRole(role?: string | null): boolean {
 export const EXCO_APPROVAL_ROLE = "MINISTRY_HEAD";
 
 /**
+ * What to call somebody on screen: their title, unabbreviated, and the one name
+ * they go by.
+ *
+ * "Rev Reena Lew" reads as Rev Reena; "Pastor John Doe" as Pastor John. The
+ * title is kept as a word rather than reduced to an initial, because a title is
+ * how these people are addressed and dropping it is not a neutral act.
+ *
+ * preferred_name always wins. Which of somebody's names is the one they go by
+ * is not a thing code can work out — the directory already holds "Rev Chan" for
+ * Chan Mun Kwan and "Paul Low" for Low Hong Ceong, neither of which any rule
+ * would have derived. Where a Chinese name is written surname-first this
+ * function will take the surname, and that is the field to correct it in.
+ */
+const NAME_TITLES: [string, string][] = [
+  ["rt rev", "Rt Rev"], ["right reverend", "Rt Rev"],
+  ["revd", "Rev"], ["rev", "Rev"], ["reverend", "Rev"],
+  ["pastor", "Pastor"], ["ps", "Pastor"], ["pr", "Pastor"],
+  ["bishop", "Bishop"], ["dr", "Dr"], ["mr", "Mr"], ["mrs", "Mrs"], ["ms", "Ms"],
+];
+
+export function displayName(fullName?: string | null, preferred?: string | null): string {
+  if (preferred?.trim()) return preferred.trim();
+  const raw = (fullName ?? "").trim();
+  if (!raw) return "";
+
+  // A name in brackets is the one they go by — "Lew Nyak Jin (Reena)".
+  const bracketed = raw.match(/\(([^)]+)\)/)?.[1]?.trim();
+  let rest = raw.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+
+  const titles: string[] = [];
+  for (;;) {
+    const lower = rest.toLowerCase().replace(/\./g, "");
+    const hit = NAME_TITLES.find(([t]) => lower === t || lower.startsWith(t + " "));
+    if (!hit) break;
+    titles.push(hit[1]);
+    rest = rest.split(/\s+/).slice(hit[0].split(" ").length).join(" ");
+  }
+
+  const given = bracketed || rest.split(/\s+/)[0] || raw;
+  return [...new Set(titles), given].filter(Boolean).join(" ");
+}
+
+/**
  * The two letters that stand for a person.
  *
  * Naive first-two-words gives "Rev Reena Lew" → RR and "Rt. Rev Bishop Thomas

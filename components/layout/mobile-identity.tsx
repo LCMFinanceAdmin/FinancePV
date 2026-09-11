@@ -30,7 +30,7 @@ export function MobileIdentity({ user, role }: { user: UserProfile; role: string
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-1.5">
-            <span className="truncate text-[13px] font-semibold text-[#274569]">{user.full_name}</span>
+            <span className="truncate text-[13px] font-semibold text-[#274569]">{user.displayName || user.full_name}</span>
             <span className="shrink-0 text-[11px] font-semibold text-[#2563eb]">{role}</span>
           </div>
           {/* The address is the part that actually settles the question — the

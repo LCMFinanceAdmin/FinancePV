@@ -4,7 +4,7 @@
 // answer to decide which features to offer, and two copies of this would drift.
 
 import { createClient } from "@/lib/supabase/server";
-import { isExcoRole } from "@/lib/utils";
+import { isExcoRole, displayName } from "@/lib/utils";
 import type { UserProfile } from "@/lib/types";
 
 // Role switching is a testing aid, so the list is deliberately short and
@@ -53,7 +53,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   // Where this person serves, and whether they lead a district. Dean is derived
   // from the district record rather than a flag, so it can't contradict the
   // assignment made in Settings.
-  const [{ data: congregation }, { data: deanOf }, { data: verifierFor }] = await Promise.all([
+  const [{ data: congregation }, { data: deanOf }, { data: verifierFor }, { data: person }] = await Promise.all([
     profile?.congregation_id
       ? supabase.from("congregations")
           .select("name, districts(name)")
@@ -64,6 +64,12 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     // and no role — but without it the queue holding that work is missing from
     // the nav, and the delegation is invisible to the person given it.
     supabase.rpc("my_verifier_scopes"),
+    // What this person is actually called. Which of somebody's names is the one
+    // they go by is not derivable — the directory holds "Rev Chan" and "Paul
+    // Low", and no rule would have produced either.
+    supabase.from("people").select("preferred_name")
+      .or(`user_email.eq.${email},work_email.eq.${email},email.eq.${email}`)
+      .limit(1).maybeSingle(),
   ]);
   const districtOfCongregation = (congregation as { districts?: { name?: string } } | null)?.districts?.name;
 
@@ -71,6 +77,10 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     id: user.id,
     email,
     full_name: profile?.full_name ?? user.user_metadata?.full_name ?? email,
+    displayName: displayName(
+      profile?.full_name ?? user.user_metadata?.full_name ?? email,
+      (person as { preferred_name?: string } | null)?.preferred_name,
+    ),
     role,
     ministries,
     isFinanceAdmin: ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role),

@@ -209,7 +209,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
           <div className="flex items-center gap-2.5">
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#dbeafe] text-xs font-bold text-[#1d4ed8]">{personInitials(user.full_name)}</div>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-[#274569] truncate">{user.full_name}</div>
+              <div className="text-sm font-semibold text-[#274569] truncate">{user.displayName || user.full_name}</div>
               <div className="text-[11px] text-[#758ba7] truncate">{user.email}</div>
             </div>
           </div>

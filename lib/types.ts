@@ -84,6 +84,8 @@ export interface UserProfile {
    * inbox. Without this the profile fell back to STAFF, and STAFF may submit
    * payment vouchers.
    */
+  /** Title and the one name they go by — "Rev Reena", "Bishop Thomas". */
+  displayName?: string;
   hasRoleRow?: boolean;
   isLcmStaff?: boolean;  // employed by LCM — gates leave, staff loans, payroll
   isPastor?: boolean;

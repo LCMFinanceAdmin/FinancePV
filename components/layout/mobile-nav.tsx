@@ -134,7 +134,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
                 {initials}
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-stone-800 truncate">{user.full_name}</div>
+                <div className="text-sm font-semibold text-stone-800 truncate">{user.displayName || user.full_name}</div>
                 <div className="text-xs text-stone-400 truncate">{user.email}</div>
                 <div className="text-[11px] font-medium text-[#4a6da7] mt-0.5">{roleLabel}</div>
               </div>
