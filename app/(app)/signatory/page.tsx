@@ -504,7 +504,7 @@ export default function SignatoryPage() {
 
     return (
       <div className={`bg-white ${compact ? "border-t border-stone-100" : "border border-stone-200 rounded-xl shadow-sm"} hover:border-[#4a6da7]/40 hover:shadow-sm transition-all`}>
-        <div className="px-2.5 py-2">
+        <div className="px-4 py-3.5">
           <PVSummary
             id={pv.id}
             pvNo={pv.pv_no}
@@ -513,10 +513,11 @@ export default function SignatoryPage() {
             ministry={pv.ministry}
             purpose={pv.purpose}
             date={pv.submitted_at}
-            badge={<StatusBadge status={computedBadgeStatus(pv)} />}
+            badge={<StatusBadge status={computedBadgeStatus(pv)} size="lg" />}
             budget={isSignatoryUser && !userHasActed && isRelevantForRole ? (
               <BudgetImpact
                 variant="chip"
+                className="!px-2.5 !py-1 !text-[14px]"
                 ministry={pv.ministry}
                 projectName={(pv as PVWithBulk & { project?: string }).project ?? null}
                 amount={pv.amount ?? 0}
@@ -552,10 +553,14 @@ export default function SignatoryPage() {
           {/* Action row: buttons (left) · status/view (right) */}
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2"
             onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            {/* On a phone the approve/reject pair takes the full width for
+                thumb reach, which leaves nothing for the signed count beside
+                it — so that count drops to its own line rather than being
+                overrun. Above sm they share the row as before. */}
+            <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:flex-1">
               {isSignatoryUser && userHasActed && (isRelevantForRole || canRetractApproved) && (
                 <>
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
+                  <span className={`text-[13px] font-semibold px-2.5 py-1 rounded-lg border ${userApproval!.action === "APPROVED" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
                     {userApproval!.action === "APPROVED" ? "✓ Approved" : "✕ Rejected"}
                   </span>
                   {canRevert && !isFinalised ? (
@@ -573,32 +578,32 @@ export default function SignatoryPage() {
                 <div className="flex flex-1 gap-2">
                   <button onClick={() => openPin([pv.id!], "APPROVED")}
                     aria-label="Approve" title="Approve"
-                    className="flex flex-1 items-center justify-center rounded-lg bg-green-600 px-3 py-1 text-white transition-colors hover:bg-green-700 sm:flex-none">
-                    <CheckCircle size={14} />
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-4 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-green-700 sm:flex-none">
+                    <CheckCircle size={16} /> Approve
                   </button>
                   <button onClick={() => openPin([pv.id!], "REJECTED")}
                     aria-label="Reject" title="Reject"
-                    className="flex flex-1 items-center justify-center rounded-lg bg-red-500 px-3 py-1 text-white transition-colors hover:bg-red-600 sm:flex-none">
-                    <XCircle size={14} />
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-4 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-red-600 sm:flex-none">
+                    <XCircle size={16} /> Reject
                   </button>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex w-full shrink-0 items-center justify-between gap-3 sm:w-auto sm:justify-end">
               {pv.status === "PAID" ? (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Paid</span>
+                  <span className="text-[13px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">✓ Paid</span>
                   {(pv as PVWithBulk & { paid_at?: string }).paid_at && (
                     <span className="text-[10px] text-stone-400 hidden sm:inline">{formatDate((pv as PVWithBulk & { paid_at?: string }).paid_at!)}</span>
                   )}
                 </div>
               ) : (
-                <div className="text-[11px] text-[#4a6da7] font-medium whitespace-nowrap">{signatoryApprovals.length}/{loa.required} signed</div>
+                <div className="text-[13px] text-[#4a6da7] font-semibold whitespace-nowrap">{signatoryApprovals.length}/{loa.required} signed</div>
               )}
               <Link href={`/my-pvs/${pv.id}`}
-                className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-[#4a6da7] transition-colors whitespace-nowrap">
-                <ExternalLink size={10} /> <span className="hidden sm:inline">View full PV</span><span className="sm:hidden">View</span>
+                className="flex items-center gap-1 text-[13px] text-stone-400 hover:text-[#4a6da7] transition-colors whitespace-nowrap">
+                <ExternalLink size={12} /> <span className="hidden sm:inline">View full PV</span><span className="sm:hidden">View</span>
               </Link>
             </div>
           </div>
@@ -660,7 +665,7 @@ export default function SignatoryPage() {
   }
 
   return (
-    <div className="cloudlight-page max-w-5xl space-y-5">
+    <div className="cloudlight-page max-w-5xl space-y-4">
       {/* Signatories are sent straight here and never see the dashboard, so
           the offer to switch alerts on has to live where they work. */}
       <NotificationsOptIn />
@@ -693,16 +698,16 @@ export default function SignatoryPage() {
       {!isPaidView && (
       <div className="flex gap-2">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
           <input
-            className="w-full border-2 border-stone-800 rounded-lg pl-9 pr-3 py-2 text-sm bg-white outline-none focus:border-[#2f5b9c]"
+            className="w-full border border-stone-300 rounded-lg pl-8 pr-3 py-1.5 text-[13px] bg-white outline-none focus:border-[#2f5b9c]"
             placeholder="Search by PV no., payee, amount (e.g. >1000, 500-2000), date, purpose…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
         <select
-          className="border-2 border-stone-800 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-[#2f5b9c] text-stone-600"
+          className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-[13px] bg-white outline-none focus:border-[#2f5b9c] text-stone-600"
           value={ministryFilter}
           onChange={e => setMinistryFilter(e.target.value)}>
           <option>All Ministries</option>
