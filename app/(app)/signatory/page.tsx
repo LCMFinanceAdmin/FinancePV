@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { BudgetImpact } from "@/components/budget/budget-impact";
 import { ApprovalPath } from "@/components/ui/approval-path";
+import { ScrollMoreHint } from "@/components/ui/scroll-more-hint";
 import { formatCurrency, formatDate, getLOATier, computedBadgeStatus } from "@/lib/utils";
 import type { PV } from "@/lib/types";
 import {
@@ -692,22 +693,26 @@ export default function SignatoryPage() {
 
       <ApprovalPath currentIndex={isGM ? 0 : 2} />
 
+      {/* Search, filter, tabs and count read as one control strip. Kept apart
+          they collected 16px of page gap between each, which is a lot of height
+          to spend above the thing being decided. */}
+      <div className="space-y-2">
       {/* Search + Ministry filter. Hidden for Paid: the archive below brings
           its own, and two search boxes on one screen is a question about which
           one is live. */}
       {!isPaidView && (
-      <div className="flex gap-2">
+      <div className="flex gap-1.5">
         <div className="relative flex-1">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-stone-400" />
           <input
-            className="w-full border border-stone-300 rounded-lg pl-8 pr-3 py-1.5 text-[13px] bg-white outline-none focus:border-[#2f5b9c]"
+            className="w-full border border-stone-300 rounded-md pl-7 pr-2.5 py-1 text-[12px] bg-white outline-none focus:border-[#2f5b9c]"
             placeholder="Search by PV no., payee, amount (e.g. >1000, 500-2000), date, purpose…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
         <select
-          className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-[13px] bg-white outline-none focus:border-[#2f5b9c] text-stone-600"
+          className="border border-stone-300 rounded-md px-2 py-1 text-[12px] bg-white outline-none focus:border-[#2f5b9c] text-stone-600"
           value={ministryFilter}
           onChange={e => setMinistryFilter(e.target.value)}>
           <option>All Ministries</option>
@@ -738,10 +743,10 @@ export default function SignatoryPage() {
             <button
               key={tab.key}
               onClick={() => setStatusFilter(tab.key as "pending" | "pending_signatory" | "approved" | "paid")}
-              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition-colors ${active ? `${tab.activeColor} shadow-sm` : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+              className={`flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[12px] font-semibold transition-colors ${active ? `${tab.activeColor} shadow-sm` : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
             >
               {tab.label}
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? "bg-white/25 text-white" : tab.dot}`}>
+              <span className={`text-[10px] px-1.5 py-0 rounded-full font-semibold ${active ? "bg-white/25 text-white" : tab.dot}`}>
                 {tab.count}
               </span>
             </button>
@@ -892,10 +897,11 @@ export default function SignatoryPage() {
 
       {/* Count */}
       {!isPaidView && !loading && (
-        <p className="text-xs text-stone-400">
+        <p className="text-[11px] text-stone-400">
           {filteredStandalones.length + filteredBulkGroups.reduce((s, g) => s + g.pvs.length, 0)} PVs
         </p>
       )}
+      </div>
 
       {/* List */}
       {isPaidView ? null : loading ? (
@@ -908,7 +914,7 @@ export default function SignatoryPage() {
            "No paid PVs"}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2" data-queue-list>
           {/* ── Master containers (Master → Bulk PVs → individual PVs) ── */}
           {masterContainers.map(mc => {
             const isExpanded = expandedBulk.has(mc.masterRunId);
@@ -948,6 +954,12 @@ export default function SignatoryPage() {
           ))}
         </div>
       )}
+
+      {/* Tells the signatory how many vouchers are still under the fold. The
+          queue scrolls inside the main pane, so there is no window scrollbar
+          to hint at it, and a card now fills enough of the screen that the
+          third one is easy to miss entirely. */}
+      {!isPaidView && !loading && <ScrollMoreHint listSelector="[data-queue-list]" noun="more" />}
 
       {/* Ministry Budget Popup (rendered at page level, overlaps everything) */}
       {ministryPopup && (
