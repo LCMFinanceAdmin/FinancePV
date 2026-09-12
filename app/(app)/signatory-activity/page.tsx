@@ -439,6 +439,20 @@ export default function SignatoryActivityPage() {
   // else's decision, hand it back — so the queue they live in offered them
   // everything except the thing they were there to do, and they had to go to
   // another page to do it.
+  /** Correct the description on a voucher, from the pane where it is read.
+   *
+   *  Updates both the row that is open and the one in the list, so the card
+   *  behind the pane does not go on showing the wording that was just fixed.
+   *  A thrown error is left to the caller, which is showing the box the text
+   *  was typed into and is the only thing able to keep it. */
+  async function saveDescription(pvId: string, text: string) {
+    const { error } = await supabase.from("pvs").update({ purpose: text }).eq("id", pvId);
+    if (error) throw new Error(error.message);
+    setActivePv(prev => (prev && prev.id === pvId ? { ...prev, purpose: text } : prev));
+    setAllPvs(prev => prev.map(p => (p.id === pvId ? { ...p, purpose: text } : p)));
+    setMinePvs(prev => (prev ? prev.map(p => (p.id === pvId ? { ...p, purpose: text } : p)) : prev));
+  }
+
   async function financeReview(pvId: string) {
     setActioning(true);
     const { data: { session } } = await supabase.auth.getSession();
@@ -612,8 +626,10 @@ export default function SignatoryActivityPage() {
             setActiveId(isOpen && wide === false ? null : pv.id);
           }
         }}
-        className={`cursor-pointer border-l-[3px] px-3 py-2 transition-colors ${
-          isOpen ? "border-l-[#4a6da7] bg-[#f2f8ff]" : "border-l-transparent hover:bg-[#f7fbff]"} ${
+        className={`cursor-pointer rounded-xl border px-3 py-2 transition-colors ${
+          isOpen
+            ? "border-[#4a6da7] bg-[#f2f8ff] shadow-[0_0_0_1px_#4a6da7]"
+            : "border-stone-300 bg-white hover:border-[#9db7dd] hover:bg-[#f7fbff]"} ${
           nested ? "bg-stone-50/40" : ""}`}
       >
         {/* Line 1 — who is being paid, and nothing else on the line.
@@ -733,6 +749,10 @@ export default function SignatoryActivityPage() {
           pv={activePv}
           loading={activeLoading}
           approvals={activeRow?.approvals}
+          // Finance keeps the books, so Finance corrects the wording. Everybody
+          // else reads it. The RLS policy on pvs says the same thing, so a
+          // wrong answer here fails at the database rather than quietly saving.
+          onSaveDescription={isFinanceAdmin ? saveDescription : undefined}
           // The decision lives on the card in the queue now. Repeating it
           // here, at three times the size, made it the biggest thing on the
           // pane and the least useful: you have already decided by the time
@@ -842,7 +862,8 @@ export default function SignatoryActivityPage() {
       )}
 
       {/* Stage chips, then the tools that act on them. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {viewMode === "activity" && TAB_CONFIG.map(tab => {
           const active = statusTab === tab.key;
           const count  = tabCounts[tab.key];
@@ -862,10 +883,11 @@ export default function SignatoryActivityPage() {
             </button>
           );
         })}
+        </div>
 
         {!(viewMode === "activity" && statusTab === "paid") && (
-          <div className="ml-auto flex flex-1 items-center gap-2 sm:flex-none">
-            <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="relative w-44 lg:w-56">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
               <input
                 className="w-full rounded-lg border border-stone-200 bg-white py-1.5 pl-8 pr-2.5 text-[13px] outline-none focus:border-[#2f5b9c]"
@@ -941,9 +963,9 @@ export default function SignatoryActivityPage() {
            one on a narrow one. The list is the pane that must always be
            visible: on a phone the other two follow underneath rather than
            hiding behind a tab, so a reviewer scrolls instead of navigating. */
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(300px,0.95fr)_minmax(300px,0.85fr)_minmax(0,2.2fr)]">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(320px,1.05fr)_minmax(262px,0.6fr)_minmax(0,2.6fr)]">
           {/* The queue */}
-          <div className="flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white 2xl:max-h-none 2xl:min-h-0">
+          <div className="flex min-h-[26rem] max-h-[calc(100vh-13rem)] flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white 2xl:max-h-none 2xl:min-h-0">
             <div className="flex shrink-0 items-center justify-between border-b border-[#eef4fc] px-3 py-1.5">
               <span className="text-[12px] font-semibold text-stone-600">
                 {loading || (viewMode === "mine" && mineLoading)
@@ -958,7 +980,7 @@ export default function SignatoryActivityPage() {
               )}
             </div>
 
-            <div className="min-h-0 flex-1 divide-y divide-[#f0f5fc] overflow-y-auto">
+            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5">
               {(loading || (viewMode === "mine" && (mineLoading || minePvs === null))) ? (
                 <div className="py-12 text-center text-sm text-stone-400">Loading&hellip;</div>
               ) : flatVisible.length === 0 ? (
@@ -1021,7 +1043,7 @@ export default function SignatoryActivityPage() {
           {/* Wide screens only. Below lg these two are rendered inside the
               open card instead — see detailPane / documentPane above. */}
           {wide === true && (<>
-          <div className="flex min-h-[26rem] max-h-[calc(100vh-16rem)] flex-col 2xl:max-h-none 2xl:min-h-0">
+          <div className="flex min-h-[26rem] max-h-[calc(100vh-13rem)] flex-col 2xl:max-h-none 2xl:min-h-0">
           {detailPane}
           </div>
 

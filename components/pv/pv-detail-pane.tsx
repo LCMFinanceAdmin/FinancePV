@@ -12,7 +12,8 @@
 // outside Finance could read. Four steps, always all four, with the current one
 // marked: a voucher's position is then a picture rather than a vocabulary.
 
-import { CheckCircle2, XCircle, Clock, Loader2, Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, XCircle, Clock, Loader2, Check, Pencil } from "lucide-react";
 import { formatCurrency, formatDate, formatDateTime, roleLabel } from "@/lib/utils";
 import type { PV, PVApproval } from "@/lib/types";
 
@@ -54,11 +55,14 @@ const SUBTITLE: Record<string, string> = {
 };
 
 export function PVDetailPane({
-  pv, loading, approvals, extraActions, budget,
+  pv, loading, approvals, extraActions, budget, onSaveDescription,
 }: {
   pv: PV | null;
   loading?: boolean;
   approvals?: PVApproval[];
+  /** Save a corrected description. Passed only to somebody allowed to make the
+   *  correction; without it the description stays read-only text, as before. */
+  onSaveDescription?: (pvId: string, text: string) => Promise<void>;
   /** What approving this would do to the ministry's budget. */
   budget?: React.ReactNode;
   /** What this viewer may do with the voucher besides decide it — open the
@@ -117,9 +121,7 @@ export function PVDetailPane({
               {formatCurrency(pv.amount)}
             </span>
           </div>
-          {pv.purpose && (
-            <p className="mt-1.5 text-[12.5px] font-semibold leading-snug text-stone-700">{pv.purpose}</p>
-          )}
+          <Description pv={pv} onSave={onSaveDescription} />
           <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
             rejected            ? "bg-red-100 text-red-700"
             : pv.status === "PAID"     ? "bg-blue-100 text-blue-700"
@@ -135,11 +137,32 @@ export function PVDetailPane({
             Half the height of the old stacked card, and shorter still because
             the purpose is above rather than repeated here, and a reference
             number equal to the PV number is not a second fact. */}
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-4 py-3">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-4 py-2.5">
           <Row label="Project" strong value={[pv.dept, pv.ministry].filter(Boolean).join(" / ")} />
           <Row label="Code" value={pv.accounting_code} />
           {pv.ref_no && pv.ref_no !== pv.pv_no && <Row label="Ref" value={pv.ref_no} />}
         </div>
+
+        {/* What the money went on. The description says why; these say on what,
+            and until now they lived only inside the voucher image — so checking
+            a figure meant reading it off a page zoomed to 38%. */}
+        {pv.line_items?.length > 0 && (
+          <div className="border-t border-[#f2f7fd] px-4 py-2.5">
+            <p className="text-[9.5px] font-semibold uppercase tracking-wide text-stone-400">Particulars</p>
+            <ul className="mt-1 space-y-0.5">
+              {pv.line_items.map((it, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-2 text-[12px]">
+                  <span className="min-w-0 flex-1 truncate text-stone-600">
+                    {it.description || <span className="text-stone-300">&mdash;</span>}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums text-stone-700">
+                    {formatCurrency(Number(it.amount) || 0)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {budget && <div className="px-4 pb-3">{budget}</div>}
 
@@ -265,5 +288,98 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#e3edf9] bg-white">
       {children}
     </div>
+  );
+}
+
+/**
+ * The description, corrected where it is read.
+ *
+ * A purpose typed in a hurry — "payment", "claim", the wrong month — is the
+ * thing every later reader has to work around, and it was only fixable by
+ * leaving the queue for the full record and coming back. Finance reviews these
+ * one after another; the correction belongs where the mistake is noticed.
+ *
+ * The draft resets whenever a different voucher is chosen, so an abandoned edit
+ * on one cannot be saved onto the next.
+ */
+function Description({
+  pv, onSave,
+}: {
+  pv: PV;
+  onSave?: (pvId: string, text: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(pv.purpose ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setEditing(false);
+    setDraft(pv.purpose ?? "");
+    setError("");
+  }, [pv.id, pv.purpose]);
+
+  if (!onSave) {
+    return pv.purpose
+      ? <p className="mt-1.5 text-[12.5px] font-semibold leading-snug text-stone-700">{pv.purpose}</p>
+      : null;
+  }
+
+  async function save() {
+    const text = draft.trim();
+    if (text === (pv.purpose ?? "").trim()) { setEditing(false); return; }
+    setSaving(true);
+    setError("");
+    try {
+      await onSave!(pv.id, text);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="mt-1.5" onClick={e => e.stopPropagation()}>
+        <textarea
+          autoFocus rows={2} value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            // Enter saves, because this is one short line and a newline in a
+            // purpose has nowhere useful to go on the printed voucher.
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); }
+            if (e.key === "Escape") { setDraft(pv.purpose ?? ""); setEditing(false); }
+          }}
+          placeholder="What this payment is for"
+          className="w-full resize-none rounded-lg border border-stone-300 px-2 py-1.5 text-[12.5px] leading-snug outline-none focus:border-[#2f5b9c]"
+        />
+        <div className="mt-1 flex items-center gap-1.5">
+          <button onClick={save} disabled={saving}
+            className="rounded-md bg-[#2f5b9c] px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-[#24487c] disabled:opacity-50">
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button onClick={() => { setDraft(pv.purpose ?? ""); setEditing(false); }}
+            className="rounded-md border border-stone-200 px-2.5 py-1 text-[11px] font-medium text-stone-500 hover:bg-stone-50">
+            Cancel
+          </button>
+          {error && <span className="text-[11px] font-medium text-red-600">{error}</span>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); setEditing(true); }}
+      title="Edit the description"
+      className="group mt-1.5 flex w-full items-start gap-1.5 rounded-md text-left transition-colors hover:bg-[#f4f9ff]">
+      <span className={`min-w-0 flex-1 text-[12.5px] font-semibold leading-snug ${
+        pv.purpose ? "text-stone-700" : "text-stone-300"}`}>
+        {pv.purpose || "No description — add one"}
+      </span>
+      <Pencil size={11} className="mt-0.5 shrink-0 text-stone-300 transition-colors group-hover:text-[#4a6da7]" />
+    </button>
   );
 }
