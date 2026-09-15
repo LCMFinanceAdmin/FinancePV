@@ -14,12 +14,12 @@
 // the shape the question actually has: who is Dean of what, which churches still
 // have nobody.
 
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { withTitle } from "@/lib/ministry";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen, AlertTriangle, Check, ChevronRight, List, History } from "lucide-react";
+import { Plus, Trash2, Save, Church, MapPin, Users, FolderOpen, AlertTriangle, Check, ChevronRight, ChevronUp, ChevronDown, List, History } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { th, td, rowCls, cell, iconBtn, saveBtn } from "@/lib/table-styles";
 import { CouncilModal } from "@/components/directory/council-modal";
@@ -61,6 +61,53 @@ interface Person {
  */
 const loginOf = (p: Person) => (p.user_email || p.email || "").trim();
 
+/**
+ * "Central District 1" as CD1, "Orang Asli District" as OAD.
+ *
+ * The column held the full name, which at this width meant every row read
+ * "Central Distr…" — the same eleven characters on forty-nine rows, telling
+ * you nothing and taking the space the church's own name needed. The initial of
+ * each word carries the whole of it once you have seen the districts table
+ * directly above, and the number stays because it is the only part that
+ * distinguishes the three Central districts from each other.
+ */
+function districtCode(name?: string | null): string {
+  const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  const letters = words.filter(w => !/^\d+$/.test(w)).map(w => w[0]!.toUpperCase()).join("");
+  const digits = words.filter(w => /^\d+$/.test(w)).join("");
+  return letters + digits;
+}
+
+type CongSort = "name" | "district" | "pastor";
+
+/** A column heading you can order the table by.
+ *
+ *  Clicking the one already chosen reverses it, which is what every table does
+ *  and so the thing nobody has to be told. */
+function SortHead({ k, sortBy, sortAsc, onSort, children }: {
+  k: CongSort;
+  sortBy: CongSort;
+  sortAsc: boolean;
+  onSort: (k: CongSort) => void;
+  children: React.ReactNode;
+}) {
+  const on = sortBy === k;
+  return (
+    <button
+      onClick={() => onSort(k)}
+      title={`Sort by ${typeof children === "string" ? children.toLowerCase() : "this column"}`}
+      className={`flex w-full items-center gap-1 text-left transition-colors hover:text-[#3d5a8f] ${
+        on ? "text-[#3d5a8f]" : ""}`}>
+      {children}
+      {on
+        ? (sortAsc ? <ChevronUp size={11} className="shrink-0" /> : <ChevronDown size={11} className="shrink-0" />)
+        : <ChevronDown size={11} className="shrink-0 text-stone-300" />}
+    </button>
+  );
+}
+
+
 const isNew = (id: string) => id.startsWith("new-");
 
 const fmtDay = (iso: string | null) =>
@@ -93,6 +140,12 @@ export default function ChurchDirectoryPage() {
   const [toast, setToast] = useState({ msg: "", ok: true });
   /** Row id -> its signature at load, for spotting unsaved edits. */
   const [baseline, setBaseline] = useState<Record<string, string>>({});
+  /** How the congregation list is ordered. Forty-nine rows is past the point
+   *  where scanning works, and the three things somebody arrives looking for
+   *  are a church, a district's churches, or a pastor's. */
+  const [sortBy, setSortBy]   = useState<CongSort>("name");
+  const [sortAsc, setSortAsc] = useState(true);
+
   /** Congregations whose leave-routing detail is open. */
   const [openRouting, setOpenRouting] = useState<Set<string>>(new Set());
   /** Every term ever held, current and past, keyed by district. */
@@ -177,6 +230,38 @@ export default function ChurchDirectoryPage() {
     const p = people.find(x => loginOf(x) === email);
     return p ? withTitle(p.full_name, p.ordination) : email;
   };
+
+  const sortCongregations = (k: CongSort) => {
+    if (k === sortBy) setSortAsc(a => !a);
+    else { setSortBy(k); setSortAsc(true); }
+  };
+
+  const districtNameOf = (id: string | null) =>
+    districts.find(d => d.id === id)?.name ?? "";
+
+  /** The list as ordered on screen.
+   *
+   *  Unsaved rows stay at the bottom whatever the sort: a blank row added by
+   *  the button sorts to the top by name, and watching the thing you just
+   *  created jump somewhere else is a poor way to be told it exists. */
+  const orderedCongregations = useMemo(() => {
+    const key = (c: Congregation) =>
+      sortBy === "district" ? districtNameOf(c.district_id)
+      : sortBy === "pastor" ? (nameFor(c.head_pastor_email) ?? "")
+      : c.name;
+    const saved = congregations.filter(c => !isNew(c.id));
+    const fresh = congregations.filter(c => isNew(c.id));
+    saved.sort((a, b) => {
+      const av = key(a), bv = key(b);
+      // Blanks last in either direction — "not named" is an absence, not a
+      // value that belongs at one end of an alphabet.
+      if (!av && bv) return 1;
+      if (av && !bv) return -1;
+      const cmp = av.localeCompare(bv, "en", { numeric: true, sensitivity: "base" });
+      return sortAsc ? cmp : -cmp;
+    });
+    return [...saved, ...fresh];
+  }, [congregations, districts, people, sortBy, sortAsc]);
 
   const dirty = (id: string, sig: string) => isNew(id) || baseline[id] !== sig;
 
@@ -366,9 +451,20 @@ export default function ChurchDirectoryPage() {
                   const past = (deanTerms[d.id] ?? []).filter(t => t.term_end);
                   return (
                     <tr key={d.id} className={`${rowCls} ${isNew(d.id) ? "bg-[#fffdf5]" : ""}`}>
+                      {/* The code beside the name it comes from. The
+                          congregations table below is all codes, and this is
+                          the one place the mapping can be read without being
+                          written down twice. */}
                       <td className={td}>
-                        <input className={`${cell} font-semibold`} value={d.name} placeholder="e.g. Central District"
-                          onChange={e => patchDistrict(d.id, { name: e.target.value })} />
+                        <div className="flex items-center gap-2">
+                          <input className={`${cell} font-semibold`} value={d.name} placeholder="e.g. Central District"
+                            onChange={e => patchDistrict(d.id, { name: e.target.value })} />
+                          {districtCode(d.name) && (
+                            <span className="shrink-0 rounded-md bg-[#eaf3ff] px-1.5 py-0.5 text-[11px] font-bold text-[#3d5a8f]">
+                              {districtCode(d.name)}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className={td}>
                         {/* The same rule the register applies when appointing to
@@ -471,12 +567,14 @@ export default function ChurchDirectoryPage() {
             <table className="w-full min-w-[1000px] border-collapse">
               <thead className="bg-stone-50">
                 <tr className="divide-x divide-stone-100">
-                  <th className={`${th} w-[20%]`}>Congregation</th>
-                  <th className={`${th} w-[14%]`}>District</th>
-                  <th className={`${th} w-[15%]`}>ROS number</th>
-                  <th className={`${th} w-[17%]`}>Head pastor</th>
-                  <th className={`${th} w-[17%]`}>Council Chairman / Rep</th>
-                  <th className={`${th} w-[17%]`}>Leave routing</th>
+                  {/* The church's own name gets a third of the table. It is the
+                      thing every row is about and it was the thing being cut. */}
+                  <th className={`${th} w-[32%]`}><SortHead k="name" sortBy={sortBy} sortAsc={sortAsc} onSort={sortCongregations}>Congregation</SortHead></th>
+                  <th className={`${th} w-[7%]`}><SortHead k="district" sortBy={sortBy} sortAsc={sortAsc} onSort={sortCongregations}>District</SortHead></th>
+                  <th className={`${th} w-[14%]`}>ROS number</th>
+                  <th className={`${th} w-[17%]`}><SortHead k="pastor" sortBy={sortBy} sortAsc={sortAsc} onSort={sortCongregations}>Head pastor</SortHead></th>
+                  <th className={`${th} w-[14%]`}>Council Chairman / Rep</th>
+                  <th className={`${th} w-[16%]`}>Leave routing</th>
                   <th className={`${th} w-28`}></th>
                 </tr>
               </thead>
@@ -488,7 +586,7 @@ export default function ChurchDirectoryPage() {
                     </td>
                   </tr>
                 )}
-                {congregations.map(c => {
+                {orderedCongregations.map(c => {
                   const fresh = isNew(c.id);
                   const changed = dirty(c.id, congregationSig(c));
                   const { approvers, missing } = routingOf(c);
@@ -496,15 +594,26 @@ export default function ChurchDirectoryPage() {
                   return (
                     <Fragment key={c.id}>
                       <tr className={`${rowCls} ${fresh ? "bg-[#fffdf5]" : ""}`}>
-                        <td className={td}>
-                          <input className={`${cell} font-semibold`} value={c.name} placeholder="e.g. Bangsar Lutheran Church"
+                        <td className="px-3 py-2.5 align-middle">
+                          <input
+                            className={`${cell} !text-[14px] !font-bold !text-stone-800 !py-1.5`}
+                            value={c.name} title={c.name || undefined}
+                            placeholder="e.g. Bangsar Lutheran Church"
                             onChange={e => patchCongregation(c.id, { name: e.target.value })} />
                         </td>
+                        {/* The options lead with the code and carry the full
+                            name after it, so the list stays readable while the
+                            closed control shows the code first as it narrows. */}
                         <td className={td}>
-                          <select className={cell} value={c.district_id ?? ""}
+                          <select
+                            className={`${cell} !px-1.5 !text-[12px] !font-bold !text-[#3d5a8f]`}
+                            title={districtNameOf(c.district_id) || "No district"}
+                            value={c.district_id ?? ""}
                             onChange={e => patchCongregation(c.id, { district_id: e.target.value || null })}>
-                            <option value="">— none —</option>
-                            {districts.filter(d => !isNew(d.id)).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                            <option value="">—</option>
+                            {districts.filter(d => !isNew(d.id)).map(d => (
+                              <option key={d.id} value={d.id} title={d.name}>{districtCode(d.name)}</option>
+                            ))}
                           </select>
                         </td>
                         <td className={td}>
