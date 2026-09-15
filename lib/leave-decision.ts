@@ -1,11 +1,16 @@
 // What an approval or rejection does to a leave application.
 //
-// A leave chain is not a relay: every required approver has to sign before the
-// leave is granted, and any one of them can end it by rejecting. That rule was
-// previously implicit in the action route, which set the status straight to the
-// action given — so the first signature approved the whole thing, and the
-// remaining approvers never got a say. With the church council President now on
-// the chain alongside the head pastor, that had to be made explicit.
+// A chain is a list of slots, and the leave is granted when every slot is
+// settled. Most slots hold one person and need that person's signature. A slot
+// can also hold several, marked with the same `group`, and any one of them
+// settles it — which is how the General Manager's September 2026 rule for
+// pastors works: Bishop, Dean or Pastor in Charge, whichever of them gets to it.
+//
+// Rejection by anybody ends the application either way.
+//
+// Before groups existed this was a plain AND over the whole list, which was
+// right when the list was the head pastor, the Council Chairman/Rep and the
+// Dean and all three had to sign.
 //
 // Kept as a pure function so the same rule serves the signed-in route and the
 // tokenised link the President uses. (`supabase/functions/_shared/leave-decision.ts`
@@ -18,6 +23,11 @@ export interface RequiredApprover {
   position?: string;
   /** True for approvers with no account, who act through a signed link. */
   external?: boolean;
+  /**
+   * Slot label. Approvers sharing one form a single slot that any one of them
+   * settles. Left unset, the approver is a slot of their own and must sign.
+   */
+  group?: string;
 }
 
 export interface ApprovalEntry {
@@ -49,14 +59,40 @@ export function hasActed(approvals: ApprovalEntry[], email: string): boolean {
   return approvals.some(a => norm(a.email) === norm(email));
 }
 
-/** Approvers still to sign, in chain order. */
+/**
+ * Approvers still to sign, in chain order.
+ *
+ * A grouped slot contributes every one of its members while it is unsettled —
+ * the application is waiting on any of them, and naming only the first would
+ * tell the other two they are not needed. Once one signs, the whole group
+ * drops out together.
+ */
 export function outstandingApprovers(
   required: RequiredApprover[],
   approvals: ApprovalEntry[],
 ): RequiredApprover[] {
-  return required.filter(r => !approvals.some(
-    a => a.action === "APPROVED" && fills(a, r.email),
-  ));
+  const signed = (r: RequiredApprover) =>
+    approvals.some(a => a.action === "APPROVED" && fills(a, r.email));
+
+  const out: RequiredApprover[] = [];
+  const done = new Set<string>();
+  for (const r of required) {
+    if (!r.group) {
+      if (!signed(r)) out.push(r);
+      continue;
+    }
+    if (done.has(r.group)) continue;
+    done.add(r.group);
+    const members = required.filter(x => x.group === r.group);
+    if (!members.some(signed)) out.push(...members);
+  }
+  return out;
+}
+
+/** The slots a chain has, counting a group as one. */
+export function slotCount(required: RequiredApprover[]): number {
+  const groups = new Set(required.filter(r => r.group).map(r => r.group));
+  return required.filter(r => !r.group).length + groups.size;
 }
 
 /**

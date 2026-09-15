@@ -1,5 +1,10 @@
 // Deno copy of `lib/leave-decision.ts` — edge functions can't import from the
 // Next app. Change both together.
+//
+// A chain is a list of slots. Most hold one person. A slot can hold several,
+// marked with the same `group`, and any one of them settles it — the General
+// Manager's September 2026 rule for pastors: Bishop, Dean or Pastor in Charge,
+// whichever of them gets to it.
 
 export interface RequiredApprover {
   email: string;
@@ -7,6 +12,11 @@ export interface RequiredApprover {
   /** The office held — captured so a printed form still names the post. */
   position?: string;
   external?: boolean;
+  /**
+   * Slot label. Approvers sharing one form a single slot that any one of them
+   * settles. Left unset, the approver is a slot of their own and must sign.
+   */
+  group?: string;
 }
 
 export interface ApprovalEntry {
@@ -28,13 +38,34 @@ export function fills(a: ApprovalEntry, slotEmail: string): boolean {
   return norm(a.email) === norm(slotEmail) || norm(a.for_email) === norm(slotEmail);
 }
 
+/**
+ * Approvers still to sign.
+ *
+ * A grouped slot contributes every one of its members while it is unsettled —
+ * the application is waiting on any of them, and naming only the first would
+ * tell the other two they are not needed. Once one signs, the group drops out
+ * together.
+ */
 export function outstandingApprovers(
   required: RequiredApprover[],
   approvals: ApprovalEntry[],
 ): RequiredApprover[] {
-  return required.filter((r) =>
-    !approvals.some((a) => a.action === "APPROVED" && fills(a, r.email))
-  );
+  const signed = (r: RequiredApprover) =>
+    approvals.some((a) => a.action === "APPROVED" && fills(a, r.email));
+
+  const out: RequiredApprover[] = [];
+  const done = new Set<string>();
+  for (const r of required) {
+    if (!r.group) {
+      if (!signed(r)) out.push(r);
+      continue;
+    }
+    if (done.has(r.group)) continue;
+    done.add(r.group);
+    const members = required.filter((x) => x.group === r.group);
+    if (!members.some(signed)) out.push(...members);
+  }
+  return out;
 }
 
 export function applyLeaveDecision(

@@ -378,19 +378,23 @@ export default function ChurchDirectoryPage() {
     load();
   }
 
-  /** Who has to approve leave for this congregation, and who is still missing. */
+  /** Who can approve leave for this congregation.
+   *
+   *  Any one of them settles it — the General Manager's rule of September 2026
+   *  — so the question this answers is no longer "are all three named" but
+   *  "is there anybody at all". A congregation with only a Dean is fully
+   *  routed; one with nobody falls to the Bishop, which still works but is
+   *  not what the church intended. */
   function routingOf(c: Congregation) {
     const district = districts.find(d => d.id === c.district_id);
     const approvers = [
-      c.head_pastor_email ? `${nameFor(c.head_pastor_email)} (head pastor)` : null,
-      c.council_president_email
-        ? `${c.council_president_name || c.council_president_email} (Council Chairman/Rep, by email)`
-        : null,
+      c.head_pastor_email ? `${nameFor(c.head_pastor_email)} (Pastor in Charge)` : null,
       district?.dean_email ? `${nameFor(district.dean_email)} (Dean)` : null,
     ].filter(Boolean) as string[];
+    // Still listed so the page can show which of the two posts is unfilled —
+    // but an empty one no longer blocks anything.
     const missing = [
-      c.head_pastor_email ? null : "head pastor",
-      c.council_president_email ? null : "Council Chairman/Rep",
+      c.head_pastor_email ? null : "Pastor in Charge",
       district?.dean_email ? null : "Dean",
     ].filter(Boolean) as string[];
     return { approvers, missing };
@@ -418,7 +422,7 @@ export default function ChurchDirectoryPage() {
         <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Administration</p>
         <h1 className="text-xl font-bold text-stone-800">Church Directory</h1>
         <p className="text-sm text-stone-400">
-          Districts and their Deans, congregations and their Council Chairman/Rep — leave approvals for pastors are worked out from this.
+          Districts and their Deans, congregations and their Pastor in Charge — any one of them, or the Bishop, approves a pastor&apos;s leave.
         </p>
       </div>
 
@@ -568,7 +572,7 @@ export default function ChurchDirectoryPage() {
           <h2 className="flex items-center gap-2 text-base font-bold text-stone-700">
             <Church size={16} className="text-[#4a6da7]" /> Congregations
             <span className="text-[12px] font-normal text-stone-400">
-              {congregations.length} · {congregations.filter(c => routingOf(c).missing.length === 0).length} fully routed
+              {congregations.length} · {congregations.filter(c => routingOf(c).approvers.length > 0).length} with a local approver
             </span>
           </h2>
           <Button size="sm" onClick={() => setCongregations(cs => [...cs, { id: `new-${Date.now()}`, name: "", district_id: null, head_pastor_email: null, ros_number: null, council_president_name: null, council_president_email: null }])}>
@@ -687,14 +691,13 @@ export default function ChurchDirectoryPage() {
                         <td className={`${td} px-3`}>
                           <button onClick={() => toggleRouting(c.id)}
                             aria-expanded={open}
-                            title={missing.length === 0
-                              ? "Pastor, Chairman and Dean are all set"
-                              : `Still needed: ${missing.join(", ")}`}
+                            title={approvers.length > 0
+                              ? `Any one of these approves: ${approvers.join(", ")}`
+                              : "Nobody here — leave falls to the Bishop"}
                             className="flex max-w-full items-center gap-1 rounded-lg px-1 py-0.5 transition-colors hover:bg-[#f2f8ff]">
                             <ChevronRight size={11} className={`shrink-0 text-stone-400 transition-transform ${open ? "rotate-90" : ""}`} />
                             {([
-                              ["Pastor", !missing.includes("head pastor")],
-                              ["Chair",  !missing.includes("Council Chairman/Rep")],
+                              ["Pastor", !missing.includes("Pastor in Charge")],
                               ["Dean",   !missing.includes("Dean")],
                             ] as [string, boolean][]).map(([label, set]) => (
                               <span key={label}
@@ -704,9 +707,12 @@ export default function ChurchDirectoryPage() {
                                 {label}
                               </span>
                             ))}
-                            {missing.length === 3 && (
-                              <span className="ml-0.5 shrink-0 text-[10.5px] font-semibold text-stone-500">Bishop</span>
-                            )}
+                            {/* The Bishop is always an alternative, and the
+                                only one left when neither post is filled. */}
+                            <span className={`ml-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold ${
+                              approvers.length === 0 ? "bg-amber-50 text-amber-800" : "bg-green-50 text-green-700"}`}>
+                              <Check size={9} className="mr-0.5 inline shrink-0" />Bishop
+                            </span>
                           </button>
                         </td>
 
@@ -761,14 +767,19 @@ export default function ChurchDirectoryPage() {
       </section>
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
-        <strong>How leave routing uses this</strong> — following note 6 on the church&apos;s leave
-        form. A pastor&apos;s application goes to their congregation&apos;s <strong>head
-        pastor</strong>, its <strong>Council Chairman/Rep</strong> and their district
-        <strong> Dean</strong>; all three must approve, in any order. A <strong>Dean&apos;s</strong> own leave goes to the <strong>Bishop</strong>. If
-        neither a Council Chairman nor a Dean can be worked out, it falls back to the Bishop so an
-        application is never left with nobody able to act. The Council Chairman is not LCM staff, so
-        they sign through a one-time link emailed when the pastor applies. Anyone with a specific
-        assignment in Leave Approvers overrides all of this.
+        <strong>How leave routing uses this</strong> — a pastor&apos;s leave is approved by
+        <strong> any one</strong> of the <strong>Bishop</strong>, their district <strong>Dean</strong>,
+        or their congregation&apos;s <strong>Pastor in Charge</strong>. One signature settles it;
+        whoever gets to it first. A <strong>Dean&apos;s</strong> own leave is the same, minus their own
+        district. Nobody approves their own leave, so a Pastor in Charge applying is settled by the
+        Bishop or the Dean.
+        <br /><br />
+        The <strong>Council Chairman/Rep</strong> is <strong>told, not asked</strong>. They are emailed
+        when a pastor applies and have nothing to click — the congregation acknowledges in its own
+        way, which is the General Manager&apos;s instruction of September 2026. This replaces the
+        older reading of note 6(a), which needed all three signatures and meant a pastor&apos;s leave
+        could wait on a church-council officer with no account here.
+        Anyone with a specific assignment in Leave Approvers overrides all of this.
       </div>
 
       {councilFor && (

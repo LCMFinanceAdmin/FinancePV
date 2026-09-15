@@ -10,9 +10,16 @@ import type { RequiredApprover } from "@/lib/leave-decision";
 // also the one that has to reach people who aren't in the app, which is why it
 // goes by email as well as the bell.
 //
-// Called by the applicant straight after submitting. The church council
-// President is excluded — they have no account and get their own signed link
-// from /api/leave-council-invite instead.
+// Called by the applicant straight after submitting.
+//
+// A pastor's approvers are alternatives to one another — Bishop, Dean or Pastor
+// in Charge, any one settles it — so they must not be told they are all needed.
+// Three people each waiting for a signature that was never required of them is
+// how an application sits for a fortnight with nobody refusing it.
+//
+// The congregation's Council Chairman/Rep is told separately and asked for
+// nothing: the General Manager's rule is that they acknowledge among
+// themselves rather than through here.
 
 function fmt(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-GB",
@@ -41,6 +48,12 @@ export async function POST(req: NextRequest) {
 
     const approvers: RequiredApprover[] = (leave.required_approvers ?? [])
       .filter((a: RequiredApprover) => !a.external);
+
+    // Whether the chain is "all of these" or "any of these" — a chain whose
+    // approvers all share one group is settled by whichever of them acts.
+    const groups = new Set(approvers.map(a => a.group).filter(Boolean));
+    const anyOne = approvers.length > 1 && groups.size === 1
+      && approvers.every(a => a.group);
 
     const { data: type0 } = await supabase
       .from("leave_types").select("name").eq("code", leave.leave_type_code).maybeSingle();
@@ -91,9 +104,12 @@ export async function POST(req: NextRequest) {
         `${leave.applicant_name} has applied for leave and needs your approval.`,
         `${type0?.name ?? leave.leave_type_code}: ${fmt(leave.start_date)} to ${fmt(leave.end_date)} (${leave.days} working day${Number(leave.days) === 1 ? "" : "s"}).`,
         ...(leave.reason ? [`Reason given: ${leave.reason}`] : []),
-        approvers.length > 1
-          ? `This application needs all of: ${approvers.map(a => a.name).join(", ")}. Each of you signs separately, and the order does not matter — you do not need to wait for the others.`
-          : "",
+        approvers.length <= 1 ? ""
+          : anyOne
+            // Said plainly, because the cost of getting it wrong is three
+            // people each waiting for one of the others.
+            ? `Any one of you can approve this: ${approvers.map(a => a.name).join(", ")}. It only needs one signature — whoever gets to it first settles it, and the others need do nothing.`
+            : `This application needs all of: ${approvers.map(a => a.name).join(", ")}. Each of you signs separately, and the order does not matter — you do not need to wait for the others.`,
       ].filter(Boolean),
       // Straight to the application itself rather than the queue's front page.
       // An approver who has to find the right row before they can act is an
@@ -102,7 +118,30 @@ export async function POST(req: NextRequest) {
       cta: "Review this leave application",
     });
 
-    return NextResponse.json({ ok: true, notified: result.recorded, emailed: result.emailed });
+    // The congregation, told and not asked. Failing to reach them must not
+    // fail the submission — the application stands and the approvers have it.
+    let informed = 0;
+    try {
+      const { leaveRouting } = await import("@/lib/leave-approvers");
+      const routing = await leaveRouting(supabase, leave.applicant_email);
+      if (routing.inform.length > 0) {
+        const r = await notifyPeople({
+          supabase,
+          to: routing.inform.map(p => ({ email: p.email, name: p.name })),
+          type: "LEAVE_INFO",
+          ref: leave.leave_no,
+          subject: `${leave.applicant_name} has applied for leave — ${leave.leave_no}`,
+          lines: [
+            `${leave.applicant_name} has applied for leave. This is for your information — there is nothing for you to approve here.`,
+            `${type0?.name ?? leave.leave_type_code}: ${fmt(leave.start_date)} to ${fmt(leave.end_date)} (${leave.days} working day${Number(leave.days) === 1 ? "" : "s"}).`,
+            "It is approved by the Bishop, the district Dean or the Pastor in Charge. The congregation acknowledges it in its own way.",
+          ],
+        });
+        informed = r.recorded;
+      }
+    } catch { /* the application is submitted either way */ }
+
+    return NextResponse.json({ ok: true, notified: result.recorded, emailed: result.emailed, informed });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
