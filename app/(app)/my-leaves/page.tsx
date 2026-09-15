@@ -7,7 +7,7 @@ import { leaveRouting } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { openLeaveForm } from "@/components/leave/leave-form-html";
-import { CalendarDays, Plus, CheckCircle2, XCircle, Clock, X, Upload } from "lucide-react";
+import { CalendarDays, Plus, CheckCircle2, XCircle, Clock, X, Upload, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 
@@ -71,13 +71,20 @@ function MyLeavesInner() {
   const [userEmail,        setUserEmail]        = useState("");
   const [userName,         setUserName]         = useState("");
   const [userDesignation,  setUserDesignation]  = useState("");
+  /** Only a pastor is asked to notify a congregation. */
+  const [isPastor, setIsPastor] = useState(false);
   const [toast,            setToast]            = useState({ msg: "", ok: true });
   const year = new Date().getFullYear();
 
   // Apply form state
   const [form, setForm] = useState({
     leave_type_code: "ANNUAL", start_date: "", end_date: "", reason: "", attachment_url: "",
+    // How the congregation was told. A pastor is expected to notify them; since
+    // the General Manager took them off the approval chain there was nothing to
+    // show for it, and the person signing had no sight of whether it happened.
+    congregation_ack_url: "", congregation_ack_name: "", congregation_ack_note: "",
   });
+  const [ackUploading, setAckUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [resending,  setResending]  = useState<string | null>(null);
@@ -106,7 +113,7 @@ function MyLeavesInner() {
         .order("applied_at", { ascending: false }),
       supabase.from("replacement_days_earned").select("*").eq("employee_email", email)
         .gte("work_date", `${year}-01-01`).lte("work_date", `${year}-12-31`),
-      supabase.from("user_roles").select("full_name,designation").eq("email", email).single(),
+      supabase.from("user_roles").select("full_name,designation,is_pastor").eq("email", email).single(),
       supabase.from("user_roles").select("email,role"),
       supabase.rpc("my_leave_entitlements"),
     ]);
@@ -155,6 +162,7 @@ function MyLeavesInner() {
     setReplacementDays(rdays ?? []);
     setUserName(profile?.full_name ?? email);
     setUserDesignation(profile?.designation ?? "");
+    setIsPastor(profile?.is_pastor === true);
     setRoleByEmail(Object.fromEntries(
       ((people ?? []) as { email: string; role: string }[])
         .map(p => [p.email.trim().toLowerCase(), p.role]),
@@ -219,6 +227,7 @@ function MyLeavesInner() {
       end_date: app.end_date,
       reason: app.reason,
       attachment_url: "",
+      congregation_ack_url: "", congregation_ack_name: "", congregation_ack_note: "",
     });
     // A fresh signature is required: the applicant is declaring the amended
     // details, not the ones they signed before.
@@ -233,7 +242,8 @@ function MyLeavesInner() {
     setEditingId(null);
     setOpenedAt(null);
     setApplicantSig(null);
-    setForm({ leave_type_code: "ANNUAL", start_date: "", end_date: "", reason: "", attachment_url: "" });
+    setForm({ leave_type_code: "ANNUAL", start_date: "", end_date: "", reason: "", attachment_url: "",
+      congregation_ack_url: "", congregation_ack_name: "", congregation_ack_note: "" });
   }
 
   async function amendLeave() {
@@ -261,6 +271,27 @@ function MyLeavesInner() {
       ? `Application amended — ${b.cleared} approval${b.cleared === 1 ? "" : "s"} cleared, it needs signing again`
       : "Application amended");
     await load();
+  }
+
+  /** Attach the notice the pastor sent their congregation.
+   *
+   *  Stored under their own address, which is what the bucket policy allows —
+   *  a pastor attaches to their own application and nobody else's. Uploaded
+   *  before the application exists, so the path is keyed on time rather than
+   *  on a leave number that has not been issued yet.
+   */
+  async function uploadAck(file: File) {
+    if (!userEmail) return;
+    setAckUploading(true);
+    try {
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${userEmail.toLowerCase()}/${Date.now()}-${safe}`;
+      const { error } = await supabase.storage.from("leave-docs").upload(path, file, { upsert: false });
+      if (error) { showMsg(error.message, false); return; }
+      setForm(f => ({ ...f, congregation_ack_url: path, congregation_ack_name: file.name }));
+    } finally {
+      setAckUploading(false);
+    }
   }
 
   async function submitLeave() {
@@ -314,6 +345,11 @@ function MyLeavesInner() {
       days,
       reason:             form.reason,
       attachment_url:     form.attachment_url || null,
+      congregation_ack_url:  form.congregation_ack_url || null,
+      congregation_ack_name: form.congregation_ack_name || null,
+      congregation_ack_note: form.congregation_ack_note.trim() || null,
+      ...(form.congregation_ack_url || form.congregation_ack_note.trim()
+        ? { congregation_ack_at: new Date().toISOString() } : {}),
       applicant_signature: applicantSig,
       required_approvers: resolvedApprovers,
       // The Bishop's leave needs no approval, so it is not left sitting in a
@@ -788,6 +824,55 @@ function MyLeavesInner() {
                     onChange={e => setForm(f => ({ ...f, attachment_url: e.target.value }))}
                     placeholder="Link to the medical certificate or other document…"
                     className="mt-2 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#2f5b9c]" />
+                </div>
+              )}
+
+              {/* ── Telling the congregation ────────────────────────
+                  The congregation is told, not asked — so a pastor has an
+                  obligation with nothing to show for it, and the Dean or Pastor
+                  in Charge signing has no sight of whether it was met. The
+                  letter, the filled form or the forwarded email goes here.
+
+                  Never required. A pastor who telephoned the chairman has done
+                  what the church asks; the note is for saying so. */}
+              {isPastor && (
+                <div className="mt-3 rounded-xl border border-[#dbe9fb] bg-[#f7fbff] p-3">
+                  <p className="flex items-center gap-1.5 text-[13px] font-semibold text-stone-700">
+                    <Upload size={13} className="text-[#4a6da7]" /> Did you tell your congregation?
+                  </p>
+                  <p className="mt-0.5 text-[12px] leading-snug text-stone-500">
+                    Optional. Attach the letter, form or email you sent them, so whoever approves
+                    can see it — the congregation is told rather than asked, so this is the only
+                    record that it happened.
+                  </p>
+
+                  {form.congregation_ack_name ? (
+                    <div className="mt-2 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-2.5 py-1.5">
+                      <Check size={13} className="shrink-0 text-green-700" />
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-green-800">
+                        {form.congregation_ack_name}
+                      </span>
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, congregation_ack_url: "", congregation_ack_name: "" }))}
+                        className="shrink-0 text-[11.5px] font-semibold text-stone-500 hover:text-red-600">
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="mt-2 flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#a9c4e8] bg-white px-3 py-2 text-[12.5px] font-medium text-[#3d5a8f] transition-colors hover:bg-[#eaf3ff]">
+                      <Upload size={13} />
+                      {ackUploading ? "Uploading…" : "Attach the notice you sent"}
+                      <input type="file" className="hidden" disabled={ackUploading}
+                        accept=".pdf,.doc,.docx,.eml,.txt,image/*"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadAck(f); e.target.value = ""; }} />
+                    </label>
+                  )}
+
+                  <input
+                    value={form.congregation_ack_note}
+                    onChange={e => setForm(f => ({ ...f, congregation_ack_note: e.target.value }))}
+                    placeholder="Or say how you told them — e.g. announced at Sunday service, 7 Sep"
+                    className="mt-2 w-full rounded-lg border border-[#dbe9fb] bg-white px-3 py-1.5 text-[12.5px] outline-none focus:border-[#2f5b9c]" />
                 </div>
               )}
 

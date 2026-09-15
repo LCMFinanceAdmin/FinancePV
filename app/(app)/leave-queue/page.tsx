@@ -14,11 +14,57 @@ interface LeaveApp {
   id: string; leave_no: string; applicant_name: string; applicant_email: string;
   leave_type_code: string; start_date: string; end_date: string; days: number;
   reason: string; status: string; applied_at: string; applicant_signature?: string | null;
+  /** What the pastor sent their congregation — see migration 214. */
+  congregation_ack_url?: string | null;
+  congregation_ack_name?: string | null;
+  congregation_ack_note?: string | null;
   balance_annual_before?: number | null; balance_medical_before?: number | null;
-  required_approvers: { email: string; name: string; position?: string; external?: boolean }[];
+  required_approvers: { email: string; name: string; position?: string; external?: boolean; group?: string }[];
   approvals: { email: string; name: string; position?: string; action: string; timestamp: string; remarks?: string; for_email?: string; signature_data?: string }[];
 }
 interface LeaveType { code: string; name: string; }
+
+/**
+ * What the pastor did about telling their congregation.
+ *
+ * Shown to whoever is about to sign. Never a gate: a pastor who telephoned the
+ * chairman has done what the church asks, and the point is that the signer can
+ * see what happened rather than that the system enforces it.
+ */
+function CongregationNotice({ leave }: { leave: LeaveApp }) {
+  const supabase = createClient();
+  const [opening, setOpening] = useState(false);
+  const has = !!leave.congregation_ack_url || !!leave.congregation_ack_note;
+
+  async function open() {
+    if (!leave.congregation_ack_url) return;
+    setOpening(true);
+    // The bucket is private, so a link has to be signed each time rather than
+    // stored — a URL that works forever is a URL that leaks forever.
+    const { data } = await supabase.storage.from("leave-docs")
+      .createSignedUrl(leave.congregation_ack_url, 60 * 5);
+    setOpening(false);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener");
+  }
+
+  return (
+    <div className={`mt-2 rounded-lg px-2.5 py-1.5 text-[12px] ${
+      has ? "bg-green-50 text-green-800" : "bg-stone-50 text-stone-500"}`}>
+      <span className="font-semibold">Congregation told:</span>{" "}
+      {has ? (
+        <>
+          {leave.congregation_ack_note}
+          {leave.congregation_ack_url && (
+            <button onClick={open} disabled={opening}
+              className="ml-1 font-semibold text-[#3d5a8f] underline decoration-dotted hover:text-[#24487c]">
+              {opening ? "opening…" : (leave.congregation_ack_name || "view the notice")}
+            </button>
+          )}
+        </>
+      ) : "nothing recorded"}
+    </div>
+  );
+}
 
 const TYPE_COLORS: Record<string, string> = {
   ANNUAL:      "bg-blue-100 text-blue-700",
@@ -109,10 +155,11 @@ function LeaveQueueInner() {
 
   const myLeaves = leaves.filter(isMine);
 
-  // A pastor's leave needs the church council President as well, so an
-  // application can still be PENDING after you have signed it. Those don't
-  // belong in your queue — nothing is asked of you — but they aren't history
-  // either, so they're listed separately.
+  // A chain can still be PENDING after you have signed it — a staff chain
+  // needing both the General Manager and the Bishop, for instance. Those don't
+  // belong in your queue, nothing more being asked of you, but they aren't
+  // history either, so they're listed separately. A pastor's chain is settled
+  // by whoever signs first, so it leaves this list immediately.
   const iSigned = (l: LeaveApp) =>
     l.approvals?.some(a => norm(a.email) === norm(userEmail) && a.action === "APPROVED");
 
@@ -232,6 +279,13 @@ function LeaveQueueInner() {
               {approveTarget.reason && (
                 <p className="mt-1 text-xs italic text-stone-400">&ldquo;{approveTarget.reason}&rdquo;</p>
               )}
+
+              {/* Whether the congregation was told. They are no longer asked to
+                  approve, so this is the only sight the signer gets of an
+                  obligation the pastor still has. Absence is stated rather than
+                  left blank — "nothing recorded" is a fact worth reading before
+                  signing, and a blank space says nothing at all. */}
+              <CongregationNotice leave={approveTarget} />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-stone-500">
