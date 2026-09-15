@@ -227,7 +227,14 @@ export default function ChurchDirectoryPage() {
 
   const nameFor = (email: string | null | undefined) => {
     if (!email) return null;
-    const p = people.find(x => loginOf(x) === email);
+    // Case-insensitively: an address stored as R.Tan@lcm.org.my against a
+    // directory holding r.tan@lcm.org.my is the same person, and an exact match
+    // would fall through to showing the raw address — which then sorts the
+    // pastor column by email rather than by name, silently and only for the
+    // rows that happen to disagree. Nothing disagrees today; this is about the
+    // day something does.
+    const want = email.toLowerCase();
+    const p = people.find(x => loginOf(x).toLowerCase() === want);
     return p ? withTitle(p.full_name, p.ordination) : email;
   };
 
@@ -257,8 +264,15 @@ export default function ChurchDirectoryPage() {
       // value that belongs at one end of an alphabet.
       if (!av && bv) return 1;
       if (av && !bv) return -1;
+      // numeric so "9th Miles" precedes "11th Mile" rather than following it,
+      // which is the order a person reading a list of churches expects.
       const cmp = av.localeCompare(bv, "en", { numeric: true, sensitivity: "base" });
-      return sortAsc ? cmp : -cmp;
+      if (cmp !== 0) return sortAsc ? cmp : -cmp;
+      // Ties fall back to the church's name, so the six district blocks are
+      // each alphabetical inside rather than holding whatever order the last
+      // sort happened to leave. Forty-seven congregations have no pastor
+      // recorded; without this they would be an unordered heap of forty-seven.
+      return a.name.localeCompare(b.name, "en", { numeric: true, sensitivity: "base" });
     });
     return [...saved, ...fresh];
   }, [congregations, districts, people, sortBy, sortAsc]);
@@ -570,7 +584,7 @@ export default function ChurchDirectoryPage() {
                   {/* The church's own name gets a third of the table. It is the
                       thing every row is about and it was the thing being cut. */}
                   <th className={`${th} w-[32%]`}><SortHead k="name" sortBy={sortBy} sortAsc={sortAsc} onSort={sortCongregations}>Congregation</SortHead></th>
-                  <th className={`${th} w-[7%]`}><SortHead k="district" sortBy={sortBy} sortAsc={sortAsc} onSort={sortCongregations}>District</SortHead></th>
+                  <th className={`${th} w-[7%] min-w-[78px]`}><SortHead k="district" sortBy={sortBy} sortAsc={sortAsc} onSort={sortCongregations}>District</SortHead></th>
                   <th className={`${th} w-[14%]`}>ROS number</th>
                   <th className={`${th} w-[17%]`}><SortHead k="pastor" sortBy={sortBy} sortAsc={sortAsc} onSort={sortCongregations}>Head pastor</SortHead></th>
                   <th className={`${th} w-[14%]`}>Council Chairman / Rep</th>
@@ -635,22 +649,27 @@ export default function ChurchDirectoryPage() {
                             value is how they come to disagree — the council list
                             is the place, and a trigger writes the answer back to
                             the field leave routing reads. See migration 145. */}
+                        {/* One line, not two. The address under the name was
+                            a second truncated string on every row for a fact
+                            nobody reads off a table — it is the tooltip now.
+
+                            And "not named" is the state of all forty-nine of
+                            these, so it may as well be the way to fix it: the
+                            council list is one click from the gap rather than
+                            from an icon at the end of the row. */}
                         <td className={`${td} px-3`}>
                           {c.council_president_name || c.council_president_email ? (
-                            <>
-                              <span className="block truncate text-[13px] font-medium text-stone-700">
-                                {c.council_president_name || c.council_president_email}
-                              </span>
-                              {c.council_president_email && c.council_president_name && (
-                                <span className="block truncate text-[11px] italic text-stone-400">
-                                  {c.council_president_email}
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-[12px] italic text-stone-400">
-                              {fresh ? "save first" : "not named"}
+                            <span className="block truncate text-[13px] font-medium text-stone-700"
+                              title={c.council_president_email || undefined}>
+                              {c.council_president_name || c.council_president_email}
                             </span>
+                          ) : fresh ? (
+                            <span className="text-[12px] italic text-stone-400">save first</span>
+                          ) : (
+                            <button onClick={() => setCouncilFor(c)}
+                              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-stone-400 transition-colors hover:bg-[#eaf3ff] hover:text-[#3d5a8f]">
+                              <Plus size={11} className="shrink-0" /> Name one
+                            </button>
                           )}
                         </td>
 
@@ -659,17 +678,35 @@ export default function ChurchDirectoryPage() {
                             it — the sentence matters when something is wrong,
                             and the rest of the time it is the same sentence
                             repeated down the page. */}
+                        {/* Three slots, named and either filled or not. The
+                            chip before this said "Needs Council Chairman/Rep"
+                            and truncated to "Needs Council Chairman…", which
+                            costs a column to say less than three letters do:
+                            you could not see from it which of the three were
+                            already in place. */}
                         <td className={`${td} px-3`}>
                           <button onClick={() => toggleRouting(c.id)}
                             aria-expanded={open}
-                            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 !text-[11px] !font-semibold transition-colors ${
-                              missing.length === 0 ? "bg-green-50 text-green-700 hover:bg-green-100"
-                                : missing.length === 3 ? "bg-stone-100 text-stone-500 hover:bg-stone-200"
-                                : "bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>
-                            <ChevronRight size={11} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
-                            {missing.length === 0 ? <><Check size={11} className="shrink-0" /> All three set</>
-                              : missing.length === 3 ? "Falls to Bishop"
-                              : <span className="truncate">Needs {missing.join(", ")}</span>}
+                            title={missing.length === 0
+                              ? "Pastor, Chairman and Dean are all set"
+                              : `Still needed: ${missing.join(", ")}`}
+                            className="flex max-w-full items-center gap-1 rounded-lg px-1 py-0.5 transition-colors hover:bg-[#f2f8ff]">
+                            <ChevronRight size={11} className={`shrink-0 text-stone-400 transition-transform ${open ? "rotate-90" : ""}`} />
+                            {([
+                              ["Pastor", !missing.includes("head pastor")],
+                              ["Chair",  !missing.includes("Council Chairman/Rep")],
+                              ["Dean",   !missing.includes("Dean")],
+                            ] as [string, boolean][]).map(([label, set]) => (
+                              <span key={label}
+                                className={`inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold ${
+                                  set ? "bg-green-50 text-green-700" : "bg-stone-100 text-stone-400"}`}>
+                                {set ? <Check size={9} className="shrink-0" /> : <span className="text-[11px] leading-none">·</span>}
+                                {label}
+                              </span>
+                            ))}
+                            {missing.length === 3 && (
+                              <span className="ml-0.5 shrink-0 text-[10.5px] font-semibold text-stone-500">Bishop</span>
+                            )}
                           </button>
                         </td>
 
