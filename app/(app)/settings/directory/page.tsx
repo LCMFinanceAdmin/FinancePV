@@ -222,8 +222,28 @@ export default function ChurchDirectoryPage() {
   // Somebody with no address at all cannot be reached by a leave request, so
   // they are not offered — picking them would look like it worked.
   const reachable = people.filter(p => loginOf(p));
-  const pastors = reachable.filter(p => p.ministry_status);
+
+  // Ordination as well as ministry_status. The status field is filled in for 18
+  // of 87 people, and testing on it alone hid thirty-seven Reverends from a list
+  // whose whole purpose is choosing among Reverends — including five of the six
+  // Deans, who had to be recorded in SQL because this page would not offer them.
+  const pastors = reachable.filter(p => p.ministry_status || p.ordination);
   const pastorOptions = pastors.length > 0 ? pastors : reachable;
+
+  /** The list, with whoever holds the post now guaranteed to be in it.
+   *
+   *  A <select> shows the option matching its value and nothing at all when no
+   *  option matches, so a Dean outside the filter above renders as "— none —"
+   *  on a district that has one. Reading "no Dean" off a district that has one
+   *  is worse than an untidy list, and worse again if somebody saves the row
+   *  believing it. */
+  const withCurrent = (email: string | null | undefined): Person[] => {
+    if (!email) return pastorOptions;
+    const want = email.toLowerCase();
+    if (pastorOptions.some(p => loginOf(p).toLowerCase() === want)) return pastorOptions;
+    const held = people.find(p => loginOf(p).toLowerCase() === want);
+    return held ? [held, ...pastorOptions] : pastorOptions;
+  };
 
   const nameFor = (email: string | null | undefined) => {
     if (!email) return null;
@@ -465,7 +485,12 @@ export default function ChurchDirectoryPage() {
                   const why = chosen ? deanBlocks[`${d.id}|${chosen.id}`] : null;
                   const count = congregations.filter(c => c.district_id === d.id).length;
                   const changed = dirty(d.id, districtSig(d));
-                  const offerable = eligibleDeans(d);
+                  // Whoever holds the post is always in the list, even if
+                  // the filters would not have offered them — otherwise the row
+                  // renders "— none —" over a district that has a Dean.
+                  const offerable = withCurrent(d.dean_email)
+                    .filter(p => eligibleDeans(d).some(e => e.id === p.id)
+                              || loginOf(p) === d.dean_email);
                   const past = (deanTerms[d.id] ?? []).filter(t => t.term_end);
                   return (
                     <tr key={d.id} className={`${rowCls} ${isNew(d.id) ? "bg-[#fffdf5]" : ""}`}>
@@ -642,7 +667,7 @@ export default function ChurchDirectoryPage() {
                           <select className={cell} value={c.head_pastor_email ?? ""}
                             onChange={e => patchCongregation(c.id, { head_pastor_email: e.target.value || null })}>
                             <option value="">— none —</option>
-                            {pastorOptions.map(p => (
+                            {withCurrent(c.head_pastor_email).map(p => (
                               <option key={p.id} value={loginOf(p)}>{withTitle(p.full_name, p.ordination)}</option>
                             ))}
                           </select>
