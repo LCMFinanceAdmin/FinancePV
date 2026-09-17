@@ -40,5 +40,9 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons|sw.js|manifest.json).*)"],
+  // lcm-logo.svg joins the list for the same reason as the rest: it is the
+  // church's own mark on a public path, there is nothing in it to protect,
+  // and routing it through the session check cost a redirect on every page
+  // load. It was the only asset in public/ still going through.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons|lcm-logo.svg|sw.js|manifest.json).*)"],
 };

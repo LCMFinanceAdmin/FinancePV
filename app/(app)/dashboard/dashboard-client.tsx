@@ -31,7 +31,12 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
   const [approvedCount,setApprovedCount]= useState(0);
   const [needsInfoCount, setNeedsInfoCount] = useState(0);
   const [loading,      setLoading]      = useState(true);
-  const [firstName,    setFirstName]    = useState("");
+  // Seeded from the profile the server already resolved, not left empty until
+  // the client fetch below returns. It was rendering "Good evening," with a
+  // trailing comma and no name on every load until that round trip finished —
+  // and permanently, on any load where the fetch fails.
+  const [firstName,    setFirstName]    = useState(
+    (profile?.displayName || profile?.full_name || profile?.email || "").split(" ")[0]);
 
   const [userRole,       setUserRole]       = useState("");
   const isFinanceAdmin = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(userRole);

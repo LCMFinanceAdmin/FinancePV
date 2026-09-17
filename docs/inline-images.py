@@ -18,6 +18,7 @@ diagram rather than to a broken-image icon.
     python docs/inline-images.py
 """
 import base64
+import io
 import pathlib
 import re
 import sys
@@ -28,6 +29,38 @@ IMGS = ROOT / "img"
 
 MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml"}
+
+# A figure renders about 620px wide in the handbook. Screenshots arrive at two
+# or three times that, which is right for the folder and wasteful inside a file
+# people email: the dashboard capture was 740 KB of PNG, a megabyte once encoded
+# as text, for a picture nothing will ever draw above 1600px.
+MAX_WIDTH = 1600
+WEBP_QUALITY = 88
+
+
+def optimise(path: pathlib.Path) -> "tuple[bytes, str] | None":
+    """Right-size a screenshot and encode it small, or None to use it as-is.
+
+    WebP rather than PNG because a screenshot is mostly flat colour with a few
+    gradients, which is the case WebP is best at — 64 KB against 524 KB here,
+    for a difference nobody can see at the size it is drawn. Anything that is
+    not a raster photograph (an SVG, say) is left alone.
+    """
+    if path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+        return None
+    try:
+        from PIL import Image
+    except ImportError:
+        print("    (Pillow not installed — embedding at full size)")
+        return None
+
+    im = Image.open(path).convert("RGB")
+    if im.width > MAX_WIDTH:
+        im = im.resize((MAX_WIDTH, round(im.height * MAX_WIDTH / im.width)),
+                       Image.LANCZOS)
+    buf = io.BytesIO()
+    im.save(buf, "WEBP", quality=WEBP_QUALITY, method=6)
+    return buf.getvalue(), "image/webp"
 
 
 def main() -> int:
@@ -50,7 +83,14 @@ def main() -> int:
             print(f"  {name:22} unknown type {path.suffix} — skipped")
             continue
 
-        uri = f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+        raw = path.read_bytes()
+        small = optimise(path)
+        if small and len(small[0]) < len(raw):
+            was = len(raw)
+            raw, mime = small
+            print(f"  {name:22} {was//1024} KB -> {len(raw)//1024} KB as {mime.split('/')[1]}")
+
+        uri = f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
 
         # Replace the src of the one tag that names this file, leaving every
         # other attribute — alt text, the onerror fallback — untouched.
