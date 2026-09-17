@@ -341,6 +341,115 @@ footer p{max-width:64ch;}
   .faq .a{display:block !important;}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important;}}
+
+/* ── Screen figures ───────────────────────────────────────────────────────
+   The two screens everybody meets, drawn rather than photographed. A drawing
+   scales, prints, reads in dark mode and can be labelled; a screenshot of a
+   1500px window becomes an unreadable grey smudge on a printed page and is
+   wrong the first time a button moves.                                      */
+.shot{
+  border:1px solid var(--line-2); border-radius:14px; overflow:hidden;
+  background:var(--surface); box-shadow:var(--shadow); margin:1.4rem 0 .5rem;
+}
+.shot .bar{
+  display:flex; align-items:center; gap:.5rem;
+  padding:.5rem .8rem; border-bottom:1px solid var(--line);
+  background:var(--surface-2);
+}
+.shot .dot{width:9px;height:9px;border-radius:50%;background:var(--line-2);flex:none;}
+.shot .url{
+  flex:1; font:500 .82rem/1.2 "Source Sans 3",system-ui,sans-serif;
+  color:var(--ink-2); background:var(--surface); border:1px solid var(--line);
+  border-radius:999px; padding:.28rem .7rem; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.shot .screen{padding:1.6rem 1.1rem; background:var(--ground);}
+
+/* The sign-in card, as it actually appears. */
+.signin{max-width:310px;margin:0 auto;text-align:center;}
+.signin .logo{
+  width:52px;height:52px;border-radius:14px;background:#4a6da7;color:#fff;
+  display:grid;place-items:center;font:700 1.5rem/1 "Source Sans 3",sans-serif;
+  margin:0 auto .7rem;
+}
+.signin h4{margin:0;font:700 1.2rem/1.2 "Source Sans 3",sans-serif;color:var(--ink);}
+.signin .sub{margin:.15rem 0 1rem;font-size:.88rem;color:var(--ink-3);}
+.signin .card{
+  background:var(--surface); border:1px solid var(--line); border-radius:14px;
+  padding:1rem .95rem; text-align:left;
+}
+.signin .card b{display:block;font:700 1rem/1.3 "Source Sans 3",sans-serif;color:var(--ink);}
+.signin .card .q{margin:.1rem 0 .85rem;font-size:.86rem;color:var(--ink-3);}
+.btn-g,.btn-e{
+  display:flex;align-items:center;justify-content:center;gap:.5rem;
+  width:100%;border-radius:10px;padding:.6rem .8rem;
+  font:600 .95rem/1 "Source Sans 3",sans-serif;
+}
+.btn-g{background:#1a56db;color:#fff;border:1px solid #1a56db;}
+.btn-e{background:var(--surface);color:var(--ink);border:1px solid var(--line-2);}
+.signin .cap{margin:.4rem 0 0;text-align:center;font-size:.8rem;color:var(--ink-3);}
+.signin .or{
+  display:flex;align-items:center;gap:.6rem;margin:.85rem 0;
+  font-size:.82rem;color:var(--ink-3);
+}
+.signin .or::before,.signin .or::after{content:"";flex:1;height:1px;background:var(--line);}
+
+/* The dashboard, reduced to the parts a first-time user needs to find. */
+.dash{display:flex;gap:.7rem;align-items:stretch;}
+.dash .side{
+  width:33%;min-width:130px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);padding:.6rem;display:flex;flex-direction:column;gap:.45rem;
+}
+.dash .side .brand{font:700 .9rem/1.2 "Source Sans 3",sans-serif;color:var(--ink);}
+.dash .side .item{font-size:.82rem;color:var(--ink-2);padding:.18rem .3rem;border-radius:6px;}
+.dash .side .item.on{background:var(--brand-wash);color:var(--brand-deep);font-weight:600;}
+.whoami{
+  margin-top:auto;border:1px solid var(--line-2);border-radius:10px;
+  background:var(--surface-2);padding:.5rem .55rem;display:flex;gap:.5rem;align-items:center;
+}
+.whoami .av{
+  width:30px;height:30px;border-radius:9px;background:#dbeafe;color:#1d4ed8;flex:none;
+  display:grid;place-items:center;font:700 .7rem/1 "Source Sans 3",sans-serif;
+}
+.whoami .nm{font:700 .82rem/1.25 "Source Sans 3",sans-serif;color:var(--ink);}
+.whoami .em{font-size:.72rem;color:var(--ink-3);word-break:break-all;}
+.whoami .rl{font:700 .72rem/1.2 "Source Sans 3",sans-serif;color:var(--brand);}
+.dash .body{flex:1;display:flex;flex-direction:column;gap:.6rem;}
+.dash .hi{font:700 1.05rem/1.2 "Source Sans 3",sans-serif;color:var(--ink);}
+.dash .hi span{display:block;font-weight:400;font-size:.84rem;color:var(--ink-3);margin-top:.1rem;}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:.45rem;}
+.tiles div{
+  border:1px solid var(--line);border-radius:10px;padding:.45rem .5rem;background:var(--surface);
+}
+.tiles b{display:block;font:700 1.15rem/1 "Source Sans 3",sans-serif;color:var(--ink);}
+.tiles span{font-size:.7rem;color:var(--ink-3);}
+.acts{display:grid;grid-template-columns:repeat(4,1fr);gap:.45rem;}
+.acts div{
+  border-radius:10px;padding:.5rem .55rem;color:#fff;
+  font:700 .76rem/1.15 "Source Sans 3",sans-serif;
+}
+.shot figcaption,.figcap{
+  margin:.1rem 0 1.5rem;font-size:.87rem;color:var(--ink-3);
+}
+.callouts{list-style:none;margin:.2rem 0 1.5rem;padding:0;display:grid;gap:.45rem;}
+.callouts li{
+  display:flex;gap:.6rem;align-items:flex-start;
+  font-size:.94rem;color:var(--ink-2);
+}
+.callouts .k{
+  flex:none;width:1.4rem;height:1.4rem;border-radius:50%;
+  background:var(--brand);color:#fff;display:grid;place-items:center;
+  font:700 .76rem/1 "Source Sans 3",sans-serif;margin-top:.1rem;
+}
+@media (max-width:640px){
+  .tiles,.acts{grid-template-columns:repeat(2,1fr);}
+  .dash{flex-direction:column;}
+  .dash .side{width:auto;}
+}
+@media print{
+  .shot{break-inside:avoid;box-shadow:none;}
+}
+
 </style>
 
 <div class="wrap">
@@ -356,7 +465,19 @@ footer p{max-width:64ch;}
     <nav class="rail" aria-label="Contents">
       <h2>Contents</h2>
       <ol>
-        <li><a href="#start">Where to start</a></li>
+        <li><a href="#getting-in">Getting in</a></li>
+        <li><a href="#first-time" class="sub">The first time</a></li>
+        <li><a href="#whoami" class="sub">Are you the right person?</a></li>
+        <li><a href="#start">What your role can do</a></li>
+        <li><a href="#how-approval">How an approval works</a></li>
+        <li><a href="#how-many" class="sub">How many signatures</a></li>
+        <li><a href="#exco">The EXCO</a></li>
+        <li><a href="#exco-request" class="sub">Asking for a payment</a></li>
+        <li><a href="#exco-verify" class="sub">Verifying spending</a></li>
+        <li><a href="#hq">The HQ office</a></li>
+        <li><a href="#hq-finance" class="sub">Finance Executive</a></li>
+        <li><a href="#hq-gm" class="sub">General Manager</a></li>
+        <li><a href="#hq-sign" class="sub">The three signatories</a></li>
         <li><a href="#claims">Claiming money back</a></li>
         <li><a href="#track" class="sub">Tracking your claim</a></li>
         <li><a href="#request" class="sub">Asking the church to pay</a></li>
@@ -377,9 +498,113 @@ footer p{max-width:64ch;}
     <main>
 
       <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="getting-in">
+        <h2 class="head">Getting in</h2>
+        <p class="lede">The app lives at one address. There is no password to remember and none to lose &mdash; you sign in either with your church Google account or with a link emailed to you.</p>
+
+        <p style="text-align:center;margin:1.4rem 0 .3rem;">
+          <a class="path" style="font-size:1.05rem;padding:.5rem 1rem;display:inline-block;"
+             href="https://finance-pv.vercel.app">finance-pv.vercel.app</a>
+        </p>
+        <p class="figcap" style="text-align:center;">Open it in any browser, on a phone or a computer. Bookmark it the first time.</p>
+
+        <figure class="shot">
+          <div class="bar">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="url">finance-pv.vercel.app/login</span>
+          </div>
+          <div class="screen">
+            <div class="signin">
+              <div class="logo">L</div>
+              <h4>LCM Finance</h4>
+              <p class="sub">Payment Voucher System</p>
+              <div class="card">
+                <b>Sign in to continue</b>
+                <p class="q">Choose how you want to sign in</p>
+                <div class="btn-g">Sign in with Google</div>
+                <p class="cap">For @lcm.org.my accounts</p>
+                <div class="or">or</div>
+                <div class="btn-e">Sign in with email link</div>
+                <p class="cap">For staff without a church email account</p>
+              </div>
+            </div>
+          </div>
+        </figure>
+        <p class="figcap">The sign-in screen. Two buttons, and which one is yours depends only on whether the church has given you an <strong>@lcm.org.my</strong> mailbox.</p>
+
+        <ul class="callouts">
+          <li><span class="k">1</span><span><b>Sign in with Google</b> &mdash; if you have an <strong>@lcm.org.my</strong> address. One tap, the same as opening your church email. Nothing to type.</span></li>
+          <li><span class="k">2</span><span><b>Sign in with email link</b> &mdash; if you do not. Type the address the church has for you, and a link arrives in your inbox. Click it and you are in. The link is for you alone and stops working once used, so do not forward it.</span></li>
+        </ul>
+
+        <div class="note-box">
+          <p><b>Nothing happens when you click?</b> Check the address the church holds for you can actually receive email. A mailbox that was never really set up is the usual reason a link never arrives &mdash; ask the Finance Executive to correct it, rather than trying again.</p>
+        </div>
+
+        <h3 id="first-time">The first time you sign in</h3>
+        <p>You do not create an account. Somebody at HQ gives your address a role first, and signing in simply attaches you to it. If you get in and see <b>&ldquo;This account has no role yet&rdquo;</b>, that step has not been done &mdash; ask the Finance Executive or the Administrator to add you under <span class="path">Settings &rarr; Access &amp; Roles</span>. It is not a fault, and trying again will not change it.</p>
+
+        <h3 id="whoami">Checking you are in the right account</h3>
+        <p>Some people have two addresses &mdash; their own and an office one, like <span class="path">stewardship@lcm.org.my</span>. Either will sign you in to the same account, but it is worth a glance the first time.</p>
+
+        <figure class="shot">
+          <div class="bar">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="url">finance-pv.vercel.app/dashboard</span>
+          </div>
+          <div class="screen">
+            <div class="dash">
+              <div class="side">
+                <div class="brand">LCM Finance</div>
+                <div class="item on">Dashboard</div>
+                <div class="item">Submit PV</div>
+                <div class="item">Payments</div>
+                <div class="item">My Space</div>
+                <div class="whoami">
+                  <span class="av">JA</span>
+                  <span>
+                    <span class="nm">Jermaine</span>
+                    <span class="em">finance@lcm.org.my</span>
+                    <span class="rl">Finance Executive</span>
+                  </span>
+                </div>
+              </div>
+              <div class="body">
+                <div class="hi">Good evening, Jermaine
+                  <span>Here&rsquo;s what needs your attention today</span></div>
+                <div class="tiles">
+                  <div><b>8</b><span>In progress</span></div>
+                  <div><b>1</b><span>Approved</span></div>
+                  <div><b>0</b><span>Needs info</span></div>
+                  <div><b>9</b><span>Total</span></div>
+                </div>
+                <div class="acts">
+                  <div style="background:#2563eb;">New Request</div>
+                  <div style="background:#7c3aed;">My PVs</div>
+                  <div style="background:#0ea5e9;">My Submissions</div>
+                  <div style="background:#ea580c;">Payment Req.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </figure>
+        <p class="figcap">What you land on. The four tiles count <em>your</em> work, not the church&rsquo;s.</p>
+
+        <ul class="callouts">
+          <li><span class="k">1</span><span><b>Bottom left is who you are.</b> Your name, the address you came in with, and your role underneath it in blue. If the role is wrong, everything else will look wrong too &mdash; stop there and ask.</span></li>
+          <li><span class="k">2</span><span><b>On a phone</b> the same three lines sit across the top of every page, and the <b>More</b> tab at the bottom right shows your initials.</span></li>
+          <li><span class="k">3</span><span><b>The left-hand menu is built from your role.</b> If a page named later in this handbook is not in your menu, that part is not yours to do. Nothing is broken and nothing is hidden from you by mistake.</span></li>
+        </ul>
+
+        <div class="note-box">
+          <p><b>Signing out.</b> At the foot of the menu, under your name. On a shared computer, sign out &mdash; the app stays signed in for a long time on purpose, so that the people who use it once a month are not locked out.</p>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
       <section id="start">
-        <h2 class="head">Where to start</h2>
-        <p class="lede">Sign in at the church's app address with your <strong>@lcm.org.my</strong> account. What you see in the left-hand menu depends on who you are — so if a page named below isn't in your menu, that part isn't yours to do, and nothing is broken.</p>
+        <h2 class="head">What your role can do</h2>
+        <p class="lede">The left-hand menu is built from your role, so it shows you your own work and nothing else. Find yourself below. If a page named later in this handbook is not in your menu, that part is not yours to do &mdash; nothing is broken.</p>
 
         <ul class="roles">
           <li class="role">
@@ -432,6 +657,134 @@ footer p{max-width:64ch;}
       </section>
 
       <!-- ─────────────────────────────────────────────────────────────── -->
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="how-approval">
+        <h2 class="head">How an approval works</h2>
+        <p class="lede">Every payment travels the same road, whoever raised it. Four stops. Nothing skips a stop, and nothing moves backwards except deliberately, by somebody who says why.</p>
+
+        <div class="spine">
+          <div class="tier">
+            <span class="stage-who">Stop 1</span>
+            <b class="stage-name">Finance checks it</b>
+            <p>The Finance Executive at HQ reads what was submitted: the amount, the ministry it is drawn against, whether there is a budget for it, and whether the receipts are attached. They are not deciding whether the church should spend the money &mdash; they are deciding whether the paperwork can be relied on.</p>
+          </div>
+          <div class="tier">
+            <span class="stage-who">Stop 2</span>
+            <b class="stage-name">The ministry verifies it</b>
+            <p>The EXCO member holding that portfolio confirms it is their ministry&rsquo;s spending and that they asked for it. See <a href="#exco">The EXCO</a>.</p>
+          </div>
+          <div class="tier">
+            <span class="stage-who">Stop 3</span>
+            <b class="stage-name">The General Manager approves it</b>
+            <p>The GM releases it to the signatories. Until this point nobody has committed the church to anything.</p>
+          </div>
+          <div class="tier">
+            <span class="stage-who">Stop 4</span>
+            <b class="stage-name">The officers sign it</b>
+            <p>The Treasurer, the Bishop and the Secretary. How many of them sign depends on the amount &mdash; see below. Once signed, Finance pays it and records the reference.</p>
+          </div>
+        </div>
+
+        <h3 id="how-many">How many signatures</h3>
+        <p>Set by the church&rsquo;s own limits of authority, not by the app.</p>
+
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>The payment</th><th>Signatures</th><th>Who may give them</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Up to <b>RM 30,000</b></td>
+                <td>1</td>
+                <td>The Treasurer</td>
+              </tr>
+              <tr>
+                <td>Over <b>RM 30,000</b></td>
+                <td>2</td>
+                <td>Any two of the Treasurer, the Bishop, the Secretary</td>
+              </tr>
+              <tr>
+                <td>Buying an asset over <b>RM 100,000</b></td>
+                <td>2</td>
+                <td>Any two of the same three, and the EXCO must have agreed to it</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>The voucher itself shows where it has got to and what it is still waiting for, so you never have to ask anybody. Your own are under <span class="path">My Space &rarr; My Submissions</span>.</p>
+
+        <div class="note-box">
+          <p><b>Rejected is not the end.</b> A rejection comes with a reason and sends the voucher back to whoever raised it. Fix what was wrong and submit it again &mdash; it keeps its history, so nobody has to be told the story twice.</p>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="exco">
+        <h2 class="head">The EXCO: asking, and verifying</h2>
+        <p class="lede">An EXCO member holds one portfolio &mdash; Mission, Education, Property, Stewardship and so on &mdash; and does two separate things with money: <em>asks</em> for it before it is spent, and <em>confirms</em> spending that has already been claimed against their ministry.</p>
+
+        <h3 id="exco-request">Asking for a payment</h3>
+        <p><span class="path">Payments &rarr; Payment Requests &rarr; New Request</span>. Use this when the church has not yet paid and you want it to: a contractor&rsquo;s quotation, a speaker&rsquo;s fee, a purchase your committee has agreed to.</p>
+        <ol class="steps">
+          <li>Say who is to be paid, how much, and which ministry and budget line it comes from.</li>
+          <li>Attach the quotation or invoice.</li>
+          <li>Submit. Your ministry&rsquo;s EXCO member is told at once.</li>
+        </ol>
+        <p>Once verified it goes to the General Manager. When he accepts it, it becomes a claim on his list and the Finance Executive raises the actual voucher from it &mdash; you do not raise a second thing.</p>
+
+        <div class="note-box">
+          <p><b>If your ministry has no EXCO member in office</b>, the General Manager can approve the request himself, and the record says so plainly: <em>approved without EXCO verification &mdash; no member in office</em>. A request is never left waiting on a post nobody holds.</p>
+        </div>
+
+        <h3 id="exco-verify">Verifying your ministry&rsquo;s spending</h3>
+        <p><span class="path">Approvals &rarr; EXCO Queue</span>. What is waiting on you, and nothing else.</p>
+        <p>You are answering one question: <b>is this ours, and did we ask for it?</b> You are not checking the arithmetic &mdash; Finance has done that &mdash; and you are not deciding whether the church can afford it, which is the Treasurer&rsquo;s. The card shows what the payment does to your ministry&rsquo;s budget before you decide, including when it is <em>Unbudgeted</em>, which is worth a pause rather than a refusal.</p>
+
+        <div class="note-box">
+          <p><b>If your committee agreed it in a meeting</b> and nobody wants to sign in for it, tell the Finance Executive. They can record the committee&rsquo;s decision on your behalf, and the voucher will name who decided and on what basis. That is a record of what happened, not a way round you.</p>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section id="hq">
+        <h2 class="head">The HQ office</h2>
+        <p class="lede">Four posts handle every payment between them, and the separation is the point: the person who checks the paperwork is not the person who approves the spending, and neither of them signs.</p>
+
+        <h3 id="hq-finance">The Finance Executive</h3>
+        <p><span class="path">Payments &rarr; Finance Activity</span> shows every voucher at every stage, in three panes: the queue, the record, and the voucher itself. Reviewing a voucher means confirming the paperwork stands up &mdash; the payee, the amount, the receipts, the budget line.</p>
+        <ul>
+          <li><b>Review</b> sends it on to the General Manager.</li>
+          <li><b>Send on without the committee</b> stops waiting for a ministry that is not responding. They are still told, and can still sign afterwards.</li>
+          <li><b>Pull it back for editing</b> undoes a review and any signatures given, and returns the voucher to your queue. Use it deliberately &mdash; it clears officers&rsquo; signatures.</li>
+          <li><b>Record the committee&rsquo;s verification</b> puts a ministry&rsquo;s offline decision on the voucher, with the name of who decided.</li>
+        </ul>
+        <p>After the officers have signed, <span class="path">Payments &rarr; Payments</span> is where a voucher is marked paid and the bank reference recorded.</p>
+
+        <h3 id="hq-gm">The General Manager</h3>
+        <p><span class="path">Approvals &rarr; Signatory Queue</span>, first tab: <b>Needs your approval</b>. These are vouchers Finance has reviewed and that are waiting on you to release them to the officers. The second tab, <b>With the signatories</b>, is what you have already approved &mdash; nothing there is asking anything of you.</p>
+        <p>The GM cannot approve a voucher Finance has not yet reviewed. That is deliberate: the check and the approval are two different acts by two different people, and collapsing them would leave the church with neither.</p>
+        <p><span class="path">Approvals &rarr; GM Claims</span> holds payment requests you have accepted, waiting for Finance to raise the voucher.</p>
+
+        <h3 id="hq-sign">The three signatories</h3>
+        <p>The <b>Treasurer</b>, the <b>Bishop</b> and the <b>Secretary</b>. Everything waiting on you is at <span class="path">Approvals &rarr; Signatory Queue</span> under <b>Needs your signature</b>.</p>
+        <ol class="steps">
+          <li>Open the voucher and read it &mdash; the document itself is on the page, not behind a download.</li>
+          <li>Press <b>Approve</b> or <b>Reject</b>.</li>
+          <li>Enter your six-digit PIN. The PIN is your signature; it is what makes the approval yours.</li>
+        </ol>
+        <p>You set your PIN the first time you approve anything, or from <b>Set my PIN</b> at the top of the queue. Nobody, including the people who built the system, can see it or set it for you.</p>
+
+        <div class="note-box">
+          <p><b>Changed your mind?</b> <b>Retract</b> takes your signature back off, so long as the voucher has not been paid. It is on the voucher where you signed it.</p>
+        </div>
+
+        <div class="note-box warn">
+          <p><b>Two of you may be enough.</b> Over RM 30,000 a voucher needs two of the three officers &mdash; whichever two get to it. Under that, the Treasurer alone. So a voucher can complete without reaching you, and finding one already approved is not a sign that something was missed.</p>
+        </div>
+      </section>
+
       <section id="claims">
         <h2 class="head">Claiming money back</h2>
         <p class="lede">You paid for something out of your own pocket — petrol, refreshments, a repair — and you want the church to pay you back. Use <span class="path">Submit PV</span>, which sits at the top of the menu for everyone.</p>
@@ -619,6 +972,18 @@ footer p{max-width:64ch;}
         <h2 class="head">Applying for leave</h2>
         <p class="lede">Go to <span class="path">My Space → My Leave</span>. The page opens on your balance, and the button to apply is on the same screen.</p>
 
+        <div class="note-box">
+          <span class="t">Pastors: showing that you told your congregation</span>
+          <p>Your congregation is told about your leave but is not asked to approve it, so the only
+            record that you notified them is the one you make. When you apply you will see
+            <strong>&ldquo;Did you tell your congregation?&rdquo;</strong> &mdash; attach the letter,
+            the filled form or the email you sent them, or simply type how you told them
+            (<em>&ldquo;announced at Sunday service, 7 Sep&rdquo;</em>). Whoever approves your leave
+            sees it before they sign.</p>
+          <p>It is never required. A pastor who telephoned the chairman has done what the church
+            asks; the note is for saying so.</p>
+        </div>
+
         <h4>What you are entitled to each year</h4>
         <p>Annual and sick leave both <strong>rise with your length of service</strong>. The same chart applies to pastors, parish workers and office staff alike.</p>
 
@@ -697,18 +1062,20 @@ footer p{max-width:64ch;}
             <span class="if">If the applicant is a</span>
             <b>Pastor</b>
             <ol class="signers">
-              <li>Head pastor of their congregation</li>
-              <li>Council Chairman or Representative<span class="ext">Not an LCM employee — signs through a one-time link sent to them by email</span></li>
-              <li>Their district Dean</li>
+              <li>The Bishop, <em>or</em></li>
+              <li>Their district Dean, <em>or</em></li>
+              <li>Their congregation&rsquo;s Pastor in Charge</li>
             </ol>
+            <p style="font-size:.9rem;color:var(--ink-2);margin:.7rem 0 0;"><b>Any one of the three.</b> One signature settles it &mdash; whoever gets to it first. The other two need do nothing.</p>
           </div>
           <div class="branch">
             <span class="if">If the applicant is a</span>
             <b>Dean</b>
             <ol class="signers">
-              <li>The Bishop</li>
+              <li>The Bishop, <em>or</em></li>
+              <li>Their Pastor in Charge</li>
             </ol>
-            <p style="font-size:.9rem;color:var(--ink-2);margin:.7rem 0 0;">A Dean is also a pastor, but their own leave goes straight to the Bishop.</p>
+            <p style="font-size:.9rem;color:var(--ink-2);margin:.7rem 0 0;">The same rule. Nobody approves their own leave, so a Dean&rsquo;s own district does not settle it.</p>
           </div>
           <div class="branch">
             <span class="if">If the applicant is</span>
@@ -729,21 +1096,21 @@ footer p{max-width:64ch;}
         <div class="note-box">
           <span class="t">How the request reaches you</span>
           <p><strong>If you have a login</strong> — Dean, head pastor, GM, Bishop — you get an email with a button that opens that exact application, already at the top of your queue. You sign in as normal, because your approval is recorded against your identity.</p>
-          <p><strong>If you are the Council Chairman</strong>, your email carries the pastor's name, the dates and the length, and one button that opens a page showing that single application. No account, no password. The link is personal to you and lasts 30 days.</p>
+          <p><strong>If you are the Council Chairman or Representative</strong>, you are told and not asked. An email tells you the pastor has applied, and there is nothing for you to click &mdash; the congregation acknowledges in its own way. Until September 2026 your signature was required, which meant a pastor&rsquo;s leave could wait on somebody who had never asked to be in a finance system.</p>
         </div>
 
         <div class="note-box">
           <span class="t">Two things that surprise people</span>
-          <p><strong>Everyone named must sign.</strong> Nobody on the list is a rubber stamp, and the order does not matter — whoever opens it first can sign first.</p>
+          <p><strong>A pastor&rsquo;s leave needs one signature, not three.</strong> The Bishop, the Dean and the Pastor in Charge are alternatives to one another. Staff leave is different: everybody named there does have to sign.</p>
           <p><strong>Nobody ever signs their own leave.</strong> If the applicant would otherwise be one of their own approvers — a head pastor applying for their own leave, for instance — they are removed from the list, and the remaining signatories settle it.</p>
         </div>
 
         <div class="note-box">
           <span class="t">When the rules do not fit</span>
           <p>A few people have a chain set for them by hand, which overrides everything above. The
-            Secretary is the standing example: he is himself the head pastor of his congregation, so
-            the ordinary rule would drop that step and leave the Council Chairman and the Dean. The
-            church wants the <strong>Bishop and the Dean</strong> instead, so that is what his
+            Secretary is the standing example: he is himself the Pastor in Charge of his
+            congregation, and nobody approves their own leave. The church wants the
+            <strong>Bishop and the Dean</strong> named explicitly for him, so that is what his
             application goes to.</p>
           <p>If your own chain looks wrong, that is the thing to ask Finance about. An assigned chain
             is a row they can edit, not something buried in the app.</p>
@@ -905,12 +1272,12 @@ footer p{max-width:64ch;}
 
           <details>
             <summary>Why does my leave need three signatures?</summary>
-            <div class="a"><p>Because you are a pastor. Note 6(a) of the church's leave form requires the Council Chairman or Representative and the district Dean, and LCM practice adds the head pastor of your congregation. All three must sign, in any order.</p></div>
+            <div class="a"><p>Because you are a pastor. Since September 2026 it takes one signature from any of three people &mdash; the Bishop, your district Dean, or your congregation&rsquo;s Pastor in Charge. Whoever gets to it first settles it. Your congregation is told, and is not asked to approve anything.</p></div>
           </details>
 
           <details>
-            <summary>Our Council Chairman has no login. How can they sign?</summary>
-            <div class="a"><p>They do not need one. The Council Chairman holds a church council office, not an LCM post, so the app emails them a one-time link that lets them sign that single application and nothing else.</p></div>
+            <summary>Does our Council Chairman have to do anything?</summary>
+            <div class="a"><p>No. They are emailed when a pastor applies, and that is all &mdash; there is nothing to click and no account to set up. If you want to show that you told your congregation, attach the letter, the form or the email you sent them when you apply; whoever approves your leave can then see it.</p></div>
           </details>
 
           <details>
