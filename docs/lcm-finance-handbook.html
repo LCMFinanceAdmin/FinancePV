@@ -364,6 +364,7 @@ footer p{max-width:64ch;}
   white-space:nowrap;
 }
 .shot .screen{padding:1.6rem 1.1rem; background:var(--ground);}
+.shot img{display:block; width:100%; height:auto;}
 
 /* The sign-in card, as it actually appears. */
 .signin{max-width:310px;margin:0 auto;text-align:center;}
@@ -513,22 +514,7 @@ footer p{max-width:64ch;}
             <span class="dot"></span><span class="dot"></span><span class="dot"></span>
             <span class="url">finance-pv.vercel.app/login</span>
           </div>
-          <div class="screen">
-            <div class="signin">
-              <div class="logo">L</div>
-              <h4>LCM Finance</h4>
-              <p class="sub">Payment Voucher System</p>
-              <div class="card">
-                <b>Sign in to continue</b>
-                <p class="q">Choose how you want to sign in</p>
-                <div class="btn-g">Sign in with Google</div>
-                <p class="cap">For @lcm.org.my accounts</p>
-                <div class="or">or</div>
-                <div class="btn-e">Sign in with email link</div>
-                <p class="cap">For staff without a church email account</p>
-              </div>
-            </div>
-          </div>
+          <img src="img/01-sign-in.png" alt="The LCM Finance sign-in screen: a blue L tile above the words LCM Finance and Payment Voucher System, then a card headed Sign in to continue, with a blue Sign in with Google button marked For @lcm.org.my accounts, the word or, and an outlined Sign in with email link button marked For staff without a church email account.">
         </figure>
         <p class="figcap">The sign-in screen. Two buttons, and which one is yours depends only on whether the church has given you an <strong>@lcm.org.my</strong> mailbox.</p>
 
@@ -552,7 +538,10 @@ footer p{max-width:64ch;}
             <span class="dot"></span><span class="dot"></span><span class="dot"></span>
             <span class="url">finance-pv.vercel.app/dashboard</span>
           </div>
-          <div class="screen">
+          <img src="img/02-dashboard.png"
+               alt="The dashboard after signing in: a left-hand menu with the person's name, email address and role at the foot of it, a greeting, four counters, and coloured shortcut tiles."
+               onerror="this.remove();var d=document.getElementById('dash-drawn');if(d)d.hidden=false;">
+          <div id="dash-drawn" hidden><div class="screen">
             <div class="dash">
               <div class="side">
                 <div class="brand">LCM Finance</div>
@@ -587,6 +576,7 @@ footer p{max-width:64ch;}
               </div>
             </div>
           </div>
+        </div>
         </figure>
         <p class="figcap">What you land on. The four tiles count <em>your</em> work, not the church&rsquo;s.</p>
 
