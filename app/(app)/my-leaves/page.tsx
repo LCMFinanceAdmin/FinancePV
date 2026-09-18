@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDays as tidy } from "@/lib/utils";
 import { describeApprovers } from "@/lib/approver-label";
 import { leaveRouting } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
@@ -204,6 +204,57 @@ function MyLeavesInner() {
       used: counted,
       remaining: Math.max(0, entitlement - counted),
     };
+  }
+
+  /** How a leave type's allowance should be described — the one place that
+   *  decides it, so the balance card and the apply form cannot disagree.
+   *
+   *  They did disagree. The card read the service-banded figure from
+   *  my_leave_entitlements(); the form printed leave_types.days_per_year, which
+   *  is only the base of the ladder. Somebody with seven years of service read
+   *  "5 used / 21 total" on the Balance tab, ticked Annual Leave on the next
+   *  screen, and was told "Entitlement: 14 days a year". Two clicks apart.
+   */
+  function describeEntitlement(type: LeaveType) {
+    const bal  = getBalance(type.code, type);
+    const meta = entMeta[type.code];
+    const kind = meta?.kind ?? (type.is_replacement ? "EARNED" : "FIXED");
+
+    // No fixed allowance is not the same as none left, and neither is the same
+    // as not yet qualified. All three used to render identically as zero.
+    const asNeeded = kind === "AS_NEEDED";
+    const notYet = kind === "BANDED" && bal.entitlement === 0 && (meta?.minMonths ?? 0) > 0;
+
+    const subtitle =
+      asNeeded ? "No fixed allowance — apply as the need arises"
+      : kind === "EARNED" ? "Only what you have earned working rest days"
+      : notYet ? `Starts after ${meta!.minMonths} months of service`
+      : kind === "BANDED" && meta?.band
+        ? `${tidy(bal.entitlement)} days — ${meta.band} of service`
+        : `${tidy(bal.entitlement)} days a year`;
+
+    return { bal, meta, kind, asNeeded, notYet, subtitle };
+  }
+
+  /** The line under the apply form's tick grid: what this type allows and what
+   *  is left of it, from the same figures the Balance tab shows.
+   *
+   *  The kinds that have no annual figure get the rule instead of a number —
+   *  quoting a balance for compassionate leave, or an entitlement for one
+   *  earned a day at a time, would be inventing an allowance that isn't there.
+   */
+  function entitlementLine(type: LeaveType): string {
+    const { bal, asNeeded, notYet, kind, subtitle } = describeEntitlement(type);
+    if (asNeeded || notYet) return subtitle;
+    if (kind === "EARNED") {
+      return bal.entitlement === 0
+        ? "No replacement days earned yet"
+        : `${tidy(bal.entitlement)} day${bal.entitlement === 1 ? "" : "s"} earned — ${tidy(bal.remaining)} left`;
+    }
+    // A banded type nobody is placed on falls through to here at zero; saying
+    // "0 days a year" reads like an allowance spent rather than one absent.
+    if (bal.entitlement === 0) return "No entitlement recorded for this type";
+    return `Entitlement: ${subtitle} — ${tidy(bal.remaining)} left`;
   }
 
   // Calculate working days (excl weekends) between two dates
@@ -454,6 +505,16 @@ function MyLeavesInner() {
   const selected = leaveTypes.find(t => t.code === form.leave_type_code);
   const previewDays = calcDays(form.start_date, form.end_date);
 
+  // What the tick grid says about the type now ticked. Worked out from the
+  // entitlement the database returned, so it is the same figure as the Balance
+  // tab — these two lines are on screen within two clicks of each other.
+  const selectedEnt  = selected ? describeEntitlement(selected) : null;
+  const selectedLine = selected ? entitlementLine(selected) : null;
+  const selectedPartnerCode = selected ? aggregateWith[selected.code] : undefined;
+  const selectedPartner = selectedPartnerCode
+    ? leaveTypes.find(t => t.code === selectedPartnerCode)?.name.toLowerCase() ?? "sick leave"
+    : null;
+
   // The figures the printed form asks for, worked out once and reused both
   // here and on submission, so what the applicant sees is exactly what is
   // snapshotted onto the record.
@@ -554,27 +615,8 @@ function MyLeavesInner() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {offeredTypes.map(type => {
-              const bal = getBalance(type.code, type);
-              const meta = entMeta[type.code];
-              const kind = meta?.kind ?? (type.is_replacement ? "EARNED" : "FIXED");
+              const { bal, kind, asNeeded, notYet, subtitle } = describeEntitlement(type);
               const pct = bal.entitlement > 0 ? Math.min(100, (bal.used / bal.entitlement) * 100) : 0;
-
-              // No fixed allowance is not the same as none left, and the card
-              // has to say which. The two used to render identically as zero.
-              const asNeeded = kind === "AS_NEEDED";
-              const notYet = kind === "BANDED" && bal.entitlement === 0 && (meta?.minMonths ?? 0) > 0;
-
-              // numeric(x,1) from the database renders as "14.0"; nobody
-              // writes their leave balance with a decimal place.
-              const tidy = (n: number) => (Math.round(n * 10) / 10).toString().replace(/\.0$/, "");
-
-              const subtitle =
-                asNeeded ? "No fixed allowance — apply as the need arises"
-                : kind === "EARNED" ? "Only what you have earned working rest days"
-                : notYet ? `Starts after ${meta!.minMonths} months of service`
-                : kind === "BANDED" && meta?.band
-                  ? `${tidy(bal.entitlement)} days — ${meta.band} of service`
-                  : `${tidy(bal.entitlement)} days a year`;
 
               return (
                 <Card key={type.code}>
@@ -800,10 +842,19 @@ function MyLeavesInner() {
                 })}
               </div>
 
-              {selected && !selected.is_replacement && selected.days_per_year > 0 && (
-                <p className="mt-1.5 text-[12px] text-stone-400">
-                  Entitlement: {selected.days_per_year} days a year
-                </p>
+              {selectedLine && (
+                <div className="mt-1.5 space-y-1 text-[12px] leading-relaxed text-stone-400">
+                  <p>{selectedLine}</p>
+                  {/* A shared ceiling has to be said here as well as on the
+                      card: somebody reading 60 days without knowing that sick
+                      leave comes off it will plan on days they do not have. */}
+                  {selectedPartner && selectedEnt && selectedEnt.bal.entitlement > 0 && (
+                    <p>
+                      These {tidy(selectedEnt.bal.entitlement)} days include any {selectedPartner} you
+                      have taken — both draw on the same total.
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* Note 1 on the form — surfaced when it actually applies,

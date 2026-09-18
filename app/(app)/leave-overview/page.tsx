@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDays } from "@/lib/utils";
 import {
   CalendarCheck, Search, AlertCircle, Clock, ChevronRight, Users,
 } from "lucide-react";
@@ -39,6 +39,16 @@ interface LeaveApp {
 }
 interface Person { email: string; full_name: string | null; role: string; is_lcm_staff: boolean | null }
 interface Replacement { employee_email: string; days: number; work_date: string }
+/** One person, one leave type, as leave_entitlements_everyone() returns it. */
+interface Entitlement {
+  email: string; code: string; days: number; years_of_service: number | null;
+  kind: string; aggregate_with: string | null;
+}
+/** A balance, or the absence of one. Somebody with no entitlement at all is not
+ *  somebody at zero, and the table has to be able to say which. */
+type Balance =
+  | { entitlement: number; used: number; remaining: number }
+  | { entitlement: null;   used: number; remaining: null };
 
 const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
 
@@ -48,6 +58,10 @@ export default function LeaveOverviewPage() {
   const [apps, setApps] = useState<LeaveApp[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [replacements, setReplacements] = useState<Replacement[]>([]);
+  // Entitlements as the database works them out, per person per type. Not read
+  // off leave_types: that column is the base of the service ladder, and this
+  // page was quoting it as though it were everybody's figure.
+  const [ents, setEnts] = useState<Entitlement[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [query, setQuery] = useState("");
@@ -68,11 +82,12 @@ export default function LeaveOverviewPage() {
       .select("role").eq("email", session?.user?.email ?? "").maybeSingle();
     if (!ALLOWED.includes(me?.role ?? "")) { setDenied(true); setLoading(false); return; }
 
-    const [{ data: lt }, { data: la, error }, { data: ur }, { data: rd }] = await Promise.all([
+    const [{ data: lt }, { data: la, error }, { data: ur }, { data: rd }, { data: en }] = await Promise.all([
       supabase.from("leave_types").select("code,name,days_per_year,is_replacement,sort_order").order("sort_order"),
       supabase.from("leave_applications").select("*").order("applied_at", { ascending: false }),
       supabase.from("user_roles").select("email,full_name,role,is_lcm_staff").order("full_name"),
       supabase.from("replacement_days_earned").select("employee_email,days,work_date"),
+      supabase.rpc("leave_entitlements_everyone"),
     ]);
     // An empty list with no error would look like a church where nobody takes
     // leave; a refusal should say so.
@@ -81,6 +96,7 @@ export default function LeaveOverviewPage() {
     setApps((la ?? []) as LeaveApp[]);
     setPeople((ur ?? []) as Person[]);
     setReplacements((rd ?? []) as Replacement[]);
+    setEnts((en ?? []) as Entitlement[]);
     setLoading(false);
   }, [supabase]);
 
@@ -91,25 +107,67 @@ export default function LeaveOverviewPage() {
     return p?.full_name || email;
   }, [people]);
 
+  /** email → code → entitlement, built once rather than scanned per cell. */
+  const entOf = useMemo(() => {
+    const m: Record<string, Record<string, Entitlement>> = {};
+    for (const e of ents) {
+      (m[norm(e.email)] ??= {})[e.code] = e;
+    }
+    return m;
+  }, [ents]);
+
+  /** Completed years of service, as the entitlement calculation saw them — the
+   *  reason one person's annual total is not another's. */
+  const serviceYears = useCallback((email: string): number | null => {
+    const rows = entOf[norm(email)];
+    if (!rows) return null;
+    for (const r of Object.values(rows)) if (r.years_of_service != null) return r.years_of_service;
+    return null;
+  }, [entOf]);
+
   /**
    * The same rule /my-leaves shows each person about themselves: days approved
    * this year against the entitlement, and for replacement leave the days
    * actually earned. Written the same way deliberately — an overview that
    * disagreed with someone's own page would be worse than no overview.
+   *
+   * It did disagree, from 174 onwards. The entitlement came off
+   * leave_types.days_per_year, which is the bottom rung of the service ladder,
+   * so everybody past their first band was quoted 14 annual days here and 21 or
+   * 25 on their own page. It read the other way too: somebody who joined in
+   * March has 11.5 prorated days (177) and this credited them 14. The figures
+   * now come from the same banded calculation, through
+   * leave_entitlements_everyone() (217).
    */
-  const balanceFor = useCallback((email: string, t: LeaveType) => {
-    const used = apps
+  const balanceFor = useCallback((email: string, t: LeaveType): Balance => {
+    const usedOf = (code: string) => apps
       .filter(a => norm(a.applicant_email) === norm(email)
-        && a.leave_type_code === t.code
+        && a.leave_type_code === code
         && a.status === "APPROVED"
         && new Date(a.start_date).getFullYear() === year)
       .reduce((s, a) => s + Number(a.days), 0);
-    const entitlement = t.is_replacement
-      ? replacements.filter(r => norm(r.employee_email) === norm(email))
-          .reduce((s, r) => s + Number(r.days), 0)
-      : Number(t.days_per_year);
-    return { entitlement, used, remaining: Math.max(0, entitlement - used) };
-  }, [apps, replacements, year]);
+
+    const used = usedOf(t.code);
+
+    if (t.is_replacement) {
+      const earned = replacements.filter(r => norm(r.employee_email) === norm(email))
+        .reduce((s, r) => s + Number(r.days), 0);
+      return { entitlement: earned, used, remaining: Math.max(0, earned - used) };
+    }
+
+    // No row means no entitlement to speak of: not on a payroll whose leave
+    // terms are configured (191). Their own page tells them exactly that, so
+    // quoting them a number here — anybody's number — would be inventing one.
+    const row = entOf[norm(email)]?.[t.code];
+    if (!row) return { entitlement: null, used, remaining: null };
+
+    // Where a ceiling is shared, the other type's days come off it too, so
+    // eighteen days of sick leave leave forty-two of hospitalisation rather
+    // than sixty. /my-leaves has counted it this way since 176; this did not.
+    const counted = used + (row.aggregate_with ? usedOf(row.aggregate_with) : 0);
+    const entitlement = Number(row.days);
+    return { entitlement, used: counted, remaining: Math.max(0, entitlement - counted) };
+  }, [apps, replacements, entOf, year]);
 
   // Only people employed by LCM have leave to speak of.
   const staff = useMemo(() => {
@@ -155,7 +213,12 @@ export default function LeaveOverviewPage() {
   }
 
   // Entitlement types worth a column; replacement leave is shown per person.
-  const columns = types.filter(t => !t.is_replacement && Number(t.days_per_year) > 0).slice(0, 4);
+  // Judged on whether anybody actually has days of it, not on the flat column:
+  // a banded type could sit at zero there and still be 21 days for everybody.
+  const countable = new Set(ents.filter(e => Number(e.days) > 0).map(e => e.code));
+  const columns = types
+    .filter(t => !t.is_replacement && (countable.has(t.code) || Number(t.days_per_year) > 0))
+    .slice(0, 4);
 
   return (
     <div className="cloudlight-page max-w-5xl space-y-5">
@@ -249,21 +312,36 @@ export default function LeaveOverviewPage() {
                         <ChevronRight size={13} className={`shrink-0 text-stone-300 transition-transform ${isOpen ? "rotate-90" : ""}`} />
                         <div className="min-w-0">
                           <div className="truncate font-medium text-stone-800">{p.full_name || p.email}</div>
-                          {isOpen && <div className="truncate text-[11px] text-stone-400">{p.email}</div>}
+                          {isOpen && (
+                            <div className="truncate text-[11px] text-stone-400">
+                              {p.email}
+                              {serviceYears(p.email) != null && (
+                                <> · {serviceYears(p.email)} year{serviceYears(p.email) === 1 ? "" : "s"} of service</>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
                     {columns.map(t => {
                       const b = balanceFor(p.email, t);
+                      if (b.entitlement === null) {
+                        return (
+                          <td key={t.code} className="px-3 py-2 text-right"
+                            title="No leave entitlement on this account — LCM payroll decides it">
+                            <span className="text-stone-300">—</span>
+                          </td>
+                        );
+                      }
                       const low = b.entitlement > 0 && b.remaining <= 2;
                       return (
                         <td key={t.code} className="px-3 py-2 text-right">
                           <span className={`font-semibold ${low ? "text-amber-600" : "text-stone-800"}`}>
-                            {b.remaining}
+                            {formatDays(b.remaining)}
                           </span>
-                          <span className="text-[11px] text-stone-400"> / {b.entitlement}</span>
+                          <span className="text-[11px] text-stone-400"> / {formatDays(b.entitlement)}</span>
                           {isOpen && b.used > 0 && (
-                            <div className="text-[11px] text-stone-400">{b.used} taken</div>
+                            <div className="text-[11px] text-stone-400">{formatDays(b.used)} taken</div>
                           )}
                         </td>
                       );
@@ -283,8 +361,11 @@ export default function LeaveOverviewPage() {
 
       <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 text-xs text-stone-500">
         Balances count leave <strong>approved</strong> this calendar year against the entitlement, which is
-        the same sum each person sees on their own My Leave page. Applications still waiting are not
-        deducted. Nothing here approves anything — that stays with the people each application names.
+        the same sum each person sees on their own My Leave page — banded by length of service, so two
+        people on the same leave type will not always show the same total. A dash means the account has
+        no entitlement at all: LCM&rsquo;s leave follows LCM&rsquo;s payroll. Applications still waiting
+        are not deducted. Nothing here approves anything — that stays with the people each application
+        names.
       </div>
     </div>
   );
