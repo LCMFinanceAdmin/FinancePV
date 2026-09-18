@@ -46,6 +46,9 @@ next-env.d.ts
 # Annotation-placement previews from docs/check-annotations.py
 docs/img/_check/
 
-# Word build of the handbook — regenerate with docs/handbook-to-docx.py
+# Scratch images the Word build draws the annotation rings into. The .docx
+# itself is committed: the office pulls the file rather than rebuilding it,
+# which is worth a binary diff on the occasions the handbook changes.
 docs/.docx-figures/
-docs/*.docx
+# Word's lock file, which exists only while the document is open.
+~$*
