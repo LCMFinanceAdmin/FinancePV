@@ -30,12 +30,23 @@ IMGS = ROOT / "img"
 MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml"}
 
-# A figure renders about 620px wide in the handbook. Screenshots arrive at two
-# or three times that, which is right for the folder and wasteful inside a file
-# people email: the dashboard capture was 740 KB of PNG, a megabyte once encoded
-# as text, for a picture nothing will ever draw above 1600px.
-MAX_WIDTH = 1600
-WEBP_QUALITY = 88
+# A figure renders about 620px wide in the handbook, 820px on a wide screen.
+# Screenshots arrive at two or three times that, which is right for the folder
+# and wasteful inside a file people email.
+#
+# 1200px is where these particular pictures stop losing anything. The binding
+# constraint is not the English text but the Chinese beside it — 申请者, 付款方式
+# — which carries far more stroke in the same height, and blurs a step before
+# Latin letters do. Compared at the width a reader actually sees:
+#
+#   1600 q88   crisp, and 45% larger than it needs to be
+#   1200 q82   holds, including the bilingual form labels   <- here
+#   1000 q82   the small grey sub-labels begin to soften
+#
+# So this is a floor set by the smallest type in the set, not a guess. Re-check
+# it against docs/img/03-request-desktop.png if the figures ever change.
+MAX_WIDTH = 1200
+WEBP_QUALITY = 82
 
 
 def optimise(path: pathlib.Path) -> "tuple[bytes, str] | None":

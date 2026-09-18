@@ -28,9 +28,15 @@ Replace a file here, keeping the name, then:
 python docs/inline-images.py
 ```
 
-It re-sizes anything wider than 1600px, re-encodes it as WebP and embeds it as
+It re-sizes anything wider than 1200px, re-encodes it as WebP and embeds it as
 a data URI. Run it as often as you like — it replaces what is already embedded
 rather than stacking a second copy.
+
+1200px is a floor set by the smallest type in these pictures, which is the
+Chinese on the bilingual voucher form rather than anything in English: it
+carries more stroke in the same height and softens a step earlier. Keep the
+sources here at full size — the folder is not what gets emailed — and let the
+script do the reducing, so the decision lives in one place.
 
 A file missing from this folder is left as a folder reference in the handbook,
 which is what makes the drawn fallback appear in its place. That is intended
