@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import { describeApprover as describe, type LabelledApprover } from "@/lib/approver-label";
+import { outstandingApprovers, type RequiredApprover } from "@/lib/leave-decision";
 import { CheckCircle2, XCircle, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -148,10 +149,11 @@ function LeaveQueueInner() {
   // sees nothing. So a slot also matches when you now hold the role the named
   // person held. (This is what the /api/leave-action route already allows: it
   // accepts any senior role, so this only surfaces what could already be done.)
-  const isMine = (l: LeaveApp) =>
-    (l.required_approvers ?? []).some(a =>
-      norm(a.email) === norm(userEmail) ||
-      (!!userRole && roleByEmail[norm(a.email)] === userRole));
+  const isMe = (a: { email: string }) =>
+    norm(a.email) === norm(userEmail) ||
+    (!!userRole && roleByEmail[norm(a.email)] === userRole);
+
+  const isMine = (l: LeaveApp) => (l.required_approvers ?? []).some(isMe);
 
   const myLeaves = leaves.filter(isMine);
 
@@ -163,21 +165,43 @@ function LeaveQueueInner() {
   const iSigned = (l: LeaveApp) =>
     l.approvals?.some(a => norm(a.email) === norm(userEmail) && a.action === "APPROVED");
 
-  // A slot is answered either by the person named or by whoever signed in their
-  // place — see for_email in lib/leave-decision.
-  const filled = (a: { email?: string; for_email?: string }, slot: string) =>
-    norm(a.email) === norm(slot) || norm(a.for_email) === norm(slot);
-
   // The one the email was about goes to the top, so a long queue can't bury it.
   const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l))
     .sort((a, b) => Number(b.leave_no === highlightRef) - Number(a.leave_no === highlightRef));
   const awaitingOthers = myLeaves.filter(l => l.status === "PENDING" && iSigned(l));
   const history        = myLeaves.filter(l => l.status !== "PENDING");
 
-  const stillToSign = (l: LeaveApp) =>
-    (l.required_approvers ?? []).filter(r => !l.approvals?.some(
-      a => a.action === "APPROVED" && filled(a, r.email),
-    ));
+  // What is still outstanding, grouped back into the slots the chain actually
+  // has. `outstandingApprovers` returns every member of an unsettled group —
+  // the application really is waiting on any of them — so the members have to
+  // be gathered back together before they can be counted or named. Counting
+  // them individually is what made a pastor's leave look like three signatures
+  // when the rule is that any one of the three settles it.
+  const outstandingSlots = (l: LeaveApp): RequiredApprover[][] => {
+    const out = outstandingApprovers(
+      (l.required_approvers ?? []) as RequiredApprover[],
+      (l.approvals ?? []) as Parameters<typeof outstandingApprovers>[1],
+    );
+    const slots: RequiredApprover[][] = [];
+    const byGroup = new Map<string, RequiredApprover[]>();
+    for (const r of out) {
+      if (!r.group) { slots.push([r]); continue; }
+      const existing = byGroup.get(r.group);
+      if (existing) { existing.push(r); continue; }
+      const slot = [r];
+      byGroup.set(r.group, slot);
+      slots.push(slot);
+    }
+    return slots;
+  };
+
+  // "the Bishop or the Dean or the Pastor in Charge" for a slot any one of them
+  // settles; a plain name for a slot held by one person.
+  const nameSlot = (slot: RequiredApprover[]) =>
+    slot.map(r => describeApprover(r)).join(" or ");
+
+  const nameSlots = (slots: RequiredApprover[][]) =>
+    slots.map(nameSlot).join(" and ");
 
   async function act(
     leaveId: string,
@@ -385,16 +409,19 @@ function LeaveQueueInner() {
                   </div>
                 </div>
 
-                {/* Approving doesn't grant the leave on its own when others
-                    are named — say so before they click. */}
-                {stillToSign(app).length > 1 && (
-                  <p className="text-[11.5px] leading-snug text-stone-400">
-                    Also needs {stillToSign(app)
-                      .filter(r => norm(r.email) !== norm(userEmail))
-                      .map(r => describeApprover(r))
-                      .join(" and ")}
-                  </p>
-                )}
+                {/* Approving doesn't grant the leave on its own when another
+                    slot is still open — say so before they click. The people
+                    sharing your own slot are alternatives to you, not
+                    additions, so they are not "also needed": your signature
+                    settles that slot and releases them. */}
+                {(() => {
+                  const others = outstandingSlots(app).filter(slot => !slot.some(isMe));
+                  return others.length > 0 && (
+                    <p className="text-[11.5px] leading-snug text-stone-400">
+                      Also needs {nameSlots(others)}
+                    </p>
+                  );
+                })()}
 
                 <div className="flex gap-2 pt-1 border-t border-stone-100">
                   <button
@@ -424,9 +451,7 @@ function LeaveQueueInner() {
                 <p key={app.id} className="text-xs text-stone-600">
                   <span className="font-semibold text-stone-700">{app.applicant_name}</span>{" "}
                   {formatDate(app.start_date)} → {formatDate(app.end_date)} · waiting on{" "}
-                  {stillToSign(app)
-                    .map(r => describeApprover(r))
-                    .join(" and ")}
+                  {nameSlots(outstandingSlots(app))}
                 </p>
               ))}
             </div>
