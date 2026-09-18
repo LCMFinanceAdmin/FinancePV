@@ -42,3 +42,6 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Annotation-placement previews from docs/check-annotations.py
+docs/img/_check/
