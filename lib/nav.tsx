@@ -65,6 +65,16 @@ const financeNotAcct = (u: UserProfile) => u.isFinanceAdmin && !isAcct(u);
  */
 const isAdmin = (u: UserProfile) => !!u.isAdministrator;
 
+/**
+ * The church's own structure, offered to guests.
+ *
+ * Shown to them rather than to everybody only because it is what they
+ * asked for — there is nothing in these two pages that any other role
+ * could not see, so widening this predicate is safe if the church wants
+ * the structure in front of all its people.
+ */
+const isGuest = (u: UserProfile) => !!u.isGuest;
+
 const size = 16;
 
 /** Always visible, never nested — the two things done most often. */
@@ -83,6 +93,25 @@ export const PINNED: NavItem[] = [
 ];
 
 export const NAV_GROUPS: NavGroup[] = [
+  {
+    id: "church",
+    label: "The Church",
+    desc: "How LCM is organised, and who holds office",
+    icon: <Church size={size} />,
+    accent: "#0d9488",
+    items: [
+      {
+        href: "/church/directory", label: "Church Directory",
+        desc: "Districts, the churches in each, and their head pastors",
+        icon: <Church size={size} />, show: isGuest,
+      },
+      {
+        href: "/church/offices", label: "Elected Offices",
+        desc: "Who currently holds each office and portfolio",
+        icon: <Landmark size={size} />, show: isGuest,
+      },
+    ],
+  },
   {
     id: "approvals",
     label: "Approvals",

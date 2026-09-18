@@ -96,12 +96,17 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     isBamCommittee: false,
     // Keeps the people directory. Not a finance role — no approving, no payments.
     isAdministrator: role === "ADMINISTRATOR",
+    isGuest: role === "GUEST",
     isTestAdmin: TEST_ADMIN_EMAILS.includes(email),
     hasRoleRow: !!profile,
     isTestAccount: profile?.is_test_account === true,
     // Defaults to true so an account with no directory record behaves exactly
-    // as it did before this was introduced.
-    isLcmStaff: profile?.is_lcm_staff ?? true,
+    // as it did before this was introduced — except for a guest, who is by
+    // definition not employed here. Migration 217 holds the column itself to
+    // false for a guest; this says the same thing again because the default
+    // above is the wrong way round for them and a row predating the trigger
+    // would otherwise be offered leave, salary and loans.
+    isLcmStaff: role === "GUEST" ? false : (profile?.is_lcm_staff ?? true),
     isPastor: profile?.is_pastor ?? false,
     isDean: !!deanOf,
     congregation: (congregation as { name?: string } | null)?.name ?? undefined,

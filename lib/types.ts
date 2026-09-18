@@ -7,7 +7,9 @@ export type UserRole =
   | "MINISTRY_HEAD"
   | "BUILDING_MANAGER"
   | "BAM_COMMITTEE"
-  | "STAFF";
+  | "STAFF"
+  // Owed money by the church and nothing else — see isGuest below.
+  | "GUEST";
 
 export type PVStatus =
   | "PENDING_HEAD"
@@ -68,6 +70,16 @@ export interface UserProfile {
   isBuildingManager: boolean;
   isBamCommittee?: boolean;
   isAdministrator?: boolean;
+  /**
+   * Owed money by the church, and nothing else.
+   *
+   * Not employed by LCM and not on the EXCO — a volunteer, a vendor, a
+   * council member out of pocket. A guest may raise a payment request,
+   * follow it, and read the church's structure. Everything else in the
+   * app is withheld by omission: GUEST appears in no permission list, so
+   * a feature has to name it before a guest can reach it.
+   */
+  isGuest?: boolean;
   isTestAdmin: boolean;
   // Church directory. Position and employment sit alongside the system role
   // above rather than replacing it: an EXCO member who is also a pastor is
