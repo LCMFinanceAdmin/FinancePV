@@ -39,33 +39,52 @@ export function fills(a: ApprovalEntry, slotEmail: string): boolean {
 }
 
 /**
+ * The slots still to be settled, each holding everyone who could settle it.
+ *
+ * One entry per slot: an approver on their own is a slot of one, a group is a
+ * slot of however many share it. Anything telling a person what an application
+ * is waiting on wants this shape, because a slot of three means "any one of",
+ * not "and".
+ */
+export function outstandingSlots(
+  required: RequiredApprover[],
+  approvals: ApprovalEntry[],
+): RequiredApprover[][] {
+  const signed = (r: RequiredApprover) =>
+    approvals.some((a) => a.action === "APPROVED" && fills(a, r.email));
+
+  const out: RequiredApprover[][] = [];
+  const done = new Set<string>();
+  for (const r of required) {
+    if (!r.group) {
+      if (!signed(r)) out.push([r]);
+      continue;
+    }
+    if (done.has(r.group)) continue;
+    done.add(r.group);
+    const members = required.filter((x) => x.group === r.group);
+    if (!members.some(signed)) out.push(members);
+  }
+  return out;
+}
+
+/**
  * Approvers still to sign.
  *
  * A grouped slot contributes every one of its members while it is unsettled —
  * the application is waiting on any of them, and naming only the first would
  * tell the other two they are not needed. Once one signs, the group drops out
  * together.
+ *
+ * Counting is all this is safe for: it flattens the slots away, so an
+ * alternative can no longer be told from a requirement. To say who is waited
+ * on, use `outstandingSlots`.
  */
 export function outstandingApprovers(
   required: RequiredApprover[],
   approvals: ApprovalEntry[],
 ): RequiredApprover[] {
-  const signed = (r: RequiredApprover) =>
-    approvals.some((a) => a.action === "APPROVED" && fills(a, r.email));
-
-  const out: RequiredApprover[] = [];
-  const done = new Set<string>();
-  for (const r of required) {
-    if (!r.group) {
-      if (!signed(r)) out.push(r);
-      continue;
-    }
-    if (done.has(r.group)) continue;
-    done.add(r.group);
-    const members = required.filter((x) => x.group === r.group);
-    if (!members.some(signed)) out.push(...members);
-  }
-  return out;
+  return outstandingSlots(required, approvals).flat();
 }
 
 export function applyLeaveDecision(

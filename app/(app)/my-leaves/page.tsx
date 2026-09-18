@@ -2,7 +2,8 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
-import { describeApprovers } from "@/lib/approver-label";
+import { describeSlots } from "@/lib/approver-label";
+import { outstandingSlots } from "@/lib/leave-decision";
 import { leaveRouting } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
@@ -22,7 +23,7 @@ interface LeaveApp {
   applied_at: string;
   balance_annual_before?: number | null; balance_medical_before?: number | null;
   approvals: { email?: string; name: string; position?: string; action: string; timestamp: string; remarks?: string; for_email?: string; signature_data?: string }[];
-  required_approvers?: { email: string; name: string; position?: string; external?: boolean }[];
+  required_approvers?: { email: string; name: string; position?: string; external?: boolean; group?: string }[];
 }
 interface ReplacementDay { id: string; work_date: string; days: number; reason: string; }
 
@@ -320,11 +321,24 @@ function MyLeavesInner() {
       setSubmitting(false);
       return;
     }
+    // The chain is snapshotted onto the application, so it stays what it was
+    // when the leave was asked for even if the rules or the post-holders change.
+    //
     // `external` marks approvers with no account — currently the church council
     // President, who acts through an emailed link rather than signing in.
+    //
+    // `group` marks approvers who are alternatives to one another and share a
+    // single slot that any one of them settles: a pastor's Bishop, district
+    // Dean and Pastor in Charge, under the General Manager's September 2026
+    // rule. It has to be carried through here. Everything downstream — the
+    // decision in /api/leave-action, the wording of the request email, what the
+    // queue tells an approver — reads it off the stored chain, and an approver
+    // stored without it is an approver who must sign, which is how a rule of
+    // "any one of three" was being enforced as all three.
     const resolvedApprovers = resolved.map(a => ({
       email: a.email, name: a.name, position: a.position ?? "",
       ...(a.external ? { external: true } : {}),
+      ...(a.group ? { group: a.group } : {}),
     }));
 
     // The balances shown on the form are the ones stored, so the record and
@@ -491,7 +505,9 @@ function MyLeavesInner() {
         r.notifyOnly
           ? "No approval needed — the church will be notified that you are away."
           : r.approvers.length
-            ? r.approvers.map(a => a.position ? `${a.name} (${a.position})` : a.name).join(" and ")
+            // Slots, so alternatives read as a choice. Nobody signed yet, so
+            // every slot of the chain is outstanding by definition.
+            ? describeSlots(outstandingSlots(r.approvers, []))
             : "No approver could be worked out — ask Finance to check your record.");
     }).catch(() => {});
     return () => { cancelled = true; };
@@ -924,14 +940,19 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink,
 }) {
   const type = leaveTypes.find(t => t.code === app.leave_type_code);
 
-  // Everyone named has to approve, so say who is still to sign rather than
-  // leaving a half-signed application looking stalled for no visible reason.
-  const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
-  const required = app.required_approvers ?? [];
-  const outstanding = required.filter(r => !app.approvals?.some(
-    a => norm(a.email) === norm(r.email) && a.action === "APPROVED",
-  ));
-  const councilPending = outstanding.some(r => r.external);
+  // Say who is still to sign, rather than leaving a half-signed application
+  // looking stalled for no visible reason — and say it the way the rule works.
+  // Most of the chain must all approve; where it offers alternatives, as a
+  // pastor's does, any one of them settles that slot, and telling the applicant
+  // their leave is waiting on three people when it is waiting on whichever of
+  // three gets to it makes a granted application look stuck.
+  const outstanding = outstandingSlots(
+    app.required_approvers ?? [],
+    // Older rows carry approvals without an email; they are not a match for
+    // anybody, which is what an empty string gives us.
+    (app.approvals ?? []).map(a => ({ ...a, email: a.email ?? "" })),
+  );
+  const councilPending = outstanding.flat().some(r => r.external);
   return (
     <div className="cloudlight-card rounded-2xl px-4 py-3.5 space-y-2">
       <div className="flex items-start justify-between gap-3">
@@ -975,7 +996,7 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink,
 
       {app.status === "PENDING" && outstanding.length > 0 && (
         <p className="text-xs text-amber-600">
-          Waiting on {describeApprovers(outstanding, roleByEmail)}
+          Waiting on {describeSlots(outstanding, roleByEmail)}
         </p>
       )}
 

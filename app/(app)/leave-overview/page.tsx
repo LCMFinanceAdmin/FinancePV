@@ -19,10 +19,12 @@ import { formatDate } from "@/lib/utils";
 import {
   CalendarCheck, Search, AlertCircle, Clock, ChevronRight, Users,
 } from "lucide-react";
+import { describeSlots } from "@/lib/approver-label";
+import { outstandingSlots } from "@/lib/leave-decision";
 
 interface LeaveType { code: string; name: string; days_per_year: number; is_replacement: boolean; sort_order: number }
-interface Approver { email: string; name?: string; role?: string }
-interface Approval { email: string; for_email?: string; action: string; at?: string }
+interface Approver { email: string; name?: string; role?: string; position?: string; group?: string }
+interface Approval { email: string; name?: string; for_email?: string; action: string; at?: string; timestamp?: string }
 interface LeaveApp {
   id: string;
   applicant_email: string;
@@ -91,6 +93,12 @@ export default function LeaveOverviewPage() {
     return p?.full_name || email;
   }, [people]);
 
+  // email → role, so a slot still names the post on applications made before
+  // positions were captured onto them.
+  const roleByEmail = useMemo(
+    () => Object.fromEntries(people.map(p => [norm(p.email), p.role])),
+    [people]);
+
   /**
    * The same rule /my-leaves shows each person about themselves: days approved
    * this year against the entitlement, and for replacement leave the days
@@ -125,11 +133,20 @@ export default function LeaveOverviewPage() {
       .sort((a, b) => a.applied_at.localeCompare(b.applied_at)),
     [apps]);
 
-  /** Who has not signed yet — the answer to "what is this waiting on". */
+  /**
+   * What is this waiting on — as slots, not names.
+   *
+   * Most slots hold one person who must sign. A pastor's chain holds the
+   * Bishop, the district Dean and the Pastor in Charge in a single slot that
+   * any one of them settles, so listing all three flat reads as three missing
+   * signatures when there is one, and an application about to be granted looks
+   * like one that has stalled. Whoever is chasing these needs to know which.
+   */
   const stillToSign = useCallback((l: LeaveApp) =>
-    (l.required_approvers ?? []).filter(r => !(l.approvals ?? []).some(
-      a => a.action === "APPROVED" && (norm(a.email) === norm(r.email) || norm(a.for_email) === norm(r.email)),
-    )), []);
+    outstandingSlots(
+      (l.required_approvers ?? []).map(r => ({ ...r, name: r.name || nameOf(r.email) })),
+      (l.approvals ?? []).map(a => ({ ...a, name: a.name ?? "", timestamp: a.timestamp ?? a.at ?? "" })),
+    ), [nameOf]);
 
   const daysWaiting = (l: LeaveApp) =>
     Math.floor((Date.now() - new Date(l.applied_at).getTime()) / 86400_000);
@@ -204,7 +221,7 @@ export default function LeaveOverviewPage() {
                     {waiting.length === 0
                       ? "All signatures in — waiting to be finalised."
                       : <>Still to sign: <span className="font-medium text-stone-700">
-                          {waiting.map(w => w.name || nameOf(w.email)).join(", ")}
+                          {describeSlots(waiting, roleByEmail)}
                         </span></>}
                   </p>
                 </div>

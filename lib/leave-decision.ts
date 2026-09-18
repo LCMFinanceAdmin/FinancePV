@@ -60,33 +60,54 @@ export function hasActed(approvals: ApprovalEntry[], email: string): boolean {
 }
 
 /**
+ * The slots still to be settled, each holding everyone who could settle it.
+ *
+ * One entry per slot, in chain order: an approver on their own is a slot of
+ * one, and a group is a slot of however many share it. Anything that tells a
+ * person what an application is waiting on wants this shape rather than a flat
+ * list, because the difference between a slot of one and a slot of three is the
+ * difference between "and" and "any one of" — and a Dean told that a pastor's
+ * leave "also needs the Bishop" is being told the opposite of the rule.
+ */
+export function outstandingSlots(
+  required: RequiredApprover[],
+  approvals: ApprovalEntry[],
+): RequiredApprover[][] {
+  const signed = (r: RequiredApprover) =>
+    approvals.some(a => a.action === "APPROVED" && fills(a, r.email));
+
+  const out: RequiredApprover[][] = [];
+  const done = new Set<string>();
+  for (const r of required) {
+    if (!r.group) {
+      if (!signed(r)) out.push([r]);
+      continue;
+    }
+    if (done.has(r.group)) continue;
+    done.add(r.group);
+    const members = required.filter(x => x.group === r.group);
+    if (!members.some(signed)) out.push(members);
+  }
+  return out;
+}
+
+/**
  * Approvers still to sign, in chain order.
  *
  * A grouped slot contributes every one of its members while it is unsettled —
  * the application is waiting on any of them, and naming only the first would
  * tell the other two they are not needed. Once one signs, the whole group
  * drops out together.
+ *
+ * Counting is all this is safe for. It flattens the slots away, so the caller
+ * can no longer tell an alternative from a requirement; to say who is waited
+ * on, use `outstandingSlots`.
  */
 export function outstandingApprovers(
   required: RequiredApprover[],
   approvals: ApprovalEntry[],
 ): RequiredApprover[] {
-  const signed = (r: RequiredApprover) =>
-    approvals.some(a => a.action === "APPROVED" && fills(a, r.email));
-
-  const out: RequiredApprover[] = [];
-  const done = new Set<string>();
-  for (const r of required) {
-    if (!r.group) {
-      if (!signed(r)) out.push(r);
-      continue;
-    }
-    if (done.has(r.group)) continue;
-    done.add(r.group);
-    const members = required.filter(x => x.group === r.group);
-    if (!members.some(signed)) out.push(...members);
-  }
-  return out;
+  return outstandingSlots(required, approvals).flat();
 }
 
 /** The slots a chain has, counting a group as one. */

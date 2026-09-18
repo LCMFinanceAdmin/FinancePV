@@ -3,7 +3,8 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
-import { describeApprover as describe, type LabelledApprover } from "@/lib/approver-label";
+import { describeSlots } from "@/lib/approver-label";
+import { outstandingSlots } from "@/lib/leave-decision";
 import { CheckCircle2, XCircle, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -163,21 +164,30 @@ function LeaveQueueInner() {
   const iSigned = (l: LeaveApp) =>
     l.approvals?.some(a => norm(a.email) === norm(userEmail) && a.action === "APPROVED");
 
-  // A slot is answered either by the person named or by whoever signed in their
-  // place — see for_email in lib/leave-decision.
-  const filled = (a: { email?: string; for_email?: string }, slot: string) =>
-    norm(a.email) === norm(slot) || norm(a.for_email) === norm(slot);
-
   // The one the email was about goes to the top, so a long queue can't bury it.
   const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l))
     .sort((a, b) => Number(b.leave_no === highlightRef) - Number(a.leave_no === highlightRef));
   const awaitingOthers = myLeaves.filter(l => l.status === "PENDING" && iSigned(l));
   const history        = myLeaves.filter(l => l.status !== "PENDING");
 
-  const stillToSign = (l: LeaveApp) =>
-    (l.required_approvers ?? []).filter(r => !l.approvals?.some(
-      a => a.action === "APPROVED" && filled(a, r.email),
-    ));
+  // What the application is still waiting on, as slots rather than names — the
+  // same rule the /api/leave-action route decides by, so the page cannot tell
+  // an approver something the outcome contradicts. A slot of one is a signature
+  // that must be given; a slot of several is settled by any one of them, which
+  // is how a pastor's Bishop / Dean / Pastor in Charge chain works.
+  const waitingOn = (l: LeaveApp) =>
+    outstandingSlots(l.required_approvers ?? [], l.approvals ?? []);
+
+  // Is this slot yours to settle? By name, or because you now hold the post the
+  // named person held — the same reach as isMine above.
+  const isMySlot = (slot: { email: string }[]) =>
+    slot.some(r => norm(r.email) === norm(userEmail)
+      || (!!userRole && roleByEmail[norm(r.email)] === userRole));
+
+  // What would be left after you sign. Your signature settles the whole slot
+  // you stand in, so the rest of that slot goes with it: a Dean signing a
+  // pastor's leave grants it outright, and must not be told it needs more.
+  const remainingAfterMe = (l: LeaveApp) => waitingOn(l).filter(s => !isMySlot(s));
 
   async function act(
     leaveId: string,
@@ -203,8 +213,6 @@ function LeaveQueueInner() {
   }
 
   const typeName = (code: string) => leaveTypes.find(t => t.code === code)?.name ?? code;
-
-  const describeApprover = (a: LabelledApprover) => describe(a, roleByEmail);
 
   // The application, as the signed document HR files.
   const viewForm = (l: LeaveApp) => openLeaveForm({
@@ -385,14 +393,12 @@ function LeaveQueueInner() {
                   </div>
                 </div>
 
-                {/* Approving doesn't grant the leave on its own when others
-                    are named — say so before they click. */}
-                {stillToSign(app).length > 1 && (
+                {/* Approving doesn't always grant the leave on its own — say
+                    so before they click, and say nothing when it does. Silence
+                    here is the message that one signature is the whole of it. */}
+                {remainingAfterMe(app).length > 0 && (
                   <p className="text-[11.5px] leading-snug text-stone-400">
-                    Also needs {stillToSign(app)
-                      .filter(r => norm(r.email) !== norm(userEmail))
-                      .map(r => describeApprover(r))
-                      .join(" and ")}
+                    Also needs {describeSlots(remainingAfterMe(app), roleByEmail)}
                   </p>
                 )}
 
@@ -424,9 +430,7 @@ function LeaveQueueInner() {
                 <p key={app.id} className="text-xs text-stone-600">
                   <span className="font-semibold text-stone-700">{app.applicant_name}</span>{" "}
                   {formatDate(app.start_date)} → {formatDate(app.end_date)} · waiting on{" "}
-                  {stillToSign(app)
-                    .map(r => describeApprover(r))
-                    .join(" and ")}
+                  {describeSlots(waitingOn(app), roleByEmail)}
                 </p>
               ))}
             </div>
