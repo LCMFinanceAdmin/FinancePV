@@ -45,3 +45,7 @@ next-env.d.ts
 
 # Annotation-placement previews from docs/check-annotations.py
 docs/img/_check/
+
+# Word build of the handbook — regenerate with docs/handbook-to-docx.py
+docs/.docx-figures/
+docs/*.docx
