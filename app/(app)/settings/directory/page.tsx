@@ -334,9 +334,11 @@ export default function ChurchDirectoryPage() {
         if (error) throw new Error(error.message);
         id = data.id as string;
       } else {
-        const { error } = await supabase.from("districts")
-          .update({ name: d.name.trim(), updated_at: new Date().toISOString() }).eq("id", id);
+        const { data, error } = await supabase.from("districts")
+          .update({ name: d.name.trim(), updated_at: new Date().toISOString() }).eq("id", id)
+          .select("id");
         if (error) throw new Error(error.message);
+        if (!data?.length) throw new Error(REFUSED);
       }
 
       const person = personByLogin(d.dean_email);
@@ -364,11 +366,28 @@ export default function ChurchDirectoryPage() {
     if (isNew(id)) { setDistricts(ds => ds.filter(x => x.id !== id)); return; }
     const used = congregations.filter(c => c.district_id === id).length;
     if (used > 0 && !confirm(`${used} congregation(s) are in this district. They'll be left without one. Delete anyway?`)) return;
-    const { error } = await supabase.from("districts").delete().eq("id", id);
+    const { data, error } = await supabase.from("districts").delete().eq("id", id).select("id");
     if (error) { showToast(error.message, false); return; }
+    if (!data?.length) { showToast(REFUSED, false); return; }
     showToast("District removed");
     load();
   }
+
+  /**
+   * What a refused write looks like from here.
+   *
+   * Row-level security filters rows rather than raising: an UPDATE or DELETE
+   * the policy will not allow simply matches nothing, and Supabase returns
+   * error === null. Reading only the error therefore reports success for a
+   * write that did not happen — which is how forty-nine ROS numbers were
+   * typed in, acknowledged, and lost on the next reload.
+   *
+   * So every write asks for the rows back and counts them. None means the
+   * database declined, and the only honest thing to say is so.
+   */
+  const REFUSED =
+    "Not saved \u2014 your role cannot edit the church directory. " +
+    "Ask the Finance Executive or the General Manager.";
 
   async function saveCongregation(c: Congregation) {
     setSaving(true);
@@ -381,19 +400,21 @@ export default function ChurchDirectoryPage() {
       council_president_email: c.council_president_email?.trim().toLowerCase() || null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = isNew(c.id)
-      ? await supabase.from("congregations").insert(payload)
-      : await supabase.from("congregations").update(payload).eq("id", c.id);
+    const { data, error } = isNew(c.id)
+      ? await supabase.from("congregations").insert(payload).select("id")
+      : await supabase.from("congregations").update(payload).eq("id", c.id).select("id");
     setSaving(false);
     if (error) { showToast(error.message, false); return; }
+    if (!data?.length) { showToast(REFUSED, false); return; }
     showToast("Congregation saved");
     load();
   }
 
   async function deleteCongregation(id: string) {
     if (isNew(id)) { setCongregations(cs => cs.filter(x => x.id !== id)); return; }
-    const { error } = await supabase.from("congregations").delete().eq("id", id);
+    const { data, error } = await supabase.from("congregations").delete().eq("id", id).select("id");
     if (error) { showToast(error.message, false); return; }
+    if (!data?.length) { showToast(REFUSED, false); return; }
     showToast("Congregation removed");
     load();
   }
