@@ -409,17 +409,31 @@ export function calcLine(input: CalcInput): CalcLine {
       }
     }
 
-    // SKBBK tops up the employee's SOCSO contribution, so it follows the same
-    // two gates: nothing on the 13th month, and nothing at 60+, where the
-    // employee has no SOCSO share to supplement. Anyone who has left the
-    // scheme pays nothing regardless.
-    // ...and a third gate: a scheme that started in June is not owed for May.
-    // Recovering the months between its start date and the payroll catching up
-    // is what an adjustment is for — it is a debt to a past month, not this
-    // month's contribution, and only the two kept apart will reconcile against
-    // PERKESO's own statement.
+    // SKBBK is its own scheme, not a top-up of the SOCSO employee share.
+    //
+    // This used to carry a `!over60` gate, on the reasoning that SKBBK
+    // supplements the employee's SOCSO contribution and somebody with no such
+    // contribution has nothing to supplement. That reasoning is wrong, and the
+    // church's own payroll says so: in the October 2026 figures, nineteen
+    // people pay no employee SOCSO — they are 60 or over, Category 2,
+    // employment injury only — and every one of them pays SKBBK at exactly the
+    // band figure for their wage. Nineteen people at nineteen different wages
+    // is not a coincidence, and it was confirmed against the scheme's own
+    // rule before this was changed.
+    //
+    // Left as it was, each of those nineteen would have been under-deducted by
+    // about 0.75% of wages, LCM would have under-remitted PERKESO by the same,
+    // and the filing would not have matched the payroll it came from.
+    //
+    // Two gates remain, and a third. Nothing on the 13th month, which is a
+    // payment rather than a month worked. Nothing for anyone who has left the
+    // scheme. And a scheme that started in June is not owed for May: recovering
+    // the months between its start and the payroll catching up is what an
+    // adjustment is for — a debt to a past month, not this month's
+    // contribution, and only the two kept apart reconcile against PERKESO's
+    // own statement.
     const startedByNow = (input.month ?? 13) >= (rates.skbbk_from_month ?? 1);
-    if (!over60 && !input.skbbkOptedOut && startedByNow) {
+    if (!input.skbbkOptedOut && startedByNow) {
       // From the schedule where it reaches, since SKBBK is a column of the same
       // table and is filed off it. The rate is the fallback, not the source.
       skbbk = band ? band.skbbk : round2(Math.min(gross, rates.skbbk_ceiling) * rates.skbbk_ee);
