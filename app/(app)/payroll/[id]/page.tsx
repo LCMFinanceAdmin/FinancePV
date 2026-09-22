@@ -69,12 +69,37 @@ const COMPONENTS: { key: keyof PayrollSalary; label: string }[] = [
   { key: "stm_allowance", label: "STM / allowance" },
 ];
 
+/** The slice of a recurring PV the payroll side shows and edits. */
+interface AllowancePv {
+  id: string;
+  name: string;
+  amount: number;
+  frequency: string;
+  active: boolean;
+  next_due: string | null;
+  group_name: string | null;
+  current_pv_no: string | null;
+  current_pv_status: string | null;
+}
+
 export default function PayrollEmployeePage() {
   const { id } = useParams<{ id: string }>();
   const supabase = createClient();
   const [emp, setEmp] = useState<PayrollEmployee | null>(null);
   const [salaries, setSalaries] = useState<PayrollSalary[]>([]);
   const [loans, setLoans] = useState<EmployeeLoan[]>([]);
+  /**
+   * Allowances, which are recurring PVs rather than payroll.
+   *
+   * LCM pays them outside the payslip on purpose — they are not salary, are
+   * not taxed as salary, and must not enter the EPF or SOCSO base. They leave
+   * on the monthly recurring expenses PV. What is edited here is that very
+   * row, not a copy of it, so the two views cannot disagree and the change is
+   * on the next recurring PV without anybody re-entering it.
+   */
+  const [allowances, setAllowances] = useState<AllowancePv[]>([]);
+  const [allowanceEdit, setAllowanceEdit] = useState<Record<string, string>>({});
+  const [savingAllowance, setSavingAllowance] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
   const [pcb, setPcb] = useState<number[]>(Array(13).fill(0)); // 0-11 = months, 12 = 13th month
@@ -92,7 +117,7 @@ export default function PayrollEmployeePage() {
   const [adjustments, setAdjustments] = useState<PayrollAdjustment[]>([]);
   const [adjModal, setAdjModal] = useState<{ month: number; editing: PayrollAdjustment | null } | null>(null);
   const [showYearlySheet, setShowYearlySheet] = useState(false);
-  const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "documents">("overview");
+  const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "allowances" | "documents">("overview");
 
   const refreshCustomItems = useCallback(async () => {
     const { data: items } = await supabase.from("payroll_employee_custom_items")
@@ -140,18 +165,46 @@ export default function PayrollEmployeePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: e }, { data: s }, { data: ln }] = await Promise.all([
+    const [{ data: e }, { data: s }, { data: ln }, { data: allw }] = await Promise.all([
       supabase.from("payroll_employees").select("*").eq("id", id).single(),
       supabase.from("payroll_salary").select("*").eq("employee_id", id).order("effective_from", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("employee_loans").select("*").eq("employee_id", id).order("created_at", { ascending: false }),
+      supabase.from("recurring_pvs")
+        .select("id,name,amount,frequency,active,next_due,group_name,current_pv_no,current_pv_status")
+        .eq("employee_id", id).order("name"),
     ]);
     setEmp(e as PayrollEmployee);
     setSalaries((s as PayrollSalary[]) ?? []);
     setLoans((ln as EmployeeLoan[]) ?? []);
+    setAllowances((allw as AllowancePv[]) ?? []);
     setLoading(false);
   }, [supabase, id]);
 
   useEffect(() => { load(); }, [load]);
+
+  /**
+   * Writes straight to the recurring PV. Nothing is copied into payroll, so
+   * the recurring expenses page shows the new figure immediately and the next
+   * monthly bundle picks it up without a second edit.
+   */
+  async function saveAllowance(a: AllowancePv) {
+    const raw = allowanceEdit[a.id];
+    if (raw === undefined) return;
+    const amount = parseFloat(raw);
+    if (!Number.isFinite(amount) || amount < 0) { alert("Enter an amount."); return; }
+    setSavingAllowance(a.id);
+    const { data, error } = await supabase.from("recurring_pvs")
+      .update({ amount, updated_at: new Date().toISOString() })
+      .eq("id", a.id).select("id");
+    setSavingAllowance(null);
+    if (error) { alert(error.message); return; }
+    // A policy that refuses filters rows rather than raising — saying "saved"
+    // when nothing was written is how the ROS numbers were lost.
+    if (!data?.length) { alert("Not saved — your role cannot edit recurring payments."); return; }
+    setAllowanceEdit(e => { const n = { ...e }; delete n[a.id]; return n; });
+    alert("Allowance updated. It will show on the next recurring PV.");
+    load();
+  }
 
   if (loading) return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Loading…</div>;
   if (!emp) return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Employee not found.</div>;
@@ -379,6 +432,7 @@ export default function PayrollEmployeePage() {
             ["sheet", "Yearly Sheet", Table2],
             ["payslips", "Payslips", Receipt],
             ["loans", "Loans", HandCoins],
+            ["allowances", "Allowances", Wallet],
             ["documents", "Documents", FolderOpen],
           ] as const).map(([key, label, Icon]) => (
             <button key={key} onClick={() => setTab(key)}
@@ -940,6 +994,81 @@ export default function PayrollEmployeePage() {
             </div>
           )}
           <p className="text-[11px] text-stone-400 mt-3">Click a month to preview, print or share the salary slip.</p>
+        </div>
+      )}
+
+      {/* ── Allowances tab ── */}
+      {tab === "allowances" && (
+        <div className="bg-white border border-stone-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5">
+              <Wallet size={15} className="text-[#4a6da7]" /> Allowances
+            </h2>
+            <Link href="/recurring" className="flex items-center gap-1 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5c8f] transition-colors">
+              Recurring payments <ExternalLink size={12} />
+            </Link>
+          </div>
+          <p className="text-xs text-stone-400 mb-4">
+            Paid outside payroll, on the monthly recurring expenses PV. Not salary, not taxed as
+            salary, and not part of the EPF or SOCSO base — which is why it does not appear on the
+            payslip. Editing here edits the recurring payment itself.
+          </p>
+
+          {allowances.length === 0 ? (
+            <p className="text-sm text-stone-400">
+              No allowance is linked to this employee. If they receive one, open it under
+              Recurring payments and set the employee there.
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              {allowances.map(a => {
+                const edited = allowanceEdit[a.id];
+                const dirty = edited !== undefined && parseFloat(edited) !== Number(a.amount);
+                return (
+                  <div key={a.id} className="border border-stone-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <span className="text-sm font-bold text-stone-700">{a.name}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                        a.active ? "bg-green-100 text-green-700" : "bg-stone-100 text-stone-500"}`}>
+                        {a.active ? "Active" : "Stopped"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 mt-3 text-sm items-end">
+                      <label className="block">
+                        <span className="block text-[11px] font-semibold text-stone-400">Amount / month</span>
+                        <input type="number" step="0.01" min="0"
+                          value={edited ?? String(a.amount ?? "")}
+                          onChange={e => setAllowanceEdit(m => ({ ...m, [a.id]: e.target.value }))}
+                          className="mt-0.5 w-32 border border-stone-200 rounded-lg px-2 py-1 text-sm font-mono outline-none focus:border-[#2f5b9c]" />
+                      </label>
+                      <Field label="Frequency" value={a.frequency ?? "—"} />
+                      <Field label="Next due" value={a.next_due ? fmtDate(a.next_due) : "—"} />
+                      <Field label="Latest PV" value={a.current_pv_no ?? "—"} />
+                    </div>
+                    {dirty && (
+                      <div className="mt-3 flex items-center gap-2">
+                        <button onClick={() => saveAllowance(a)} disabled={savingAllowance === a.id}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5c8f] disabled:opacity-60">
+                          {savingAllowance === a.id ? "Saving…" : "Save"}
+                        </button>
+                        <button onClick={() => setAllowanceEdit(m => { const n = { ...m }; delete n[a.id]; return n; })}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg text-stone-500 hover:bg-stone-100">
+                          Cancel
+                        </button>
+                        <span className="text-[11px] text-stone-400">
+                          Changes the recurring payment, so it lands on the next monthly PV.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <p className="text-[11px] text-stone-400 pt-1">
+                Total {formatCurrency(allowances.filter(a => a.active).reduce((t, a) => t + Number(a.amount || 0), 0))} a month,
+                on top of salary and taxed separately.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
