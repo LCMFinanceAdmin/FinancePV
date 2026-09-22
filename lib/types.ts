@@ -458,6 +458,14 @@ export interface PayrollEmployee {
   is_orang_asli: boolean;
   date_commenced: string | null;
   increment_month_override: number | null; // NULL = automatic (join-date rule); else 1 or 7
+  /**
+   * Standing monthly PCB in RM, or null when there is none.
+   *
+   * Pre-fills the run rather than deciding it: the box stays editable and
+   * the run stores what was actually used, so a month that differs is typed
+   * over the top exactly as before.
+   */
+  fixed_pcb: number | null;
   commencement_base: number;
   posting_type: PostingType;
   church_name: string;

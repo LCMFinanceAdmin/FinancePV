@@ -223,11 +223,88 @@ export function fullGross(s: SalaryComponents): number {
 
 // Gross for a given month, applying increment timing (current-year increment only
 // from its effective month). The 13th month always uses the full gross.
-export function grossForMonth(s: SalaryComponents, dateCommenced: string | null, month: number, is13th: boolean, incrementMonthOverride?: number | null): number {
+export function grossForMonth(
+  s: SalaryComponents,
+  dateCommenced: string | null,
+  month: number,
+  is13th: boolean,
+  incrementMonthOverride?: number | null,
+  /** Optional. Absent means a whole month, which is what it was before this. */
+  days?: MonthDays | null,
+): number {
   const full = fullGross(s);
+  // A 13th month is a payment, not a month worked, so it is never pro-rated.
   if (is13th) return full;
   const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
-  return month >= eff ? full : full - Number(s.increment_current);
+  const earned = month >= eff ? full : full - Number(s.increment_current);
+  return round2(earned * monthFraction(days));
+}
+
+/**
+ * How much of a month somebody was actually employed for.
+ *
+ * Calendar days of that particular month, which is the basis the Employment
+ * Act uses for an incomplete month — monthly wages, divided by the days in
+ * the month, times the days eligible. Not 26 working days, and not a flat
+ * 30: February pays a full month at 28 days, and joining on the 1st of any
+ * month is a full month whatever its length.
+ *
+ * Returns the whole month when nothing interrupts it, so the ordinary case
+ * costs nothing and reads as untouched.
+ */
+export interface MonthDays {
+  daysInMonth: number;
+  daysPaid: number;
+  /** Why it is short. Null when the whole month is paid. */
+  reason: "joined" | "left" | "joined and left" | null;
+}
+
+function dayIfInMonth(iso: string | null, year: number, month: number): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return null;
+  return d.getDate();
+}
+
+export function monthDays(
+  dateCommenced: string | null,
+  resignedDate: string | null,
+  year: number,
+  month: number,
+): MonthDays {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const whole: MonthDays = { daysInMonth, daysPaid: daysInMonth, reason: null };
+
+  // Employed for none of it: started after this month, or left before it.
+  const start = dateCommenced ? new Date(dateCommenced) : null;
+  const end = resignedDate ? new Date(resignedDate) : null;
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0);
+  if (start && !Number.isNaN(start.getTime()) && start > monthEnd) {
+    return { daysInMonth, daysPaid: 0, reason: "joined" };
+  }
+  if (end && !Number.isNaN(end.getTime()) && end < monthStart) {
+    return { daysInMonth, daysPaid: 0, reason: "left" };
+  }
+
+  const from = dayIfInMonth(dateCommenced, year, month);
+  const to = dayIfInMonth(resignedDate, year, month);
+  if (from === null && to === null) return whole;
+
+  const firstDay = from ?? 1;
+  // The day they leave is worked, so it counts.
+  const lastDay = to ?? daysInMonth;
+  const daysPaid = Math.max(0, lastDay - firstDay + 1);
+  const reason: MonthDays["reason"] =
+    from !== null && to !== null ? "joined and left" : from !== null ? "joined" : "left";
+  return { daysInMonth, daysPaid, reason };
+}
+
+/** The fraction to apply, 1 when the whole month is paid. */
+export function monthFraction(d?: MonthDays | null): number {
+  if (!d || d.daysInMonth <= 0 || d.daysPaid >= d.daysInMonth) return 1;
+  return d.daysPaid / d.daysInMonth;
 }
 
 export interface EarningComponent { label: string; amount: number }
@@ -252,6 +329,7 @@ export function grossComponentsForMonth(
   month: number,
   is13th: boolean,
   incrementMonthOverride?: number | null,
+  days?: MonthDays | null,
 ): EarningComponent[] {
   const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
   // The 13th month is paid on the full gross, so the increment always counts.
@@ -268,6 +346,19 @@ export function grossComponentsForMonth(
   add("Experience bonus", Number(s.experience_bonus));
   add("Family allowance", Number(s.family_allowance));
   add("STM / Allowance", Number(s.stm_allowance));
+
+  // An incomplete month is shown as what was agreed, less a named deduction,
+  // rather than by quietly shrinking every line above. The agreed salary is
+  // what the person recognises; scaling each component would leave a payslip
+  // where no figure matches their letter of appointment and nothing says why.
+  const fraction = monthFraction(days);
+  if (!is13th && fraction < 1 && days) {
+    const full = out.reduce((t, c) => t + c.amount, 0);
+    out.push({
+      label: `Incomplete month (${days.daysPaid} of ${days.daysInMonth} days, ${days.reason})`,
+      amount: round2(full * fraction) - round2(full),
+    });
+  }
   return out;
 }
 

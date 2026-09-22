@@ -142,6 +142,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   const [childrenUnder18, setChildrenUnder18] = useState(String(existing?.children_under_18 ?? 0));
   const [childrenCollege, setChildrenCollege] = useState(String(existing?.children_in_college ?? 0));
   const [voluntaryEpf, setVoluntaryEpf] = useState(String(existing?.epf_voluntary_ee_amount ?? 0));
+  const [fixedPcb, setFixedPcb] = useState(existing?.fixed_pcb != null ? String(existing.fixed_pcb) : "");
   const [epfNo, setEpfNo] = useState(existing?.epf_no ?? "");
   const [tin, setTin] = useState(existing?.tin ?? "");
   const [taxRef, setTaxRef] = useState(existing?.employer_tax_ref ?? "");
@@ -366,6 +367,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         children_under_18: parseInt(childrenUnder18) || 0,
         children_in_college: parseInt(childrenCollege) || 0,
         epf_voluntary_ee_amount: parseFloat(voluntaryEpf) || 0,
+        fixed_pcb: fixedPcb.trim() === "" ? null : parseFloat(fixedPcb),
         epf_no: epfNo.trim(),
         tin: tin.trim(),
         employer_tax_ref: taxRef.trim(),
@@ -597,6 +599,9 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className={labelCls}>EPF No.</label><input className={inputCls} value={epfNo} onChange={e => setEpfNo(e.target.value)} /></div>
               <div><label className={labelCls}>Voluntary EPF (RM, fixed)</label><input type="number" className={inputCls} value={voluntaryEpf} onChange={e => setVoluntaryEpf(e.target.value)} /></div>
+              {/* Pre-fills the run rather than deciding it — the run box stays
+                  editable, so a month that differs is typed over the top. */}
+              <div><label className={labelCls}>Fixed PCB (RM / month)</label><input type="number" step="0.01" min="0" className={inputCls} value={fixedPcb} onChange={e => setFixedPcb(e.target.value)} placeholder="blank = key it each month" /></div>
               <div><label className={labelCls}>TIN (Tax)</label><input className={inputCls} value={tin} onChange={e => setTin(e.target.value)} placeholder="Tax identification no." /></div>
               <div><label className={labelCls}>Employer Tax Ref</label><input className={inputCls} value={taxRef} onChange={e => setTaxRef(e.target.value)} /></div>
               <div>

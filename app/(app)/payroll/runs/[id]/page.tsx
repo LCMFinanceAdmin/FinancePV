@@ -8,7 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
 import { BankExportModal, buildBankRows, generateWorkbook } from "@/components/payroll/bank-export-modal";
 import { generateStatutorySummary } from "@/components/payroll/statutory-summary";
-import { calcLine, ageAt, grossForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { calcLine, ageAt, grossForMonth, monthDays, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
 
@@ -173,6 +173,29 @@ export default function PayrollRunDetailPage() {
 
   useEffect(() => { loadUser(); load(); }, [load]);
 
+  /**
+   * Start each PCB box at the employee's standing figure.
+   *
+   * Only fills a box that is still untouched, so a figure typed for this run
+   * is never overwritten by a later load, and a keyed run does not revert on
+   * a refresh.
+   */
+  useEffect(() => {
+    if (!employees.length) return;
+    setPcb(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const e of employees) {
+        if (next[e.id] === undefined && e.fixed_pcb != null) {
+          next[e.id] = Number(e.fixed_pcb);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [employees]);
+
+
   if (loading) return <div className="max-w-5xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Loading…</div>;
   if (!run) return <div className="max-w-5xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Run not found.</div>;
 
@@ -190,7 +213,10 @@ export default function PayrollRunDetailPage() {
     .map(e => {
       const sal = salByEmp[e.id];
       if (!sal) return null;
-      const gross = grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override);
+      // Joined or left part-way through: paid for the days employed, on the
+      // Employment Act's calendar-day basis.
+      const days = is13th ? null : monthDays(e.date_commenced, e.resigned_date, run.year, run.month);
+      const gross = grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override, days);
       const epl = is13th ? 0 : (loansByEmp[e.id] ?? []).reduce((s, ln) =>
         s + dueFromBalance(ln, repayments, run.year, run.month, run.id).amount, 0);
       const line = calcLine({
