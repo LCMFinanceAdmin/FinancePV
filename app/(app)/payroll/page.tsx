@@ -1,7 +1,9 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Search, Wallet, Church, Building2, UserX, ChevronRight, X, Percent, HandCoins, CalendarClock, Pencil, Trash2, Users, CheckCircle2, AlertTriangle, ArrowRight, FileText } from "lucide-react";
+import {
+  AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, CalendarClock, CheckCircle2, ChevronRight, Church, FileText, HandCoins, Pencil, Percent, Plus, Search, Trash2, UserX, Users, Wallet, X,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
@@ -812,11 +814,30 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
 
 // ─── Directory page ───────────────────────────────────────────────────────────
 
+type SortKey = "name" | "salary" | "service" | "age";
+
+/** Label, and what the two arrows mean for this column. */
+const SORTS: { key: SortKey; label: string; up: string; down: string }[] = [
+  { key: "name",    label: "Name",    up: "A to Z",        down: "Z to A" },
+  { key: "salary",  label: "Salary",  up: "lowest first",  down: "highest first" },
+  { key: "service", label: "Service", up: "newest first",  down: "longest first" },
+  { key: "age",     label: "Age",     up: "youngest first", down: "oldest first" },
+];
+
 export default function PayrollPage() {
   const supabase = createClient();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [employees, setEmployees] = useState<PayrollEmployee[]>([]);
   const [salaryByEmp, setSalaryByEmp] = useState<Record<string, number>>({}); // emp_id -> latest gross
+  /**
+   * How the list is ordered. Eighty-one people is past the point where
+   * scanning works, and the question is rarely "where is this person" — the
+   * search box answers that. It is "who earns most", "who is nearest
+   * retirement", "who has served longest", which a list in insertion order
+   * cannot answer at all.
+   */
+  const [sortBy, setSortBy] = useState<SortKey>("name");
+  const [sortAsc, setSortAsc] = useState(true);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showStatus, setShowStatus] = useState<"ACTIVE" | "RESIGNED" | "ALL">("ACTIVE");
@@ -927,12 +948,44 @@ export default function PayrollPage() {
       || postingLabel(e).toLowerCase().includes(q);
   });
 
+  /**
+   * Ordered before paging, so the sort runs over everybody rather than over
+   * whichever twenty happen to be on screen.
+   *
+   * A missing date or salary sorts last whichever way the arrow points: a
+   * record nobody has filled in is not the youngest person in the church, and
+   * putting it at the top of "youngest first" would read as though it were.
+   */
+  const sorted = [...filtered].sort((a, b) => {
+    const dir = sortAsc ? 1 : -1;
+    const byName = a.full_name.localeCompare(b.full_name, "en", { sensitivity: "base" });
+
+    if (sortBy === "name") return byName * dir;
+
+    const num = (e: typeof a): number | null => {
+      if (sortBy === "salary") return salaryByEmp[e.id] ?? null;
+      const raw = sortBy === "service" ? e.date_commenced : e.dob;
+      if (!raw) return null;
+      const t = new Date(raw).getTime();
+      return Number.isNaN(t) ? null : t;
+    };
+
+    const av = num(a), bv = num(b);
+    if (av === null && bv === null) return byName;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    // Service and age are held as dates, where earlier means longer and older.
+    // The arrow should mean what its label says, so those two are inverted.
+    const flip = sortBy === "salary" ? 1 : -1;
+    return av === bv ? byName : (av < bv ? -1 : 1) * dir * flip;
+  });
+
   // Paged so a full staff list doesn't turn into an endless scroll.
   const PER_PAGE = 20;
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PER_PAGE));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * PER_PAGE;
-  const paged = filtered.slice(pageStart, pageStart + PER_PAGE);
+  const paged = sorted.slice(pageStart, pageStart + PER_PAGE);
 
   // ── Dashboard derivations ──
   const activeEmps = employees.filter(e => e.status === "ACTIVE");
@@ -1045,7 +1098,34 @@ export default function PayrollPage() {
               Missing details <X size={11} />
             </button>
           )}
+
+          {/* Sort. Pressing the column you are already on turns it round,
+              which is what every table in the app does. */}
+          <span className="ml-auto flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Sort</span>
+            {SORTS.map(s => {
+              const on = sortBy === s.key;
+              return (
+                <button key={s.key}
+                  onClick={() => { if (on) setSortAsc(a => !a); else { setSortBy(s.key); setSortAsc(true); } setPage(1); }}
+                  title={on ? (sortAsc ? s.up : s.down) : `Sort by ${s.label.toLowerCase()} — ${s.up}`}
+                  className={`flex items-center gap-0.5 text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                    on ? "bg-[#4a6da7] text-white border-transparent"
+                       : "bg-white text-stone-500 border-stone-200 hover:border-[#4a6da7]/40"}`}>
+                  {s.label}
+                  {on && (sortAsc ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
+                </button>
+              );
+            })}
+          </span>
         </div>
+        {sortBy !== "name" && (
+          <p className="text-[11px] text-stone-400">
+            Ordered by {SORTS.find(s => s.key === sortBy)!.label.toLowerCase()},{" "}
+            {sortAsc ? SORTS.find(s => s.key === sortBy)!.up : SORTS.find(s => s.key === sortBy)!.down}
+            {". Anybody whose record is blank is listed last."}
+          </p>
+        )}
       </div>
 
       {loading ? (
