@@ -1,4 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
+import { isHqOffice } from "../_shared/ministries.ts";
 import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, nextLscPvNo, nextHlePvNo, nextLgbPvNo, getProfileByEmail, insertPvWithNumber } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
@@ -304,15 +305,9 @@ Deno.serve(async (req) => {
     const excoAlreadyVerified = !!d.exco_verified_by;
 
     const ministry = d.ministry || d.dept || "";
-    // HQ office expenses answer to no EXCO. There is no committee above the
-    // office to report to, so these go straight to Finance, then the GM, then
-    // the signatories. Kept in step with isHqOffice() in lib/ministries.ts —
-    // this function is Deno and cannot import from the app, so the list is
-    // repeated rather than shared. Change one, change the other.
-    const HQ_OFFICE_MINISTRIES = ["hq", "head quarters (hq)", "lcm hq office"];
-    const isHqOffice = HQ_OFFICE_MINISTRIES.includes(ministry.trim().toLowerCase());
-
-    const goesToExco = !excoAlreadyVerified && !isHqOffice && hasDeptHead && !isApplicantHead;
+    // HQ office expenses answer to no EXCO — straight to Finance, then the GM,
+    // then the signatories.
+    const goesToExco = !excoAlreadyVerified && !isHqOffice(ministry) && hasDeptHead && !isApplicantHead;
     const initialStatus = goesToExco ? "PENDING_HEAD" : "PENDING";
     const amount = amountFrom(d);
     const loa = getLOATier(amount, d.payment_type);

@@ -49,3 +49,27 @@ export function expandMinistries(assigned: string[]): string[] {
 export function coveringMinistries(ministry: string): string[] {
   return family(ministry);
 }
+
+/**
+ * HQ office expenses, which answer to no EXCO.
+ *
+ * Every other ministry is a committee spending its own budget, so one of its
+ * members verifies a claim before Finance sees it. HQ is the office itself:
+ * there is no committee above it, and routing its stationery and utilities
+ * through one only added a signature nobody was placed to give. Straight to
+ * Finance, then the GM, then the signatories.
+ *
+ * Three spellings because three exist in the data. "HQ" is the name in the
+ * ministries table and the only one a new voucher can be booked to; the others
+ * are on vouchers raised in August, before the list settled.
+ */
+const HQ_OFFICE_MINISTRIES = [
+  "hq",
+  "head quarters (hq)",
+  "lcm hq office",
+];
+
+/** Does this ministry's spending skip EXCO verification entirely? */
+export function isHqOffice(ministry: string | null | undefined): boolean {
+  return HQ_OFFICE_MINISTRIES.includes(norm(ministry ?? ""));
+}
