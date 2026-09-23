@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, grossComponentsForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem,
@@ -99,10 +99,41 @@ export default function PayrollEmployeePage() {
    */
   const [allowances, setAllowances] = useState<AllowancePv[]>([]);
   const [allowanceEdit, setAllowanceEdit] = useState<Record<string, string>>({});
+  const [nameEdit, setNameEdit] = useState<Record<string, string>>({});
   const [savingAllowance, setSavingAllowance] = useState<string | null>(null);
+  /**
+   * An existing allowance, copied from when a new one is created.
+   *
+   * The monthly bundle is raised per group_name, so an allowance created
+   * without one would be paid to nobody: it would sit in the recurring list
+   * and never appear on a PV. Copying a sibling means a new row lands in the
+   * same group, with the same bank and payment method, and is picked up by
+   * the next run without anybody configuring it.
+   */
+  const [allowanceTemplate, setAllowanceTemplate] = useState<Record<string, unknown> | null>(null);
+  const [newAllowance, setNewAllowance] = useState({ name: "", amount: "" });
+  const [addingAllowance, setAddingAllowance] = useState(false);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
   const [pcb, setPcb] = useState<number[]>(Array(13).fill(0)); // 0-11 = months, 12 = 13th month
+  /**
+   * Seed the twelve months from the employee's standing PCB.
+   *
+   * Only fills a month still at zero, so a figure typed here — or one
+   * loaded from a finalized run — is never overwritten. The 13th month is
+   * left alone: it is taxed on its own footing and is not the monthly
+   * deduction repeated.
+   */
+  useEffect(() => {
+    const standing = Number(emp?.fixed_pcb ?? 0);
+    if (!standing) return;
+    setPcb(prev => {
+      if (prev.slice(0, 12).every(v => v)) return prev;
+      const next = [...prev];
+      for (let i = 0; i < 12; i++) if (!next[i]) next[i] = standing;
+      return next;
+    });
+  }, [emp?.fixed_pcb]);
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [bands, setBands] = useState<ContributionBand[]>([]);
   const [canEdit, setCanEdit] = useState(false);
@@ -117,7 +148,7 @@ export default function PayrollEmployeePage() {
   const [adjustments, setAdjustments] = useState<PayrollAdjustment[]>([]);
   const [adjModal, setAdjModal] = useState<{ month: number; editing: PayrollAdjustment | null } | null>(null);
   const [showYearlySheet, setShowYearlySheet] = useState(false);
-  const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "allowances" | "documents">("overview");
+  const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "documents">("overview");
 
   const refreshCustomItems = useCallback(async () => {
     const { data: items } = await supabase.from("payroll_employee_custom_items")
@@ -165,22 +196,92 @@ export default function PayrollEmployeePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: e }, { data: s }, { data: ln }, { data: allw }] = await Promise.all([
+    const [{ data: e }, { data: s }, { data: ln }, { data: allw }, { data: tmpl }] = await Promise.all([
       supabase.from("payroll_employees").select("*").eq("id", id).single(),
       supabase.from("payroll_salary").select("*").eq("employee_id", id).order("effective_from", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("employee_loans").select("*").eq("employee_id", id).order("created_at", { ascending: false }),
       supabase.from("recurring_pvs")
         .select("id,name,amount,frequency,active,next_due,group_name,current_pv_no,current_pv_status")
         .eq("employee_id", id).order("name"),
+      supabase.from("recurring_pvs").select("*")
+        .ilike("group_name", "%Allowance%").eq("active", true).limit(1),
     ]);
     setEmp(e as PayrollEmployee);
     setSalaries((s as PayrollSalary[]) ?? []);
     setLoans((ln as EmployeeLoan[]) ?? []);
     setAllowances((allw as AllowancePv[]) ?? []);
+    setAllowanceTemplate(((tmpl as Record<string, unknown>[]) ?? [])[0] ?? null);
     setLoading(false);
   }, [supabase, id]);
 
   useEffect(() => { load(); }, [load]);
+
+  /**
+   * A new allowance for this person.
+   *
+   * Created as a recurring PV in the same group as the others, because that is
+   * what the monthly bundle is built from. Nothing about payroll changes: the
+   * allowance is not salary, is not taxed as salary, and does not touch the
+   * EPF or SOCSO base.
+   */
+  async function addAllowance() {
+    if (!emp) return;
+    const name = newAllowance.name.trim();
+    const amount = parseFloat(newAllowance.amount);
+    if (!name) { alert("Give the allowance a name."); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { alert("Enter an amount."); return; }
+
+    const t = allowanceTemplate ?? {};
+    const row: Record<string, unknown> = {
+      name, amount, employee_id: emp.id,
+      payee_name: emp.full_name,
+      frequency: (t.frequency as string) ?? "MONTHLY",
+      group_name: (t.group_name as string) ?? null,
+      active: true,
+      // Where the church already pays the others from, so the new one is
+      // remitted the same way rather than needing a bank account typed again.
+      payment_method: (t.payment_method as string) ?? null,
+      pv_type: (t.pv_type as string) ?? null,
+      ministry: (t.ministry as string) ?? null,
+      dept: (t.dept as string) ?? null,
+      purpose: `${name} — ${emp.full_name}`,
+      created_by: (await supabase.auth.getSession()).data.session?.user?.email ?? "",
+    };
+    setAddingAllowance(true);
+    const { data, error } = await supabase.from("recurring_pvs").insert(row).select("id");
+    setAddingAllowance(false);
+    if (error) { alert(error.message); return; }
+    if (!data?.length) { alert("Not added — your role cannot create recurring payments."); return; }
+    setNewAllowance({ name: "", amount: "" });
+    alert("Allowance added. It will appear on the next recurring PV.");
+    load();
+  }
+
+  /**
+   * Take an allowance off.
+   *
+   * One that has never been paid is deleted outright — it was a mistake and
+   * leaving it would only confuse. One that has been on a PV is stopped
+   * instead: its history belongs to vouchers that were raised and possibly
+   * paid, and deleting the row would leave those pointing at nothing.
+   */
+  async function removeAllowance(a: AllowancePv) {
+    const everRun = !!a.current_pv_no;
+    const what = everRun
+      ? `Stop "${a.name}"? It has already been on ${a.current_pv_no}, so the record is kept and no further payment is made.`
+      : `Delete "${a.name}"? It has never been paid, so nothing is kept.`;
+    if (!confirm(what)) return;
+    setSavingAllowance(a.id);
+    const q = everRun
+      ? supabase.from("recurring_pvs").update({ active: false, updated_at: new Date().toISOString() }).eq("id", a.id)
+      : supabase.from("recurring_pvs").delete().eq("id", a.id);
+    const { data, error } = await q.select("id");
+    setSavingAllowance(null);
+    if (error) { alert(error.message); return; }
+    if (!data?.length) { alert("Not changed — your role cannot edit recurring payments."); return; }
+    alert(everRun ? "Allowance stopped." : "Allowance deleted.");
+    load();
+  }
 
   /**
    * Writes straight to the recurring PV. Nothing is copied into payroll, so
@@ -188,20 +289,22 @@ export default function PayrollEmployeePage() {
    * monthly bundle picks it up without a second edit.
    */
   async function saveAllowance(a: AllowancePv) {
-    const raw = allowanceEdit[a.id];
-    if (raw === undefined) return;
+    const raw = allowanceEdit[a.id] ?? String(a.amount ?? "");
     const amount = parseFloat(raw);
     if (!Number.isFinite(amount) || amount < 0) { alert("Enter an amount."); return; }
     setSavingAllowance(a.id);
+    const renamed = (nameEdit[a.id] ?? "").trim();
+    const patch: Record<string, unknown> = { amount, updated_at: new Date().toISOString() };
+    if (renamed && renamed !== a.name) patch.name = renamed;
     const { data, error } = await supabase.from("recurring_pvs")
-      .update({ amount, updated_at: new Date().toISOString() })
-      .eq("id", a.id).select("id");
+      .update(patch).eq("id", a.id).select("id");
     setSavingAllowance(null);
     if (error) { alert(error.message); return; }
     // A policy that refuses filters rows rather than raising — saying "saved"
     // when nothing was written is how the ROS numbers were lost.
     if (!data?.length) { alert("Not saved — your role cannot edit recurring payments."); return; }
     setAllowanceEdit(e => { const n = { ...e }; delete n[a.id]; return n; });
+    setNameEdit(e => { const n = { ...e }; delete n[a.id]; return n; });
     alert("Allowance updated. It will show on the next recurring PV.");
     load();
   }
@@ -283,7 +386,12 @@ export default function PayrollEmployeePage() {
       ? { className: " bg-amber-100/70 font-semibold text-amber-900", title: adjWhy(m, c) }
       : { className: "", title: undefined as string | undefined };
   const monthLines: CalcLine[] = current ? MONTHS.map((_, i) => calcLine({
-    gross: grossForMonth(current, emp.date_commenced, i + 1, false, emp.increment_month_override),
+    // The sheet is the same arithmetic as a run, so a month somebody joined
+    // or left part-way through is pro-rated here too. Without this the
+    // sheet and the run disagree about the same month, and the sheet is
+    // what people check the run against.
+    gross: grossForMonth(current, emp.date_commenced, i + 1, false, emp.increment_month_override,
+      monthDays(emp.date_commenced, emp.resigned_date, year, i + 1)),
     age: ageAt(emp.dob, year, i + 1),
     month: i + 1,
     bands,
@@ -432,7 +540,6 @@ export default function PayrollEmployeePage() {
             ["sheet", "Yearly Sheet", Table2],
             ["payslips", "Payslips", Receipt],
             ["loans", "Loans", HandCoins],
-            ["allowances", "Allowances", Wallet],
             ["documents", "Documents", FolderOpen],
           ] as const).map(([key, label, Icon]) => (
             <button key={key} onClick={() => setTab(key)}
@@ -998,7 +1105,7 @@ export default function PayrollEmployeePage() {
       )}
 
       {/* ── Allowances tab ── */}
-      {tab === "allowances" && (
+      {tab === "salary" && (
         <div className="bg-white border border-stone-200 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5">
@@ -1023,15 +1130,27 @@ export default function PayrollEmployeePage() {
             <div className="space-y-2.5">
               {allowances.map(a => {
                 const edited = allowanceEdit[a.id];
-                const dirty = edited !== undefined && parseFloat(edited) !== Number(a.amount);
+                const renamed = nameEdit[a.id] !== undefined && nameEdit[a.id].trim() !== a.name;
+                const dirty = (edited !== undefined && parseFloat(edited) !== Number(a.amount)) || renamed;
                 return (
                   <div key={a.id} className="border border-stone-200 rounded-xl p-4">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <span className="text-sm font-bold text-stone-700">{a.name}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                        a.active ? "bg-green-100 text-green-700" : "bg-stone-100 text-stone-500"}`}>
-                        {a.active ? "Active" : "Stopped"}
-                      </span>
+                      <input value={nameEdit[a.id] ?? a.name}
+                        onChange={e => setNameEdit(m => ({ ...m, [a.id]: e.target.value }))}
+                        className="text-sm font-bold text-stone-700 border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] rounded px-1.5 py-0.5 outline-none flex-1 min-w-[12rem]" />
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                          a.active ? "bg-green-100 text-green-700" : "bg-stone-100 text-stone-500"}`}>
+                          {a.active ? "Active" : "Stopped"}
+                        </span>
+                        {canEdit && (
+                          <button onClick={() => removeAllowance(a)} disabled={savingAllowance === a.id}
+                            title={a.current_pv_no ? "Stop this allowance" : "Delete this allowance"}
+                            className="text-stone-400 hover:text-red-600 transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 mt-3 text-sm items-end">
                       <label className="block">
@@ -1066,6 +1185,36 @@ export default function PayrollEmployeePage() {
               <p className="text-[11px] text-stone-400 pt-1">
                 Total {formatCurrency(allowances.filter(a => a.active).reduce((t, a) => t + Number(a.amount || 0), 0))} a month,
                 on top of salary and taxed separately.
+              </p>
+            </div>
+          )}
+
+          {canEdit && (
+            <div className="mt-4 border-t border-stone-200 pt-4">
+              <p className="text-xs font-semibold text-stone-500 mb-2">Add an allowance</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="block">
+                  <span className="block text-[11px] text-stone-400">What it is</span>
+                  <input value={newAllowance.name}
+                    onChange={e => setNewAllowance(n => ({ ...n, name: e.target.value }))}
+                    placeholder="e.g. Petrol allowance"
+                    className="mt-0.5 w-56 border border-stone-200 rounded-lg px-2 py-1 text-sm outline-none focus:border-[#2f5b9c]" />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] text-stone-400">Amount / month</span>
+                  <input type="number" step="0.01" min="0" value={newAllowance.amount}
+                    onChange={e => setNewAllowance(n => ({ ...n, amount: e.target.value }))}
+                    className="mt-0.5 w-32 border border-stone-200 rounded-lg px-2 py-1 text-sm font-mono outline-none focus:border-[#2f5b9c]" />
+                </label>
+                <button onClick={addAllowance} disabled={addingAllowance}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5c8f] disabled:opacity-60">
+                  {addingAllowance ? "Adding…" : "Add"}
+                </button>
+              </div>
+              <p className="text-[11px] text-stone-400 mt-2">
+                Goes into the same monthly bundle as the others
+                {allowanceTemplate?.group_name ? ` (${String(allowanceTemplate.group_name)})` : ""}.
+                Not salary, so it is not taxed as salary and does not change EPF or SOCSO.
               </p>
             </div>
           )}
