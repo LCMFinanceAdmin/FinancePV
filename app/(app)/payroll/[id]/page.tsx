@@ -1405,25 +1405,27 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       #ys-print-area .ys-months th,
       #ys-print-area .ys-months td { padding-left: 3px !important; padding-right: 3px !important; }
 
-      /* Four pixels on every size, which is as far as this sheet goes.
-         Thirteen columns across a landscape A4 leave each figure about 60pt
-         of paper; at much past this the digits stop fitting their column and
-         Chrome clips them off the edge rather than wrapping, because a figure
-         like 2,660.00 has nowhere to break. Ten pixels, asked for, loses the
-         Net and Total LCM columns entirely. */
-      #ys-print-area table { font-size: 16px !important; }
-      #ys-print-area table th { font-size: 15px !important; }
-      #ys-print-area table td { font-size: 16px !important; }
-      #ys-print-area table th div:first-child { font-size: 14px !important; }
-      #ys-print-area table th div:last-child  { font-size: 12px !important; }
+      /* Ten pixels on every size. Written out rather than scaled, because
+         each step here is a deliberate distance from the next -- a heading, a
+         figure, a footnote -- and multiplying them would close those gaps up.
 
-      #ys-print-area .ys-head > div:nth-child(1) { font-size: 15px !important; }
-      #ys-print-area .ys-head > div:nth-child(2) { font-size: 24px !important; }
-      #ys-print-area .ys-head > div:nth-child(3) { font-size: 18px !important; }
-      #ys-print-area .ys-caption { font-size: 16px !important; }
+         This only fits because of the 3px horizontal padding above. At the
+         8px it used to carry, a figure like 2,660.00 had nowhere to break and
+         Chrome clipped the Net and Total LCM columns clean off the paper
+         rather than wrapping them. The two changes are one change. */
+      #ys-print-area table { font-size: 22px !important; }
+      #ys-print-area table th { font-size: 21px !important; }
+      #ys-print-area table td { font-size: 22px !important; }
+      #ys-print-area table th div:first-child { font-size: 20px !important; }
+      #ys-print-area table th div:last-child  { font-size: 18px !important; }
+
+      #ys-print-area .ys-head > div:nth-child(1) { font-size: 21px !important; }
+      #ys-print-area .ys-head > div:nth-child(2) { font-size: 30px !important; }
+      #ys-print-area .ys-head > div:nth-child(3) { font-size: 24px !important; }
+      #ys-print-area .ys-caption { font-size: 22px !important; }
       #ys-print-area .ys-notes,
-      #ys-print-area .ys-notes p { font-size: 14px !important; }
-      #ys-print-area .ys-signatures div { font-size: 15px !important; }
+      #ys-print-area .ys-notes p { font-size: 20px !important; }
+      #ys-print-area .ys-signatures div { font-size: 21px !important; }
 
       /* The annual line is the one somebody looks for first. Black fill and
          white type carry that through a monochrome print, where the blue it
