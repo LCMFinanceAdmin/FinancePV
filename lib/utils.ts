@@ -234,6 +234,7 @@ export const switchableRoleOptions = () =>
 
 export const STATUS_LABELS: Record<PVStatus, string> = {
   PENDING_HEAD:       "Pending EXCO Review",
+  PENDING_CHECK:      "Pending Check of Particulars",
   PENDING:            "Pending Finance Review",
   REVIEWED:           "Finance Reviewed",
   MINISTRY_VERIFIED:  "Ministry Verified",
@@ -251,6 +252,7 @@ export const STATUS_LABELS: Record<PVStatus, string> = {
 
 export const STATUS_COLORS: Record<PVStatus, string> = {
   PENDING_HEAD:       "bg-yellow-100 text-yellow-800",
+  PENDING_CHECK:      "bg-sky-100 text-sky-800",
   PENDING:            "bg-amber-100 text-amber-800",
   REVIEWED:           "bg-amber-200 text-amber-900",
   MINISTRY_VERIFIED:  "bg-blue-600 text-white",

@@ -27,6 +27,32 @@ const MINISTRY_PARENTS: { child: string; parent: string }[] = [
 const norm = (s: string) => (s ?? "").trim().toLowerCase();
 
 /**
+ * HQ office expenses, which answer to no EXCO.
+ *
+ * Every other ministry is a committee spending its own budget, so a member of
+ * that committee verifies the claim before Finance sees it. HQ is the office
+ * itself: there is no committee above it to report to, and routing its
+ * stationery and utilities through one only added a signature nobody was in a
+ * position to give. These go straight to Finance, then the GM, then the
+ * signatories.
+ *
+ * Three spellings because three exist in the data. "HQ" is the name in the
+ * ministries table and the only one a new voucher can now be booked to;
+ * the other two are on vouchers raised in August, before the list settled.
+ * All three are here so the rule reads the same backwards and forwards.
+ */
+const HQ_OFFICE_MINISTRIES = [
+  "hq",
+  "head quarters (hq)",
+  "lcm hq office",
+];
+
+/** Does this ministry's spending skip EXCO verification entirely? */
+export function isHqOffice(ministry: string | null | undefined): boolean {
+  return HQ_OFFICE_MINISTRIES.includes(norm(ministry ?? ""));
+}
+
+/**
  * Every ministry connected to `m` through the parent/child links, in either
  * direction. Iterates to a fixed point so a future chain (sub-sub-ministry)
  * resolves too.

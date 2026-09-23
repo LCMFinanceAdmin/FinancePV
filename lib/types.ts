@@ -13,6 +13,10 @@ export type UserRole =
 
 export type PVStatus =
   | "PENDING_HEAD"
+  // With the person the ministry's EXCO Member appointed to check the
+  // particulars. Comes before PENDING_HEAD is answered, not instead of it —
+  // the voucher goes back to the EXCO once the checker is satisfied.
+  | "PENDING_CHECK"
   | "PENDING"
   | "REVIEWED"
   | "MINISTRY_VERIFIED"
@@ -181,6 +185,20 @@ export interface PV {
   ministry_verified_on_behalf_by?: string | null;
   /** How that decision reached Finance, specific enough to go and check. */
   ministry_verified_basis?: string | null;
+  /**
+   * The check on the particulars, when the EXCO Member asked for one.
+   *
+   * Separate from the verification above and not a substitute for it: the
+   * checker says the figures and particulars are right, the EXCO Member says
+   * the church should pay. Null throughout on a voucher the EXCO was content
+   * to verify unaided, which is theirs to decide voucher by voucher.
+   */
+  checked_by_email?: string | null;
+  checked_by_name?: string | null;
+  checked_at?: string | null;
+  checked_signature_data?: string | null;
+  check_requested_by?: string | null;
+  check_requested_at?: string | null;
   head_verified: string;
   head_verified_at: string;
   finance_verified_by: string;

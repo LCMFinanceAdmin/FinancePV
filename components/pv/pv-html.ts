@@ -1,5 +1,6 @@
 import type { PV, PVApproval } from "@/lib/types";
 import { getLOATier, roleLabel } from "@/lib/utils";
+import { isHqOffice } from "@/lib/ministries";
 
 // HTML-based Payment Voucher rendering — the reliable counterpart to the
 // react-pdf PVDocument. An ordinary <img> renders signatures dependably in
@@ -178,15 +179,34 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
             ? `  —  recorded by ${esc(recordedBy)}${pv.ministry_verified_basis ? ` (${esc(pv.ministry_verified_basis)})` : ""}`
             : "")
       : null;
-    const exco = sigCell("Verified by:", "(By EXCO Member / Dept Head in Charge)", excoApproval?.signature_data,
-        ministryVerified ? (excoApproval?.name ?? pv.ministry_verified_by ?? pv.dept_head_name ?? "EXCO Member") : null,
-        excoSubLine,
-        "Name: _______________________  Date: ___________");
     // A lone signature box stops two thirds of the way across, with the rest
     // left blank and unbordered — a box stretched the full width reads as a
     // large empty field waiting to be filled in.
     const partRow = (cell: string) => `<div class="one-col">${cell}<div class="filler"></div></div>`;
-    midSection = `${applicant ? partRow(applicant) : ""}${partRow(exco)}`;
+
+    // HQ office expenses answer to no EXCO, so the box that asks one to sign
+    // does not belong on the voucher at all. Printing it empty invites
+    // somebody to wonder who was meant to sign, or worse, to sign it.
+    if (isHqOffice(pv.ministry)) {
+      midSection = applicant ? partRow(applicant) : "";
+    } else {
+      const exco = sigCell("Verified by:", "(By EXCO Member / Dept Head in Charge)", excoApproval?.signature_data,
+          ministryVerified ? (excoApproval?.name ?? pv.ministry_verified_by ?? pv.dept_head_name ?? "EXCO Member") : null,
+          excoSubLine,
+          "Name: _______________________  Date: ___________");
+
+      // Checked by, beside it. The EXCO verifies that the claim should be paid;
+      // the person they appoint checks that the figures and particulars are
+      // right, which is a different question and wants its own signature. It
+      // is the EXCO's to ask for, so the box only appears once they have.
+      const checked = pv.checked_at || pv.checked_by_name || pv.checked_by_email;
+      const checker = sigCell("Checked by:", "(Appointed by the EXCO Member)", pv.checked_signature_data,
+          checked ? (pv.checked_by_name || pv.checked_by_email || null) : null,
+          checked ? `Date: ${fmtDate(pv.checked_at)}` : null,
+          "Name: _______________________  Date: ___________");
+
+      midSection = `${applicant ? partRow(applicant) : ""}<div class="two-col">${exco}${checker}</div>`;
+    }
   }
 
   // Approved-by (signatory) columns
@@ -379,7 +399,7 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
 
     <div class="fin-header">FOR LCM FINANCE OFFICE ONLY</div>
     <div class="fin-row">
-      <div class="fin-col">${sigCell(isBamPV ? "Reviewed by:" : "Prepared by:", "(Finance Executive)", financeApproval?.signature_data, financeApproval?.name || null, financeApproval ? `Date: ${fmtDate(financeApproval.timestamp)}` : null)}</div>
+      <div class="fin-col">${sigCell("Reviewed by:", "(Finance Executive)", financeApproval?.signature_data, financeApproval?.name || null, financeApproval ? `Date: ${fmtDate(financeApproval.timestamp)}` : null)}</div>
       <div class="fin-col">${sigCell("Verified by:", "(General Manager)", gmApproval?.signature_data, gmApproval?.name || null, gmApproval ? `Date: ${fmtDate(gmApproval.timestamp)}` : null)}</div>
       <div class="fin-col">
         <div class="appr-head"><div class="sig-label">Approved by:</div><div class="sig-sub">(Bishop / Secretary / Treasurer)</div></div>
