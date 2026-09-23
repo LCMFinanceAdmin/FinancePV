@@ -1495,32 +1495,61 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       }
 
       /*
-       * Size the sheet to the page -- up as well as down.
+       * Size the sheet so it lands on one page.
        *
-       * How tall it is depends on the employee — every special allowance and
-       * deduction adds a column, and a wide table wraps nothing but does push
-       * the whole thing along. So the fit is measured here rather than guessed
-       * at in a stylesheet, from the first child to the last, because the area
-       * itself is a flex child and would otherwise report the height of the
-       * window instead of the height of the sheet.
+       * Three things made the old version of this unreliable, and all three
+       * showed up the moment a real record had more columns than a test one.
        *
-       * Floored at 0.6: past that the figures stop being readable, and two
-       * honest pages beat one unreadable one.
+       * It compared the area's width against the page. That number meant
+       * nothing: the table is width:100%, so in print it fills the page
+       * whatever it contains, while on screen it reports the width of the
+       * modal. Every sheet was being penalised for being in a wide window.
+       *
+       * It measured height at the screen's width and then applied a zoom.
+       * But `zoom` changes the layout width too -- at 0.6 the sheet is laid
+       * out at 1/0.6 of the page and then scaled down -- so the height that
+       * was measured belonged to a layout that was never going to be used.
+       *
+       * And when the answer came out below the floor it applied no zoom at
+       * all, which is the opposite of what a floor is for: the sheet that was
+       * too big to fit printed at full size and ran off the page.
+       *
+       * So: try each scale from the largest down, lay the sheet out at the
+       * width that scale will actually give it, and take the first one whose
+       * height lands on the page. Costly-looking, but it is a couple of dozen
+       * layouts once, at print time.
        */
       const kids = Array.from(area.children) as HTMLElement[];
       if (!kids.length) return;
-      const top = kids[0].getBoundingClientRect().top;
-      const bottom = kids[kids.length - 1].getBoundingClientRect().bottom;
-      const h = bottom - top;
-      const w = area.scrollWidth;
-      const fit = Math.min(h > 0 ? PAGE_H / h : 1, w > 0 ? PAGE_W / w : 1);
-      // Below 0.6 the figures stop being readable and two honest pages beat
-      // one unreadable one. Above 1.5 nothing here needs to be that large.
-      area.style.zoom = fit >= 0.6 && fit <= 1.5 ? String(Math.floor(fit * 100) / 100) : "";
+      const heightAt = (scale: number) => {
+        area.style.zoom = String(scale);
+        // What the page will give it: width:auto at print means the page box,
+        // and a zoomed box lays out at its visual width divided by the scale.
+        // max-width has to go with it — the sheet carries max-w-[1400px] for
+        // the screen, and left in place it caps the measuring layout, so every
+        // scale below about 0.75 was measured at a width the paper will never
+        // impose and came back far too tall.
+        area.style.maxWidth = "none";
+        area.style.width = `${PAGE_W / scale}px`;
+        // getBoundingClientRect already accounts for zoom, so this is the
+        // height the paper will see.
+        return kids[kids.length - 1].getBoundingClientRect().bottom
+             - kids[0].getBoundingClientRect().top;
+      };
+
+      let chosen = 0;
+      for (let pct = 150; pct >= 40; pct -= 5) {
+        if (heightAt(pct / 100) <= PAGE_H) { chosen = pct / 100; break; }
+      }
+      // Nothing down to 40% fits, so let it paginate rather than shrink the
+      // figures past reading. The break rules above keep that tidy.
+      area.style.width = "";
+      area.style.maxWidth = "";
+      area.style.zoom = chosen ? String(chosen) : "";
     };
     const unmark = () => {
       const area = document.getElementById("ys-print-area");
-      if (area) area.style.zoom = "";
+      if (area) { area.style.zoom = ""; area.style.width = ""; area.style.maxWidth = ""; }
       for (const el of Array.from(document.querySelectorAll(".ys-print-off, .ys-print-path"))) {
         el.classList.remove("ys-print-off", "ys-print-path");
       }
