@@ -11,10 +11,12 @@ import type { ContributionBand } from "@/lib/payroll/calc";
 const PCT_FIELDS: { key: keyof PayrollStatutoryRates; label: string; group: string }[] = [
   { key: "epf_ee_under60", label: "EPF Employee — under 60", group: "EPF" },
   { key: "epf_er_under60", label: "EPF Employer — under 60 (13% + 3%)", group: "EPF" },
+  { key: "epf_er_under60_over_threshold", label: "EPF Employer — under 60, above the threshold (12% + 3%)", group: "EPF" },
   { key: "epf_ee_over60", label: "EPF Employee — 60+ / contract", group: "EPF" },
   { key: "epf_er_over60", label: "EPF Employer — 60+ / contract (4% + 3%)", group: "EPF" },
   { key: "epf_ee_orang_asli", label: "EPF Employee — Orang Asli", group: "EPF" },
   { key: "epf_er_orang_asli", label: "EPF Employer — Orang Asli", group: "EPF" },
+  { key: "epf_er_orang_asli_over_threshold", label: "EPF Employer — Orang Asli, above the threshold (12%)", group: "EPF" },
   { key: "socso_ee", label: "SOCSO Employee", group: "SOCSO" },
   { key: "socso_er", label: "SOCSO Employer", group: "SOCSO" },
   { key: "socso_er_over60", label: "SOCSO Employer — 60+ (injury only)", group: "SOCSO" },
@@ -24,6 +26,7 @@ const PCT_FIELDS: { key: keyof PayrollStatutoryRates; label: string; group: stri
   { key: "skbbk_ee", label: "SKBBK (Lindung 24) — employee", group: "SKBBK" },
 ];
 const CEIL_FIELDS: { key: keyof PayrollStatutoryRates; label: string }[] = [
+  { key: "epf_wage_threshold", label: "EPF wage threshold (RM) — above it the table steps in RM100" },
   { key: "socso_ceiling", label: "SOCSO wage ceiling (RM)" },
   { key: "eis_ceiling", label: "EIS wage ceiling (RM)" },
   { key: "skbbk_ceiling", label: "SKBBK wage ceiling (RM)" },

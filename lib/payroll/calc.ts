@@ -47,6 +47,28 @@ export interface RateConfig {
    * so there is nothing to opt into and nothing for the employer to match.
    */
   epf_ceases_age?: number;
+  /**
+   * The wage at which EPF's Third Schedule changes shape.
+   *
+   * At or below it the table steps in RM20 and the employer's statutory
+   * share is 13%. Above it the steps are RM100 and the statutory share is
+   * 12%. LCM pays three points above statutory, so its own employer rate
+   * steps down with it — 16% to 15% — while the employee's 11% does not
+   * move. Getting the step wrong is worth tens of ringgit a month to the
+   * handful of people it reaches.
+   */
+  epf_wage_threshold?: number;
+  /** Employer rate above the threshold: statutory 12% plus LCM's three. */
+  epf_er_under60_over_threshold?: number;
+  /**
+   * Orang Asli employer rate above the threshold: plain statutory 12%.
+   *
+   * Their rate below the threshold is the bare statutory 13% rather than
+   * 16%, so the three points are not added here either. Nobody on the
+   * current payroll earns above the threshold, so unlike every other rate
+   * here this one has never been checked against a real payslip.
+   */
+  epf_er_orang_asli_over_threshold?: number;
 }
 
 // Current LCM defaults — used when no year row is loaded.
@@ -61,6 +83,9 @@ export const DEFAULT_RATES: RateConfig = {
   // every salary, which is the worse failure by far.
   skbbk_ee: 0, skbbk_ceiling: 6000, skbbk_from_month: 1,
   epf_ceases_age: 75,
+  epf_wage_threshold: 5000,
+  epf_er_under60_over_threshold: 0.15,
+  epf_er_orang_asli_over_threshold: 0.12,
 };
 
 export interface CalcAdjustment {
@@ -213,17 +238,38 @@ function portion(ee: number, er: number): StatPortion {
 
 // EPF rate tiers (employee %, employer %), from the editable rate config.
 export function resolveEpfRates(
-  input: { age: number; employmentType: EmploymentType; isOrangAsli: boolean; epfOver60Contributing?: boolean },
+  input: { gross: number; age: number; employmentType: EmploymentType; isOrangAsli: boolean; epfOver60Contributing?: boolean },
   rates: RateConfig = DEFAULT_RATES,
 ): { ee: number; er: number } {
   // Past the ceasing age the scheme is closed to both sides, whatever else
   // is true of the person. Checked first for that reason: an Orang Asli rate
   // or a standing choice to contribute cannot reopen it.
   if (input.age >= (rates.epf_ceases_age ?? 75)) return { ee: 0, er: 0 };
-  if (input.isOrangAsli) return { ee: rates.epf_ee_orang_asli, er: rates.epf_er_orang_asli };
+
+  // "Exceeding", as the schedule words it — a wage of exactly the threshold
+  // is still in the lower table.
+  const aboveThreshold = input.gross > (rates.epf_wage_threshold ?? 5000);
+
+  if (input.isOrangAsli) {
+    return {
+      ee: rates.epf_ee_orang_asli,
+      er: aboveThreshold
+        ? rates.epf_er_orang_asli_over_threshold ?? rates.epf_er_orang_asli
+        : rates.epf_er_orang_asli,
+    };
+  }
   const stillContributing = input.age < 60 || input.epfOver60Contributing === true;
-  if (input.employmentType === "PERMANENT" && stillContributing) return { ee: rates.epf_ee_under60, er: rates.epf_er_under60 };
-  return { ee: rates.epf_ee_over60, er: rates.epf_er_over60 }; // stepped out at 60+, or contract
+  if (input.employmentType === "PERMANENT" && stillContributing) {
+    return {
+      ee: rates.epf_ee_under60,
+      er: aboveThreshold
+        ? rates.epf_er_under60_over_threshold ?? rates.epf_er_under60
+        : rates.epf_er_under60,
+    };
+  }
+  // Stepped out at 60+, or contract. The over-60 employer rate is 4% statutory
+  // plus LCM's three either side of the threshold, so it does not step.
+  return { ee: rates.epf_ee_over60, er: rates.epf_er_over60 };
 }
 
 // Annual increment effective month: joined before July → effective Jan; after July → effective July.
@@ -394,9 +440,11 @@ export function grossComponentsForMonth(
 
 // KWSP contribution-schedule approximation: round wage up to the next RM20 band,
 // apply the rate, then round the contribution up to the next ringgit.
-function epfContribution(gross: number, rate: number): number {
+function epfContribution(gross: number, rate: number, threshold: number): number {
   if (rate === 0) return 0;
-  const bandWage = Math.ceil(gross / 20) * 20;
+  // RM20 steps in the lower table, RM100 in the upper one.
+  const step = gross > threshold ? 100 : 20;
+  const bandWage = Math.ceil(gross / step) * step;
   // Settle the product to the sixth decimal before rounding up.
   //
   // A rate like 0.07 has no exact binary form, so 3500 * 0.07 comes out as
@@ -416,8 +464,9 @@ export function calcLine(input: CalcInput): CalcLine {
   const epfRates = resolveEpfRates(input, rates);
   // A voluntary sum is still a contribution, so it stops where they all do.
   const epfClosed = input.age >= (rates.epf_ceases_age ?? 75);
-  const epfEe = epfContribution(gross, epfRates.ee) + (epfClosed ? 0 : voluntaryEpf || 0);
-  const epfEr = epfContribution(gross, epfRates.er);
+  const epfThreshold = rates.epf_wage_threshold ?? 5000;
+  const epfEe = epfContribution(gross, epfRates.ee, epfThreshold) + (epfClosed ? 0 : voluntaryEpf || 0);
+  const epfEr = epfContribution(gross, epfRates.er, epfThreshold);
   const epf: StatPortion = { ee: round2(epfEe), er: round2(epfEr), total: round2(epfEe + epfEr) };
 
   // SOCSO + EIS + SKBBK — skipped entirely for the 13th month

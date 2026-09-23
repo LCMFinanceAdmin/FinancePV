@@ -499,6 +499,10 @@ export interface PayrollStatutoryRates {
   epf_ee_under60: number; epf_er_under60: number;
   epf_ee_over60: number; epf_er_over60: number;
   epf_ee_orang_asli: number; epf_er_orang_asli: number;
+  /** Above this wage EPF's table steps in RM100 and the employer rate drops a point. */
+  epf_wage_threshold: number;
+  epf_er_under60_over_threshold: number;
+  epf_er_orang_asli_over_threshold: number;
   socso_ee: number; socso_er: number; socso_er_over60: number; socso_ceiling: number;
   eis_rate: number; eis_ceiling: number;
   // SKBBK (Lindung 24) — employee side only, so no employer rate.
