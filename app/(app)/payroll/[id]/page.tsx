@@ -1353,17 +1353,111 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const [whatsappHint, setWhatsappHint] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
-  // Inject print CSS so only the sheet content prints, not the background page
+  /**
+   * Print the sheet and nothing else.
+   *
+   * This used to hide the page with `visibility: hidden` and pull the sheet out
+   * with `position: fixed`. Both were wrong for paper. A fixed box is fixed to
+   * the PAGE, so the browser repeated the whole statement on every sheet that
+   * came out — and `visibility: hidden` only makes things invisible, it does
+   * not reclaim the space they occupy, so the sheet had a page of the app's
+   * chrome laid out underneath it.
+   *
+   * Instead: walk from the sheet up to <body> and `display: none` everything
+   * hanging off that path, then flatten the path itself into plain blocks. The
+   * sheet is left as ordinary flowing content, which is the one thing that
+   * paginates correctly.
+   */
   useEffect(() => {
     const style = document.createElement("style");
     style.id = "ys-print-css";
     style.textContent = `@media print {
-      body * { visibility: hidden !important; }
-      #ys-print-area, #ys-print-area * { visibility: visible !important; }
-      #ys-print-area { position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; background: white !important; padding: 24px 32px !important; box-sizing: border-box !important; }
+      /* The sheet is wider than it is tall; asking for it sideways saves the
+         user reaching for the Layout menu every time. */
+      @page { size: A4 landscape; margin: 10mm; }
+
+      .ys-print-off { display: none !important; }
+      .ys-print-path {
+        display: block !important;
+        position: static !important;
+        overflow: visible !important;
+        width: auto !important; max-width: none !important;
+        height: auto !important; max-height: none !important;
+        margin: 0 !important; padding: 0 !important;
+        background: #fff !important;
+      }
+      #ys-print-area {
+        width: auto !important; max-width: none !important;
+        padding: 0 !important; margin: 0 !important;
+      }
+
+      /* If it does run to a second page, break it somewhere a reader can
+         follow: never through a row, never through the signatures, and with
+         the column headings repeated above the months that carried over. */
+      #ys-print-area thead { display: table-header-group; }
+      #ys-print-area tr { break-inside: avoid; page-break-inside: avoid; }
+      #ys-print-area .ys-keep { break-inside: avoid; page-break-inside: avoid; }
+
+      /* Screen spacing is generous because there is no page to run out of.
+         On paper it is the difference between one sheet and two. */
+      #ys-print-area .ys-notes { margin-bottom: 8px !important; }
+      #ys-print-area .ys-signatures { margin-top: 18px !important; }
+      #ys-print-area .ys-sig-line { height: 34px !important; }
     }`;
     document.head.appendChild(style);
-    return () => style.remove();
+
+    // A4 landscape less the 10mm margins, in CSS pixels (96 to the inch).
+    const PAGE_W = ((297 - 20) / 25.4) * 96;
+    const PAGE_H = ((210 - 20) / 25.4) * 96;
+
+    const mark = () => {
+      const area = document.getElementById("ys-print-area");
+      if (!area) return;
+      for (let el: HTMLElement | null = area; el && el !== document.body; el = el.parentElement) {
+        for (const sib of Array.from(el.parentElement?.children ?? [])) {
+          if (sib !== el) sib.classList.add("ys-print-off");
+        }
+        if (el !== area) el.classList.add("ys-print-path");
+      }
+
+      /*
+       * Shrink the sheet just enough to land on one page.
+       *
+       * How tall it is depends on the employee — every special allowance and
+       * deduction adds a column, and a wide table wraps nothing but does push
+       * the whole thing along. So the fit is measured here rather than guessed
+       * at in a stylesheet, from the first child to the last, because the area
+       * itself is a flex child and would otherwise report the height of the
+       * window instead of the height of the sheet.
+       *
+       * Floored at 0.6: past that the figures stop being readable, and two
+       * honest pages beat one unreadable one.
+       */
+      const kids = Array.from(area.children) as HTMLElement[];
+      if (!kids.length) return;
+      const top = kids[0].getBoundingClientRect().top;
+      const bottom = kids[kids.length - 1].getBoundingClientRect().bottom;
+      const h = bottom - top;
+      const w = area.scrollWidth;
+      const fit = Math.min(h > 0 ? PAGE_H / h : 1, w > 0 ? PAGE_W / w : 1);
+      area.style.zoom = fit < 1 && fit >= 0.6 ? String(Math.floor(fit * 100) / 100) : "";
+    };
+    const unmark = () => {
+      const area = document.getElementById("ys-print-area");
+      if (area) area.style.zoom = "";
+      for (const el of Array.from(document.querySelectorAll(".ys-print-off, .ys-print-path"))) {
+        el.classList.remove("ys-print-off", "ys-print-path");
+      }
+    };
+
+    window.addEventListener("beforeprint", mark);
+    window.addEventListener("afterprint", unmark);
+    return () => {
+      window.removeEventListener("beforeprint", mark);
+      window.removeEventListener("afterprint", unmark);
+      unmark();
+      style.remove();
+    };
   }, []);
 
   // Build custom columns (same logic as parent)
@@ -1756,7 +1850,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
         </div>
 
         {/* Notes */}
-        <div className="text-[10px] text-stone-400 mb-6 space-y-0.5">
+        <div className="ys-notes text-[10px] text-stone-400 mb-6 space-y-0.5">
           <p>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Current-year increment effective from {["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][effMonth - 1]}.</p>
           {hasEpl && <p className="text-red-500">EPL column (highlighted red): loan repayment deductions included in monthly net.</p>}
           {customCols.filter(c => c.type === "allowance").length > 0 && <p className="text-green-600">Green columns: special allowances included in gross/net calculation.</p>}
@@ -1764,14 +1858,14 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
         </div>
 
         {/* Signature section */}
-        <div className="grid grid-cols-2 gap-8 mt-8 print:mt-12">
+        <div className="ys-signatures ys-keep grid grid-cols-2 gap-8 mt-8 print:mt-12">
           <div>
-            <div className="h-12 border-b border-stone-400 mb-1.5"></div>
+            <div className="ys-sig-line h-12 border-b border-stone-400 mb-1.5"></div>
             <div className="text-[11px] text-stone-500">Prepared by / Finance Executive</div>
             <div className="text-[11px] text-stone-400 mt-0.5">Date: ___________________</div>
           </div>
           <div>
-            <div className="h-12 border-b border-stone-400 mb-1.5"></div>
+            <div className="ys-sig-line h-12 border-b border-stone-400 mb-1.5"></div>
             <div className="text-[11px] text-stone-500">Acknowledged by / {emp.full_name}</div>
             <div className="text-[11px] text-stone-400 mt-0.5">Date: ___________________</div>
           </div>
