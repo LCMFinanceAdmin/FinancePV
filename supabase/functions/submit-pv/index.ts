@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { isHqOffice } from "../_shared/ministries.ts";
+import { mayVerifyFor } from "../_shared/verifiers.ts";
 import { getServiceClient, getUserClient, getLOATier, nextPvNo, nextBamPvNo, nextLscPvNo, nextHlePvNo, nextLgbPvNo, getProfileByEmail, insertPvWithNumber } from "../_shared/supabase.ts";
 import { sendPushToRoles, sendPushToMinistryHeads, sendPushToEmails } from "../_shared/push.ts";
 
@@ -307,8 +308,46 @@ Deno.serve(async (req) => {
     const ministry = d.ministry || d.dept || "";
     // HQ office expenses answer to no EXCO — straight to Finance, then the GM,
     // then the signatories.
-    const goesToExco = !excoAlreadyVerified && !isHqOffice(ministry) && hasDeptHead && !isApplicantHead;
-    const initialStatus = goesToExco ? "PENDING_HEAD" : "PENDING";
+    const hqOffice = isHqOffice(ministry);
+
+    // ── The ministry's checker ────────────────────────────────────────
+    //
+    // The person the EXCO Member appointed to run the ministry's spending.
+    // They usually raise the voucher themselves, in which case the check is
+    // already theirs and there is nothing to ask for. When somebody else
+    // raises it — Finance, on their behalf — it goes to them first, because
+    // the whole point of the appointment is that they are the one who knows
+    // whether the transaction is what it says it is.
+    //
+    // Either way the EXCO Member still verifies afterwards, UNLESS they have
+    // delegated this budget line to the checker. That delegation already
+    // exists and is what lets the Education Desk verify what Education books;
+    // a checker holding it verifies on the EXCO's behalf, and the voucher goes
+    // straight on rather than waiting for a second signature that would say
+    // the same thing.
+    const { data: minRow } = await db.from("ministries")
+      .select("checker_email,checker_name").eq("name", ministry).maybeSingle();
+    const checkerEmail = (minRow?.checker_email ?? "").trim().toLowerCase();
+    const raisedByChecker = !!checkerEmail && checkerEmail === (user.email ?? "").trim().toLowerCase();
+
+    // Does the checker's word settle it for this budget line?
+    let checkerMayVerify = false;
+    if (checkerEmail && !hqOffice && !excoAlreadyVerified) {
+      const checkerProfile = await getProfileByEmail(db, checkerEmail, "ministries");
+      const { allowed } = await mayVerifyFor(
+        db, checkerEmail, checkerProfile?.ministries ?? [], ministry, d.project || null,
+      );
+      checkerMayVerify = allowed;
+    }
+
+    const needsCheck = !!checkerEmail && !raisedByChecker && !hqOffice && !excoAlreadyVerified;
+    const goesToExco = !excoAlreadyVerified && !hqOffice && hasDeptHead && !isApplicantHead
+      // A voucher the checker raised on a line delegated to them is already
+      // verified for the ministry — asking the EXCO to say so again is asking
+      // for a signature that adds nothing.
+      && !(raisedByChecker && checkerMayVerify);
+
+    const initialStatus = needsCheck ? "PENDING_CHECK" : (goesToExco ? "PENDING_HEAD" : "PENDING");
     const amount = amountFrom(d);
     const loa = getLOATier(amount, d.payment_type);
 
@@ -363,7 +402,16 @@ Deno.serve(async (req) => {
       claim_category:        d.claim_category || null,
       dept_head_name:        deptData?.head_name || "",
       dept_head_email:       deptData?.head_email || "",
-      head_verified:         excoAlreadyVerified ? "YES" : (goesToExco ? "NO" : "N/A"),
+      head_verified:         excoAlreadyVerified ? "YES" : (goesToExco || needsCheck ? "NO" : "N/A"),
+      // The checker raised it, so the check is theirs and already given.
+      checked_by_email:      raisedByChecker ? user.email : null,
+      checked_by_name:       raisedByChecker ? (profile?.full_name || user.email) : null,
+      checked_at:            raisedByChecker ? now : null,
+      // And where the EXCO delegated this budget line to them, that same act
+      // is the ministry's verification.
+      ministry_verified:     raisedByChecker && checkerMayVerify ? "YES" : "NO",
+      ministry_verified_by:  raisedByChecker && checkerMayVerify ? (profile?.full_name || user.email) : "",
+      ministry_verified_at:  raisedByChecker && checkerMayVerify ? now : null,
       payee_name:            d.payee_name || "",
       payment_method:        d.payment_method || "",
       payee_bank_name:       d.payee_bank_name || "",
@@ -383,7 +431,6 @@ Deno.serve(async (req) => {
       admin_comment:            "",
       approvals:                [...excoApprovalEntry, ...financeApprovalEntry],
       signed_pdf_url:           "",
-      ministry_verified:        "NO",
       finance_verified_by:      d.finance_signature_data ? (profile?.full_name || user.email) : "",
       finance_verified_at:      d.finance_signature_data ? now : null,
       payment_type:          ["GENERAL", "ASSET_PURCHASE"].includes((d.payment_type || "").toUpperCase()) ? d.payment_type.toUpperCase() : "GENERAL",

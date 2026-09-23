@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
     if (!profile) return json({ error: "User not found in system" }, 403);
 
     const { pv_id, action, remarks, on_behalf_of, basis, signature_data } = await req.json();
-    if (!["APPROVED", "REJECTED", "REQUEST_CHECK", "CHECKED"].includes(action)) {
+    if (!["APPROVED", "REJECTED", "CHECKED"].includes(action)) {
       return json({ error: "Invalid action" }, 400);
     }
 
@@ -29,81 +29,75 @@ Deno.serve(async (req) => {
 
     // ── The check on the particulars ──────────────────────────────────
     //
-    // A step before verification, not instead of it. The EXCO Member asks
-    // somebody they have appointed to confirm the figures and particulars are
-    // right; the voucher comes back to them to verify once that person is
-    // satisfied. Asking is their call each time, so nothing here fires on its
-    // own — a voucher they are content to verify unaided never comes this way.
-    if (action === "REQUEST_CHECK" || action === "CHECKED") {
+    // The checker runs the ministry's spending for the EXCO Member. They
+    // usually raise the voucher themselves, and then the check is already
+    // theirs; when Finance raises one on their behalf it comes here first,
+    // because they are the person who knows whether the transaction is what
+    // it says it is.
+    //
+    // Confirming the particulars is not the same as approving the payment.
+    // The voucher goes back to the EXCO Member for that — unless they have
+    // delegated this budget line to the checker, in which case the one act
+    // does both, exactly as it does for the Education Desk today.
+    if (action === "CHECKED") {
       const { data: minRow } = await db.from("ministries")
         .select("name,checker_email,checker_name").eq("name", pv.ministry).maybeSingle();
       const checkerEmail = (minRow?.checker_email ?? "").trim().toLowerCase();
       const me = (user.email ?? "").trim().toLowerCase();
       const now = new Date().toISOString();
 
-      if (action === "REQUEST_CHECK") {
-        if (pv.status !== "PENDING_HEAD") {
-          return json({ error: "This voucher is not waiting on the ministry, so there is nothing to send for checking." }, 400);
-        }
-        if (!checkerEmail) {
-          return json({ error: `No one is appointed to check ${pv.ministry}'s vouchers yet. Appoint someone on the Ministry page first.` }, 400);
-        }
-        // Same standing as verifying it: if they could not verify this
-        // voucher, they are not the person to decide it needs checking.
-        const { allowed } = await mayVerifyFor(db, user.email!, profile.ministries, pv.ministry, pv.project);
-        if (!allowed) return json({ error: "You have no standing over this ministry's vouchers." }, 403);
-
-        await db.from("pvs").update({
-          status: "PENDING_CHECK",
-          check_requested_by: profile.full_name || user.email,
-          check_requested_at: now,
-          // Cleared so a second round of checking does not show the first
-          // round's signature as though it were this one's.
-          checked_by_email: null, checked_by_name: null,
-          checked_at: null, checked_signature_data: null,
-          approvals: [...(pv.approvals ?? []), {
-            role: "MINISTRY_HEAD", email: user.email,
-            name: profile.full_name || user.email,
-            action: "CHECK_REQUESTED", timestamp: now,
-            remarks: [`Sent to ${minRow?.checker_name || checkerEmail} to check the particulars`, remarks || ""].filter(Boolean).join(" — "),
-          }],
-          updated_at: now,
-        }).eq("id", pv_id);
-
-        await db.from("notifications").insert({
-          recipient_email: checkerEmail,
-          type: "CHECK_REQUESTED", pv_no: pv.pv_no, pv_id,
-          message: `${pv.pv_no} — ${profile.full_name || user.email} has asked you to check the particulars.`,
-        });
-        await sendPushToEmails(db, [checkerEmail], {
-          title: `Check ${pv.pv_no}`,
-          body: `${profile.full_name || user.email} has asked you to check the particulars.`,
-        });
-        return json({ ok: true, status: "PENDING_CHECK" });
-      }
-
-      // action === "CHECKED"
       if (pv.status !== "PENDING_CHECK") {
-        return json({ error: "This voucher has not been sent for checking." }, 400);
+        return json({ error: "This voucher is not waiting on a check." }, 400);
       }
       if (!checkerEmail || checkerEmail !== me) {
         return json({ error: "Only the person appointed to check this ministry's vouchers can confirm the particulars." }, 403);
       }
+      // Has the EXCO Member delegated this budget line to them?
+      //
+      // If so their word settles it: the delegation exists precisely so that
+      // somebody running a desk can clear its own spending, and asking the
+      // EXCO to sign again for a line they have already handed over adds a
+      // signature that says nothing new. If not, the check is a check — the
+      // figures are right — and the voucher goes back for the EXCO to decide
+      // whether the church should pay, which was never the checker's call.
+      const { allowed: settlesIt } = await mayVerifyFor(
+        db, user.email!, profile.ministries, pv.ministry, pv.project,
+      );
+
       await db.from("pvs").update({
-        // Back to the EXCO Member, who still has to verify it. The check says
-        // the figures are right, not that the church should pay.
-        status: "PENDING_HEAD",
+        status: settlesIt ? "PENDING" : "PENDING_HEAD",
         checked_by_email: user.email,
         checked_by_name: profile.full_name || user.email,
         checked_at: now,
         checked_signature_data: signature_data ?? null,
+        ...(settlesIt ? {
+          head_verified: "YES",
+          ministry_verified: "YES",
+          ministry_verified_by: profile.full_name || user.email,
+          ministry_verified_at: now,
+        } : {}),
         approvals: [...(pv.approvals ?? []), {
           role: "MINISTRY_CHECKER", email: user.email,
           name: profile.full_name || user.email,
-          action: "CHECKED", timestamp: now, remarks: remarks || "",
+          action: settlesIt ? "CHECKED_AND_VERIFIED" : "CHECKED",
+          timestamp: now,
+          remarks: [
+            settlesIt ? `Verified for ${pv.ministry} under a delegation for this budget line` : "",
+            remarks || "",
+          ].filter(Boolean).join(" — "),
+          ...(settlesIt ? { delegated: true } : {}),
         }],
         updated_at: now,
       }).eq("id", pv_id);
+
+      if (settlesIt) {
+        // Finance is who it is waiting on now, not the committee.
+        await sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
+          title: `${pv.pv_no} ready for review`,
+          body: `${profile.full_name || user.email} checked and verified it for ${pv.ministry}.`,
+        });
+        return json({ ok: true, status: "PENDING" });
+      }
 
       const { data: heads } = await db.from("ministry_heads").select("email").eq("ministry", pv.ministry);
       const headEmails = (heads ?? []).map((h: { email: string }) => h.email).filter(Boolean);

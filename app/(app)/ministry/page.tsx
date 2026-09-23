@@ -16,7 +16,7 @@ import { loadMyVerifierScopes, coveredByScope, scopedMinistries, type VerifierSc
 import type { PV, PurchaseRequest } from "@/lib/types";
 import {
   CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
-  Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText, Search,
+  Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText,
 } from "lucide-react";
 
 function isImage(url: string) {
@@ -178,7 +178,7 @@ export default function ExcoPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function act(pvId: string, action: "APPROVED" | "REJECTED" | "REQUEST_CHECK" | "CHECKED") {
+  async function act(pvId: string, action: "APPROVED" | "REJECTED" | "CHECKED") {
     setActing(true);
     try {
       const session = (await supabase.auth.getSession()).data.session;
@@ -190,10 +190,9 @@ export default function ExcoPage() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Action failed");
       showMsg({
-        APPROVED:      "PV verified",
-        REJECTED:      "PV rejected",
-        REQUEST_CHECK: "Sent to the checker",
-        CHECKED:       "Particulars confirmed — back with the EXCO Member to verify",
+        APPROVED: "PV verified",
+        REJECTED: "PV rejected",
+        CHECKED:  "Particulars confirmed",
       }[action]);
       setSelected(null); setRemarks("");
       await load();
@@ -544,17 +543,6 @@ export default function ExcoPage() {
                         <Button variant="danger" size="sm" loading={acting} onClick={() => act(pv.id!, "REJECTED")} className="flex-1">
                           <XCircle size={14} /> Reject
                         </Button>
-                        {/* Only where somebody has been appointed, and only on
-                            a voucher still waiting on this committee. Asking
-                            for a check is a choice each time, not a stage every
-                            voucher passes through. */}
-                        {pv.status === "PENDING_HEAD" && checkerFor(pv.ministry) && (
-                          <Button variant="secondary" size="sm" loading={acting}
-                            title={`Send to ${checkerFor(pv.ministry)?.checker_name || checkerFor(pv.ministry)?.checker_email} to check the particulars`}
-                            onClick={() => act(pv.id!, "REQUEST_CHECK")} className="flex-1">
-                            <Search size={14} /> Send to check
-                          </Button>
-                        )}
                         <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setRemarks(""); }}>Cancel</Button>
                       </div>
                     </div>
