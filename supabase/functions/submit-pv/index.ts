@@ -302,11 +302,18 @@ Deno.serve(async (req) => {
     // by the ministry's own EXCO and approved by the GM, so it starts at the
     // Finance stage rather than asking the same committee to verify twice.
     const excoAlreadyVerified = !!d.exco_verified_by;
-    const initialStatus = excoAlreadyVerified
-      ? "PENDING"
-      : (hasDeptHead && !isApplicantHead ? "PENDING_HEAD" : "PENDING");
 
     const ministry = d.ministry || d.dept || "";
+    // HQ office expenses answer to no EXCO. There is no committee above the
+    // office to report to, so these go straight to Finance, then the GM, then
+    // the signatories. Kept in step with isHqOffice() in lib/ministries.ts —
+    // this function is Deno and cannot import from the app, so the list is
+    // repeated rather than shared. Change one, change the other.
+    const HQ_OFFICE_MINISTRIES = ["hq", "head quarters (hq)", "lcm hq office"];
+    const isHqOffice = HQ_OFFICE_MINISTRIES.includes(ministry.trim().toLowerCase());
+
+    const goesToExco = !excoAlreadyVerified && !isHqOffice && hasDeptHead && !isApplicantHead;
+    const initialStatus = goesToExco ? "PENDING_HEAD" : "PENDING";
     const amount = amountFrom(d);
     const loa = getLOATier(amount, d.payment_type);
 
@@ -361,7 +368,7 @@ Deno.serve(async (req) => {
       claim_category:        d.claim_category || null,
       dept_head_name:        deptData?.head_name || "",
       dept_head_email:       deptData?.head_email || "",
-      head_verified:         excoAlreadyVerified ? "YES" : (hasDeptHead && !isApplicantHead ? "NO" : "N/A"),
+      head_verified:         excoAlreadyVerified ? "YES" : (goesToExco ? "NO" : "N/A"),
       payee_name:            d.payee_name || "",
       payment_method:        d.payment_method || "",
       payee_bank_name:       d.payee_bank_name || "",

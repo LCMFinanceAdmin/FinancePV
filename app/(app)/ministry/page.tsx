@@ -11,11 +11,12 @@ import { BudgetImpact } from "@/components/budget/budget-impact";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { expandMinistries } from "@/lib/ministries";
 import { VerifierPanel } from "@/components/ministry/verifier-panel";
+import { CheckerPanel } from "@/components/ministry/checker-panel";
 import { loadMyVerifierScopes, coveredByScope, scopedMinistries, type VerifierScope } from "@/lib/verifiers";
 import type { PV, PurchaseRequest } from "@/lib/types";
 import {
   CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
-  Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText,
+  Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText, Search,
 } from "lucide-react";
 
 function isImage(url: string) {
@@ -27,6 +28,15 @@ type TabKey = "requests" | "pending" | "my_pvs" | "ministry";
 export default function ExcoPage() {
   const supabase = createClient();
   const [pendingPvs, setPendingPvs] = useState<Partial<PV>[]>([]);
+  /**
+   * Who each ministry has appointed to check its vouchers.
+   *
+   * Loaded for every ministry rather than only the caller's, because the
+   * person appointed to check usually holds no portfolio of their own — their
+   * standing comes from this row and nothing else, so filtering by portfolio
+   * would hide the appointment from the one person it names.
+   */
+  const [checkers, setCheckers] = useState<{ name: string; checker_email: string | null; checker_name: string | null }[]>([]);
   const [myPvs, setMyPvs] = useState<Partial<PV>[]>([]);
   const [ministryPvs, setMinistryPvs] = useState<Partial<PV>[]>([]);
   // Payment Requests awaiting this committee's verification — the first
@@ -106,8 +116,10 @@ export default function ExcoPage() {
       // is none. So the people with the authority had nothing to act on, and
       // the only way to change a delegation was through the database.
       const myRole = (security as { role?: string } | null)?.role ?? "";
+      const { data: allMin } = await supabase.from("ministries")
+        .select("name,checker_email,checker_name").order("name");
+      setCheckers(allMin ?? []);
       if (["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3", "GENERAL_MANAGER"].includes(myRole)) {
-        const { data: allMin } = await supabase.from("ministries").select("name").order("name");
         setManageableMinistries((allMin ?? []).map((m: { name: string }) => m.name));
       } else {
         setManageableMinistries(profile?.ministries ?? []);
@@ -125,7 +137,7 @@ export default function ExcoPage() {
       const [pendingRes, myRes, ministryRes, requestsRes] = await Promise.all([
         ministries.length
           ? supabase.from("pvs").select(PV_COLS)
-              .eq("status", "PENDING_HEAD")
+              .in("status", ["PENDING_HEAD", "PENDING_CHECK"])
               .in("ministry", ministries)
               .order("submitted_at", { ascending: true })
           : Promise.resolve({ data: [] }),
@@ -156,9 +168,17 @@ export default function ExcoPage() {
     }
   }, [supabase]);
 
+  const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
+  /** The appointment standing over this ministry, if there is one. */
+  const checkerFor = (ministry: string | null | undefined) =>
+    checkers.find(c => norm(c.name) === norm(ministry) && norm(c.checker_email) !== "") ?? null;
+  /** Am I the person appointed to check for it? */
+  const amCheckerFor = (ministry: string | null | undefined) =>
+    norm(checkerFor(ministry)?.checker_email) === norm(myEmail) && norm(myEmail) !== "";
+
   useEffect(() => { load(); }, [load]);
 
-  async function act(pvId: string, action: "APPROVED" | "REJECTED") {
+  async function act(pvId: string, action: "APPROVED" | "REJECTED" | "REQUEST_CHECK" | "CHECKED") {
     setActing(true);
     try {
       const session = (await supabase.auth.getSession()).data.session;
@@ -169,7 +189,12 @@ export default function ExcoPage() {
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? "Action failed");
-      showMsg(`PV ${action === "APPROVED" ? "verified" : "rejected"}`);
+      showMsg({
+        APPROVED:      "PV verified",
+        REJECTED:      "PV rejected",
+        REQUEST_CHECK: "Sent to the checker",
+        CHECKED:       "Particulars confirmed — back with the EXCO Member to verify",
+      }[action]);
       setSelected(null); setRemarks("");
       await load();
     } catch (err: unknown) {
@@ -247,6 +272,8 @@ export default function ExcoPage() {
       <ApprovalPath currentIndex={1} />
 
       <VerifierPanel ministries={manageableMinistries} myEmail={myEmail} />
+
+      <CheckerPanel ministries={manageableMinistries} />
 
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
@@ -517,9 +544,27 @@ export default function ExcoPage() {
                         <Button variant="danger" size="sm" loading={acting} onClick={() => act(pv.id!, "REJECTED")} className="flex-1">
                           <XCircle size={14} /> Reject
                         </Button>
+                        {/* Only where somebody has been appointed, and only on
+                            a voucher still waiting on this committee. Asking
+                            for a check is a choice each time, not a stage every
+                            voucher passes through. */}
+                        {pv.status === "PENDING_HEAD" && checkerFor(pv.ministry) && (
+                          <Button variant="secondary" size="sm" loading={acting}
+                            title={`Send to ${checkerFor(pv.ministry)?.checker_name || checkerFor(pv.ministry)?.checker_email} to check the particulars`}
+                            onClick={() => act(pv.id!, "REQUEST_CHECK")} className="flex-1">
+                            <Search size={14} /> Send to check
+                          </Button>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setRemarks(""); }}>Cancel</Button>
                       </div>
                     </div>
+                  ) : pv.status === "PENDING_CHECK" && amCheckerFor(pv.ministry) ? (
+                    /* The checker confirms the figures and particulars. They
+                       are not verifying the payment — that stays with the EXCO
+                       Member, and the voucher goes back to them. */
+                    <Button variant="primary" size="sm" loading={acting} onClick={() => act(pv.id!, "CHECKED")}>
+                      <CheckCircle size={14} /> Particulars are correct
+                    </Button>
                   ) : (
                     <Button variant="secondary" size="sm" onClick={() => setSelected(pv)}>Review</Button>
                   )
