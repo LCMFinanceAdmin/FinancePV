@@ -1,0 +1,31 @@
+# Only what this repository manages.
+#
+# `supabase config push` sends everything declared here and leaves everything
+# else alone, so this file is deliberately almost empty. The full remote config
+# was pulled once while diagnosing the sign-in problem and is NOT kept here: it
+# came back with auth.sms.twilio.enabled = false against a remote that has it
+# on, because the API masks the account SID and the CLI cannot round-trip what
+# it cannot read. Committing that would have left a file which, pushed by
+# anyone for any reason, would quietly turn off SMS.
+#
+# Everything below is the email that carries a sign-in link.
+
+project_id = "osjbcgftckdhkdsulmhr"
+
+# The default templates use {{ .ConfirmationURL }}, which sends people through
+# Supabase's verify endpoint and back with a ?code= that only the browser which
+# asked for the link can redeem. Mail apps open links in their own webview, and
+# scanners follow them before the person does, so that code was almost never
+# redeemable — four flows sat unclaimed in auth.flow_state and only one person
+# has ever signed in this way.
+#
+# {{ .TokenHash }} carries no such tie. Supabase checks it against the token it
+# sent and issues a session whatever browser asks. Handled by app/auth/confirm.
+
+[auth.email.template.magic_link]
+subject = "Sign in to LCM Finance"
+content_path = "./supabase/templates/magic-link.html"
+
+[auth.email.template.confirmation]
+subject = "Confirm your email for LCM Finance"
+content_path = "./supabase/templates/confirmation.html"

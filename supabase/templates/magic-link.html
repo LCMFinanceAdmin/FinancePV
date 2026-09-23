@@ -1,0 +1,21 @@
+<h2>Sign in to LCM Finance</h2>
+
+<p>Click the button below to sign in. The link works once and expires in an hour.</p>
+
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=magiclink"
+     style="display:inline-block;background:#4a6da7;color:#ffffff;text-decoration:none;
+            padding:12px 24px;border-radius:10px;font-family:Arial,Helvetica,sans-serif;
+            font-size:15px;font-weight:bold">
+    Sign in to LCM Finance
+  </a>
+</p>
+
+<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#78716c">
+  If the button does not work, copy this address into your browser:<br>
+  {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=magiclink
+</p>
+
+<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#78716c">
+  If you did not ask to sign in, you can ignore this email.
+</p>
