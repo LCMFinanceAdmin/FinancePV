@@ -26,6 +26,15 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
 
+  // Why they were sent back here.
+  //
+  // /auth/callback has always redirected to /login?error=... when a sign-in
+  // link could not be completed, and this page has always ignored it. So
+  // somebody who clicked a link in good faith arrived at an untouched sign-in
+  // screen with nothing to read and no idea what had gone wrong — which is
+  // indistinguishable, from where they sit, from the link doing nothing at all.
+  const linkError = explainLinkError(searchParams.get("error"));
+
   // Carries the page the user was trying to reach (e.g. a shared /submit
   // link) through the OAuth / magic-link round trip via /auth/callback.
   function callbackUrl() {
@@ -82,6 +91,7 @@ function LoginForm() {
               <h2 className="text-base font-semibold text-stone-700 mb-1">Sign in to continue</h2>
               <p className="text-sm text-stone-400 mb-5">Choose how you want to sign in</p>
 
+              {linkError && <ErrorBox msg={linkError} />}
               {error && <ErrorBox msg={error} />}
 
               <Button onClick={signInWithGoogle} loading={loading} className="w-full gap-3" size="lg">
@@ -185,6 +195,35 @@ function LoginForm() {
       </div>
     </div>
   );
+}
+
+/**
+ * Turn what came back from Supabase into something worth reading.
+ *
+ * The raw messages are accurate and unhelpful — "invalid flow state" tells
+ * somebody nothing about the fact that they opened the link on their phone
+ * after asking for it on a laptop. The specific causes get a specific
+ * sentence; anything unrecognised is still shown rather than swallowed,
+ * because a message nobody wrote is better than no message at all.
+ */
+function explainLinkError(raw: string | null): string {
+  if (!raw) return "";
+  const m = raw.toLowerCase();
+  if (m.includes("flow state") || m.includes("code verifier") || m.includes("pkce")) {
+    return "That link has to be opened in the same browser that asked for it. "
+         + "Opening it from a mail app, or on a different device, will not work. "
+         + "Ask for a new link below and open it in this browser.";
+  }
+  if (m.includes("expired") || m.includes("invalid") || m.includes("already")) {
+    return "That sign-in link has expired or has already been used. Links work "
+         + "once and last an hour, and some mail providers follow them "
+         + "automatically while scanning for spam. Ask for a fresh one below.";
+  }
+  if (m.includes("nothing to sign in with")) {
+    return "That link arrived without anything to sign in with — it may have "
+         + "been cut short by the mail app. Try asking for a new one below.";
+  }
+  return raw;
 }
 
 function ErrorBox({ msg }: { msg: string }) {
