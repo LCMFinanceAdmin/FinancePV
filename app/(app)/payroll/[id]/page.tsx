@@ -1383,12 +1383,12 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       #ys-print-area table th,
       #ys-print-area table td { border: 1.5px solid #000 !important; }
 
-      /* The months table reads as a grid of figures, so everything in it sits
-         centred in its cell — headings included, so a column and its heading
-         line up. The profile table above is label-and-value prose and stays
-         as it is. */
-      #ys-print-area .ys-months th,
-      #ys-print-area .ys-months td { text-align: center !important; }
+      /* Everything sits centred in its cell, headings included, so a column
+         and its heading line up. Both tables: the profile reads as a form
+         once it is centred, and a statement whose two halves were aligned
+         differently looked like two documents stapled together. */
+      #ys-print-area table th,
+      #ys-print-area table td { text-align: center !important; }
 
       /* The annual line is the one somebody looks for first. Black fill and
          white type carry that through a monochrome print, where the blue it
@@ -1748,7 +1748,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
 
         {/* Yearly table */}
         <div className="overflow-x-auto mb-5">
-          <table className="ys-months w-full text-[12px] border-collapse" style={{ minWidth: 900 }}>
+          <table className="w-full text-[12px] border-collapse" style={{ minWidth: 900 }}>
             <thead>
               <tr className="bg-[#4a6da7] text-white">
                 <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-left align-bottom">Month</th>
