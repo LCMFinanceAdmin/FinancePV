@@ -52,3 +52,10 @@ docs/img/_check/
 docs/.docx-figures/
 # Word's lock file, which exists only while the document is open.
 ~$*
+
+# Payroll exports carry real salaries, IC, bank and tax numbers for ~105 people.
+# Git history is permanent, so these must never be added — not even once.
+docs/*.pdf
+*[Pp]ayroll*.pdf
+*[Pp]ayroll*.xlsx
+*[Pp]ayroll*.csv
