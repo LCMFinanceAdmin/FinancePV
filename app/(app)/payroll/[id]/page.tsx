@@ -1371,7 +1371,39 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   useEffect(() => {
     const style = document.createElement("style");
     style.id = "ys-print-css";
-    style.textContent = `@media print {
+    style.textContent = `
+      /* ── How the statement's tables look, on screen and on paper ──────────
+         Kept here rather than on sixty className strings so the rules read as
+         the decisions they are, and so one change lands everywhere at once. */
+
+      /* Black gridlines, heavy enough to survive a grayscale photocopy. The
+         app's stone-200 hairlines look right on a screen and all but vanish
+         off a printer. */
+      #ys-print-area table { border-collapse: collapse; }
+      #ys-print-area table th,
+      #ys-print-area table td { border: 1.5px solid #000 !important; }
+
+      /* The months table reads as a grid of figures, so everything in it sits
+         centred in its cell — headings included, so a column and its heading
+         line up. The profile table above is label-and-value prose and stays
+         as it is. */
+      #ys-print-area .ys-months th,
+      #ys-print-area .ys-months td { text-align: center !important; }
+
+      /* The annual line is the one somebody looks for first. Black fill and
+         white type carry that through a monochrome print, where the blue it
+         used to wear came out the same mid-grey as every other heading. The
+         allowance and deduction columns lose their green and red here too;
+         the + and − in front of each figure is what says which is which
+         once the colour has gone anyway. */
+      #ys-print-area .ys-annual td {
+        background: #000 !important;
+        color: #fff !important;
+        font-weight: 800 !important;
+        border-color: #000 !important;
+      }
+
+      @media print {
       /* The sheet is wider than it is tall; asking for it sideways saves the
          user reaching for the Layout menu every time. */
       @page { size: A4 landscape; margin: 10mm; }
@@ -1403,7 +1435,12 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       #ys-print-area .ys-notes { margin-bottom: 8px !important; }
       #ys-print-area .ys-signatures { margin-top: 18px !important; }
       #ys-print-area .ys-sig-line { height: 34px !important; }
-    }`;
+
+      /* Chrome drops background fills by default when printing. Without this
+         the annual line prints as white-on-white — invisible. */
+      #ys-print-area .ys-annual td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      }
+    `;
     document.head.appendChild(style);
 
     // A4 landscape less the 10mm margins, in CSS pixels (96 to the inch).
@@ -1711,7 +1748,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
 
         {/* Yearly table */}
         <div className="overflow-x-auto mb-5">
-          <table className="w-full text-[12px] border-collapse" style={{ minWidth: 900 }}>
+          <table className="ys-months w-full text-[12px] border-collapse" style={{ minWidth: 900 }}>
             <thead>
               <tr className="bg-[#4a6da7] text-white">
                 <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-left align-bottom">Month</th>
@@ -1735,13 +1772,13 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                   so a sheet that merged it into SOCSO EE could not be lined up
                   against theirs. */}
               <tr className="bg-[#4a6da7] text-white">
-                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">EE</th>
-                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">ER</th>
-                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">EE</th>
-                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px] bg-[#3d5c8f]">SKBBK</th>
-                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">ER</th>
-                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">EE</th>
-                <th className="border border-[#3d5c8f] px-2 py-1 text-right text-[11px]">ER</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-[11px]">Employee</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-[11px]">Employer</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-[11px]">Employee</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-[11px] bg-[#3d5c8f]">SKBBK</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-[11px]">Employer</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-[11px]">Employee</th>
+                <th className="border border-[#3d5c8f] px-2 py-1 text-[11px]">Employer</th>
               </tr>
             </thead>
             <tbody>
@@ -1826,7 +1863,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <tr><td colSpan={10 + (hasEpl ? 1 : 0) + customCols.length} className="border border-stone-200 px-2 py-1 text-stone-400 italic text-center">13th month — excluded (Orang Asli)</td></tr>
               )}
               {/* Annual total */}
-              <tr className="bg-[#4a6da7] text-white font-bold">
+              <tr className="ys-annual ys-keep bg-[#4a6da7] text-white font-bold">
                 <td className="border border-[#3d5c8f] px-2 py-1.5">ANNUAL</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.gross))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.pcb))}</td>
