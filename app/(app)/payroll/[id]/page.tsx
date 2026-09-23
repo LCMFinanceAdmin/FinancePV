@@ -1390,6 +1390,41 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       #ys-print-area table th,
       #ys-print-area table td { text-align: center !important; }
 
+      /* -- Room to breathe --------------------------------------------------
+         Five more pixels between every row, which is close to exactly the
+         slack the page had left over.
+
+         The horizontal padding goes the other way, down from 8px a side to 3.
+         The months table is the widest thing on the sheet and was already
+         within a whisker of the paper's edge, so that padding was the only
+         width there was to give back -- and giving it back is what lets the
+         figures themselves grow, by way of the fit step, which now scales up
+         as well as down. */
+      #ys-print-area table th,
+      #ys-print-area table td { padding-top: 6.5px !important; padding-bottom: 6.5px !important; }
+      #ys-print-area .ys-months th,
+      #ys-print-area .ys-months td { padding-left: 3px !important; padding-right: 3px !important; }
+
+      /* Four pixels on every size, which is as far as this sheet goes.
+         Thirteen columns across a landscape A4 leave each figure about 60pt
+         of paper; at much past this the digits stop fitting their column and
+         Chrome clips them off the edge rather than wrapping, because a figure
+         like 2,660.00 has nowhere to break. Ten pixels, asked for, loses the
+         Net and Total LCM columns entirely. */
+      #ys-print-area table { font-size: 16px !important; }
+      #ys-print-area table th { font-size: 15px !important; }
+      #ys-print-area table td { font-size: 16px !important; }
+      #ys-print-area table th div:first-child { font-size: 14px !important; }
+      #ys-print-area table th div:last-child  { font-size: 12px !important; }
+
+      #ys-print-area .ys-head > div:nth-child(1) { font-size: 15px !important; }
+      #ys-print-area .ys-head > div:nth-child(2) { font-size: 24px !important; }
+      #ys-print-area .ys-head > div:nth-child(3) { font-size: 18px !important; }
+      #ys-print-area .ys-caption { font-size: 16px !important; }
+      #ys-print-area .ys-notes,
+      #ys-print-area .ys-notes p { font-size: 14px !important; }
+      #ys-print-area .ys-signatures div { font-size: 15px !important; }
+
       /* The annual line is the one somebody looks for first. Black fill and
          white type carry that through a monochrome print, where the blue it
          used to wear came out the same mid-grey as every other heading. The
@@ -1458,7 +1493,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       }
 
       /*
-       * Shrink the sheet just enough to land on one page.
+       * Size the sheet to the page -- up as well as down.
        *
        * How tall it is depends on the employee — every special allowance and
        * deduction adds a column, and a wide table wraps nothing but does push
@@ -1477,7 +1512,9 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       const h = bottom - top;
       const w = area.scrollWidth;
       const fit = Math.min(h > 0 ? PAGE_H / h : 1, w > 0 ? PAGE_W / w : 1);
-      area.style.zoom = fit < 1 && fit >= 0.6 ? String(Math.floor(fit * 100) / 100) : "";
+      // Below 0.6 the figures stop being readable and two honest pages beat
+      // one unreadable one. Above 1.5 nothing here needs to be that large.
+      area.style.zoom = fit >= 0.6 && fit <= 1.5 ? String(Math.floor(fit * 100) / 100) : "";
     };
     const unmark = () => {
       const area = document.getElementById("ys-print-area");
@@ -1645,7 +1682,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       {/* Sheet content */}
       <div id="ys-print-area" className="flex-1 px-6 py-5 max-w-[1400px] mx-auto w-full">
         {/* Header */}
-        <div className="text-center mb-4">
+        <div className="ys-head text-center mb-4">
           <div className="text-[11px] text-stone-500 uppercase tracking-widest mb-0.5">Lutheran Church in Malaysia</div>
           <div className="text-xl font-bold text-stone-800">Employee Salary Statement</div>
           <div className="text-sm text-stone-500">Year {year}</div>
@@ -1653,7 +1690,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
 
         {/* Employee profile table */}
         <div className="border border-stone-300 rounded-lg overflow-hidden mb-4">
-          <div className="bg-[#4a6da7] text-white px-3 py-1.5 text-xs font-bold uppercase tracking-wider">Employee Profile</div>
+          <div className="ys-caption bg-[#4a6da7] text-white px-3 py-1.5 text-xs font-bold uppercase tracking-wider">Employee Profile</div>
           <table className="w-full text-[12px] border-collapse">
             <tbody>
               <tr>
@@ -1748,7 +1785,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
 
         {/* Yearly table */}
         <div className="overflow-x-auto mb-5">
-          <table className="w-full text-[12px] border-collapse" style={{ minWidth: 900 }}>
+          <table className="ys-months w-full text-[12px] border-collapse" style={{ minWidth: 900 }}>
             <thead>
               <tr className="bg-[#4a6da7] text-white">
                 <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-left align-bottom">Month</th>
