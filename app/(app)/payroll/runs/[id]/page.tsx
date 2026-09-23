@@ -223,7 +223,7 @@ export default function PayrollRunDetailPage() {
         gross, age: ageAt(e.dob, run.year, ageMonth), employmentType: e.employment_type,
         month: run.month, bands,
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
-        skbbkOptedOut: e.skbbk_opted_out,
+        skbbkOptedOut: e.skbbk_opted_out, epfOver60Contributing: e.epf_over60_contributing,
         manualPcb: pcb[e.id] || 0, eplDeduction: epl, is13thMonth: is13th, rates,
         customItems: empCustomItems[e.id] ?? [],
         adjustments: empAdjustments[e.id] ?? [],

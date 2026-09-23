@@ -39,6 +39,14 @@ export interface RateConfig {
    * that were never taken. See migration 133.
    */
   skbbk_from_month?: number;
+  /**
+   * The age at which EPF stops accepting contributions altogether.
+   *
+   * Distinct from 60. At 60 an employee may keep contributing or step out,
+   * and the employer pays either way. At this age neither side may pay in,
+   * so there is nothing to opt into and nothing for the employer to match.
+   */
+  epf_ceases_age?: number;
 }
 
 // Current LCM defaults — used when no year row is loaded.
@@ -52,6 +60,7 @@ export const DEFAULT_RATES: RateConfig = {
   // is visibly unset; a guessed rate would quietly take the wrong amount from
   // every salary, which is the worse failure by far.
   skbbk_ee: 0, skbbk_ceiling: 6000, skbbk_from_month: 1,
+  epf_ceases_age: 75,
 };
 
 export interface CalcAdjustment {
@@ -118,6 +127,20 @@ export interface CalcInput {
   eplDeduction: number;        // monthly loan installment
   is13thMonth: boolean;        // 13th month: EPF + PCB only, no SOCSO/EIS
   skbbkOptedOut?: boolean;     // opted out of SKBBK (Lindung 24) — then nothing is deducted
+  /**
+   * An employee aged 60 or over who has chosen to keep contributing to EPF.
+   *
+   * Past 60 the employee's own contribution becomes a choice. Step out and
+   * only the employer pays, at the over-60 rate — which is what this
+   * calculation assumed of everyone, because there was no way to say
+   * otherwise. Stay in and both sides carry on at the ordinary rate, the
+   * employee's 11% and the employer's 16%; no separate rate exists for a
+   * contributing over-60, and inventing one would put a figure on a payslip
+   * that no schedule backs.
+   *
+   * Anything paid ON TOP of that is voluntaryEpf, a flat sum, not a rate.
+   */
+  epfOver60Contributing?: boolean;
   /**
    * The month being computed, 1-13. Only SKBBK reads it, to honour a scheme
    * that starts part-way through the year. Optional: a caller that does not
@@ -189,11 +212,18 @@ function portion(ee: number, er: number): StatPortion {
 }
 
 // EPF rate tiers (employee %, employer %), from the editable rate config.
-export function resolveEpfRates(input: { age: number; employmentType: EmploymentType; isOrangAsli: boolean }, rates: RateConfig = DEFAULT_RATES): { ee: number; er: number } {
+export function resolveEpfRates(
+  input: { age: number; employmentType: EmploymentType; isOrangAsli: boolean; epfOver60Contributing?: boolean },
+  rates: RateConfig = DEFAULT_RATES,
+): { ee: number; er: number } {
+  // Past the ceasing age the scheme is closed to both sides, whatever else
+  // is true of the person. Checked first for that reason: an Orang Asli rate
+  // or a standing choice to contribute cannot reopen it.
+  if (input.age >= (rates.epf_ceases_age ?? 75)) return { ee: 0, er: 0 };
   if (input.isOrangAsli) return { ee: rates.epf_ee_orang_asli, er: rates.epf_er_orang_asli };
-  const under60 = input.age < 60;
-  if (input.employmentType === "PERMANENT" && under60) return { ee: rates.epf_ee_under60, er: rates.epf_er_under60 };
-  return { ee: rates.epf_ee_over60, er: rates.epf_er_over60 }; // 60+ or contract
+  const stillContributing = input.age < 60 || input.epfOver60Contributing === true;
+  if (input.employmentType === "PERMANENT" && stillContributing) return { ee: rates.epf_ee_under60, er: rates.epf_er_under60 };
+  return { ee: rates.epf_ee_over60, er: rates.epf_er_over60 }; // stepped out at 60+, or contract
 }
 
 // Annual increment effective month: joined before July → effective Jan; after July → effective July.
@@ -367,7 +397,15 @@ export function grossComponentsForMonth(
 function epfContribution(gross: number, rate: number): number {
   if (rate === 0) return 0;
   const bandWage = Math.ceil(gross / 20) * 20;
-  return Math.ceil(bandWage * rate);
+  // Settle the product to the sixth decimal before rounding up.
+  //
+  // A rate like 0.07 has no exact binary form, so 3500 * 0.07 comes out as
+  // 245.00000000000003 and Math.ceil dutifully returns 246. The church was
+  // paying an extra ringgit for every wage where the contribution lands on a
+  // whole number — nine people in October alone. Nothing here changes what
+  // is owed; it stops a rounding rule from firing on a number that only looks
+  // like it has a fraction.
+  return Math.ceil(Math.round(bandWage * rate * 1e6) / 1e6);
 }
 
 export function calcLine(input: CalcInput): CalcLine {
@@ -376,7 +414,9 @@ export function calcLine(input: CalcInput): CalcLine {
 
   // EPF — applies to both normal and 13th-month
   const epfRates = resolveEpfRates(input, rates);
-  const epfEe = epfContribution(gross, epfRates.ee) + (voluntaryEpf || 0);
+  // A voluntary sum is still a contribution, so it stops where they all do.
+  const epfClosed = input.age >= (rates.epf_ceases_age ?? 75);
+  const epfEe = epfContribution(gross, epfRates.ee) + (epfClosed ? 0 : voluntaryEpf || 0);
   const epfEr = epfContribution(gross, epfRates.er);
   const epf: StatPortion = { ee: round2(epfEe), er: round2(epfEr), total: round2(epfEe + epfEr) };
 

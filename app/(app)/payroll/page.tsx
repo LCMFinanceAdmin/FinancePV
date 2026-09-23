@@ -133,6 +133,8 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   // enrolled. Phrased as opting out in the data and as "in the scheme" on the
   // form, because that is the question Finance is actually answering.
   const [inSkbbk, setInSkbbk] = useState(!(existing?.skbbk_opted_out ?? false));
+  // Below 60 this is not a choice, so the box only appears once it is one.
+  const [epfOver60, setEpfOver60] = useState(existing?.epf_over60_contributing ?? false);
   const [dateCommenced, setDateCommenced] = useState(existing?.date_commenced ?? "");
   const [incrementOverride, setIncrementOverride] = useState(existing?.increment_month_override != null ? String(existing.increment_month_override) : "");
   const [postingType, setPostingType] = useState<PostingType>(existing?.posting_type ?? "OFFICE");
@@ -357,6 +359,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         prior_experience_years: parseInt(priorExp) || 0,
         is_orang_asli: isOrangAsli,
         skbbk_opted_out: !inSkbbk,
+        epf_over60_contributing: epfOver60,
         date_commenced: dateCommenced || null,
         increment_month_override: incrementOverride ? parseInt(incrementOverride) : null,
         posting_type: postingType,
@@ -546,6 +549,10 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
               <label className="flex items-center gap-1.5 text-sm text-stone-700"
                 title="SKBBK (Lindung 24) tops up the employee's SOCSO contribution. Untick only for someone who has opted out of the scheme.">
                 <input type="checkbox" checked={inSkbbk} onChange={e => setInSkbbk(e.target.checked)} /> In SKBBK (Lindung 24)
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                title="At 60 the employee's own EPF contribution becomes optional. Ticked, both sides carry on at the ordinary rate; unticked, only the employer pays. EPF closes to both sides at 75.">
+                <input type="checkbox" checked={epfOver60} onChange={e => setEpfOver60(e.target.checked)} /> Still contributing to EPF at 60+
               </label>
             </div>
             {isPastor && (

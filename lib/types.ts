@@ -477,6 +477,8 @@ export interface PayrollEmployee {
   epf_voluntary_ee_amount: number;
   /** Opted out of SKBBK (Lindung 24). False — in the scheme — is the default. */
   skbbk_opted_out: boolean;
+  /** Aged 60+ and still making their own EPF contribution. Ignored below 60 and from 75. */
+  epf_over60_contributing: boolean;
   epf_no: string;
   tin: string;
   revised_note: string;

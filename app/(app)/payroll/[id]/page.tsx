@@ -46,6 +46,15 @@ function ageFrom(dob: string | null): string {
   if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
   return String(age);
 }
+// What the EPF line on this record means at the person's age today. Below 60
+// there is no choice to report, so it says nothing rather than saying "no".
+function epfAgeNote(dob: string | null, contributing: boolean): string {
+  const age = Number(ageFrom(dob));
+  if (!Number.isFinite(age)) return "—";
+  if (age >= 75) return "Closed — neither side contributes";
+  if (age < 60) return "—";
+  return contributing ? "Still contributing" : "Employer only";
+}
 function yearsOfService(commenced: string | null): string {
   if (!commenced) return "—";
   const d = new Date(commenced);
@@ -399,6 +408,7 @@ export default function PayrollEmployeePage() {
     isOrangAsli: emp.is_orang_asli,
     voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
     skbbkOptedOut: emp.skbbk_opted_out,
+    epfOver60Contributing: emp.epf_over60_contributing,
     manualPcb: pcb[i] || 0,
     eplDeduction: eplForMonth(i + 1),
     is13thMonth: false,
@@ -414,6 +424,7 @@ export default function PayrollEmployeePage() {
     isOrangAsli: emp.is_orang_asli,
     voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
     skbbkOptedOut: emp.skbbk_opted_out,
+    epfOver60Contributing: emp.epf_over60_contributing,
     manualPcb: pcb[12] || 0,
     eplDeduction: 0,
     is13thMonth: true,
@@ -588,6 +599,7 @@ export default function PayrollEmployeePage() {
               <Field label="EPF No." value={emp.epf_no || "—"} />
               <Field label="Voluntary EPF" value={emp.epf_voluntary_ee_amount ? formatCurrency(emp.epf_voluntary_ee_amount) : "—"} />
               <Field label="SKBBK (Lindung 24)" value={emp.skbbk_opted_out ? "Opted out" : "In the scheme"} />
+              <Field label="EPF at 60+" value={epfAgeNote(emp.dob, emp.epf_over60_contributing)} />
               <Field label="TIN (Tax)" value={emp.tin || "—"} />
               <Field label="Employer Tax Ref" value={emp.employer_tax_ref || "—"} />
               <Field label="Bank" value={emp.bank_name ? `${emp.bank_name} · ${emp.bank_acct}` : "—"} />
