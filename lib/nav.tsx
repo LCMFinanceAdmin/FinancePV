@@ -129,9 +129,14 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: <Users size={size} />, show: (u) => u.isSignatory,
       },
       {
-        href: "/ministry", label: "EXCO Queue", desc: "Verify your committee's requests",
+        href: "/ministry", label: "EXCO Queue", desc: "Verify your committee's requests, and appoint who checks them",
         icon: <Building2 size={size} />,
-        show: (u) => u.isMinistryHead || !!u.isMinistryVerifier,
+        // Finance and the GM appoint checkers and delegates here for every
+        // ministry — the panels were already handed the full list, but the
+        // page itself was missing from their nav, so the people with the
+        // authority had no way to reach it.
+        show: (u) => u.isMinistryHead || !!u.isMinistryVerifier || !!u.isMinistryChecker
+                     || u.isFinanceAdmin || u.isGeneralManager,
       },
       {
         href: "/bam-queue", label: "BAM Queue", desc: "Building & event vouchers to review",

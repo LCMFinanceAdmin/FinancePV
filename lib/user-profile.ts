@@ -53,7 +53,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   // Where this person serves, and whether they lead a district. Dean is derived
   // from the district record rather than a flag, so it can't contradict the
   // assignment made in Settings.
-  const [{ data: congregation }, { data: deanOf }, { data: verifierFor }, { data: person }] = await Promise.all([
+  const [{ data: congregation }, { data: deanOf }, { data: verifierFor }, { data: checkerFor }, { data: person }] = await Promise.all([
     profile?.congregation_id
       ? supabase.from("congregations")
           .select("name, districts(name)")
@@ -64,6 +64,10 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     // and no role — but without it the queue holding that work is missing from
     // the nav, and the delegation is invisible to the person given it.
     supabase.rpc("my_verifier_scopes"),
+    // Appointed to check a ministry's vouchers. Like a delegation it carries
+    // no role and no portfolio, and without it the queue holding that work is
+    // missing from the nav — the person appointed would have nowhere to go.
+    supabase.from("ministries").select("name").ilike("checker_email", email),
     // What this person is actually called. Which of somebody's names is the one
     // they go by is not derivable — the directory holds "Rev Chan" and "Paul
     // Low", and no rule would have produced either.
@@ -90,6 +94,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     signatoryRole: isSignatory ? role : "",
     isMinistryHead: isExcoRole(role) || ministries.length > 0,
     isMinistryVerifier: ((verifierFor as unknown[] | null)?.length ?? 0) > 0,
+    isMinistryChecker: ((checkerFor as unknown[] | null)?.length ?? 0) > 0,
     isMinistrySupport: role === "MINISTRY_SUPPORT",
     isGeneralManager: role === "GENERAL_MANAGER",
     isBuildingManager: role === "BUILDING_MANAGER",

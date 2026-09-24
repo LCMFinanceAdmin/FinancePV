@@ -63,6 +63,14 @@ export interface UserProfile {
    */
   isMinistryVerifier?: boolean;
   /**
+   * Appointed by an EXCO Member to check their ministry's vouchers.
+   *
+   * Carries no portfolio and no role of its own: what they may do comes from
+   * ministries.checker_email, and what they may verify outright comes from a
+   * delegation in ministry_verifiers, if the EXCO has given them one.
+   */
+  isMinistryChecker?: boolean;
+  /**
    * A Ministry Desk — appointed by an EXCO member to run a desk.
    *
    * Deliberately NOT folded into isMinistryHead: a desk holds no portfolio and
