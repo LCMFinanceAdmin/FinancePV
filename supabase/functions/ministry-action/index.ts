@@ -64,8 +64,24 @@ Deno.serve(async (req) => {
         db, user.email!, profile.ministries, pv.ministry, pv.project,
       );
 
+      // Is there anybody to send it back to?
+      //
+      // Several ministries have no EXCO Member assigned — Orang Asli among
+      // them. Without a checker such a voucher went straight to Finance,
+      // because submit-pv only routes to the committee when one exists. With a
+      // checker it would have gone to PENDING_HEAD after the check and stopped
+      // there for good, waiting on a person who does not exist. The check adds
+      // a signature to the voucher; it must not add a dead end to it.
+      const { data: excoRows } = await db.from("user_roles")
+        .select("email").contains("ministries", [pv.ministry]);
+      const hasExco = ((excoRows ?? []) as unknown[]).length > 0;
+      const backToExco = !settlesIt && hasExco;
+
       await db.from("pvs").update({
-        status: settlesIt ? "PENDING" : "PENDING_HEAD",
+        status: backToExco ? "PENDING_HEAD" : "PENDING",
+        // Nobody holds this ministry, so there is no verification to wait for
+        // and the voucher should not claim one is outstanding.
+        ...(!settlesIt && !hasExco ? { head_verified: "N/A" } : {}),
         checked_by_email: user.email,
         checked_by_name: profile.full_name || user.email,
         checked_at: now,
@@ -90,11 +106,13 @@ Deno.serve(async (req) => {
         updated_at: now,
       }).eq("id", pv_id);
 
-      if (settlesIt) {
+      if (!backToExco) {
         // Finance is who it is waiting on now, not the committee.
         await sendPushToRoles(db, ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"], {
           title: `${pv.pv_no} ready for review`,
-          body: `${profile.full_name || user.email} checked and verified it for ${pv.ministry}.`,
+          body: settlesIt
+            ? `${profile.full_name || user.email} checked and verified it for ${pv.ministry}.`
+            : `${profile.full_name || user.email} checked it. ${pv.ministry} has no EXCO Member to verify.`,
         });
         return json({ ok: true, status: "PENDING" });
       }
