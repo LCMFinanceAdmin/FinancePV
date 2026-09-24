@@ -23,6 +23,8 @@ export function CheckerPanel({ ministries }: { ministries: string[] }) {
   const [people, setPeople] = useState<PickablePerson[]>([]);
   const [rows, setRows] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState("");
+  /** Appointed, but has never signed in — so nothing will reach them yet. */
+  const [noAccount, setNoAccount] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState("");
 
   // HQ has no EXCO to appoint anyone, so it has nothing to show here.
@@ -31,13 +33,24 @@ export function CheckerPanel({ ministries }: { ministries: string[] }) {
   const load = useCallback(async () => {
     if (!mine.length) return;
     const [{ data: min }, { data: dir }] = await Promise.all([
-      supabase.from("ministries").select("name,checker_email").in("name", mine),
+      supabase.from("ministries").select("name,checker_email,checker_name").in("name", mine),
       supabase.from("user_roles").select("email,full_name").order("full_name"),
     ]);
     const next: Record<string, string> = {};
     for (const m of min ?? []) next[m.name] = m.checker_email ?? "";
     setRows(next);
-    setPeople((dir ?? []) as PickablePerson[]);
+
+    // Somebody can be appointed before they have an account — they are named
+    // by address, and the address is what the voucher path matches on. The
+    // picker lists people who have signed in at least once, so an appointment
+    // made ahead of that would have shown as "Nobody appointed" while the
+    // ministry's vouchers were quietly routing to them. Fold them in.
+    const known = new Set((dir ?? []).map((p: PickablePerson) => p.email.toLowerCase()));
+    const pending: PickablePerson[] = (min ?? [])
+      .filter(m => (m.checker_email ?? "").trim() && !known.has(m.checker_email!.toLowerCase()))
+      .map(m => ({ email: m.checker_email!, full_name: m.checker_name ?? null }));
+    setPeople([...(dir ?? []), ...pending] as PickablePerson[]);
+    setNoAccount(new Set(pending.map(p => p.email.toLowerCase())));
   }, [supabase, mine.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
@@ -97,7 +110,18 @@ export function CheckerPanel({ ministries }: { ministries: string[] }) {
               Save
             </Button>
           </div>
-        ))}
+        )).flatMap((row, i) => {
+          const m = mine[i];
+          const email = (rows[m] ?? "").toLowerCase();
+          return noAccount.has(email)
+            ? [row, (
+                <p key={`${m}-warn`} className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 sm:ml-58">
+                  {rows[m]} has never signed in, so vouchers will wait for them.
+                  Ask them to sign in once at the login page with that address.
+                </p>
+              )]
+            : [row];
+        })}
       </div>
 
       {msg && <p className="text-xs mt-3 text-stone-500">{msg}</p>}
