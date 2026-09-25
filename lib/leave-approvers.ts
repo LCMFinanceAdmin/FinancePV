@@ -45,6 +45,8 @@ export interface LeaveApprover {
   external?: boolean;
   /** Approvers sharing a group form one slot that any of them settles. */
   group?: string;
+  /** Where this slot sits in the order of signing. Lower signs first. */
+  step?: number;
 }
 
 const eq = (a?: string | null, b?: string | null) =>
@@ -96,11 +98,15 @@ export async function leaveRouting(
     .order("sort_order");
   if (custom && custom.length > 0) {
     return {
-      approvers: custom.map(a => ({
+      // sort_order is the order of signing. The column has been on this table
+      // from the start and was only ever used to order the display; an
+      // assignment that says "Sean, then the Bishop" now means it.
+      approvers: custom.map((a, i) => ({
         email: a.approver_email,
         name: a.approver_name,
         reason: "assigned approver",
         position: "Assigned approver",
+        step: i + 1,
       })),
       notifyOnly: false,
       informEveryone: false,
@@ -185,44 +191,66 @@ export async function leaveRouting(
       }
     }
 
-    // Every one of these is an alternative to the others, so they share a slot.
-    // Self-approval is skipped at each: a Dean does not sign their own leave,
-    // and neither does a head pastor — the remaining two settle it.
-    const anyOne: LeaveApprover[] = [];
+    // A pastor's leave climbs one rung at a time.
+    //
+    //   pastor       -> Pastor in Charge, then the Dean
+    //   Pastor in Charge -> the Dean, then the Bishop
+    //   Dean         -> the Bishop
+    //
+    // This replaces the September 2026 rule, under which any one of the
+    // Bishop, the Dean or the Pastor in Charge could settle it on their own.
+    // That rule exists in the history for a reason — the chain before it asked
+    // a church-council officer with no account here to follow an emailed link,
+    // and pastors' leave sat unanswered. What is asked for now is neither: two
+    // signatures at most, both from people who hold accounts, and each one
+    // looked at by the person directly above.
+    //
+    // A rung nobody fills is skipped rather than blocking. Most congregations
+    // have no Pastor in Charge recorded, so most pastors' leave goes to the
+    // Dean alone; that is a gap in the directory, not a reason to refuse leave.
+    const chainUp: LeaveApprover[] = [];
+    const isHeadPastor = !!headPastorEmail && eq(headPastorEmail, applicantEmail);
 
-    for (const b of bishopChain) anyOne.push({ ...b, group: PASTORAL_SLOT });
-
-    // A Dean's own district is their own, so for a Dean this finds nothing and
-    // the Bishop or their Pastor in Charge settles it instead.
-    const deanDistrictId = isDean ? null : districtId;
-    if (deanDistrictId) {
+    const deanSlot = async (districtIdForDean: string | null): Promise<LeaveApprover | null> => {
+      if (!districtIdForDean) return null;
       const { data: district } = await supabase
-        .from("districts").select("name,dean_email").eq("id", deanDistrictId).maybeSingle();
-      if (district?.dean_email && !eq(district.dean_email, applicantEmail)) {
-        anyOne.push({
-          email: district.dean_email,
-          name: await nameFor(district.dean_email),
-          reason: district.name ? `Dean, ${district.name}` : "Dean",
-          position: district.name ? `Dean, ${district.name}` : "Dean",
-          group: PASTORAL_SLOT,
+        .from("districts").select("name,dean_email").eq("id", districtIdForDean).maybeSingle();
+      if (!district?.dean_email || eq(district.dean_email, applicantEmail)) return null;
+      return {
+        email: district.dean_email,
+        name: await nameFor(district.dean_email),
+        reason: district.name ? `Dean, ${district.name}` : "Dean",
+        position: district.name ? `Dean, ${district.name}` : "Dean",
+      };
+    };
+
+    if (isDean) {
+      // The Dean answers to the Bishop and to nobody in between.
+      for (const b of bishopChain) chainUp.push({ ...b });
+    } else if (isHeadPastor) {
+      const dean = await deanSlot(districtId);
+      if (dean) chainUp.push(dean);
+      for (const b of bishopChain) chainUp.push({ ...b });
+    } else {
+      if (headPastorEmail && !eq(headPastorEmail, applicantEmail)) {
+        chainUp.push({
+          email: headPastorEmail,
+          name: await nameFor(headPastorEmail),
+          reason: congregationName ? `Pastor in Charge, ${congregationName}` : "Pastor in Charge",
+          position: congregationName ? `Pastor in Charge, ${congregationName}` : "Pastor in Charge",
         });
       }
+      const dean = await deanSlot(districtId);
+      if (dean) chainUp.push(dean);
     }
 
-    if (headPastorEmail && !eq(headPastorEmail, applicantEmail)) {
-      anyOne.push({
-        email: headPastorEmail,
-        name: await nameFor(headPastorEmail),
-        reason: congregationName ? `Pastor in Charge, ${congregationName}` : "Pastor in Charge",
-        position: congregationName ? `Pastor in Charge, ${congregationName}` : "Pastor in Charge",
-        group: PASTORAL_SLOT,
-      });
-    }
+    // Each rung is its own step, in the order they were added.
+    const anyOne = chainUp.map((a, i) => ({ ...a, step: i + 1 }));
 
-    // Nobody workable — no Bishop recorded, no Dean, no Pastor in Charge, or
-    // the applicant is all of them. Falling back to the Bishop keeps an
-    // application from being left with nobody able to act; where the Bishop is
-    // the applicant, the branch above has already granted it.
+    // Nobody above them at all — no Dean recorded, no Pastor in Charge, or the
+    // applicant is both. Falling back to the Bishop keeps an application from
+    // being left with nobody able to act; where the Bishop is the applicant,
+    // the branch above has already granted it.
     return {
       approvers: anyOne.length > 0 ? anyOne : bishopChain,
       notifyOnly: false,
@@ -231,16 +259,28 @@ export async function leaveRouting(
     };
   }
 
-  // 3. Staff.
+  // 3. Staff — the General Manager first, then the Bishop.
+  //
+  // Both were required before and either could sign first, so an application
+  // could be granted by the Bishop before the General Manager had seen it. The
+  // Finance, Admin and Accounts Executives all report through the GM, and the
+  // Bishop's signature is meant to follow that reading, not race it.
+  //
+  // Somebody who reports to the Bishop alone — the General Manager himself,
+  // and anybody set to BISHOP_ONLY — has a chain of one.
   const chain: LeaveApprover[] = [];
   if (me?.reports_to !== "BISHOP_ONLY") {
     const { data: gms } = await supabase
       .from("user_roles").select("email,full_name").eq("role", "GENERAL_MANAGER");
     for (const gm of gms ?? []) {
       if (!eq(gm.email, applicantEmail)) {
-        chain.push({ email: gm.email, name: gm.full_name, reason: "General Manager", position: "General Manager" });
+        chain.push({ email: gm.email, name: gm.full_name, reason: "General Manager", position: "General Manager", step: 1 });
       }
     }
   }
-  return { approvers: [...chain, ...bishopChain], notifyOnly: false, informEveryone: false, inform };
+  const bishopStep = chain.length > 0 ? 2 : 1;
+  return {
+    approvers: [...chain, ...bishopChain.map(b => ({ ...b, step: bishopStep }))],
+    notifyOnly: false, informEveryone: false, inform,
+  };
 }

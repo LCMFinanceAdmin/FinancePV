@@ -945,7 +945,13 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink,
               <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-1.5 py-0.5 rounded-full font-medium">{type.name}</span>
             )}
           </div>
-          <p className="text-sm font-medium text-stone-800 mt-1">
+          {/* Whose leave this is. Obvious on your own page and not on a
+              printed copy or a screenshot passed to somebody else, which is
+              where these cards usually end up being read. */}
+          {app.applicant_name && (
+            <p className="text-sm font-bold text-stone-900 mt-1">{app.applicant_name}</p>
+          )}
+          <p className="text-sm font-medium text-stone-800">
             {formatDate(app.start_date)} → {formatDate(app.end_date)}
           </p>
           <p className="text-xs text-stone-400">{app.days} working day{Number(app.days) !== 1 ? "s" : ""} · Applied {formatDate(app.applied_at)}</p>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { applyLeaveDecision, outstandingApprovers } from "@/lib/leave-decision";
+import { applyLeaveDecision, outstandingApprovers, canActNow, waitingOnBefore } from "@/lib/leave-decision";
 import type { RequiredApprover, ApprovalEntry } from "@/lib/leave-decision";
 import { notifyPeople } from "@/lib/notify";
 
@@ -97,6 +97,25 @@ export async function POST(req: NextRequest) {
 
       if (leave.status !== "PENDING") {
         return NextResponse.json({ error: `Leave is already ${leave.status}` }, { status: 400 });
+      }
+
+      // Their turn has to have come.
+      //
+      // The chain is ordered now — the General Manager before the Bishop, the
+      // Pastor in Charge before the Dean — and a signature given out of order
+      // answers a question the step before it has not asked yet. Approving
+      // early is refused with the name of whoever is still to sign; rejecting
+      // is not, because a refusal further up the chain is still a refusal and
+      // holding it back would only delay the applicant.
+      if (isDesignatedApprover && action === "APPROVED"
+          && !canActNow(required, existing, filledSlot!.email)) {
+        const before = waitingOnBefore(required, existing, filledSlot!.email);
+        const who = before.map(b => b.name || b.email).join(" and ");
+        return NextResponse.json({
+          error: who
+            ? `This is waiting on ${who} first. It will come to you once they have signed.`
+            : "This is not with you yet.",
+        }, { status: 409 });
       }
     }
 

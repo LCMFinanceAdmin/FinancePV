@@ -478,7 +478,7 @@ function LeaveQueueInner() {
                 </div>
                 <span className="text-sm font-bold text-stone-700">{app.days}d</span>
               </div>
-              <p className="text-sm font-medium text-stone-800">{app.applicant_name}</p>
+              <p className="text-sm font-bold text-stone-900">{app.applicant_name}</p>
               <p className="text-xs text-stone-400">{formatDate(app.start_date)} → {formatDate(app.end_date)}</p>
               <button onClick={() => viewForm(app)}
                 className="text-xs font-medium text-[#4a6da7] hover:underline">
