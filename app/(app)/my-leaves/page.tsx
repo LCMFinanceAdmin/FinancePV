@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import { ApprovalChain } from "@/components/leave/approval-chain";
+import { roleLabel } from "@/lib/utils";
+import { loadRoles } from "@/lib/roles";
 import { leaveRouting } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
@@ -106,15 +108,20 @@ function MyLeavesInner() {
     const email = session?.user?.email ?? "";
     setUserEmail(email);
 
+    // The role names come from app_roles, and roleLabel reads them from a cache
+    // this page never filled — so a Dean's post would have printed as
+    // "DEAN ORANG ASLI DISTRICT" rather than "Dean — Orang Asli District".
+    // Cached for the page's lifetime, so this costs one request at most.
     const [{ data: lt }, { data: apps }, { data: rdays }, { data: profile }, { data: ents }] = await Promise.all([
       supabase.from("leave_types").select("*").eq("active", true).order("sort_order"),
       supabase.from("leave_applications").select("*").eq("applicant_email", email)
         .order("applied_at", { ascending: false }),
       supabase.from("replacement_days_earned").select("*").eq("employee_email", email)
         .gte("work_date", `${year}-01-01`).lte("work_date", `${year}-12-31`),
-      supabase.from("user_roles").select("full_name,designation,is_pastor").eq("email", email).single(),
+      supabase.from("user_roles").select("full_name,designation,is_pastor,role").eq("email", email).single(),
       supabase.rpc("my_leave_entitlements"),
     ]);
+    await loadRoles(supabase);
 
     const entMap: Record<string, number> = {};
     const aggMap: Record<string, string> = {};
@@ -159,7 +166,19 @@ function MyLeavesInner() {
     setApplications(apps ?? []);
     setReplacementDays(rdays ?? []);
     setUserName(profile?.full_name ?? email);
-    setUserDesignation(profile?.designation ?? "");
+    // The post on the form: a recorded designation where there is one, the
+    // role otherwise.
+    //
+    // It used to be the designation alone, and the form told anybody without
+    // one to "ask Finance to add your designation" — which pointed at nothing.
+    // Twenty of the twenty-five accounts have no designation, there is no
+    // screen anywhere that sets this column, and the Finance Executive reading
+    // that sentence was being told to ask herself. The role already carries the
+    // title, and carries it more reliably: it is what the rest of the app shows
+    // and it changes when the post does. A designation stays as the override
+    // for a job title the role does not describe — "LCM Office Staff" against a
+    // STAFF role.
+    setUserDesignation(profile?.designation?.trim() || roleLabel(profile?.role));
     setIsPastor(profile?.is_pastor === true);
     setLoading(false);
   }
@@ -718,7 +737,7 @@ function MyLeavesInner() {
                   <tr>
                     <td className="border border-stone-300 p-2.5 font-medium text-stone-600">Position</td>
                     <td className="border border-stone-300 p-2.5 text-stone-800">
-                      {userDesignation || <span className="text-stone-400">Not set — ask Finance to add your designation</span>}
+                      {userDesignation || <span className="text-stone-400">Not recorded</span>}
                     </td>
                   </tr>
                   <tr>
