@@ -1,0 +1,11 @@
+{
+  "//": "The tests run under Node's own type stripping, which requires imports to carry the .ts extension. The app's config forbids that, so the two are kept apart — this one exists so an editor still typechecks the tests.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": []
+}

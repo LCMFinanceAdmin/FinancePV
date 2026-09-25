@@ -1,0 +1,4 @@
+{
+  "//": "Scopes ES modules to the tests only. The app's own package.json stays CommonJS — setting \"type\": \"module\" there would change how every file in the project is parsed.",
+  "type": "module"
+}
