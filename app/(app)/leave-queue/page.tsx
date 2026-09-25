@@ -15,12 +15,14 @@ interface LeaveApp {
   id: string; leave_no: string; applicant_name: string; applicant_email: string;
   leave_type_code: string; start_date: string; end_date: string; days: number;
   reason: string; status: string; applied_at: string; applicant_signature?: string | null;
+  /** The post held when the application was made — printed on the filed form. */
+  designation?: string | null;
   /** What the pastor sent their congregation — see migration 214. */
   congregation_ack_url?: string | null;
   congregation_ack_name?: string | null;
   congregation_ack_note?: string | null;
   balance_annual_before?: number | null; balance_medical_before?: number | null;
-  required_approvers: { email: string; name: string; position?: string; external?: boolean; group?: string }[];
+  required_approvers: { email: string; name: string; position?: string; external?: boolean; group?: string; step?: number }[];
   approvals: { email: string; name: string; position?: string; action: string; timestamp: string; remarks?: string; for_email?: string; signature_data?: string }[];
 }
 interface LeaveType { code: string; name: string; }
@@ -165,10 +167,26 @@ function LeaveQueueInner() {
   const iSigned = (l: LeaveApp) =>
     l.approvals?.some(a => norm(a.email) === norm(userEmail) && a.action === "APPROVED");
 
+  /**
+   * Is it with me, now?
+   *
+   * Being named on the chain is not the same as being asked. Since the chain
+   * runs in order, an application waiting on the General Manager would
+   * otherwise have sat in the Bishop's queue looking actionable — and the
+   * Approve button would have come back with "this is waiting on Jeffrey Koit
+   * first", which is a poor way to learn it was never yours to press.
+   */
+  const isMyTurn = (l: LeaveApp) =>
+    outstandingApprovers(
+      (l.required_approvers ?? []) as RequiredApprover[],
+      (l.approvals ?? []) as Parameters<typeof outstandingApprovers>[1],
+    ).some(isMe);
+
   // The one the email was about goes to the top, so a long queue can't bury it.
-  const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l))
+  const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l) && isMyTurn(l))
     .sort((a, b) => Number(b.leave_no === highlightRef) - Number(a.leave_no === highlightRef));
-  const awaitingOthers = myLeaves.filter(l => l.status === "PENDING" && iSigned(l));
+  // Signed by me, or not yet mine to sign. Either way nothing is being asked.
+  const awaitingOthers = myLeaves.filter(l => l.status === "PENDING" && (iSigned(l) || !isMyTurn(l)));
   const history        = myLeaves.filter(l => l.status !== "PENDING");
 
   // What is still outstanding, grouped back into the slots the chain actually
@@ -238,6 +256,7 @@ function LeaveQueueInner() {
     balance_annual_before: l.balance_annual_before,
     balance_medical_before: l.balance_medical_before,
     applicant_signature: l.applicant_signature,
+    designation: l.designation ?? "",
     required_approvers: l.required_approvers ?? [],
     approvals: l.approvals ?? [],
   });
@@ -445,7 +464,7 @@ function LeaveQueueInner() {
           {awaitingOthers.length > 0 && (
             <div className="rounded-2xl border border-[#dbe9fb] bg-[#f4f9ff] p-4 space-y-2">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#4f7fc3]">
-                You&apos;ve signed — waiting on others
+                Not with you — waiting on others
               </p>
               {awaitingOthers.map(app => (
                 <p key={app.id} className="text-xs text-stone-600">

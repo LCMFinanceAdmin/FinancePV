@@ -91,6 +91,21 @@ export async function POST(req: NextRequest) {
         "GENERAL_MANAGER", "BISHOP", "TREASURER", "SECRETARY"];
       const isSenior = seniorRoles.includes(profile?.role ?? "");
 
+      // Nobody decides their own leave.
+      //
+      // The routing takes care not to put anybody on their own chain, so this
+      // could only be reached through the senior override below — and every
+      // senior role is on that list. A Finance Executive could apply for leave
+      // and grant it herself in one request, past both the General Manager and
+      // the Bishop, and the voucher trail would show her name approving her own
+      // application. Withdrawing is what an applicant does to their own
+      // application; CANCELLED is handled above and stays open to them.
+      if (same(leave.applicant_email, user.email)) {
+        return NextResponse.json({
+          error: "You cannot approve or reject your own leave. Use Withdraw if you no longer want it.",
+        }, { status: 403 });
+      }
+
       if (!isDesignatedApprover && !isSenior) {
         return NextResponse.json({ error: "Not authorised to act on this leave" }, { status: 403 });
       }
@@ -194,6 +209,30 @@ export async function POST(req: NextRequest) {
         ],
         path: "/my-leaves",
       });
+
+      // And whoever it has just landed with.
+      //
+      // Nothing told them before. Every approver was emailed once at
+      // submission, which was harmless while all of them could sign from the
+      // start — but the chain is ordered now, so that mail reached the Bishop
+      // before the General Manager had looked at it, and nothing reached him
+      // when it was finally his to sign. An ordered chain that nobody is told
+      // about is a chain that stops at the first step.
+      const nowWith = stillWaiting.filter(a => !a.external && a.email);
+      if (nowWith.length > 0) {
+        await notifyPeople({
+          supabase,
+          to: nowWith.map(a => ({ email: a.email, name: a.name })),
+          type: "LEAVE_PENDING",
+          ref: leave.leave_no,
+          subject: `Leave application for your approval — ${leave.leave_no}`,
+          lines: [
+            `${leave.applicant_name}'s leave application ${leave.leave_no} is now with you.`,
+            `${who} has already approved it.`,
+          ],
+          path: "/leave-queue",
+        });
+      }
     } else {
       await notifyPeople({
         supabase,

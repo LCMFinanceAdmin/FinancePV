@@ -252,7 +252,11 @@ export async function leaveRouting(
     // being left with nobody able to act; where the Bishop is the applicant,
     // the branch above has already granted it.
     return {
-      approvers: anyOne.length > 0 ? anyOne : bishopChain,
+      // The fallback carries its step too. Unset reads as 1 and behaves the
+      // same, but a stored chain with no steps is indistinguishable from one
+      // written before there were any — which is the shape that had to be
+      // repaired by hand on four applications.
+      approvers: anyOne.length > 0 ? anyOne : bishopChain.map(b => ({ ...b, step: 1 })),
       notifyOnly: false,
       informEveryone: false,
       inform,

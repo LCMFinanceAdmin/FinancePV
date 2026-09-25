@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { notifyPeople } from "@/lib/notify";
-import type { RequiredApprover } from "@/lib/leave-decision";
+import { outstandingApprovers, type RequiredApprover } from "@/lib/leave-decision";
 
 // Tell the approvers that a leave application is waiting on them.
 //
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     const { data: leave } = await supabase
       .from("leave_applications")
-      .select("leave_no,applicant_email,applicant_name,leave_type_code,start_date,end_date,days,reason,required_approvers,status")
+      .select("leave_no,applicant_email,applicant_name,leave_type_code,start_date,end_date,days,reason,required_approvers,approvals,status")
       .eq("id", leave_id)
       .maybeSingle();
 
@@ -46,14 +46,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Not your application" }, { status: 403 });
     }
 
-    const approvers: RequiredApprover[] = (leave.required_approvers ?? [])
+    // Only the people it is actually with.
+    //
+    // This used to mail every approver on the chain. That was harmless while
+    // any of them could sign from the start; with an ordered chain it told the
+    // Bishop to approve something sitting with the General Manager. Whoever is
+    // next is told when their turn comes, by /api/leave-action.
+    const allApprovers: RequiredApprover[] = (leave.required_approvers ?? [])
       .filter((a: RequiredApprover) => !a.external);
+    const approvers: RequiredApprover[] =
+      outstandingApprovers(allApprovers, leave.approvals ?? []);
 
     // Whether the chain is "all of these" or "any of these" — a chain whose
     // approvers all share one group is settled by whichever of them acts.
     const groups = new Set(approvers.map(a => a.group).filter(Boolean));
     const anyOne = approvers.length > 1 && groups.size === 1
       && approvers.every(a => a.group);
+    // Said once, so somebody at the first step of two knows more is to follow.
+    const laterSteps = allApprovers.length - approvers.length;
 
     const { data: type0 } = await supabase
       .from("leave_types").select("name").eq("code", leave.leave_type_code).maybeSingle();
@@ -109,7 +119,12 @@ export async function POST(req: NextRequest) {
             // Said plainly, because the cost of getting it wrong is three
             // people each waiting for one of the others.
             ? `Any one of you can approve this: ${approvers.map(a => a.name).join(", ")}. It only needs one signature — whoever gets to it first settles it, and the others need do nothing.`
-            : `This application needs all of: ${approvers.map(a => a.name).join(", ")}. Each of you signs separately, and the order does not matter — you do not need to wait for the others.`,
+            : `This step needs all of: ${approvers.map(a => a.name).join(", ")}.`,
+        // Somebody signing the first of two steps should know the application
+        // is not granted by their signature alone.
+        laterSteps > 0
+          ? `Once you have signed, it goes on for further approval before it is granted.`
+          : "",
       ].filter(Boolean),
       // Straight to the application itself rather than the queue's front page.
       // An approver who has to find the right row before they can act is an

@@ -20,6 +20,8 @@ interface LeaveType {
 interface LeaveApp {
   id: string; leave_no: string; leave_type_code: string; start_date: string;
   applicant_email?: string; applicant_name?: string; applicant_signature?: string | null;
+  /** The post held when the application was made — printed on the filed form. */
+  designation?: string | null;
   end_date: string; days: number; reason: string; status: string;
   applied_at: string;
   balance_annual_before?: number | null; balance_medical_before?: number | null;
@@ -369,6 +371,10 @@ function MyLeavesInner() {
       days,
       reason:             form.reason,
       attachment_url:     form.attachment_url || null,
+      // The post as it stands today. Frozen here rather than looked up when
+      // the form is opened, so a filed copy keeps reading as it did when it
+      // was signed.
+      designation:        userDesignation || null,
       congregation_ack_url:  form.congregation_ack_url || null,
       congregation_ack_name: form.congregation_ack_name || null,
       congregation_ack_note: form.congregation_ack_note.trim() || null,
@@ -469,6 +475,7 @@ function MyLeavesInner() {
     applicant_name: l.applicant_name ?? userName,
     applicant_email: l.applicant_email ?? userEmail,
     leave_type: leaveTypes.find(t => t.code === l.leave_type_code)?.name ?? l.leave_type_code,
+    designation: l.designation ?? userDesignation,
     required_approvers: l.required_approvers ?? [],
     approvals: l.approvals ?? [],
   });
