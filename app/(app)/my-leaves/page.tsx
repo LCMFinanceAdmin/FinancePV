@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
-import { describeApprovers } from "@/lib/approver-label";
+import { ApprovalChain } from "@/components/leave/approval-chain";
 import { leaveRouting } from "@/lib/leave-approvers";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
@@ -95,7 +95,6 @@ function MyLeavesInner() {
   const [openedAt, setOpenedAt] = useState<Date | null>(null);
   // email → role, so an application submitted before positions were recorded
   // still names the office rather than showing a bare name.
-  const [roleByEmail, setRoleByEmail] = useState<Record<string, string>>({});
 
   function showMsg(msg: string, ok = true) {
     setToast({ msg, ok }); setTimeout(() => setToast({ msg: "", ok: true }), 3000);
@@ -107,14 +106,13 @@ function MyLeavesInner() {
     const email = session?.user?.email ?? "";
     setUserEmail(email);
 
-    const [{ data: lt }, { data: apps }, { data: rdays }, { data: profile }, { data: people }, { data: ents }] = await Promise.all([
+    const [{ data: lt }, { data: apps }, { data: rdays }, { data: profile }, { data: ents }] = await Promise.all([
       supabase.from("leave_types").select("*").eq("active", true).order("sort_order"),
       supabase.from("leave_applications").select("*").eq("applicant_email", email)
         .order("applied_at", { ascending: false }),
       supabase.from("replacement_days_earned").select("*").eq("employee_email", email)
         .gte("work_date", `${year}-01-01`).lte("work_date", `${year}-12-31`),
       supabase.from("user_roles").select("full_name,designation,is_pastor").eq("email", email).single(),
-      supabase.from("user_roles").select("email,role"),
       supabase.rpc("my_leave_entitlements"),
     ]);
 
@@ -163,10 +161,6 @@ function MyLeavesInner() {
     setUserName(profile?.full_name ?? email);
     setUserDesignation(profile?.designation ?? "");
     setIsPastor(profile?.is_pastor === true);
-    setRoleByEmail(Object.fromEntries(
-      ((people ?? []) as { email: string; role: string }[])
-        .map(p => [p.email.trim().toLowerCase(), p.role]),
-    ));
     setLoading(false);
   }
 
@@ -322,9 +316,20 @@ function MyLeavesInner() {
     }
     // `external` marks approvers with no account — currently the church council
     // President, who acts through an emailed link rather than signing in.
+    // Everything the routing decided, not a hand-picked subset.
+    //
+    // This used to copy email, name, position and external and drop the rest,
+    // which silently threw away both fields that say how the chain is to be
+    // read: `group`, which makes several approvers one slot that any of them
+    // settles, and `step`, which puts them in order. The pastoral rule of
+    // September 2026 — any one of the Bishop, Dean or Pastor in Charge — was
+    // written, stored without its group, and so required all three signatures
+    // instead of one, which is the very thing it was written to stop.
     const resolvedApprovers = resolved.map(a => ({
       email: a.email, name: a.name, position: a.position ?? "",
       ...(a.external ? { external: true } : {}),
+      ...(a.group ? { group: a.group } : {}),
+      ...(a.step ? { step: a.step } : {}),
     }));
 
     // The balances shown on the form are the ones stored, so the record and
@@ -650,7 +655,7 @@ function MyLeavesInner() {
             <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes}
               onCancel={() => cancelLeave(app.id)} cancelling={cancelling === app.id}
               onResendCouncilLink={() => resendCouncilLink(app.id)} resending={resending === app.id}
-              onViewForm={() => viewForm(app)} onEdit={() => startEdit(app)} roleByEmail={roleByEmail} />
+              onViewForm={() => viewForm(app)} onEdit={() => startEdit(app)} />
           ))}
         </div>
       )}
@@ -661,7 +666,7 @@ function MyLeavesInner() {
           {history.length === 0 ? (
             <EmptyState icon={<CalendarDays size={24} />} msg="No leave history" />
           ) : history.map(app => (
-            <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes} onViewForm={() => viewForm(app)} roleByEmail={roleByEmail} />
+            <LeaveCard key={app.id} app={app} leaveTypes={leaveTypes} onViewForm={() => viewForm(app)} />
           ))}
         </div>
       )}
@@ -704,22 +709,11 @@ function MyLeavesInner() {
               <table className="w-full border-collapse text-[14px]">
                 <tbody>
                   <tr>
-                    <td rowSpan={4} className="w-[26%] border border-stone-300 bg-stone-50 p-2.5 align-top font-semibold text-stone-700">
+                    <td rowSpan={3} className="w-[26%] border border-stone-300 bg-stone-50 p-2.5 align-top font-semibold text-stone-700">
                       Submitted by
                     </td>
                     <td className="w-[22%] border border-stone-300 p-2.5 font-medium text-stone-600">Name</td>
                     <td className="border border-stone-300 p-2.5 text-stone-800">{userName}</td>
-                  </tr>
-                  <tr>
-                    <td className="border border-stone-300 p-2.5 font-medium text-stone-600">
-                      Signature <span className="text-red-500">*</span>
-                    </td>
-                    <td className="border border-stone-300 p-2">
-                      <SignaturePad value={applicantSig ?? ""} onChange={setApplicantSig} />
-                      <p className="mt-1 text-[11px] text-stone-400">
-                        Sign with your finger or mouse. This declares the details are correct.
-                      </p>
-                    </td>
                   </tr>
                   <tr>
                     <td className="border border-stone-300 p-2.5 font-medium text-stone-600">Position</td>
@@ -884,6 +878,26 @@ function MyLeavesInner() {
                 </p>
               </div>
 
+              {/* ── The declaration ─────────────────────────────────
+                  A signature sits under what it attests to, not above it. It
+                  used to be the second row of the form, drawn before the dates,
+                  the type of leave or the reason had been filled in — so the
+                  applicant was declaring the details were correct before there
+                  were any details. */}
+              <div className="mt-4 rounded-xl border border-stone-300 p-3">
+                <p className="text-[13px] font-semibold text-stone-700">
+                  Applicant&apos;s signature <span className="text-red-500">*</span>
+                </p>
+                <p className="mt-0.5 mb-2 text-[12px] text-stone-500">
+                  {userName}
+                  {userDesignation ? ` · ${userDesignation}` : ""} · {todayLabel}
+                </p>
+                <SignaturePad value={applicantSig ?? ""} onChange={setApplicantSig} />
+                <p className="mt-1 text-[11px] text-stone-400">
+                  Sign with your finger or mouse. This declares the details above are correct.
+                </p>
+              </div>
+
               <details className="mt-4 text-[12px] text-stone-500">
                 <summary className="cursor-pointer font-semibold text-stone-600">
                   Notes on the leave form
@@ -914,13 +928,12 @@ function MyLeavesInner() {
   );
 }
 
-function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending, onViewForm, onEdit, roleByEmail = {} }: {
+function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink, resending, onViewForm, onEdit }: {
   app: LeaveApp; leaveTypes: LeaveType[];
   onCancel?: () => void; cancelling?: boolean;
   onResendCouncilLink?: () => void; resending?: boolean;
   onViewForm?: () => void;
   onEdit?: () => void;
-  roleByEmail?: Record<string, string>;
 }) {
   const type = leaveTypes.find(t => t.code === app.leave_type_code);
 
@@ -963,14 +976,13 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink,
 
       {app.reason && <p className="text-xs text-stone-500 italic">&ldquo;{app.reason}&rdquo;</p>}
 
-      {app.approvals?.length > 0 && (
-        <div className="pt-1 border-t border-stone-100 space-y-1">
-          {app.approvals.map((ap, i) => (
-            <p key={i} className="text-xs text-stone-400">
-              {ap.action === "APPROVED" ? "✓" : "✗"} {ap.name} · {formatDate(ap.timestamp)}
-              {ap.remarks ? ` — ${ap.remarks}` : ""}
-            </p>
-          ))}
+      {/* The whole chain, in order: what is signed, what it is with now, and
+          what follows. Replaces a list of past approvals above a separate
+          "waiting on" line, which said the same thing twice and neither time
+          said which of two names was actually being waited on. */}
+      {required.length > 0 && (
+        <div className="pt-1.5 border-t border-stone-100">
+          <ApprovalChain required={required} approvals={app.approvals ?? []} />
         </div>
       )}
 
@@ -978,12 +990,6 @@ function LeaveCard({ app, leaveTypes, onCancel, cancelling, onResendCouncilLink,
         className="text-xs font-medium text-[#4a6da7] hover:underline">
         View signed form →
       </button>
-
-      {app.status === "PENDING" && outstanding.length > 0 && (
-        <p className="text-xs text-amber-600">
-          Waiting on {describeApprovers(outstanding, roleByEmail)}
-        </p>
-      )}
 
       {app.status === "PENDING" && onCancel && (
         <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-stone-100">
