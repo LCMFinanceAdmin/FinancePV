@@ -18,6 +18,7 @@ as they are.
 | `payroll-calc.test.ts` | what is owed: EPF across the RM5,000 threshold and the age brackets, SOCSO/SKBBK/EIS, an incomplete month |
 | `pv-voucher.test.ts` | what the payment voucher says, and whose signature it asks for |
 | `pv-checker.test.ts` | the checker's step on a voucher, through the real `ministry-action` edge function |
+| `pv-submit-routing.test.ts` | where a new voucher goes the moment it is raised, through the real `submit-pv` edge function |
 
 The last of those runs `app/api/leave-action/route.ts` itself. Only the three
 modules that reach outside the process are stood in for — the Next response
