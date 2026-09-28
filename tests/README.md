@@ -19,6 +19,7 @@ as they are.
 | `pv-voucher.test.ts` | what the payment voucher says, and whose signature it asks for |
 | `pv-checker.test.ts` | the checker's step on a voucher, through the real `ministry-action` edge function |
 | `pv-submit-routing.test.ts` | where a new voucher goes the moment it is raised, through the real `submit-pv` edge function |
+| `pv-finance-gm.test.ts` | Finance review, the gate to the signatories, and who may not sign |
 
 The last of those runs `app/api/leave-action/route.ts` itself. Only the three
 modules that reach outside the process are stood in for — the Next response
@@ -27,12 +28,18 @@ the site runs, not a description of it.
 
 ## Edge functions
 
-`pv-checker.test.ts` runs a Supabase edge function, which is written for Deno.
-Three things make that possible: `Deno.serve` is shimmed before the import so
-the handler can be captured rather than served, the two shared modules that
-reach outside the process are swapped for stand-ins, and the import goes
-through a variable so TypeScript does not pull Deno source into this
-directory's type graph — Deno checks it, with its own config.
+Several files run Supabase edge functions, which are written for Deno. Three
+things make that possible: `Deno.serve` is shimmed before the import so the
+handler can be captured rather than served, the modules that reach outside the
+process are swapped for stand-ins, and the import goes through a variable so
+TypeScript does not pull Deno source into this directory's type graph — Deno
+checks it, with its own config.
+
+`_shared/supabase.ts` is deliberately **not** stubbed. It holds rules these
+tests are about — who counts as the beneficiary of a voucher, how many
+signatures an amount needs — and standing it in for would mean testing the
+stand-in. Only its network import is replaced, so the real module loads and its
+real logic runs.
 
 ## Real figures stay out
 

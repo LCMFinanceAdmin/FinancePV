@@ -25,38 +25,97 @@ export function resetPv() {
 
 const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
 
+/**
+ * Tables that are simply empty when a test does not mention them.
+ *
+ * Every handler reads a few of these on its way to the thing being tested —
+ * saved signatures, the voucher-number pool, the outbox. Requiring each test
+ * to declare them would be noise, and the point of throwing on an unknown
+ * table is to catch a query nobody expected, not this.
+ */
+const ALWAYS_PRESENT = [
+  "user_security_credentials",
+  "pv_number_pool",
+  "notifications",
+];
+
 /** A query builder over pvWorld.tables, covering only the shapes these functions use. */
+let rowCounter = 0;
+
 export function pvQuery(table: string) {
   const eqs: Record<string, unknown> = {};
   /** Array columns: every value must be present in the row's array. */
   const containsAll: [string, unknown[]][] = [];
+  const likes: [string, string][] = [];
+  const inLists: [string, unknown[]][] = [];
+  const isNull: string[] = [];
+  let sort: { column: string; ascending: boolean } | null = null;
+  let limit: number | null = null;
   let patch: Row | null = null;
   let inserted: Row[] | null = null;
 
   const rows = (): Row[] => {
-    const src = pvWorld.tables[table];
+    const src = pvWorld.tables[table] ?? (ALWAYS_PRESENT.includes(table) ? [] : undefined);
     if (!src) throw new Error(`the stub knows nothing of the table "${table}"`);
-    return src.filter(r =>
+    const out = src.filter(r =>
       Object.entries(eqs).every(([c, v]) => norm(r[c]) === norm(v)) &&
       containsAll.every(([c, vs]) => {
         const held = Array.isArray(r[c]) ? (r[c] as unknown[]) : [];
         return vs.every(v => held.some(h => norm(h) === norm(v)));
-      }));
+      }) &&
+      // Only the prefix form the voucher series uses, which is all it needs.
+      likes.every(([c, pattern]) => norm(r[c]).startsWith(norm(pattern.replace(/%$/, "")))) &&
+      inLists.every(([c, vs]) => vs.some(v => norm(v) === norm(r[c]))) &&
+      isNull.every(c => r[c] === null || r[c] === undefined));
+    if (sort) {
+      const { column, ascending } = sort;
+      out.sort((a, b) => (norm(a[column]) < norm(b[column]) ? -1 : norm(a[column]) > norm(b[column]) ? 1 : 0) * (ascending ? 1 : -1));
+    }
+    return limit === null ? out : out.slice(0, limit);
+  };
+
+  /** Apply a pending insert, once, and hand back what was written. */
+  const flushInsert = (): Row[] | null => {
+    if (!inserted) return null;
+    const written = inserted.map(r => ({ id: `row-${++rowCounter}`, ...r }));
+    inserted = null;
+    if (table === "notifications") pvWorld.notifications.push(...written);
+    else (pvWorld.tables[table] ??= []).push(...written);
+    return written;
   };
 
   const q = {
     select: () => q,
-    order: () => q,
+    order: (column?: string, opts?: { ascending?: boolean }) => {
+      if (column) sort = { column, ascending: opts?.ascending !== false };
+      return q;
+    },
     eq: (c: string, v: unknown) => { eqs[c] = v; return q; },
     contains: (c: string, vs: unknown[]) => { containsAll.push([c, vs]); return q; },
+    in: (c: string, vs: unknown[]) => { inLists.push([c, vs]); return q; },
+    like: (c: string, pattern: string) => { likes.push([c, pattern]); return q; },
+    is: (c: string, v: unknown) => { if (v === null) isNull.push(c); return q; },
+    limit: (n: number) => { limit = n; return q; },
+    upsert: (rowsIn: Row | Row[]) => { inserted = Array.isArray(rowsIn) ? rowsIn : [rowsIn]; return q; },
     update: (p: Row) => { patch = p; return q; },
     insert: (rowsIn: Row | Row[]) => { inserted = Array.isArray(rowsIn) ? rowsIn : [rowsIn]; return q; },
-    single: async () => ({ data: rows()[0] ?? null, error: rows()[0] ? null : { message: "no rows" } }),
-    maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
+    // insert(...).select(...).single() is how a row is written and read back,
+    // so a pending insert is applied here rather than waiting for an await on
+    // the builder itself.
+    single: async () => {
+      const wrote = flushInsert();
+      if (wrote) return { data: wrote[0] ?? null, error: null };
+      const r = rows()[0] ?? null;
+      return { data: r, error: r ? null : { message: "no rows" } };
+    },
+    maybeSingle: async () => {
+      const wrote = flushInsert();
+      if (wrote) return { data: wrote[0] ?? null, error: null };
+      return { data: rows()[0] ?? null, error: null };
+    },
     then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => {
       if (inserted) {
-        if (table === "notifications") pvWorld.notifications.push(...inserted);
-        else (pvWorld.tables[table] ??= []).push(...inserted);
+        flushInsert();
         return Promise.resolve({ error: null }).then(res, rej);
       }
       if (patch) {

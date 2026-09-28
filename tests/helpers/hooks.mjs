@@ -24,15 +24,24 @@ const STUBS = {
 // reach the outside world through two shared modules. Those are matched on
 // where they resolve to rather than on how they were written, since the same
 // file is "../_shared/supabase.ts" from every function.
+// _shared/supabase.ts is NOT stubbed. It holds the rules these tests are
+// about — who counts as the beneficiary of a voucher, how many signatures an
+// amount needs, when a signatory's approval is the last one — and standing it
+// in for would mean testing the stand-in. Only its network import is replaced,
+// so the real module loads and its real logic runs.
 const EDGE_STUBS = [
-  ["supabase/functions/_shared/supabase.ts", "tests/helpers/stub-edge-supabase.ts"],
   ["supabase/functions/_shared/push.ts", "tests/helpers/stub-edge-push.ts"],
 ];
+
+// The client the shared module builds at the top of the file.
+const URL_IMPORTS = {
+  "https://esm.sh/@supabase/supabase-js@2": "tests/helpers/stub-supabase-js.ts",
+};
 
 const hasExtension = (s) => /\.(ts|tsx|mts|mjs|js|json)$/.test(s);
 
 export async function resolve(specifier, context, next) {
-  const stub = STUBS[specifier];
+  const stub = STUBS[specifier] ?? URL_IMPORTS[specifier];
   if (stub) return next(here(stub), context);
   if (specifier.startsWith("@/")) {
     const rest = specifier.slice(2);
