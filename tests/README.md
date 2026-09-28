@@ -20,6 +20,7 @@ as they are.
 | `pv-checker.test.ts` | the checker's step on a voucher, through the real `ministry-action` edge function |
 | `pv-submit-routing.test.ts` | where a new voucher goes the moment it is raised, through the real `submit-pv` edge function |
 | `pv-finance-gm.test.ts` | Finance review, the gate to the signatories, and who may not sign |
+| `pv-signatories-paid.test.ts` | how many officers must sign, when that is enough, the approval PIN, and marking a voucher paid |
 
 The last of those runs `app/api/leave-action/route.ts` itself. Only the three
 modules that reach outside the process are stood in for — the Next response
