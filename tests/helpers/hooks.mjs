@@ -20,9 +20,32 @@ const STUBS = {
   "@/lib/notify": "tests/helpers/stub-notify.ts",
 };
 
+// The edge functions are Deno: they import each other by relative path and
+// reach the outside world through two shared modules. Those are matched on
+// where they resolve to rather than on how they were written, since the same
+// file is "../_shared/supabase.ts" from every function.
+const EDGE_STUBS = [
+  ["supabase/functions/_shared/supabase.ts", "tests/helpers/stub-edge-supabase.ts"],
+  ["supabase/functions/_shared/push.ts", "tests/helpers/stub-edge-push.ts"],
+];
+
+const hasExtension = (s) => /\.(ts|tsx|mts|mjs|js|json)$/.test(s);
+
 export async function resolve(specifier, context, next) {
   const stub = STUBS[specifier];
   if (stub) return next(here(stub), context);
-  if (specifier.startsWith("@/")) return next(here(specifier.slice(2) + ".ts"), context);
-  return next(specifier, context);
+  if (specifier.startsWith("@/")) {
+    const rest = specifier.slice(2);
+    return next(here(hasExtension(rest) ? rest : rest + ".ts"), context);
+  }
+
+  const resolved = await next(specifier, context);
+  for (const [tail, replacement] of EDGE_STUBS) {
+    // split/join rather than a regex: a Windows path is full of backslashes
+    // and escaping them here is how this line got broken once already.
+    if (resolved.url.split("\\").join("/").endsWith(tail)) {
+      return next(here(replacement), context);
+    }
+  }
+  return resolved;
 }

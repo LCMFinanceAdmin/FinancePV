@@ -17,11 +17,21 @@ as they are.
 | `leave-action.test.ts` | the application walked end to end through the real route handler |
 | `payroll-calc.test.ts` | what is owed: EPF across the RM5,000 threshold and the age brackets, SOCSO/SKBBK/EIS, an incomplete month |
 | `pv-voucher.test.ts` | what the payment voucher says, and whose signature it asks for |
+| `pv-checker.test.ts` | the checker's step on a voucher, through the real `ministry-action` edge function |
 
 The last of those runs `app/api/leave-action/route.ts` itself. Only the three
 modules that reach outside the process are stood in for — the Next response
 helper, the Supabase client and the mailer — so what is under test is the code
 the site runs, not a description of it.
+
+## Edge functions
+
+`pv-checker.test.ts` runs a Supabase edge function, which is written for Deno.
+Three things make that possible: `Deno.serve` is shimmed before the import so
+the handler can be captured rather than served, the two shared modules that
+reach outside the process are swapped for stand-ins, and the import goes
+through a variable so TypeScript does not pull Deno source into this
+directory's type graph — Deno checks it, with its own config.
 
 ## Real figures stay out
 
