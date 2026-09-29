@@ -1245,10 +1245,19 @@ export default function PVDetailPage() {
       {user?.isFinanceAdmin && (
         <div className="print:hidden max-w-4xl mx-auto px-4 mt-3">
           <div className="bg-stone-50 border border-stone-200 rounded-xl px-2.5 py-2">
-            <div className="flex items-center gap-1.5 mb-1.5">
+            <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
               <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">For Office Use</span>
               {officeSaved && <span className="text-xs text-green-600 font-medium">Saved</span>}
+              {/* The system's own handle, for finding this voucher again —
+                  shown as information rather than offered as the reference,
+                  which follows the church's filing sequence and not this one. */}
+              <span className="text-[11px] text-stone-400">System ref {pv.pv_no}</span>
             </div>
+            {!officeRef.trim() && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-1.5">
+                No reference yet — the voucher prints this box empty until one is entered.
+              </p>
+            )}
             <div className="flex gap-3 flex-wrap items-end">
               <div className="flex-1 min-w-[140px]">
                 <label className="text-[11px] text-stone-500 font-medium block mb-0.5">Ref No</label>
@@ -1256,7 +1265,7 @@ export default function PVDetailPage() {
                   type="text"
                   value={officeRef}
                   onChange={e => setOfficeRef(e.target.value)}
-                  placeholder={pv.pv_no}
+                  placeholder="as filed"
                   className="w-full text-[13px] border-2 border-stone-800 rounded-lg px-2.5 py-1 outline-none focus:border-[#2f5b9c] bg-white text-stone-900 font-medium placeholder:text-stone-300"
                 />
               </div>

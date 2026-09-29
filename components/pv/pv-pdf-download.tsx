@@ -150,8 +150,9 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
   const bmApproval = approvals.find(a => a.role === "BUILDING_MANAGER");
   const committeeApproval = approvals.find(a => a.role === "BAM_COMMITTEE" && a.action === "APPROVED");
 
-  // Ref shown in the FOR OFFICE USE ONLY box — Finance Exec can override via office_ref
-  const displayRef = pv.office_ref?.trim() || pv.pv_no;
+  // Ref shown in the FOR OFFICE USE ONLY box: what Finance entered, and
+  // nothing else. See pv-html.ts — the two renderers must agree.
+  const displayRef = pv.office_ref?.trim() ?? "";
 
   return (
     <Document title={`PV ${pv.pv_no}`}>

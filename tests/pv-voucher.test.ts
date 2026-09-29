@@ -57,6 +57,22 @@ test("the three spellings of HQ are recognised, and nothing else is", () => {
   assert.ok(!isHqOffice(null));
 });
 
+test("the office reference is what Finance entered, not the system's own number", () => {
+  // The box used to fall back to pv_no, so a voucher nobody had referenced
+  // still printed one — the number this system allocated to itself, which is
+  // not the sequence the church files under.
+  const entered = voucher({ office_ref: "PV/2026/0417", accounting_code: "6000-1234" } as Partial<PV>);
+  assert.ok(entered.includes("Ref: <b>PV/2026/0417</b>"));
+  assert.ok(entered.includes("A/C Code: <b>6000-1234</b>"));
+
+  // The box, specifically. pv_no still appears in the document title, which is
+  // the print filename and how a saved voucher is found again.
+  const blank = voucher({ pv_no: "LCM-2026-0099" } as Partial<PV>);
+  assert.ok(blank.includes("Ref: <b></b>"),
+    "an unreferenced voucher prints the box empty rather than the system's number");
+  assert.ok(blank.includes("<title>LCM-2026-0099"), "but the file is still named for it");
+});
+
 test("a voucher that has been checked names who checked it, and when", () => {
   const html = voucher({
     checked_by_name: "Thomas Lim",

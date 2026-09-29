@@ -130,7 +130,14 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
   const isBamPV = pv.pv_type === "BAM";
   const bmApproval = approvals.find(a => a.role === "BUILDING_MANAGER");
   const committeeApproval = approvals.find(a => a.role === "BAM_COMMITTEE" && a.action === "APPROVED");
-  const displayRef = pv.office_ref?.trim() || pv.pv_no;
+  // What Finance wrote in the office box, and nothing else.
+  //
+  // This used to fall back to pv_no, so a voucher nobody had referenced still
+  // printed a reference — the one this system had allocated to itself, which
+  // is not the sequence the church files under. A blank says "not yet
+  // referenced", which is true and is a prompt; an auto number in its place
+  // looks like an answer.
+  const displayRef = pv.office_ref?.trim() ?? "";
 
   const itemRows = items.map((item, i) => `
     <tr>
