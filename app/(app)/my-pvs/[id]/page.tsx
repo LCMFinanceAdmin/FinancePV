@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatDateTime, getLOATier, roleLabel, computedBadgeStatus } from "@/lib/utils";
+import { nextOfficeRef, checkOfficeRef } from "@/lib/pv/office-ref";
 import { PVKeyFacts } from "@/components/pv/pv-summary";
 import { pvEntity } from "@/lib/entities";
 import type { PV, UserProfile, PVApproval } from "@/lib/types";
@@ -250,6 +251,8 @@ export default function PVDetailPage() {
   // Finance office fields (Accounting Code + Office Ref)
   const [accountingCode, setAccountingCode] = useState("");
   const [officeRef, setOfficeRef]           = useState("");
+  /** References on other vouchers, newest first — for the suggestion and the clash check. */
+  const [usedRefs, setUsedRefs]             = useState<{ ref: string; pv_no: string }[]>([]);
   const [officeSaving, setOfficeSaving]     = useState(false);
   const [officeSaved, setOfficeSaved]       = useState(false);
 
@@ -331,6 +334,21 @@ export default function PVDetailPage() {
         setPv(pvData as PV);
         setAccountingCode(pvData.accounting_code ?? "");
         setOfficeRef(pvData.office_ref ?? "");
+
+        // References already in use, newest first, so the next one can be
+        // suggested and a clash noticed. Read from the vouchers themselves
+        // rather than a counter: the sequence belongs to the church's filing,
+        // and a counter would drift the moment somebody typed around it.
+        const { data: used } = await supabase
+          .from("pvs")
+          .select("pv_no,office_ref,created_at")
+          .not("office_ref", "is", null)
+          .neq("id", pvData.id)
+          .order("created_at", { ascending: false })
+          .limit(200);
+        setUsedRefs((used ?? [])
+          .filter((r: { office_ref?: string | null }) => (r.office_ref ?? "").trim())
+          .map((r: { pv_no: string; office_ref: string }) => ({ ref: r.office_ref, pv_no: r.pv_no })));
       }
 
       // Load saved signatures for all approvers so they show on the voucher as fallback
@@ -792,6 +810,10 @@ export default function PVDetailPage() {
       setOfficeSaving(false);
     }
   }
+
+  // The last reference anyone used, and what would follow it.
+  const suggestedRef = nextOfficeRef(usedRefs[0]?.ref);
+  const refNote = checkOfficeRef(officeRef, usedRefs, usedRefs[0]?.ref);
 
   const loa = getLOATier(pv.amount, pv.payment_type);
   const approvals: PVApproval[] = pv.approvals ?? [];
@@ -1256,6 +1278,28 @@ export default function PVDetailPage() {
             {!officeRef.trim() && (
               <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-1.5">
                 No reference yet — the voucher prints this box empty until one is entered.
+                {suggestedRef && (
+                  <>
+                    {" "}Next in sequence is{" "}
+                    <button type="button" onClick={() => setOfficeRef(suggestedRef)}
+                      className="font-semibold underline underline-offset-2 hover:text-amber-900">
+                      {suggestedRef}
+                    </button>.
+                  </>
+                )}
+              </p>
+            )}
+            {/* Said, never enforced. The sequence is the church's, and Finance
+                may have a reason for any number they type — a voucher raised
+                out of order, a series started afresh, a number held back on
+                paper. A note is help; a refusal would be this system deciding
+                how their books run. */}
+            {refNote.tone !== "none" && (
+              <p className={`text-[11px] rounded-lg px-2 py-1 mb-1.5 border ${
+                refNote.tone === "warn"
+                  ? "text-red-700 bg-red-50 border-red-200"
+                  : "text-stone-600 bg-stone-100 border-stone-200"}`}>
+                {refNote.message}
               </p>
             )}
             <div className="flex gap-3 flex-wrap items-end">
