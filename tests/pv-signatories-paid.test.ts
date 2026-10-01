@@ -167,3 +167,25 @@ test("somebody outside Finance cannot mark a voucher paid", async () => {
   assert.equal(r.status, 403);
   assert.equal(pv().status, "APPROVED");
 });
+
+// ── The two copies of the rule ───────────────────────────────────────────
+
+test("the app and the edge function agree on how many signatures an amount needs", async () => {
+  // getLOATier exists twice: once in lib/utils.ts for the browser, once in
+  // supabase/functions/_shared/supabase.ts for Deno, because the two runtimes
+  // cannot import from each other. They decide how many officers must sign a
+  // payment, so a drift between them would mean a voucher needing two
+  // signatures on screen and one on the server.
+  //
+  // Pinned rather than restructured: the boundary is real and the duplication
+  // is the lesser of the two evils. This is the alarm on it.
+  const { getLOATier: appTier } = await import("@/lib/utils");
+  for (const amount of [0, 1, 29999.99, 30000, 30000.01, 99999, 100000, 100000.01, 500000]) {
+    for (const type of ["GENERAL", "ASSET_PURCHASE"]) {
+      const a = appTier(amount, type);
+      const b = getLOATier(amount, type);
+      assert.equal(a.required, b.required, `${type} ${amount}: number of signatures`);
+      assert.deepEqual(a.roles, b.roles, `${type} ${amount}: which officers`);
+    }
+  }
+});

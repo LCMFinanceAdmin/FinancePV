@@ -1609,22 +1609,6 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const hasEpl = annualEpl > 0;
   const specialCustom = customCols; // all custom items are "special"
 
-  // Same categories as the tab table, minus the actions column, and EPL only
-  // appears when somebody has a loan — so the indices after it shift twice over.
-  // Computed for the same reason as there: a hardcoded list would put a thick
-  // rule through the middle of a category as soon as a column was added.
-  const printCategoryStarts = (() => {
-    const fixed = [2, 3, 4, 6, 9];                 // Gross, PCB, EPF, SOCSO, EIS
-    const epl = hasEpl ? [11] : [];
-    const firstCustom = hasEpl ? 12 : 11;
-    const custom = customCols.map((_, i) => firstCustom + i);
-    const net = firstCustom + customCols.length;
-    return [...fixed, ...epl, ...custom, net, net + 1];
-  })();
-  const printGridCss =
-    `.ysheet-print tbody tr > *:is(${printCategoryStarts.map(n => `:nth-child(${n})`).join(",")})`
-    + `{border-left:2px solid #64748b}`;
-
   const hasAnySpecial = hasFamily || hasStm || hasExp || hasEpl || specialCustom.length > 0;
 
   const emailSubject = `${emp.full_name} — Salary Sheet ${year}`;
