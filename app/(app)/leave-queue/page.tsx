@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import { describeApprover as describe, type LabelledApprover } from "@/lib/approver-label";
+import { partitionQueue, slotIsMine } from "@/lib/leave-queue";
 import { outstandingApprovers, type RequiredApprover } from "@/lib/leave-decision";
 import { CheckCircle2, XCircle, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -143,51 +144,13 @@ function LeaveQueueInner() {
 
   useEffect(() => { load(); }, []);
 
-  const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
+  // Who sees what, and in which list. Lifted into lib/leave-queue so the rule
+  // can be checked: it decides what a signatory is shown as actionable, and a
+  // rule only exercised by clicking is one nobody can be sure of.
+  const viewer = { email: userEmail, role: userRole, roleByEmail };
+  const isMe = (a: { email: string }) => slotIsMine(a, viewer);
+  const { pending, awaitingOthers, history } = partitionQueue(leaves, viewer, highlightRef);
 
-  // An application names the people who must approve it, captured when it was
-  // submitted. Matching on email alone strands an application the moment the
-  // post changes hands — the outgoing GM is still named, and the incoming one
-  // sees nothing. So a slot also matches when you now hold the role the named
-  // person held. (This is what the /api/leave-action route already allows: it
-  // accepts any senior role, so this only surfaces what could already be done.)
-  const isMe = (a: { email: string }) =>
-    norm(a.email) === norm(userEmail) ||
-    (!!userRole && roleByEmail[norm(a.email)] === userRole);
-
-  const isMine = (l: LeaveApp) => (l.required_approvers ?? []).some(isMe);
-
-  const myLeaves = leaves.filter(isMine);
-
-  // A chain can still be PENDING after you have signed it — a staff chain
-  // needing both the General Manager and the Bishop, for instance. Those don't
-  // belong in your queue, nothing more being asked of you, but they aren't
-  // history either, so they're listed separately. A pastor's chain is settled
-  // by whoever signs first, so it leaves this list immediately.
-  const iSigned = (l: LeaveApp) =>
-    l.approvals?.some(a => norm(a.email) === norm(userEmail) && a.action === "APPROVED");
-
-  /**
-   * Is it with me, now?
-   *
-   * Being named on the chain is not the same as being asked. Since the chain
-   * runs in order, an application waiting on the General Manager would
-   * otherwise have sat in the Bishop's queue looking actionable — and the
-   * Approve button would have come back with "this is waiting on Jeffrey Koit
-   * first", which is a poor way to learn it was never yours to press.
-   */
-  const isMyTurn = (l: LeaveApp) =>
-    outstandingApprovers(
-      (l.required_approvers ?? []) as RequiredApprover[],
-      (l.approvals ?? []) as Parameters<typeof outstandingApprovers>[1],
-    ).some(isMe);
-
-  // The one the email was about goes to the top, so a long queue can't bury it.
-  const pending        = myLeaves.filter(l => l.status === "PENDING" && !iSigned(l) && isMyTurn(l))
-    .sort((a, b) => Number(b.leave_no === highlightRef) - Number(a.leave_no === highlightRef));
-  // Signed by me, or not yet mine to sign. Either way nothing is being asked.
-  const awaitingOthers = myLeaves.filter(l => l.status === "PENDING" && (iSigned(l) || !isMyTurn(l)));
-  const history        = myLeaves.filter(l => l.status !== "PENDING");
 
   // What is still outstanding, grouped back into the slots the chain actually
   // has. `outstandingApprovers` returns every member of an unsettled group —
