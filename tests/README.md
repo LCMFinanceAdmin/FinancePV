@@ -42,6 +42,20 @@ signatures an amount needs — and standing it in for would mean testing the
 stand-in. Only its network import is replaced, so the real module loads and its
 real logic runs.
 
+## What these tests cannot see
+
+The database. `npm test` runs against a stand-in, so a row-level security
+policy drawn too tight passes here and fails in the browser. `scripts/`
+holds a separate check that attempts real writes as the `authenticated` role
+and reports what the database actually did:
+
+```bash
+npm run verify:access
+```
+
+See `scripts/README.md`. Run it after any migration that changes who may
+write what.
+
 ## Real figures stay out
 
 `payroll-calc.test.ts` uses invented salaries. The reconciliations against the
