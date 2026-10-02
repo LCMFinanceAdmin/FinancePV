@@ -360,10 +360,13 @@ export function AccessPanel({
             <label className={labelClass}>Reports to, for leave</label>
             <select className={fieldClass} value={account.reports_to}
               onChange={e => patch({ reports_to: e.target.value as Account["reports_to"] })}>
-              <option value="GM_AND_BISHOP">General Manager and Bishop</option>
-              <option value="BISHOP_ONLY">Bishop only</option>
+              <option value="GM_AND_BISHOP">General Manager first, then the Bishop</option>
+              <option value="BISHOP_ONLY">Bishop only — the General Manager himself</option>
             </select>
             <p className="mt-1 text-[11px] text-stone-500">
+              Office staff go to the General Manager first, with the Bishop signing to
+              acknowledge. &ldquo;Bishop only&rdquo; is for the General Manager, who cannot approve his
+              own leave — setting anyone else to it puts their leave out of his sight.
               Pastors are routed by their congregation instead — see below.
             </p>
           </div>

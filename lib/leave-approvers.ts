@@ -270,8 +270,18 @@ export async function leaveRouting(
   // Finance, Admin and Accounts Executives all report through the GM, and the
   // Bishop's signature is meant to follow that reading, not race it.
   //
-  // Somebody who reports to the Bishop alone — the General Manager himself,
-  // and anybody set to BISHOP_ONLY — has a chain of one.
+  // Since October 2026 that applies to every full-time member of office staff,
+  // Communications and Trustees included. Three of them were set to
+  // BISHOP_ONLY and so had their leave granted without the General Manager
+  // ever seeing it; migration 240 moved them onto this chain. Somebody with a
+  // department head above them keeps that signature and gains the GM's beneath
+  // it — Sean Cham, then the General Manager, then the Bishop — which is held
+  // as an explicit assignment, since the rules here have no rung for a
+  // department head.
+  //
+  // BISHOP_ONLY is left with one holder: the General Manager himself, who
+  // cannot be his own approver. Setting anybody else to it puts their leave
+  // back out of his sight, which is the thing that was asked to stop.
   const chain: LeaveApprover[] = [];
   if (me?.reports_to !== "BISHOP_ONLY") {
     const { data: gms } = await supabase

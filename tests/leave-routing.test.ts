@@ -46,11 +46,43 @@ test("staff report through the General Manager, then the Bishop", async () => {
     "1:Jeffrey Koit  2:Bishop Thomas");
 });
 
-test("somebody set to report to the Bishop alone has a chain of one", async () => {
+test("the General Manager's own leave goes to the Bishop alone", async () => {
+  // He cannot be his own approver, which is the one remaining use of
+  // BISHOP_ONLY. Every other member of office staff was taken off it in
+  // October 2026 so the GM sees their application before the Bishop does.
   assert.equal(
-    await chain({ user_roles: [BISHOP, GM,
-      { email: "sean@lcm", full_name: "Sean", role: "STAFF", reports_to: "BISHOP_ONLY" }] }, "sean@lcm"),
+    await chain({ user_roles: [BISHOP,
+      { ...GM, reports_to: "BISHOP_ONLY" }] }, "gm@lcm"),
     "1:Bishop Thomas");
+});
+
+test("office staff reach the Bishop through the General Manager, not around him", async () => {
+  // Communications and Trustees used to be set to BISHOP_ONLY, so an
+  // application was granted without the General Manager ever seeing it.
+  for (const who of ["comms@lcm", "trustees@lcm"]) {
+    assert.equal(
+      await chain({ user_roles: [BISHOP, GM,
+        { email: "comms@lcm", full_name: "Siew Fun", role: "STAFF", reports_to: "GM_AND_BISHOP" },
+        { email: "trustees@lcm", full_name: "Sean", role: "STAFF", reports_to: "GM_AND_BISHOP" }] }, who),
+      "1:Jeffrey Koit  2:Bishop Thomas", who);
+  }
+});
+
+test("a department head signs first, then the General Manager, then the Bishop", async () => {
+  // Eddie Kwan is under Sean Cham at Trustees, so Sean still signs — the
+  // General Manager was inserted between Sean and the Bishop rather than in
+  // place of either, which is what "GM first, then Bishop for
+  // acknowledgement" means for somebody who also has a department head.
+  assert.equal(
+    await chain({
+      user_roles: [BISHOP, GM, { email: "eddie@lcm", full_name: "Eddie", role: "BUILDING_MANAGER" }],
+      leave_approver_assignments: [
+        { employee_email: "eddie@lcm", approver_email: "sean@lcm", approver_name: "Sean Cham", sort_order: 1 },
+        { employee_email: "eddie@lcm", approver_email: "gm@lcm", approver_name: "Jeffrey Koit", sort_order: 2 },
+        { employee_email: "eddie@lcm", approver_email: "bishop@lcm", approver_name: "Bishop Thomas", sort_order: 3 },
+      ],
+    }, "eddie@lcm"),
+    "1:Sean Cham  2:Jeffrey Koit  3:Bishop Thomas");
 });
 
 test("the Bishop's own leave is granted on submission", async () => {
