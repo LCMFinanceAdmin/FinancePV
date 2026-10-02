@@ -59,6 +59,14 @@ staff change.
 | `worksheets` / `income` | the Building Manager raises worksheets and records facility income |
 | `banking` | Finance and the General Manager; not the Administrator |
 | `credentials` | nobody at all — PIN hashes and signatures are the service role's |
+| `leave` | a Trustees employee at HQ is offered leave but no staff claims; a volunteer officer is offered neither |
+
+The `leave` area is the one that is not a policy. Leave is gated by a function,
+and it fails the same quiet way a policy does: somebody not entitled is offered
+no leave type at all, which on the page is an empty form rather than a refusal.
+Two people are employed by the Trustees rather than by LCM and the General
+Manager approves their leave regardless, so "LCM does not employ you" must not
+be the question the leave form asks.
 
 ### After changing a policy
 

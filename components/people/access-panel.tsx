@@ -34,6 +34,8 @@ interface Account {
   ministries: string[] | null;
   has_pin: boolean;
   is_lcm_staff: boolean;
+  /** LCM runs their leave without employing them — a Trustees employee at HQ. */
+  leave_under_lcm: boolean;
   is_pastor: boolean;
   designation: string | null;
   congregation_id: string | null;
@@ -80,7 +82,7 @@ export function AccessPanel({
     if (!userEmail) { setAccount(null); setLoading(false); return; }
     const [{ data }, { data: locks }, { data: offs }, { data: holds }] = await Promise.all([
       supabase.from("user_roles")
-        .select("id,email,role,ministries,has_pin,is_lcm_staff,is_pastor,designation,congregation_id,reports_to")
+        .select("id,email,role,ministries,has_pin,is_lcm_staff,leave_under_lcm,is_pastor,designation,congregation_id,reports_to")
         .eq("email", userEmail).maybeSingle(),
       supabase.rpc("locked_pins"),
       supabase.from("offices").select("id,name,kind,grants_role,single_holder")
@@ -381,6 +383,12 @@ export function AccessPanel({
               </label>
               <label className="flex items-center gap-2 text-sm text-stone-700">
                 <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
+                  checked={account.leave_under_lcm}
+                  onChange={e => patch({ leave_under_lcm: e.target.checked })} />
+                LCM runs their leave
+              </label>
+              <label className="flex items-center gap-2 text-sm text-stone-700">
+                <input type="checkbox" className="h-4 w-4 accent-[#2f5b9c]"
                   checked={account.is_pastor}
                   onChange={e => patch({ is_pastor: e.target.checked })} />
                 Pastor
@@ -388,7 +396,13 @@ export function AccessPanel({
             </div>
             <p className="mt-1 text-[11px] text-stone-500">
               Employment decides whether leave, staff loans and payroll are offered at all — a
-              volunteer with an lcm.org.my address is not entitled to any of them.
+              volunteer with an lcm.org.my address is not entitled to any of them. It follows the
+              payroll record and cannot be set here: the database recalculates it on every save.
+            </p>
+            <p className="mt-1 text-[11px] text-stone-500">
+              &ldquo;LCM runs their leave&rdquo; is for somebody another body employs whose leave the
+              General Manager still approves — a Trustees employee at HQ. It opens leave only,
+              never staff loans, salary or claims.
             </p>
           </div>
 

@@ -90,6 +90,31 @@ EXCEPTION WHEN insufficient_privilege THEN
   VALUES (p_area, p_who, p_what, 'refused outright', expected::text, 'FAIL');
 END $fn$;
 
+CREATE OR REPLACE FUNCTION pg_temp.try_count(
+  p_area text, p_email text, p_who text, p_sql text, p_what text, p_expected text)
+RETURNS void LANGUAGE plpgsql AS $fn$
+DECLARE n int; verdict text;
+BEGIN
+  IF p_email IS NULL THEN
+    INSERT INTO result(area, who, attempt, got, expected, verdict)
+    VALUES (p_area, p_who, p_what, 'nobody is in this position', '-', 'SKIP');
+    RETURN;
+  END IF;
+  PERFORM set_config('request.jwt.claims', json_build_object('email', p_email)::text, true);
+  SET LOCAL ROLE authenticated;
+  EXECUTE p_sql INTO n;
+  RESET ROLE;
+  -- 'some' rather than a number: the count is how many leave types the church
+  -- happens to offer, which is policy and moves. Nothing here depends on it
+  -- being ten, only on it not being none.
+  verdict := CASE
+    WHEN p_expected = 'some' AND n > 0  THEN 'PASS'
+    WHEN p_expected = 'none' AND n = 0  THEN 'PASS'
+    ELSE 'FAIL' END;
+  INSERT INTO result(area, who, attempt, got, expected, verdict)
+  VALUES (p_area, p_who, p_what, n::text, p_expected, verdict);
+END $fn$;
+
 DO $probe$
 DECLARE
   finance  text := pg_temp.whoever('FINANCE_ADMIN');
@@ -99,6 +124,16 @@ DECLARE
   bm       text := pg_temp.whoever('BUILDING_MANAGER');
   desk     text := pg_temp.whoever('MINISTRY_SUPPORT');
   exco     text := pg_temp.a_portfolio_holder();
+  -- Employed elsewhere, leave administered here. Resolved by that condition
+  -- rather than by name, like everybody else in this file.
+  guest_leave text := (SELECT email FROM user_roles
+                        WHERE leave_under_lcm AND NOT is_lcm_staff
+                        ORDER BY email LIMIT 1);
+  volunteer   text := (SELECT email FROM user_roles
+                        WHERE NOT is_lcm_staff AND NOT leave_under_lcm
+                          AND is_pastor IS NOT TRUE AND role <> 'GUEST'
+                          AND COALESCE(is_test_account, false) = false
+                        ORDER BY email LIMIT 1);
 BEGIN
   -- Money records belong to Finance.
   PERFORM pg_temp.try_insert('money', finance, 'Finance Executive',
@@ -178,6 +213,22 @@ BEGIN
   PERFORM pg_temp.try_insert('credentials', admin, 'Administrator',
     $q$INSERT INTO user_security_credentials(email) VALUES ('_probe2@example.com')$q$,
     'write a PIN hash', false);
+  -- Leave is gated by a function rather than a policy, and it fails the same
+  -- quiet way: somebody not entitled is offered no leave type at all, which on
+  -- the page is an empty form rather than a refusal. Two people are employed by
+  -- the Trustees and not by LCM, and the General Manager approves their leave
+  -- all the same (241) -- so "LCM does not employ you" must not be the question
+  -- the leave form asks.
+  PERFORM pg_temp.try_count('leave', guest_leave, 'Trustees employee',
+    $q$SELECT count(*) FROM my_leave_entitlements()$q$,
+    'is offered leave', 'some');
+  PERFORM pg_temp.try_count('leave', volunteer, 'Volunteer officer',
+    $q$SELECT count(*) FROM my_leave_entitlements()$q$,
+    'is offered leave', 'none');
+  -- And the leave must not have dragged the rest of employment along with it.
+  PERFORM pg_temp.try_count('leave', guest_leave, 'Trustees employee',
+    $q$SELECT count(*) FROM my_claim_entitlements()$q$,
+    'is offered staff claims', 'none');
 END $probe$;
 
 INSERT INTO result(seq, area, who, attempt, got, expected, verdict)

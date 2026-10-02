@@ -4,13 +4,25 @@
 // Hiding a nav item is presentation, not access control: these URLs are short
 // and guessable, and a volunteer EXCO member has a genuine @lcm.org.my login.
 // This checks the directory record itself before rendering the page.
+//
+// Leave asks a different question from loans and salary, which is why `gate`
+// exists. Loans and salary are LCM's own and follow is_lcm_staff. Leave follows
+// whether LCM *administers* it, which since October 2026 includes two Trustees
+// employees at HQ: the Trustees pay them, the General Manager approves their
+// leave. Collapsing the two questions back into one would either shut them out
+// of leave again or hand them LCM's loans.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { ShieldOff } from "lucide-react";
 
-export function StaffOnly({ feature, children }: { feature: string; children: React.ReactNode }) {
+export function StaffOnly({ feature, gate = "employment", children }: {
+  feature: string;
+  /** "leave" also admits somebody whose leave LCM runs without employing them. */
+  gate?: "employment" | "leave";
+  children: React.ReactNode;
+}) {
   const supabase = createClient();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [employer, setEmployer] = useState<string | null>(null);
@@ -20,10 +32,12 @@ export function StaffOnly({ feature, children }: { feature: string; children: Re
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setAllowed(false); return; }
       const { data } = await supabase
-        .from("user_roles").select("is_lcm_staff").eq("email", user.email!).maybeSingle();
+        .from("user_roles").select("is_lcm_staff,leave_under_lcm")
+        .eq("email", user.email!).maybeSingle();
       // Absent record means the column hasn't been populated for this account;
       // default to allowed so nothing breaks before the directory is filled in.
-      const ok = data?.is_lcm_staff ?? true;
+      const employed = data?.is_lcm_staff ?? true;
+      const ok = employed || (gate === "leave" && data?.leave_under_lcm === true);
       setAllowed(ok);
 
       // Only asked when the answer matters. Someone turned away deserves the

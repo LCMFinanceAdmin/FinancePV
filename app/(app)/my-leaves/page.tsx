@@ -44,7 +44,7 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 };
 
 export default function MyLeavesPage() {
-  return <StaffOnly feature="Leave"><MyLeavesInner /></StaffOnly>;
+  return <StaffOnly feature="Leave" gate="leave"><MyLeavesInner /></StaffOnly>;
 }
 
 function MyLeavesInner() {

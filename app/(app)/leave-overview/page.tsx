@@ -37,7 +37,12 @@ interface LeaveApp {
   required_approvers: Approver[] | null;
   approvals: Approval[] | null;
 }
-interface Person { email: string; full_name: string | null; role: string; is_lcm_staff: boolean | null }
+interface Person {
+  email: string; full_name: string | null; role: string;
+  is_lcm_staff: boolean | null;
+  /** LCM runs their leave without employing them — a Trustees employee at HQ. */
+  leave_under_lcm: boolean | null;
+}
 interface Replacement { employee_email: string; days: number; work_date: string }
 
 const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
@@ -71,7 +76,7 @@ export default function LeaveOverviewPage() {
     const [{ data: lt }, { data: la, error }, { data: ur }, { data: rd }] = await Promise.all([
       supabase.from("leave_types").select("code,name,days_per_year,is_replacement,sort_order").order("sort_order"),
       supabase.from("leave_applications").select("*").order("applied_at", { ascending: false }),
-      supabase.from("user_roles").select("email,full_name,role,is_lcm_staff").order("full_name"),
+      supabase.from("user_roles").select("email,full_name,role,is_lcm_staff,leave_under_lcm").order("full_name"),
       supabase.from("replacement_days_earned").select("employee_email,days,work_date"),
     ]);
     // An empty list with no error would look like a church where nobody takes
@@ -111,11 +116,14 @@ export default function LeaveOverviewPage() {
     return { entitlement, used, remaining: Math.max(0, entitlement - used) };
   }, [apps, replacements, year]);
 
-  // Only people employed by LCM have leave to speak of.
+  // Everyone whose leave LCM administers — which is not quite everyone it
+  // employs. A Trustees employee at HQ has leave here and no LCM payroll, so
+  // filtering on employment alone hid the very people the General Manager was
+  // being asked to approve.
   const staff = useMemo(() => {
     const q = query.trim().toLowerCase();
     return people
-      .filter(p => p.is_lcm_staff !== false)
+      .filter(p => p.is_lcm_staff !== false || p.leave_under_lcm === true)
       .filter(p => !q || (p.full_name ?? "").toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
       .sort((a, b) => (a.full_name ?? a.email).localeCompare(b.full_name ?? b.email));
   }, [people, query]);
