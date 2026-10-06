@@ -15,6 +15,7 @@ here to make the handbook rebuildable.
 | `06-leave-apply.png` | The Leave Application Form | Same |
 | `07-leave-queue.png` | The Leave Queue an approver sees | Same |
 | `08-leave-approve.png` | The Sign to approve dialog | Same |
+| `10-sidebar.png` | The left-hand list, as a Treasurer sees it | Same, via `app/shot-tmp/` (deleted afterwards) |
 
 Everyone in figures 05 to 08 is invented — Grace Lim, Esther Ng, Rev. John Tan,
 Bishop Samuel Lau and the rest. No real person's leave balance appears in the
@@ -70,7 +71,7 @@ deleting the route. Real markup, invented figures. Nothing in `lib/supabase/`
 was touched — faking a session there would be a back door, and the screenshots
 are not worth one.
 
-Five things to know if you do it again:
+Six things to know if you do it again:
 
 - **`--virtual-time-budget`** is what stops the capture landing on the loading
   splash. Without it you photograph a spinner.
@@ -85,6 +86,17 @@ Five things to know if you do it again:
   crop back to the card with equal margins. `04-request-mobile.png` also carries
   100px of replicated background down its left edge — that is the gutter the
   numbered labels sit in, not part of the app.
+- **The splash covers everything.** The root layout paints `#lcm-splash` over
+  the page until its own script removes it, and in a headless capture it is
+  simply a white sheet over whatever you came to photograph. The throwaway route
+  should carry
+  `<style>{`#lcm-splash,#lcm-update-banner,nextjs-portal{display:none!important}`}</style>`,
+  which deals with the splash, the update bar and the dev overlay badge in one
+  line. This cost three captures of a blank rectangle before it was spotted.
+- **A folder starting with `_` is not a route.** Next treats it as private, so
+  `app/__shot/` returns 404 however correct the file is. Name it without the
+  underscore, and add the path to the allow-list in `proxy.ts` or the middleware
+  bounces it to the login — then take both out again afterwards.
 - **Rebuild and restart the server in that order, and check the restart took.**
   `next start` fails silently if the old process is still holding the port, and
   you then photograph the previous build without noticing. This cost an hour.

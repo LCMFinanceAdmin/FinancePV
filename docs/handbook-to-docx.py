@@ -40,9 +40,12 @@ except ImportError as exc:
              "    python -m pip install python-docx beautifulsoup4 pillow")
 
 ROOT = pathlib.Path(__file__).resolve().parent
-BOOK = ROOT / "lcm-finance-handbook.html"
+# The handbook by default; a role guide when one is named, whose Word version
+# is written beside it under the title the page itself carries.
+BOOK = pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1     else ROOT / "lcm-finance-handbook.html"
 IMGS = ROOT / "img"
-OUT = ROOT / "LCM Finance Handbook.docx"
+OUT = (BOOK.with_suffix(".docx") if len(sys.argv) > 1
+       else ROOT / "LCM Finance Handbook.docx")
 TMP = ROOT / ".docx-figures"
 
 INK = RGBColor(0x1C, 0x27, 0x38)

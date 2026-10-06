@@ -24,7 +24,10 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
-BOOK = ROOT / "lcm-finance-handbook.html"
+# The handbook by default; a role guide when one is named. The guides are built
+# from the same pictures and embed them the same way, so they use this rather
+# than growing a second copy of it.
+BOOK = pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1     else ROOT / "lcm-finance-handbook.html"
 IMGS = ROOT / "img"
 
 MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
