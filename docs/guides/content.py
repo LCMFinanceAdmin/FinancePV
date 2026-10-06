@@ -355,10 +355,17 @@ SECTIONS = [
         reviewed by Finance and approved by the General Manager &mdash; and the voucher itself
         shows you each of those, with the name and the date.</p>
 
-        <p>Four tabs run across the top: <b>Needs your signature</b>, <b>Approved</b>,
-        <b>Paid</b> and <b>Rejected</b>, each with a count beside it. Under them, one card per
-        voucher: the ministry, who is being paid, what for, the amount, and a coloured chip
-        saying how it sits against the budget.</p>
+        <figure class="shot">
+          <img data-img="11-signatory-queue.png" src="img/11-signatory-queue.png"
+               alt="The Signatory Queue: an approval path across the top showing Finance and
+                    EXCO ticked and the Treasurer current, then tabs for Needs your
+                    signature, Approved, Paid and Rejected, and voucher cards each with a
+                    ministry, payee, purpose, amount, budget chip and Approve and Reject
+                    buttons.">
+        </figure>
+        <p class="figcap">Four tabs, each with a count. The band across the top says how far
+        a voucher has come and what is left &mdash; here, step 3 of 4. Everyone in this
+        picture is invented.</p>
 
         <ol class="steps">
           <li><b>Read the purpose and the amount</b>, and open the receipts with the
@@ -455,9 +462,17 @@ SECTIONS = [
         and what is left. The colour is a quick read &mdash; green has room, amber is close,
         red is over.</p>
 
-        <p>Each line shows four figures side by side &mdash; approved, spent, committed,
-        remaining &mdash; and the remaining one is coloured: green has room, amber is close,
-        red is over.</p>
+        <figure class="shot">
+          <img data-img="12-budget.png" src="img/12-budget.png"
+               alt="A ministry budget: one row per project with columns for budget, spent,
+                    committed, balance and available, and a total line. One project shows a
+                    negative available balance in red.">
+        </figure>
+        <p class="figcap">One row per project. <b>Balance</b> ignores what is committed;
+        <b>Available</b> subtracts it, which is the figure to use when deciding whether there
+        is room for something new. Church planting here has RM1,250 left on paper and is
+        RM550 short once the voucher already in the chain is counted. Every figure in this
+        picture is invented.</p>
 
         <div class="note-box">
           <p><b>A voucher is tied to a budget line by its project name.</b> That is why the

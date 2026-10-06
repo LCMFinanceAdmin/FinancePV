@@ -16,8 +16,16 @@ here to make the handbook rebuildable.
 | `07-leave-queue.png` | The Leave Queue an approver sees | Same |
 | `08-leave-approve.png` | The Sign to approve dialog | Same |
 | `10-sidebar.png` | The left-hand list, as a Treasurer sees it | Same, via `app/shot-tmp/` (deleted afterwards) |
+| `11-signatory-queue.png` | The Signatory Queue | The real page copied to `app/shot-tmp/queue/`, its loader replaced with literal vouchers |
+| `12-budget.png` | A ministry budget | The real page copied to `app/shot-tmp/budget/`, both loaders replaced with literal lines |
 
-Everyone in figures 05 to 08 is invented — Grace Lim, Esther Ng, Rev. John Tan,
+Two further things were taken out of the copies before capturing, because
+neither belongs in a handbook: the `NotificationsOptIn` prompt, which asks about
+the browser rather than the page, and `BudgetImpact`, which asks the database as
+it renders and would otherwise be photographed saying &ldquo;Checking
+budget&hellip;&rdquo;. Its own chip markup was kept, with invented figures.
+
+Everyone in figures 05 to 08, 11 and 12 is invented — Grace Lim, Esther Ng, Rev. John Tan,
 Bishop Samuel Lau and the rest. No real person's leave balance appears in the
 handbook, which matters because the handbook is circulated.
 
