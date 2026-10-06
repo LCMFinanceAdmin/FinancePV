@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { getBudgetImpact, type BudgetImpactResult } from "@/lib/budget-utils";
 export type { BudgetImpactResult };
-import { PiggyBank, AlertTriangle, CheckCircle2, HelpCircle } from "lucide-react";
+import { PiggyBank, AlertTriangle, CheckCircle2, HelpCircle, ChevronDown } from "lucide-react";
 
 // Shows whether a payment is inside its approved budget, at the moment the GM
 // or Treasurer decides to accept or reject it. Without this they approve blind:
@@ -22,8 +22,17 @@ interface Props {
    * year it belongs to rather than the year it happens to be reviewed in.
    */
   date?: string | null;
-  /** "panel" = full breakdown; "chip" = one-line summary for dense lists. */
-  variant?: "panel" | "chip";
+  /**
+   * "panel" = full breakdown; "chip" = one-line summary for dense lists;
+   * "expandable" = the chip, which opens the panel beneath it.
+   *
+   * The signatories asked for the third on 6 October 2026. The chip answers
+   * "can this be afforded" and the queue is read on a phone, so it has to stay
+   * one line — but the next question is always which line it is drawn against
+   * and what is left of it, and that meant leaving the queue for the budget
+   * page. The panel already said all of it; it had nowhere to be shown.
+   */
+  variant?: "panel" | "chip" | "expandable";
   className?: string;
 }
 
@@ -54,6 +63,7 @@ export function BudgetImpact({
   const supabase = createClient();
   const [data, setData] = useState<BudgetImpactResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,26 +80,45 @@ export function BudgetImpact({
   }, [ministry, projectName, amount, excludePvId, date]);
 
   if (loading || !data) {
-    return variant === "chip"
-      ? <span className={`text-[11px] text-stone-400 ${className}`}>Checking budget…</span>
-      : <div className={`rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-xs text-stone-400 ${className}`}>Checking budget…</div>;
+    return variant === "panel"
+      ? <div className={`rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-xs text-stone-400 ${className}`}>Checking budget…</div>
+      : <span className={`text-[11px] text-stone-400 ${className}`}>Checking budget…</span>;
   }
 
   const v = VERDICT[data.verdict];
   const Icon = v.icon;
 
-  if (variant === "chip") {
-    return (
-      <span
-        title={data.verdict === "UNBUDGETED"
-          ? "No budget line selected — this spend sits outside the approved budget"
-          : `${formatCurrency(data.remaining)} left on ${data.projectName}`}
-        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${v.chip} ${className}`}>
+  if (variant === "chip" || variant === "expandable") {
+    const label = (
+      <>
         <Icon size={11} className="shrink-0" />
         {data.verdict === "WITHIN"     && <>Within budget · {formatCurrency(data.balanceAfter)} left after</>}
         {data.verdict === "EXCEEDS"    && <>Over budget by {formatCurrency(data.overBy)}</>}
         {data.verdict === "UNBUDGETED" && <>Unbudgeted</>}
-      </span>
+      </>
+    );
+    const title = data.verdict === "UNBUDGETED"
+      ? "No budget line selected — this spend sits outside the approved budget"
+      : `${formatCurrency(data.remaining)} left on ${data.projectName}`;
+    const shape = `inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${v.chip} ${className}`;
+
+    if (variant === "chip") return <span title={title} className={shape}>{label}</span>;
+
+    return (
+      <div className="min-w-0">
+        <button type="button" title={title} aria-expanded={open}
+          onClick={e => { e.preventDefault(); e.stopPropagation(); setOpen(o => !o); }}
+          className={`${shape} cursor-pointer transition-colors hover:brightness-95`}>
+          {label}
+          <ChevronDown size={11}
+            className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && (
+          <BudgetImpact
+            ministry={ministry} projectName={projectName} amount={amount}
+            excludePvId={excludePvId} date={date} variant="panel" className="mt-2" />
+        )}
+      </div>
     );
   }
 

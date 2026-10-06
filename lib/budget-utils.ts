@@ -1,4 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+import { sameBudgetLine, SPENT_STATUSES, IN_FLIGHT_STATUSES } from "@/lib/budget-line";
 
 /**
  * Ensures the budget_items table exists in the database.
@@ -94,10 +95,13 @@ export async function loadBudgetProjects(
 // the Ministry Budget page. A budget item is either income- or expense-typed
 // and only the matching column is populated, so summing both yields that
 // line's budget either way.
-export const BUDGET_SPENT_STATUSES = ["APPROVED", "PAID"];
-export const BUDGET_IN_FLIGHT_STATUSES = [
-  "PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY",
-];
+// Re-exported from lib/budget-line, which holds the one description of how a
+// voucher is matched to a budget line and which statuses count. There were five
+// copies of that rule across this file, the budget page and the signatory
+// queue, differing in whether they trimmed, lowercased or did neither — so the
+// same voucher could land on a line in one figure and nowhere in another.
+export const BUDGET_SPENT_STATUSES: readonly string[] = SPENT_STATUSES;
+export const BUDGET_IN_FLIGHT_STATUSES: readonly string[] = IN_FLIGHT_STATUSES;
 
 export type BudgetVerdict = "WITHIN" | "EXCEEDS" | "UNBUDGETED";
 
@@ -207,7 +211,7 @@ export async function getBudgetImpact(
   const ministryProjectCount = rows.length;
 
   const item = projectName
-    ? rows.find(r => r.project_name?.trim().toLowerCase() === projectName.trim().toLowerCase())
+    ? rows.find(r => sameBudgetLine(projectName, r.project_name))
     : undefined;
 
   // No budget line on record — the spend sits outside the approved budget,
@@ -215,7 +219,7 @@ export async function getBudgetImpact(
   // is still returned so they can see whether there is room elsewhere.
   if (!item) return { ...empty, ministryTotals, ministryProjectCount };
 
-  const { spent, committed } = tally(p => (p ?? "").trim().toLowerCase() === item.project_name.trim().toLowerCase());
+  const { spent, committed } = tally(p => sameBudgetLine(p, item.project_name));
   const budget = (item.estimated_income || 0) + (item.estimated_expenses || 0);
   const remaining = budget - spent - committed;
   const balanceAfter = remaining - amount;

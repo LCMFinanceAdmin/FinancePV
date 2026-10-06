@@ -107,3 +107,22 @@ test("the Administrator is untouched, since the records are hers", () => {
     assert.ok(adminGroup(ADMIN).includes(needed), `the Administrator lost ${needed}`);
   }
 });
+
+test("there is one place a signatory approves a voucher, not two", () => {
+  // "My Approvals" and "Approve Vouchers" ended up showing the same vouchers
+  // and offering the same Approve and Reject, which is what the signatories
+  // asked about. The queue is the one that stayed.
+  for (const u of [TREASURER, BISHOP]) {
+    const all = [...pinned(u), ...nested(u)];
+    assert.ok(all.includes("/signatory"), "the queue is missing");
+    assert.ok(!all.includes("/hod-activity"), "the second approvals list is still offered");
+  }
+});
+
+test("a signatory's whole sidebar is short enough to read without scrolling", () => {
+  // The complaint that started this: three decisions buried among twenty-odd
+  // entries. This is a ceiling, not a target — if a genuine need pushes past
+  // it, raise it deliberately rather than by accident.
+  const total = pinned(BISHOP).length + nested(BISHOP).length;
+  assert.ok(total <= 16, `a Bishop is offered ${total} entries`);
+});

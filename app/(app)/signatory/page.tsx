@@ -1,16 +1,18 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { sameBudgetLine } from "@/lib/budget-line";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
 import { BudgetImpact } from "@/components/budget/budget-impact";
 import { ApprovalPath } from "@/components/ui/approval-path";
 import { ScrollMoreHint } from "@/components/ui/scroll-more-hint";
-import { formatCurrency, formatDate, getLOATier, computedBadgeStatus } from "@/lib/utils";
+import { formatCurrency, formatDate, getLOATier, computedBadgeStatus, reachedSignatories } from "@/lib/utils";
+import { PVAttachments } from "@/components/pv/pv-attachments";
 import type { PV } from "@/lib/types";
 import {
   CheckCircle, XCircle, X, Building2, TrendingDown, Wallet,
   ExternalLink, RotateCcw, Search, PenLine, Trash2, KeyRound,
-  Link2 as LinkIcon,
+  Link2 as LinkIcon, Paperclip, ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 import { NotificationsOptIn } from "@/components/notifications-optin";
@@ -54,6 +56,31 @@ function ActionBtn({ label, icon, color, loading, onClick }: {
   );
 }
 
+/**
+ * The supporting documents, folded away until asked for.
+ *
+ * Its own state per voucher rather than a set held by the page: the queue is a
+ * list of independent decisions, and one card opening is nobody else's business.
+ */
+function PVDocs({ urls }: { urls: string[] }) {
+  const [open, setOpen] = useState(false);
+  if (urls.length === 0) return null;
+  return (
+    <div className="mt-1.5">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="inline-flex items-center gap-1 rounded-lg bg-stone-100 px-2 py-1 text-[10px] font-semibold text-stone-600 transition-colors hover:bg-stone-200">
+        <Paperclip size={10} />
+        {urls.length} Doc{urls.length === 1 ? "" : "s"}
+        <ChevronDown size={10} className={open ? "rotate-180 transition-transform" : "transition-transform"} />
+      </button>
+      {open && <PVAttachments urls={urls} className="mt-2" />}
+    </div>
+  );
+}
+
+/** The views the queue offers. "pending" is the General Manager's alone. */
+type Tab = "pending" | "pending_signatory" | "approved" | "paid" | "rejected";
+
 export default function SignatoryPage() {
   const supabase = createClient();
   const [pvs, setPvs] = useState<PVWithBulk[]>([]);
@@ -73,7 +100,7 @@ export default function SignatoryPage() {
   const [search, setSearch] = useState("");
   const [ministryFilter, setMinistryFilter] = useState("All Ministries");
   const [ministries, setMinistries] = useState<string[]>([]);
-  const [statusFilter, setStatusFilter] = useState<"pending" | "pending_signatory" | "approved" | "paid">("pending_signatory");
+  const [statusFilter, setStatusFilter] = useState<Tab>("pending_signatory");
   // Paid replaces the list entirely rather than filtering it, so several
   // blocks below need to know.
   const isPaidView = statusFilter === "paid";
@@ -102,8 +129,8 @@ export default function SignatoryPage() {
         supabase.auth.getUser(),
         supabase
           .from("pvs")
-          .select("id,pv_no,pv_type,status,amount,payee_name,ministry,project,dept,purpose,reference_pv_id,reference_pv_no,reference_note,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method")
-          .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED", "APPROVED", "PAID", "GM_REVIEW"])
+          .select("id,pv_no,pv_type,status,amount,payee_name,ministry,project,dept,purpose,reference_pv_id,reference_pv_no,reference_note,submitted_at,approvals,payment_type,loa_required,loa_label,submitted_by_email,applicant_name,paid_at,payment_method,attachments,admin_comment")
+          .in("status", ["PENDING_SIGNATORY", "REVIEWED", "MINISTRY_VERIFIED", "APPROVED", "PAID", "GM_REVIEW", "REJECTED", "REJECTED_HEAD", "CANCELLED"])
           .order("submitted_at", { ascending: false }),
         supabase.from("bulk_pv_runs").select("id,group_name,pv_ids,total_amount,is_master,child_group_names"),
       ]);
@@ -345,16 +372,18 @@ export default function SignatoryPage() {
         supabase.from("pvs").select("project,amount").eq("ministry", ministry)
           .in("status", ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"]),
       ]);
-      const spentMap: Record<string, number> = {};
-      for (const p of spentPvs ?? []) spentMap[p.project] = (spentMap[p.project] ?? 0) + (p.amount ?? 0);
-      const pendingMap: Record<string, number> = {};
-      for (const p of pendingPvs ?? []) pendingMap[p.project] = (pendingMap[p.project] ?? 0) + (p.amount ?? 0);
+      // Totalled through the shared comparison rather than a map keyed on the
+      // raw project string. A voucher typed "Vietnam  5" belongs to the same
+      // line as "Vietnam 5", and keying on the text meant it quietly belonged
+      // to neither — see lib/budget-line.
+      const totalFor = (line: string, list: { project: string | null; amount: number | null }[] | null) =>
+        (list ?? []).reduce((sum, p) => sameBudgetLine(p.project, line) ? sum + (p.amount ?? 0) : sum, 0);
       setBudgetRows((items ?? []).map(item => ({
         project_name: item.project_name,
         estimated_income: item.estimated_income ?? 0,
         estimated_expenses: item.estimated_expenses ?? 0,
-        spent: spentMap[item.project_name] ?? 0,
-        pending: pendingMap[item.project_name] ?? 0,
+        spent: totalFor(item.project_name, spentPvs),
+        pending: totalFor(item.project_name, pendingPvs),
       })));
     } finally { setBudgetLoading(false); }
   }
@@ -380,6 +409,14 @@ export default function SignatoryPage() {
       (isGM && ["REVIEWED", "MINISTRY_VERIFIED"].includes(pv.status ?? "") && gmHasApproved(pv))
     )
   , [pvs, isGM, gmHasApproved]);
+  // Vouchers that were turned down. Only those that got as far as the signing
+  // officers: one rejected by the EXCO or by Finance was never theirs, and the
+  // Approvals list stopped showing those in October 2026 — this is the same
+  // rule, so the two cannot say different things about the same voucher.
+  const rejectedPvsAll = useMemo(
+    () => pvs.filter(pv => ["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(pv.status ?? "")
+                        && reachedSignatories(pv)),
+    [pvs]);
   const approvedPvsAll         = useMemo(() => pvs.filter(pv => pv.status === "APPROVED"), [pvs]);
   const paidPvsAll             = useMemo(() => pvs.filter(pv => pv.status === "PAID"), [pvs]);
 
@@ -387,8 +424,9 @@ export default function SignatoryPage() {
     statusFilter === "pending"           ? pendingPvsAll :
     statusFilter === "pending_signatory" ? pendingSignatoryPvsAll :
     statusFilter === "approved"          ? approvedPvsAll :
+    statusFilter === "rejected"          ? rejectedPvsAll :
     paidPvsAll,
-  [statusFilter, pendingPvsAll, pendingSignatoryPvsAll, approvedPvsAll, paidPvsAll]);
+  [statusFilter, pendingPvsAll, pendingSignatoryPvsAll, approvedPvsAll, paidPvsAll, rejectedPvsAll]);
 
   const { bulkGroups, standalones } = useMemo(() => {
     const groups: Record<string, { runId: string; groupName: string; pvs: PVWithBulk[]; masterRunId?: string; masterName?: string }> = {};
@@ -517,7 +555,7 @@ export default function SignatoryPage() {
             badge={<StatusBadge status={computedBadgeStatus(pv)} size="lg" />}
             budget={isSignatoryUser && !userHasActed && isRelevantForRole ? (
               <BudgetImpact
-                variant="chip"
+                variant="expandable"
                 className="!px-2 !py-0.5 !text-[12px]"
                 ministry={pv.ministry}
                 projectName={(pv as PVWithBulk & { project?: string }).project ?? null}
@@ -530,6 +568,20 @@ export default function SignatoryPage() {
               ? () => openMinistryPopup(pv.ministry!, pv.amount ?? 0)
               : undefined}
           />
+
+          {/* The receipts. Deciding on a claim without them meant opening the
+              voucher in another tab, which is why they were on the Approvals
+              list and not here — and why people used that list instead. */}
+          <PVDocs urls={((pv as PVWithBulk & { attachments?: string[] }).attachments) ?? []} />
+
+          {/* Why it was turned down, on the voucher that was turned down. */}
+          {["REJECTED", "REJECTED_HEAD", "CANCELLED"].includes(pv.status ?? "")
+            && (pv as PVWithBulk & { admin_comment?: string }).admin_comment && (
+            <p className="mt-1.5 rounded-lg bg-stone-50 px-2.5 py-1.5 text-[12px] leading-snug text-stone-600">
+              <span className="font-semibold text-stone-500">Reason: </span>
+              {(pv as PVWithBulk & { admin_comment?: string }).admin_comment}
+            </p>
+          )}
 
           {/* Why a second payment exists. Without this a correcting PV looks
               like a duplicate at exactly the moment someone is deciding. */}
@@ -680,6 +732,7 @@ export default function SignatoryPage() {
             {statusFilter === "pending"           ? (isGM ? "PVs pending your verification" : "Payment vouchers awaiting your approval") :
              statusFilter === "pending_signatory" ? "PVs pending Treasurer / Bishop / Secretary approval" :
              statusFilter === "approved"          ? "Payment vouchers approved by signatories" :
+             statusFilter === "rejected"          ? "Vouchers turned down after they reached the signatories" :
              "Payment vouchers that have been paid"}
           </p>
         </div>
@@ -728,21 +781,23 @@ export default function SignatoryPage() {
             One is the voucher waiting on them; the other is the one they have
             already approved, now with the signing officers. Same word, opposite
             meanings, and no way to tell without clicking. */}
-        {(isGM ? [
+        {((isGM ? [
           { key: "pending",           label: "Needs your approval",       count: pendingPvsAll.length,          activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
           { key: "pending_signatory", label: "With the signatories", count: pendingSignatoryPvsAll.length, activeColor: "bg-orange-500 text-white border-transparent", dot: "bg-orange-100 text-orange-700" },
           { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
           { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
+          { key: "rejected",          label: "Rejected",                  count: rejectedPvsAll.length,         activeColor: "bg-stone-600 text-white border-transparent", dot: "bg-stone-100 text-stone-600" },
         ] : [
           { key: "pending_signatory", label: "Needs your signature", count: pendingSignatoryPvsAll.length, activeColor: "bg-amber-500 text-white border-transparent",  dot: "bg-amber-100 text-amber-700" },
           { key: "approved",          label: "Approved",                  count: approvedPvsAll.length,         activeColor: "bg-green-600 text-white border-transparent",  dot: "bg-green-100 text-green-700" },
           { key: "paid",              label: "Paid",                      count: paidPvsAll.length,             activeColor: "bg-[#4a6da7] text-white border-transparent",  dot: "bg-blue-100 text-blue-700" },
-        ] as { key: "pending" | "pending_signatory" | "approved" | "paid"; label: string; count: number; activeColor: string; dot: string }[]).map(tab => {
+          { key: "rejected",          label: "Rejected",                  count: rejectedPvsAll.length,         activeColor: "bg-stone-600 text-white border-transparent", dot: "bg-stone-100 text-stone-600" },
+        ]) as { key: Tab; label: string; count: number; activeColor: string; dot: string }[]).map(tab => {
           const active = statusFilter === tab.key;
           return (
             <button
               key={tab.key}
-              onClick={() => setStatusFilter(tab.key as "pending" | "pending_signatory" | "approved" | "paid")}
+              onClick={() => setStatusFilter(tab.key)}
               className={`flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[12px] font-semibold transition-colors ${active ? `${tab.activeColor} shadow-sm` : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
             >
               {tab.label}
@@ -910,6 +965,7 @@ export default function SignatoryPage() {
         <div className="py-8 text-center text-stone-400 text-sm bg-white border border-stone-200 rounded-2xl">
           {statusFilter === "pending"           ? (isGM ? "No PVs pending your verification" : "No PVs awaiting your signature") :
            statusFilter === "pending_signatory" ? "No PVs pending signatory approval" :
+           statusFilter === "rejected"          ? "Nothing has been turned down" :
            statusFilter === "approved"          ? "No approved PVs" :
            "No paid PVs"}
         </div>

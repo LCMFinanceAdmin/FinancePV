@@ -213,10 +213,14 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/signatory-activity", label: "Finance Activity", desc: "Every voucher, by stage",
         icon: <Activity size={size} />, show: (u) => u.isFinanceAdmin,
       },
-      {
-        href: "/hod-activity", label: "My Approvals", desc: "Look up any voucher and its approval status",
-        icon: <ClipboardCheck size={size} />, show: (u) => u.isSignatory,
-      },
+      // "My Approvals" used to sit here, offered to signatories and to nobody
+      // else. Once it was narrowed to vouchers that had reached them it showed
+      // the same three as Approve Vouchers, offered the same Approve and Reject,
+      // and the two were indistinguishable — which is what the signatories
+      // asked about. The queue is the richer of the two: it carries the budget
+      // position and the approval path. What that list had and the queue did
+      // not — a Rejected view and the supporting documents — moved across, and
+      // the entry is gone. The page itself stays for older links.
       {
         href: "/payment-requests", label: "Payment Requests", desc: "Request a payment from your ministry",
         icon: <ShoppingCart size={size} />, show: (u) => !isAdmin(u),
