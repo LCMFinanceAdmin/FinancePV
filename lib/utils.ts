@@ -285,6 +285,30 @@ export function computedBadgeStatus(pv: { status?: string; approvals?: unknown[]
 }
 
 
+/**
+ * Has this voucher reached the signing officers yet?
+ *
+ * The Bishop, the Treasurer and the Secretary sign; they do not run the desk
+ * that prepares what they sign. Their lists were showing every voucher in the
+ * building, including ones still with the EXCO or with Finance, so the queue a
+ * signatory read was mostly other people's work in progress and the few items
+ * actually waiting on them were mixed in among it.
+ *
+ * A voucher has reached them once the Finance Executive has reviewed it and the
+ * General Manager has verified it — the same two approvals the badge uses to
+ * decide it is "Pending Signatory". Asked of the approval trail rather than of
+ * the status alone, so a voucher rejected after it got this far is still theirs
+ * to see, while one rejected before never was.
+ */
+const _SIGNING_REACHED = ["PENDING_SIGNATORY", "APPROVED", "PAID"];
+export function reachedSignatories(pv: { status?: string | null; approvals?: unknown[] | null }): boolean {
+  if (_SIGNING_REACHED.includes(pv.status ?? "")) return true;
+  const approvals = (pv.approvals ?? []) as { role?: string; action?: string }[];
+  const reviewed = approvals.some(a => _FINANCE_ROLES.includes(a.role ?? "") && a.action === "APPROVED");
+  const verified = approvals.some(a => a.role === "GENERAL_MANAGER" && a.action === "APPROVED");
+  return reviewed && verified;
+}
+
 export function getLOATier(amount: number, paymentType = "GENERAL"): LOATier {
   if (paymentType === "ASSET_PURCHASE" && amount > 100000) {
     return { required: 2, roles: ["BISHOP", "SECRETARY", "TREASURER"], label: "EXCO required (E2)" };

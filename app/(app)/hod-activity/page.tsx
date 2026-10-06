@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/ui/badge";
-import { formatCurrency, formatDate, computedBadgeStatus, isExcoRole } from "@/lib/utils";
+import { formatCurrency, formatDate, computedBadgeStatus, isExcoRole, reachedSignatories } from "@/lib/utils";
 import { expandMinistries } from "@/lib/ministries";
 import type { PV } from "@/lib/types";
 import {
@@ -55,6 +55,12 @@ export default function ExcoActivityPage() {
   // this page was written before it and never adopted it.
   const isMinistryHead = isExcoRole(userRole);
   const needsPin       = ["BISHOP", "TREASURER", "SECRETARY"].includes(userRole);
+  /**
+   * The officers who sign, as distinct from the General Manager, who is senior
+   * here but runs the desk rather than signing at the end of it. He keeps the
+   * whole pipeline; they see a voucher once it reaches them.
+   */
+  const isSigningOfficer = needsPin;
 
   // PV list
   const [pvs,    setPvs]    = useState<Partial<PV>[]>([]);
@@ -129,8 +135,15 @@ export default function ExcoActivityPage() {
     loadPVs();
   }, [loading, userRole, userMinistries, filter]);
 
-  // Filter on client side (ministry + search)
+  // Filter on client side (stage + ministry + search)
   const filtered = pvs.filter(pv => {
+    // A signing officer is shown what has reached them, and nothing earlier.
+    // Asked for by the signatories, October 2026: nine vouchers in the list and
+    // one of them theirs, the rest still with the EXCO or with Finance. What
+    // each of those desks has done is still on the voucher itself, which is
+    // where it is useful — the approval trail says who verified and reviewed
+    // it, and when.
+    if (isSigningOfficer && !reachedSignatories(pv)) return false;
     if (filterMinistry !== "ALL" && pv.ministry !== filterMinistry) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -249,9 +262,11 @@ export default function ExcoActivityPage() {
         <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Approval oversight</p>
         <h1 className="text-xl font-bold text-stone-800">My Approvals</h1>
         <p className="text-sm text-stone-400">
-          {isFinanceAdmin || isSeniorRole
-            ? "All submitted PVs with supporting documents and approval status"
-            : `PVs submitted under your ministry — view documents and take action`}
+          {isSigningOfficer
+            ? "Vouchers that have reached you — verified by the EXCO and reviewed by Finance"
+            : isFinanceAdmin || isSeniorRole
+              ? "All submitted PVs with supporting documents and approval status"
+              : `PVs submitted under your ministry — view documents and take action`}
         </p>
       </div>
 

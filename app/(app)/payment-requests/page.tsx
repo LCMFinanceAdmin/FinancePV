@@ -42,6 +42,19 @@ function stageIndex(status: PRStatus): number {
   }
 }
 
+/**
+ * Who sees the whole requisition book rather than only their own requests.
+ *
+ * The signing officers asked for it in October 2026. A request is the start of
+ * the voucher that eventually reaches them for signature, and until now the
+ * only way they learned of one was when the voucher arrived; the page filtered
+ * to the signed-in person, so a Treasurer opening it saw their own requests and
+ * nothing else. The database already allowed the read — purchase_requests lets
+ * any non-guest see them — so this is a filter being lifted, not access granted.
+ */
+const SEES_EVERY_REQUEST = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER",
+                            "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+
 export default function PaymentRequestsPage() {
   // Asking the verifier again.
   //
@@ -78,6 +91,12 @@ export default function PaymentRequestsPage() {
   const supabase = createClient();
   const [prs, setPrs] = useState<PurchaseRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState("");
+  /** "Everyone's" for those who oversee them, so the point is not hidden behind
+      a control nobody presses; their own are one click away. */
+  const [scope, setScope] = useState<"mine" | "all">("mine");
+  const [myEmail, setMyEmail] = useState("");
+  const oversees = SEES_EVERY_REQUEST.includes(role);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -85,18 +104,29 @@ export default function PaymentRequestsPage() {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data } = await supabase
-        .from("purchase_requests")
-        .select("*")
-        .eq("submitted_by_email", user.email)
+      const { data: me } = await supabase
+        .from("user_roles").select("role").eq("email", user.email).maybeSingle();
+      const myRole = (me as { role?: string } | null)?.role ?? "";
+      setRole(myRole);
+      const everyone = SEES_EVERY_REQUEST.includes(myRole);
+      setScope(everyone ? "all" : "mine");
+
+      let q = supabase.from("purchase_requests").select("*")
         .order("submitted_at", { ascending: false });
+      if (!everyone) q = q.eq("submitted_by_email", user.email);
+      const { data } = await q;
       setPrs((data ?? []) as PurchaseRequest[]);
+      setMyEmail(user.email ?? "");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const shown = scope === "all"
+    ? prs
+    : prs.filter(pr => (pr.submitted_by_email ?? "").toLowerCase() === myEmail.toLowerCase());
 
   function toggleExpand(id: string) {
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -111,10 +141,24 @@ export default function PaymentRequestsPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Requests</p>
-          <h1 className="text-xl font-bold text-stone-800">My Payment Requests</h1>
+          <h1 className="text-xl font-bold text-stone-800">
+            {oversees && scope === "all" ? "Payment Requests" : "My Payment Requests"}
+          </h1>
           <p className="text-sm text-stone-400">
-            Verified by your ministry&apos;s EXCO, then approved by the General Manager
+            Verified by the ministry&apos;s EXCO, then approved by the General Manager
           </p>
+          {oversees && (
+            <div className="mt-2 inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
+              {([["all", "Everyone’s"], ["mine", "Mine"]] as const).map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setScope(k)}
+                  className={scope === k
+                    ? "rounded-md bg-[#4a6da7] px-2.5 py-1 text-xs font-semibold text-white"
+                    : "rounded-md px-2.5 py-1 text-xs font-medium text-stone-500 hover:text-stone-700"}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <Link href="/submit"
           className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#4a6da7] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#3d5a8e]">
@@ -124,13 +168,15 @@ export default function PaymentRequestsPage() {
 
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
-      ) : prs.length === 0 ? (
+      ) : shown.length === 0 ? (
         <div className="cloudlight-card rounded-2xl py-12 text-center text-sm text-stone-400">
-          No payment requests yet. Click &ldquo;New Request&rdquo; to raise one.
+          {scope === "all"
+            ? "No payment requests have been raised."
+            : "No payment requests yet. Click “New Request” to raise one."}
         </div>
       ) : (
         <div className="space-y-3">
-          {prs.map(pr => {
+          {shown.map(pr => {
             const isOpen = expanded.has(pr.id);
             const idx = stageIndex(pr.status);
             const rejection = [...(pr.approvals ?? [])].reverse().find(a => a.action === "REJECTED");
@@ -153,7 +199,15 @@ export default function PaymentRequestsPage() {
                       </div>
                       <div className="text-sm font-semibold text-stone-800">{pr.title}</div>
                       {pr.vendor_name && <div className="text-xs text-stone-500 mt-0.5">Vendor: {pr.vendor_name}</div>}
-                      <div className="text-xs text-stone-400 mt-0.5">Submitted {formatDate(pr.submitted_at)}</div>
+                      {/* Who asked. Invisible while this page only ever showed
+                          your own requests, and the first thing wanted once it
+                          shows everybody's. */}
+                      <div className="text-xs text-stone-400 mt-0.5">
+                        {scope === "all" && (pr.submitted_by_name || pr.submitted_by_email)
+                          ? <>Raised by <span className="font-medium text-stone-500">{pr.submitted_by_name || pr.submitted_by_email}</span> &middot; </>
+                          : null}
+                        Submitted {formatDate(pr.submitted_at)}
+                      </div>
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-base font-bold text-stone-800">{formatCurrency(pr.estimated_amount)}</div>
