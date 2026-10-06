@@ -61,6 +61,7 @@ staff change.
 | `credentials` | nobody at all — PIN hashes and signatures are the service role's |
 | `leave` | a Trustees employee at HQ is offered leave but no staff claims; a volunteer officer is offered neither |
 | `records` | a signing officer reads the directory and writes none of it; the Administrator and the General Manager still keep it |
+| `records` | the Secretary keeps the office register and nothing else — seating a holder moves the role, because the role comes from the office rather than from them |
 
 The `leave` area is the one that is not a policy. Leave is gated by a function,
 and it fails the same quiet way a policy does: somebody not entitled is offered

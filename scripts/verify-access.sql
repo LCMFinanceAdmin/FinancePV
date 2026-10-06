@@ -115,6 +115,34 @@ BEGIN
   VALUES (p_area, p_who, p_what, n::text, p_expected, verdict);
 END $fn$;
 
+-- Calling something and seeing whether it refuses. seat_office_holder guards
+-- itself with a plain RAISE rather than by failing a policy, so the refusal is
+-- an ordinary exception and not insufficient_privilege.
+CREATE OR REPLACE FUNCTION pg_temp.try_call(
+  p_area text, p_email text, p_who text, p_sql text, p_what text, p_expected boolean)
+RETURNS void LANGUAGE plpgsql AS $fn$
+DECLARE allowed boolean;
+BEGIN
+  IF p_email IS NULL THEN
+    INSERT INTO result(area, who, attempt, got, expected, verdict)
+    VALUES (p_area, p_who, p_what, 'nobody is in this position', '-', 'SKIP');
+    RETURN;
+  END IF;
+  PERFORM set_config('request.jwt.claims', json_build_object('email', p_email)::text, true);
+  BEGIN
+    SET LOCAL ROLE authenticated;
+    EXECUTE p_sql;
+    RESET ROLE;
+    allowed := true;
+  EXCEPTION WHEN OTHERS THEN
+    RESET ROLE;
+    allowed := false;
+  END;
+  INSERT INTO result(area, who, attempt, got, expected, verdict)
+  VALUES (p_area, p_who, p_what, allowed::text, p_expected::text,
+          CASE WHEN allowed = p_expected THEN 'PASS' ELSE 'FAIL' END);
+END $fn$;
+
 DO $probe$
 DECLARE
   finance  text := pg_temp.whoever('FINANCE_ADMIN');
@@ -127,8 +155,15 @@ DECLARE
   -- A signing officer: they sign vouchers, they do not keep the records.
   -- Resolved by the signing roles rather than by name, and the General Manager
   -- is deliberately not among them -- he signs and administers both.
+  secretary text := (SELECT email FROM user_roles WHERE role = 'SECRETARY'
+                      ORDER BY email LIMIT 1);
+  treasury  uuid := (SELECT id FROM offices WHERE grants_role = 'TREASURER' LIMIT 1);
+  -- The Secretary is deliberately not among them: 243 gave the office register
+  -- back to that post, so a Secretary picked here would be expected to fail the
+  -- "edit the offices" probe and would have passed it only by the accident of
+  -- sorting second. The probes below cover the Secretary on their own terms.
   signer   text := (SELECT email FROM user_roles
-                     WHERE role IN ('BISHOP', 'TREASURER', 'SECRETARY')
+                     WHERE role IN ('BISHOP', 'TREASURER')
                        AND COALESCE(is_test_account, false) = false
                      ORDER BY email LIMIT 1);
   -- Employed elsewhere, leave administered here. Resolved by that condition
@@ -262,6 +297,26 @@ BEGIN
   PERFORM pg_temp.try_update('records', gm, 'General Manager',
     $q$UPDATE user_roles SET role = role$q$,
     'change what anybody may approve', $e$SELECT COUNT(*) FROM user_roles$e$);
+  -- The Secretary keeps the office register, and only that (243). Recording an
+  -- election has to move the role with the post, so the role is read off the
+  -- office rather than named by the caller: they can seat somebody, they
+  -- cannot invent a rank, and the directory is still none of their business.
+  PERFORM pg_temp.try_update('records', secretary, 'Secretary',
+    $q$UPDATE offices SET name = name$q$,
+    'edit the office register', $e$SELECT COUNT(*) FROM offices$e$);
+  PERFORM pg_temp.try_update('records', secretary, 'Secretary',
+    $q$UPDATE people SET full_name = full_name$q$,
+    'edit the directory', $e$SELECT 0$e$);
+  PERFORM pg_temp.try_update('records', secretary, 'Secretary',
+    $q$UPDATE user_roles SET role = role$q$,
+    'set a role by hand', $e$SELECT 0$e$);
+  PERFORM pg_temp.try_call('records', secretary, 'Secretary',
+    format($q$SELECT seat_office_holder(%L, %L, NULL)$q$, treasury, secretary),
+    'seat a holder, taking the role from the office', true);
+  -- And somebody who does not keep the register cannot use it as a way in.
+  PERFORM pg_temp.try_call('records', desk, 'Ministry desk',
+    format($q$SELECT seat_office_holder(%L, %L, NULL)$q$, treasury, desk),
+    'seat a holder, taking the role from the office', false);
 END $probe$;
 
 INSERT INTO result(seq, area, who, attempt, got, expected, verdict)

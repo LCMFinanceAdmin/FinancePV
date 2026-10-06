@@ -303,7 +303,6 @@ export default function OfficesPage() {
       // Move the access with the post. Without this the outgoing Treasurer
       // could still approve and the incoming one could not — the register
       // would say one thing and the system do another.
-      let roleMsg = "";
       if (electing.grants_role) {
         const incoming = people.find(p => p.id === personId);
 
@@ -320,9 +319,15 @@ export default function OfficesPage() {
             ...(electing.grants_role === "MINISTRY_HEAD" ? { ministries: [electing.name] } : {}),
           });
           if (acctErr) {
+            // Creating a login is the Administrator's, not the Secretary's:
+            // 42501 here is the policy refusing, and the raw message says
+            // "new row violates row-level security policy", which tells the
+            // person nothing they can act on.
             say(acctErr.code === "23505"
               ? "Somebody already signs in with that address — link it on their profile instead."
-              : acctErr.message, false);
+              : acctErr.code === "42501"
+                ? "Creating a login is the Administrator's to do. Record the election here, then ask them to add the login."
+                : acctErr.message, false);
             setSaving(false);
             return;
           }
@@ -331,48 +336,33 @@ export default function OfficesPage() {
           say(`${incoming?.full_name ?? "They"} can now sign in as ${roleLabel(electing.grants_role)}`);
         }
 
-        const login = typed || incoming?.user_email || incoming?.email;
-        if (login) {
-          const patch: Record<string, unknown> = { role: electing.grants_role };
-          // Whatever grants MINISTRY_HEAD also has to say which ministry, or
-          // the holder gets the role over an empty queue and cannot verify the
-          // post they were just elected to.
-          if (electing.grants_role === "MINISTRY_HEAD") patch.ministries = [electing.name];
-          const { error } = await supabase.from("user_roles").update(patch).eq("email", login);
-          roleMsg = error
-            ? ` — but their login could not be updated: ${error.message}`
-            : ` and given ${roleLabel(electing.grants_role)} access`;
-        } else {
-          roleMsg = " — they have no login yet, so add one in Logins & Roles to give them access";
-        }
-
-        // The outgoing holder keeps their login but loses the office's powers,
-        // unless they hold another office that grants the same role.
-        if (outgoing) {
-          const leaving = people.find(p => p.id === outgoing.person_id);
-          const leavingLogin = leaving?.user_email || leaving?.email;
-          const stillHolds = holdings.some(h =>
-            h.person_id === outgoing.person_id && !h.term_end && h.office_id !== electing.id &&
-            offices.find(o => o.id === h.office_id)?.grants_role === electing.grants_role);
-          if (leavingLogin && !stillHolds) {
-            await supabase.from("user_roles").update({ role: "STAFF", ministries: [] })
-              .eq("email", leavingLogin);
-          }
-        }
       }
 
-      // Leave routing reads districts.dean_email, so a new Dean has to land
-      // there too — otherwise the register and the routing disagree and a
-      // pastor's leave goes to the previous Dean.
-      if (electing.kind === "DEAN" && electing.district_id) {
-        const incoming = people.find(x => x.id === personId);
-        const login = incoming?.user_email || incoming?.email;
-        const { error } = await supabase.from("districts")
-          .update({ dean_email: login ?? null }).eq("id", electing.district_id);
-        if (error) roleMsg += ` — but the district record could not be updated: ${error.message}`;
-        else if (!login) roleMsg += " — they have no email on file, so leave routing cannot reach them yet";
-        else roleMsg += " and leave for that district now routes to them";
-      }
+      // Moving the role with the post, and the district with a Dean.
+      //
+      // Three writes used to happen here, straight from the browser: the
+      // incoming holder's role, the outgoing holder's demotion, and
+      // districts.dean_email. They are one act and they now happen in one
+      // place (243), for two reasons.
+      //
+      // The Secretary keeps this register but may not write user_roles — role
+      // is what decides who may approve what. The role therefore comes from the
+      // office rather than from whoever is recording the election, so seating
+      // somebody cannot be used to hand out a rank. And a refused UPDATE
+      // returns no error and no rows, so the old code read `error`, found none,
+      // and reported "and given Treasurer access" over a write that had not
+      // happened.
+      const incomingPerson = people.find(x => x.id === personId);
+      const outgoingPerson = outgoing ? people.find(x => x.id === outgoing.person_id) : undefined;
+      const { data: seated, error: seatErr } = await supabase.rpc("seat_office_holder", {
+        p_office_id: electing.id,
+        p_incoming_email: newLogin.trim().toLowerCase()
+          || incomingPerson?.user_email || incomingPerson?.email || null,
+        p_outgoing_email: outgoingPerson?.user_email || outgoingPerson?.email || null,
+      });
+      const roleMsg = seatErr
+        ? ` — but their access could not be updated: ${seatErr.message}`
+        : (seated as string | null) ?? "";
 
       await load();
       setElecting(null);
