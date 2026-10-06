@@ -60,6 +60,7 @@ staff change.
 | `banking` | Finance and the General Manager; not the Administrator |
 | `credentials` | nobody at all — PIN hashes and signatures are the service role's |
 | `leave` | a Trustees employee at HQ is offered leave but no staff claims; a volunteer officer is offered neither |
+| `records` | a signing officer reads the directory and writes none of it; the Administrator and the General Manager still keep it |
 
 The `leave` area is the one that is not a policy. Leave is gated by a function,
 and it fails the same quiet way a policy does: somebody not entitled is offered

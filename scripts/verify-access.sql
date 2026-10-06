@@ -124,6 +124,13 @@ DECLARE
   bm       text := pg_temp.whoever('BUILDING_MANAGER');
   desk     text := pg_temp.whoever('MINISTRY_SUPPORT');
   exco     text := pg_temp.a_portfolio_holder();
+  -- A signing officer: they sign vouchers, they do not keep the records.
+  -- Resolved by the signing roles rather than by name, and the General Manager
+  -- is deliberately not among them -- he signs and administers both.
+  signer   text := (SELECT email FROM user_roles
+                     WHERE role IN ('BISHOP', 'TREASURER', 'SECRETARY')
+                       AND COALESCE(is_test_account, false) = false
+                     ORDER BY email LIMIT 1);
   -- Employed elsewhere, leave administered here. Resolved by that condition
   -- rather than by name, like everybody else in this file.
   guest_leave text := (SELECT email FROM user_roles
@@ -229,6 +236,32 @@ BEGIN
   PERFORM pg_temp.try_count('leave', guest_leave, 'Trustees employee',
     $q$SELECT count(*) FROM my_claim_entitlements()$q$,
     'is offered staff claims', 'none');
+  -- A signing officer reads the church's records and writes none of them (242).
+  --
+  -- They used to write all of them. The role column is the one that matters:
+  -- it decides who may approve what, so an officer who could edit it could
+  -- promote anybody, themselves included, to Finance Executive. Reading is
+  -- deliberately still open -- knowing who somebody is is part of deciding
+  -- whether to sign a payment to them.
+  PERFORM pg_temp.try_count('records', signer, 'Signing officer',
+    $q$SELECT count(*) FROM people$q$, 'may read the directory', 'some');
+  PERFORM pg_temp.try_update('records', signer, 'Signing officer',
+    $q$UPDATE people SET full_name = full_name$q$,
+    'edit the directory', $e$SELECT 0$e$);
+  PERFORM pg_temp.try_update('records', signer, 'Signing officer',
+    $q$UPDATE user_roles SET role = role$q$,
+    'change what anybody may approve', $e$SELECT 0$e$);
+  PERFORM pg_temp.try_update('records', signer, 'Signing officer',
+    $q$UPDATE offices SET name = name$q$,
+    'edit the offices', $e$SELECT 0$e$);
+
+  -- And the people who do keep them, still do.
+  PERFORM pg_temp.try_update('records', admin, 'Administrator',
+    $q$UPDATE people SET full_name = full_name$q$,
+    'edit the directory', $e$SELECT COUNT(*) FROM people$e$);
+  PERFORM pg_temp.try_update('records', gm, 'General Manager',
+    $q$UPDATE user_roles SET role = role$q$,
+    'change what anybody may approve', $e$SELECT COUNT(*) FROM user_roles$e$);
 END $probe$;
 
 INSERT INTO result(seq, area, who, attempt, got, expected, verdict)
