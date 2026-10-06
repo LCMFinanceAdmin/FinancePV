@@ -43,9 +43,24 @@ export interface NavGroup {
 }
 
 
-/** May open the people directory — it holds IC numbers and addresses. */
+/**
+ * Keeps the church's records: the people directory, the offices, the registers
+ * and who may sign in. It holds IC numbers and addresses, so it is a short list.
+ *
+ * The signatories came off it in October 2026, at their own request. Approving
+ * a voucher, approving leave and checking a budget is what they are in the app
+ * to do, and six entries of record-keeping sat above those in a sidebar that
+ * had to be scrolled. The General Manager keeps all of it — he administers as
+ * well as signs — so this removes it from the Bishop, the Treasurer and the
+ * Secretary only.
+ *
+ * Worth being exact about what this is: a nav rule and nothing else. It is used
+ * nowhere but the four entries below, and the pages and their policies are
+ * unchanged — a signatory who types the address still reaches them, and still
+ * has the write access the database gives them.
+ */
 const canManagePeople = (u: UserProfile) =>
-  u.isFinanceAdmin || u.isGeneralManager || u.isSignatory || !!u.isAdministrator;
+  u.isFinanceAdmin || u.isGeneralManager || !!u.isAdministrator;
 
 /**
  * The Accounts Executive keeps the books; she does not decide vouchers, and

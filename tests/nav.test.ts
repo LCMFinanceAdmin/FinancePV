@@ -23,6 +23,8 @@ const BISHOP    = who({ role: "BISHOP" as never, isSignatory: true });
 /** Signs for the staff member under him; holds no role that says so. */
 const DEPT_HEAD = who({ role: "STAFF" as never, isLeaveApprover: true });
 const VOLUNTEER = who({ role: "MINISTRY_HEAD" as never, isMinistryHead: true });
+const GM        = who({ role: "GENERAL_MANAGER" as never, isSignatory: true, isGeneralManager: true });
+const ADMIN     = who({ role: "ADMINISTRATOR" as never, isAdministrator: true });
 
 const pinned = (u: UserProfile) => visiblePinned(u).map(i => i.href);
 /** What the sidebar renders: groups, with anything already pinned removed. */
@@ -72,4 +74,36 @@ test("a signatory has no dashboard, which is why the pins carry the weight", () 
   // of their navigation.
   assert.ok(!pinned(BISHOP).includes("/dashboard"));
   assert.ok(pinned(DEPT_HEAD).includes("/dashboard"));
+});
+
+const adminGroup = (u: UserProfile) =>
+  (visibleGroups(u, true).find(g => g.id === "admin")?.items ?? []).map(i => i.label);
+
+test("the records are not in a signatory's sidebar", () => {
+  // Six entries of record-keeping sat above the three things they are in the
+  // app to do. They asked for them to go.
+  const kept = adminGroup(BISHOP);
+  for (const gone of ["People Directory", "Offices & Elections", "Official Registers", "Access & Roles"]) {
+    assert.ok(!kept.includes(gone), `${gone} is still offered to a signatory`);
+  }
+});
+
+test("what a signatory keeps is what helps them decide", () => {
+  // The rates behind a claim they are about to sign, and reference data that
+  // carries no personal detail.
+  assert.deepEqual(adminGroup(TREASURER), ["Claim Entitlements", "Partners & Organisations"]);
+});
+
+test("the General Manager keeps the records, being a signatory and an administrator both", () => {
+  // He is in signatoryRoles, so a rule written as "not a signatory" would have
+  // taken the directory off the person who most needs it.
+  for (const needed of ["People Directory", "Offices & Elections", "Access & Roles"]) {
+    assert.ok(adminGroup(GM).includes(needed), `the GM lost ${needed}`);
+  }
+});
+
+test("the Administrator is untouched, since the records are hers", () => {
+  for (const needed of ["People Directory", "Offices & Elections", "Official Registers"]) {
+    assert.ok(adminGroup(ADMIN).includes(needed), `the Administrator lost ${needed}`);
+  }
 });
