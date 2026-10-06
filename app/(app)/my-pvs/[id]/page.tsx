@@ -7,6 +7,7 @@ import { formatCurrency, formatDate, formatDateTime, getLOATier, roleLabel, comp
 import { nextOfficeRef, checkOfficeRef } from "@/lib/pv/office-ref";
 import { PVKeyFacts } from "@/components/pv/pv-summary";
 import { pvEntity } from "@/lib/entities";
+import { attributeToBudget, IN_FLIGHT_STATUSES, SPENT_STATUSES, type BudgetAttribution } from "@/lib/budget-line";
 import type { PV, UserProfile, PVApproval } from "@/lib/types";
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock,
@@ -19,6 +20,31 @@ import dynamic from "next/dynamic";
 import { HtmlAttachmentThumb } from "@/components/attachments/html-thumb";
 
 const PVPdfDownload = dynamic(() => import("@/components/pv/pv-pdf-download"), { ssr: false });
+
+/**
+ * Which budget line the voucher is expensed from.
+ *
+ * Three answers rather than one, because they call for three different things.
+ * A voucher with no project was never attributed; one naming something that is
+ * not a line is attributed to nothing that exists, which is a mistake somebody
+ * can put right; and a matched line is the answer. Showing a blank for the
+ * first two is what hid the second.
+ */
+function BudgetLineValue({ a }: { a: BudgetAttribution | null }) {
+  if (!a) return <span className="text-stone-400">&hellip;</span>;
+  if (a.kind === "line") return <span>{a.line.project_name}</span>;
+  if (a.kind === "unbudgeted") {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1" title={`"${a.project}" is not a budget line in this ministry's budget for the voucher's year`}>
+        <span className="truncate">{a.project}</span>
+        <span className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-bold uppercase text-amber-700">
+          not budgeted
+        </span>
+      </span>
+    );
+  }
+  return <span className="font-normal text-stone-400">Not attributed</span>;
+}
 
 function fmtDate(s?: string | null) {
   if (!s) return "";
@@ -253,6 +279,7 @@ export default function PVDetailPage() {
   const [officeRef, setOfficeRef]           = useState("");
   /** References on other vouchers, newest first — for the suggestion and the clash check. */
   const [usedRefs, setUsedRefs]             = useState<{ ref: string; pv_no: string }[]>([]);
+  const [budgetLine, setBudgetLine]         = useState<BudgetAttribution | null>(null);
   const [officeSaving, setOfficeSaving]     = useState(false);
   const [officeSaved, setOfficeSaved]       = useState(false);
 
@@ -349,6 +376,29 @@ export default function PVDetailPage() {
         setUsedRefs((used ?? [])
           .filter((r: { office_ref?: string | null }) => (r.office_ref ?? "").trim())
           .map((r: { pv_no: string; office_ref: string }) => ({ ref: r.office_ref, pv_no: r.pv_no })));
+
+        // Which budget line this voucher is drawn against, and what is left of
+        // it. Asked for by the signatories, October 2026: deciding whether to
+        // sign means knowing what the ministry has already committed, and that
+        // meant leaving the voucher and finding the budget page.
+        //
+        // The year is the voucher's own, not the current one — a voucher dated
+        // last December belongs to last December's budget.
+        const year = new Date(pvData.date || pvData.submitted_at || pvData.created_at)
+          .getFullYear();
+        if (pvData.ministry && Number.isFinite(year)) {
+          const [{ data: lines }, { data: siblings }] = await Promise.all([
+            supabase.from("budget_items")
+              .select("id,ministry,project_name,project_type,description,estimated_income,estimated_expenses,year")
+              .eq("ministry", pvData.ministry).eq("year", year).is("proposal_id", null),
+            supabase.from("pvs").select("project,amount,status,ministry")
+              .eq("ministry", pvData.ministry)
+              .in("status", [...SPENT_STATUSES, ...IN_FLIGHT_STATUSES]),
+          ]);
+          setBudgetLine(attributeToBudget(pvData, lines ?? [], siblings ?? []));
+        } else {
+          setBudgetLine(attributeToBudget(pvData, [], []));
+        }
       }
 
       // Load saved signatures for all approvers so they show on the voucher as fallback
@@ -938,10 +988,37 @@ export default function PVDetailPage() {
           purpose={pv.purpose}
           date={pv.submitted_at}
           rows={[
+            { label: "Budget line", value: <BudgetLineValue a={budgetLine} /> },
             { label: "Signed", value: `${sigApprovals.length} of ${loa.required}` },
             { label: "Payment", value: pv.payment_method || "Not yet paid" },
           ]}
         />
+        {budgetLine?.kind === "line" && (
+          <div className="mt-1.5 rounded-xl border border-[#dbe9fb] bg-[#f7fbff] px-3 py-2">
+            <div className="flex items-baseline justify-between gap-3 text-[12px]">
+              <span className="font-semibold text-[#2f5b9c]">
+                {pv.ministry} &rsaquo; {budgetLine.line.project_name}
+              </span>
+              <span className="tabular-nums text-stone-500">
+                {formatCurrency(budgetLine.budgeted)} budgeted
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11.5px] tabular-nums text-stone-600">
+              <span>Spent {formatCurrency(budgetLine.spent)}</span>
+              <span>Committed {formatCurrency(budgetLine.committed)}</span>
+              <span className={budgetLine.remaining < 0 ? "font-bold text-red-600" : "font-semibold text-emerald-700"}>
+                {budgetLine.remaining < 0 ? "Over by " : "Left "}
+                {formatCurrency(Math.abs(budgetLine.remaining))}
+              </span>
+            </div>
+            {/* Committed includes this voucher while it is still in flight, so
+                "left" is what would remain if it is signed — which is the
+                question being asked, not what remains today. */}
+            <p className="mt-1 text-[10.5px] leading-snug text-stone-400">
+              Committed includes vouchers not yet paid, this one among them.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── GM Instruction banner ─────────────────────────────────── */}

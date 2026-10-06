@@ -75,13 +75,51 @@ const isAdmin = (u: UserProfile) => !!u.isAdministrator;
  */
 const isGuest = (u: UserProfile) => !!u.isGuest;
 
+/**
+ * Who is asked to sign somebody's leave.
+ *
+ * The last clause is the one that was missing: a department head named on a
+ * chain by an explicit assignment holds no role that implies it, so the queue
+ * was absent from their nav and the application sat waiting on somebody who
+ * could not find it.
+ */
+const approvesLeave = (u: UserProfile) =>
+  u.isGeneralManager || u.role === "BISHOP" || !!u.isDean || !!u.isPastor || !!u.isLeaveApprover;
+
 const size = 16;
 
-/** Always visible, never nested — the two things done most often. */
+/**
+ * Always visible, never nested — what is waiting on you, and the figures you
+ * need to answer it.
+ *
+ * Asked for by the signatories, October 2026: approving a voucher, approving
+ * leave and checking a budget meant opening two different groups and scrolling
+ * past the rest. They are decisions, not features, and a decision should not
+ * have to be hunted for. A signatory has no dashboard — they land on the
+ * voucher queue — so the sidebar is the whole of their navigation.
+ *
+ * Anything pinned is left out of the groups below for that person, so nothing
+ * appears twice. The feature directory still lists everything.
+ */
 export const PINNED: NavItem[] = [
   {
     href: "/dashboard", label: "Dashboard", desc: "What needs your attention today",
     icon: <LayoutDashboard size={size} />, show: (u) => !u.isSignatory,
+  },
+  {
+    href: "/signatory", label: "Approve Vouchers", desc: "Vouchers waiting on your signature",
+    icon: <ClipboardCheck size={size} />, show: (u) => u.isSignatory,
+  },
+  {
+    href: "/leave-queue", label: "Approve Leave", desc: "Leave applications waiting on you",
+    icon: <CalendarCheck size={size} />, show: approvesLeave,
+  },
+  {
+    // Pinned for the people who sign, because checking what a ministry has left
+    // is part of deciding whether to sign at all. Everybody else reaches it
+    // under Budget, where it also stays for them.
+    href: "/budget", label: "Budget", desc: "What each ministry has, and has spent",
+    icon: <PiggyBank size={size} />, show: (u) => u.isSignatory,
   },
   // Anyone can be owed money — a volunteer who bought refreshments, a council
   // member who paid for petrol. Raising a voucher is not an employment
@@ -145,8 +183,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/leave-queue", label: "Leave Queue", desc: "Leave applications awaiting approval",
-        icon: <ClipboardCheck size={size} />,
-        show: (u) => u.isGeneralManager || u.role === "BISHOP" || !!u.isDean || !!u.isPastor,
+        icon: <ClipboardCheck size={size} />, show: approvesLeave,
       },
     ],
   },
@@ -370,10 +407,21 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-/** Groups with at least one item this person may open. */
-export function visibleGroups(u: UserProfile): NavGroup[] {
+/**
+ * Groups with at least one item this person may open.
+ *
+ * `excludePinned` drops whatever is already pinned above, for the sidebar and
+ * the mobile sheet, which render both and would otherwise show an entry twice.
+ * The feature directory asks without it: it is a map of everything reachable,
+ * and a page missing from the map because it happens to be pinned would defeat
+ * the point of having one.
+ */
+export function visibleGroups(u: UserProfile, excludePinned = false): NavGroup[] {
+  const pinned = excludePinned
+    ? new Set(visiblePinned(u).map(i => i.href))
+    : new Set<string>();
   return NAV_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(i => i.show(u)) }))
+    .map(g => ({ ...g, items: g.items.filter(i => i.show(u) && !pinned.has(i.href)) }))
     .filter(g => g.items.length > 0);
 }
 

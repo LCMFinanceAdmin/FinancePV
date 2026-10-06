@@ -53,7 +53,8 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   // Where this person serves, and whether they lead a district. Dean is derived
   // from the district record rather than a flag, so it can't contradict the
   // assignment made in Settings.
-  const [{ data: congregation }, { data: deanOf }, { data: verifierFor }, { data: checkerFor }, { data: person }] = await Promise.all([
+  const [{ data: congregation }, { data: deanOf }, { data: verifierFor }, { data: checkerFor }, { data: person },
+         { data: leaveChains }] = await Promise.all([
     profile?.congregation_id
       ? supabase.from("congregations")
           .select("name, districts(name)")
@@ -74,6 +75,12 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     supabase.from("people").select("preferred_name")
       .or(`user_email.eq.${email},work_email.eq.${email},email.eq.${email}`)
       .limit(1).maybeSingle(),
+    // Named on somebody's leave chain without a role that says so. A department
+    // head signing for their own staff is ordinary STAFF, and the leave queue
+    // was shown only to the General Manager, the Bishop, Deans and pastors —
+    // so the one page they were needed on was the one they could not reach.
+    supabase.from("leave_approver_assignments").select("employee_email")
+      .ilike("approver_email", email).limit(1),
   ]);
   const districtOfCongregation = (congregation as { districts?: { name?: string } } | null)?.districts?.name;
 
@@ -96,6 +103,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     isMinistryVerifier: ((verifierFor as unknown[] | null)?.length ?? 0) > 0,
     isMinistryChecker: ((checkerFor as unknown[] | null)?.length ?? 0) > 0,
     isMinistrySupport: role === "MINISTRY_SUPPORT",
+    isLeaveApprover: ((leaveChains as unknown[] | null)?.length ?? 0) > 0,
     isGeneralManager: role === "GENERAL_MANAGER",
     isBuildingManager: role === "BUILDING_MANAGER",
     isBamCommittee: false,

@@ -9,7 +9,9 @@
 // Nothing here reimplements application logic: the code under test is the real
 // file, imported unmodified.
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const here = (p) => pathToFileURL(path.join(root, p)).href;
@@ -40,12 +42,18 @@ const URL_IMPORTS = {
 
 const hasExtension = (s) => /\.(ts|tsx|mts|mjs|js|json)$/.test(s);
 
+/** ".ts" unless only a ".tsx" is there — lib/nav.tsx is the one that is. */
+const withExtension = (rest) => {
+  if (hasExtension(rest)) return rest;
+  return existsSync(path.join(root, rest + ".ts")) ? rest + ".ts" : rest + ".tsx";
+};
+
 export async function resolve(specifier, context, next) {
   const stub = STUBS[specifier] ?? URL_IMPORTS[specifier];
   if (stub) return next(here(stub), context);
   if (specifier.startsWith("@/")) {
     const rest = specifier.slice(2);
-    return next(here(hasExtension(rest) ? rest : rest + ".ts"), context);
+    return next(here(withExtension(rest)), context);
   }
 
   const resolved = await next(specifier, context);
@@ -57,4 +65,27 @@ export async function resolve(specifier, context, next) {
     }
   }
   return resolved;
+}
+
+// lib/nav.tsx says who may open which page, and that rule is plain TypeScript:
+// the only JSX in the file is one icon beside each entry. Node strips types but
+// not JSX, so the icons are replaced with null on the way in and the rule itself
+// is imported unmodified. Which glyph sits beside a menu entry is not something
+// these tests have an opinion about.
+//
+// The guard matters more than the substitution. If a .tsx file ever holds real
+// markup, blanking the icons would leave something that still parses and quietly
+// means something else, so anything JSX-shaped that survives is an error rather
+// than a silent mangling.
+const ICON = /<([A-Z][A-Za-z0-9]*)\s+size=\{size\}\s*\/>/g;
+
+export async function load(url, context, next) {
+  if (!url.endsWith(".tsx")) return next(url, context);
+  const source = (await readFile(fileURLToPath(url), "utf8")).replace(ICON, "null");
+  if (source.includes("/>")) {
+    throw new Error(
+      `${url}: JSX this loader does not understand. It blanks "<Icon size={size} />" ` +
+      `and nothing else; anything further would be silently rewritten.`);
+  }
+  return { format: "module-typescript", source, shortCircuit: true };
 }

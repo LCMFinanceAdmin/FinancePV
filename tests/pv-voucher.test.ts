@@ -81,3 +81,21 @@ test("a voucher that has been checked names who checked it, and when", () => {
   assert.ok(html.includes("Thomas Lim"));
   assert.ok(html.includes("24/09/2026"));
 });
+
+test("the voucher names the budget line it is expensed from", () => {
+  // It used to read "Project: Orang Asli / HQ / Transportation" -- one field
+  // shaped like a path, leaving the reader to work out which part of it is the
+  // budget item. The signatories asked for the budget item to be named, and on
+  // the filed copy that means a field of its own.
+  const html = voucher({ ministry: "Mission", dept: "HQ", project: "Vietnam 5" });
+  assert.ok(html.includes("Ministry:  Mission / HQ"));
+  assert.ok(html.includes("Budget line:  <b>Vietnam 5</b>"));
+  assert.ok(!html.includes("Project:  Mission"));
+});
+
+test("a voucher drawn against no budget line leaves the field empty, not absent", () => {
+  // A blank where a line should be is a question somebody can answer. No field
+  // at all is not.
+  const html = voucher({ ministry: "Mission", dept: "HQ", project: null });
+  assert.ok(html.includes("Budget line:  <b>—</b>"));
+});

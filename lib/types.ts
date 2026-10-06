@@ -114,6 +114,13 @@ export interface UserProfile {
   isLcmStaff?: boolean;  // employed by LCM — gates leave, staff loans, payroll
   isPastor?: boolean;
   isDean?: boolean;      // derived: leads a district
+  /**
+   * Named on somebody's leave chain by an explicit assignment, without holding
+   * a role that implies it. A department head signing for the person under them
+   * is ordinary staff, and the leave queue was missing from their nav entirely —
+   * they could approve, and had nowhere to go to do it.
+   */
+  isLeaveApprover?: boolean;
   congregation?: string;
   district?: string;
   designation?: string;

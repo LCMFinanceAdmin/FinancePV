@@ -11,6 +11,7 @@ import {
   budgetReportHtml, bucketForMonth, PERIOD_LABELS,
   type BudgetPeriod, type ReportLine,
 } from "@/components/budget/budget-report-html";
+import { sameBudgetLine, SPENT_STATUSES, IN_FLIGHT_STATUSES } from "@/lib/budget-line";
 
 const MINISTRIES = [
   "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
@@ -237,7 +238,7 @@ function BudgetInner() {
   }
 
   async function loadBudgetData(ministry: string, year: number = selectedYear) {
-    const IN_FLIGHT = ["PENDING_HEAD", "PENDING", "REVIEWED", "MINISTRY_VERIFIED", "PENDING_SIGNATORY"];
+
 
     // Is this ministry/year still a proposal? If so its lines live under the
     // proposal rather than as approved budget, and that's what to show.
@@ -264,19 +265,25 @@ function BudgetInner() {
 
     setPendingProposals((awaiting ?? []) as BudgetProposal[]);
 
-    const spentMap: Record<string, number> = {};
-    const pendingMap: Record<string, number> = {};
-    const pendingCountMap: Record<string, number> = {};
-
-    (allPvs ?? []).forEach((pv: { project: string; amount: number; status: string }) => {
-      if (!pv.project) return;
-      if (["APPROVED", "PAID"].includes(pv.status)) {
-        spentMap[pv.project] = (spentMap[pv.project] || 0) + (pv.amount || 0);
-      } else if (IN_FLIGHT.includes(pv.status)) {
-        pendingMap[pv.project] = (pendingMap[pv.project] || 0) + (pv.amount || 0);
-        pendingCountMap[pv.project] = (pendingCountMap[pv.project] || 0) + 1;
+    // Totalled per budget line through the shared comparison, so this table and
+    // the report below cannot disagree about which line a voucher landed on.
+    // They did: this keyed a map on the raw project string while the report
+    // trimmed and lowercased, and a voucher typed with a trailing space counted
+    // in one and not the other.
+    const vouchers = (allPvs ?? []) as { project: string; amount: number; status: string }[];
+    const totalFor = (lineName: string) => {
+      let spent = 0, pending = 0, pendingCount = 0;
+      for (const pv of vouchers) {
+        if (!sameBudgetLine(pv.project, lineName)) continue;
+        if (SPENT_STATUSES.includes(pv.status as typeof SPENT_STATUSES[number])) {
+          spent += pv.amount || 0;
+        } else if (IN_FLIGHT_STATUSES.includes(pv.status as typeof IN_FLIGHT_STATUSES[number])) {
+          pending += pv.amount || 0;
+          pendingCount += 1;
+        }
       }
-    });
+      return { spent, pending, pendingCount };
+    };
 
     function colorFor(v: number): "red" | "yellow" | "green" {
       if (v < 0) return "red";
@@ -285,9 +292,7 @@ function BudgetInner() {
     }
 
     const withSpending: BudgetItem[] = (items ?? []).map((item: BudgetItem) => {
-      const spent            = spentMap[item.project_name] || 0;
-      const pending          = pendingMap[item.project_name] || 0;
-      const pendingCount     = pendingCountMap[item.project_name] || 0;
+      const { spent, pending, pendingCount } = totalFor(item.project_name);
       const budget           = (item.estimated_income || 0) + (item.estimated_expenses || 0);
       const balance          = budget - spent;
       const availableBalance = budget - spent - pending;
@@ -586,7 +591,7 @@ function BudgetInner() {
       const lines: ReportLine[] = ordered.map(({ row, isChild }) => {
         const actuals = new Array(buckets).fill(0);
         for (const pv of (pvs ?? []) as { project: string | null; amount: number; date: string | null; submitted_at: string | null }[]) {
-          if ((pv.project ?? "").trim().toLowerCase() !== row.project_name.trim().toLowerCase()) continue;
+          if (!sameBudgetLine(pv.project, row.project_name)) continue;
           const when = new Date(pv.date || pv.submitted_at || "");
           if (isNaN(when.getTime()) || when.getFullYear() !== selectedYear) continue;
           actuals[bucketForMonth(when.getMonth(), reportPeriod)] += pv.amount || 0;

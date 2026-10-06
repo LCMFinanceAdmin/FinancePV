@@ -98,7 +98,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
   // place and be missing from another.
   const moreSections = [
     { label: null, items: visiblePinned(user) },
-    ...visibleGroups(user).map(g => ({ label: g.label, items: g.items })),
+    ...visibleGroups(user, true).map(g => ({ label: g.label, items: g.items })),
   ];
 
   const initials = personInitials(user.full_name);

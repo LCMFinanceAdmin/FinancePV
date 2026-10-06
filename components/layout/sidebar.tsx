@@ -73,7 +73,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
     window.location.reload();
   }
 
-  const groups = visibleGroups(user);
+  const groups = visibleGroups(user, true);
   const pinned = visiblePinned(user);
   const activeGroup = groupForPath(groups, pathname);
   // Only the most specific entry is highlighted — see activeHref.

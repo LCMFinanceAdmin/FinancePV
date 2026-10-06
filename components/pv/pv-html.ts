@@ -108,7 +108,15 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
     : pv.payee_bank_name
       ? `${getBankAbbr(pv.payee_bank_name)}${pv.payee_bank_acct ? " | " + pv.payee_bank_acct : ""}`
       : "";
-  const projectLabel = [pv.ministry, pv.dept, pv.project].filter(Boolean).join(" / ");
+  // The ministry and the budget line it is drawn against, stated separately.
+  //
+  // These were one field — "Mission / HQ / Vietnam 5" — which reads as a path
+  // and leaves the reader to work out which part is the budget item. The
+  // signatories asked for the budget item to be named, and on the filed copy
+  // that means a field of its own. The voucher's `project` IS the budget line:
+  // the budget matches a voucher to a line by this text (see lib/budget-line).
+  const ministryLabel = [pv.ministry, pv.dept].filter(Boolean).join(" / ");
+  const budgetLineLabel = (pv.project ?? "").trim();
 
   const financeApproval = approvals.find(a => a.role === "FINANCE_ADMIN" && a.action === "APPROVED")
     ?? (pv.finance_verified_by ? { role: "FINANCE_ADMIN", email: "", name: pv.finance_verified_by, action: "APPROVED" as const, timestamp: pv.finance_verified_at, remarks: "" } : undefined);
@@ -388,7 +396,10 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
       </div>
       <div class="info-cell">Payable to:  <b>${esc(pv.payee_name)}</b></div>
       <div class="info-cell">Payee Bank A/C No:  ${esc(bankLine)}</div>
-      <div class="info-cell">Project:  ${esc(projectLabel)}</div>
+      <div class="info-row">
+        <div class="info-cell" style="flex:2">Ministry:  ${esc(ministryLabel)}</div>
+        <div class="info-cell">Budget line:  <b>${esc(budgetLineLabel || "—")}</b></div>
+      </div>
       <div class="info-cell">Purpose:  ${esc(pv.purpose)}</div>
       ${pv.reference_pv_no ? `<div class="info-cell exco-ref">Ref. earlier PV: <b>${esc(pv.reference_pv_no)}</b>${pv.reference_note ? ` — ${esc(pv.reference_note)}` : ""}</div>` : ""}
       ${pv.exco_resolution_ref ? `<div class="info-cell exco-ref">EXCO Resolution Ref: ${esc(pv.exco_resolution_ref)}${pv.exco_resolution_date ? `  dated ${esc(pv.exco_resolution_date)}` : ""}</div>` : ""}
