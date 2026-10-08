@@ -357,7 +357,7 @@ SECTIONS = [
 
         <figure class="shot">
           <img data-img="11-signatory-queue.png" src="img/11-signatory-queue.png"
-               alt="The Signatory Queue: an approval path across the top showing Finance and
+               alt="Approve Vouchers: an approval path across the top showing Finance and
                     EXCO ticked and the Treasurer current, then tabs for Needs your
                     signature, Approved, Paid and Rejected, and voucher cards each with a
                     ministry, payee, purpose, amount, budget chip and Approve and Reject

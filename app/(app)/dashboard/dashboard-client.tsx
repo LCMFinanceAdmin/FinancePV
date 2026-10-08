@@ -194,7 +194,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
     { href: "/worksheets",         icon: <FileText size={18} />,  label: "Worksheets",   desc: "Worker hours & sign",   color: "from-amber-500 to-amber-600" },
     { href: "/bookings",           icon: <Building2 size={18} />, label: "Bookings",     desc: "Facility calendar",     color: "from-emerald-500 to-emerald-700" },
   ] : isSignatory ? [
-    { href: "/signatory",      icon: <ShieldCheck size={18} />,  label: "Signatory Queue", desc: "PVs awaiting your sign", color: "from-blue-500 to-blue-700" },
+    { href: "/signatory",      icon: <ShieldCheck size={18} />,  label: "Approve Vouchers", desc: "PVs awaiting your sign", color: "from-blue-500 to-blue-700" },
     { href: "/gm-claims",      icon: <Inbox size={18} />,        label: "GM Claims",       desc: "Review instructions",    color: "from-amber-500 to-amber-600" },
     { href: "/budget",         icon: <TrendingUp size={18} />,   label: "Budget",          desc: "Ministry overview",      color: "from-emerald-500 to-emerald-700" },
     { href: "/hod-activity",   icon: <FileText size={18} />,     label: "My Approvals",    desc: "Vouchers you've acted on", color: "from-violet-500 to-violet-700" },

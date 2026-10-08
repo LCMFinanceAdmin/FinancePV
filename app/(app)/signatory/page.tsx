@@ -727,7 +727,7 @@ export default function SignatoryPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#5a8bd9] mb-1">Approvals</div>
-          <h1 className="text-2xl font-bold text-stone-800">Signatory Queue</h1>
+          <h1 className="text-2xl font-bold text-stone-800">Approve Vouchers</h1>
           <p className="text-sm text-stone-400">
             {statusFilter === "pending"           ? (isGM ? "PVs pending your verification" : "Payment vouchers awaiting your approval") :
              statusFilter === "pending_signatory" ? "PVs pending Treasurer / Bishop / Secretary approval" :

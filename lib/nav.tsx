@@ -178,7 +178,10 @@ export const NAV_GROUPS: NavGroup[] = [
         show: (u) => u.isGeneralManager || u.isFinanceAdmin || u.isSignatory,
       },
       {
-        href: "/signatory", label: "Signatory Queue", desc: "Vouchers waiting on you to approve or sign",
+        // Same page as the pin above, under the name the page itself now
+        // carries. The sidebar drops this copy as a duplicate; the feature
+        // directory, which lists everything reachable, shows it from here.
+        href: "/signatory", label: "Approve Vouchers", desc: "Vouchers waiting on you to approve or sign",
         icon: <Users size={size} />, show: (u) => u.isSignatory,
       },
       {

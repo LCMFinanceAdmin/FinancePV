@@ -12,7 +12,7 @@
 // the largest text on the card, ministry and purpose next with room to be read,
 // and the reference and status last as the small print they are.
 //
-// Shared by the Signatory Queue and Finance Activity, which had two copies of
+// Shared by Approve Vouchers and Finance Activity, which had two copies of
 // almost this, differing in ways nobody chose.
 
 import Link from "next/link";
