@@ -133,3 +133,33 @@ test("a pastor with nobody above them falls back to the Bishop", async () => {
       "lone@lcm"),
     "1:Bishop Thomas");
 });
+
+test("somebody who fills two rungs is asked once, not twice", () => {
+  // Every Dean also leads a congregation, so a pastor serving in the Dean's own
+  // church has the same man as Pastor in Charge and as Dean. Six of the 52
+  // congregations are in that position today, one per district.
+  //
+  // Asking him twice is not a second opinion, and between the two signatures
+  // the application reads as pending on the man who has just signed it.
+  return chain({
+    congregations: [{ id: "c1", name: "Christ", head_pastor_email: "dean@lcm", district_id: "d1" }],
+    districts: [{ id: "d1", name: "Central 2", dean_email: "dean@lcm" }],
+    user_roles: [BISHOP, GM,
+      { email: "pastor@lcm", full_name: "Pastor Eric", role: "STAFF", is_pastor: true, congregation_id: "c1" },
+      { email: "dean@lcm", full_name: "The Dean", role: "STAFF", is_pastor: true, congregation_id: "c1" },
+    ],
+  }, "pastor@lcm").then(c => assert.equal(c, "1:The Dean"));
+});
+
+test("two different people still make two rungs", () => {
+  // The guard above must collapse a repeat, not the chain itself.
+  return chain({
+    congregations: [{ id: "c1", name: "Hope", head_pastor_email: "head@lcm", district_id: "d1" }],
+    districts: [{ id: "d1", name: "Central", dean_email: "dean@lcm" }],
+    user_roles: [BISHOP, GM,
+      { email: "pastor@lcm", full_name: "Pastor Sam", role: "STAFF", is_pastor: true, congregation_id: "c1" },
+      { email: "head@lcm", full_name: "Head Pastor", role: "STAFF", is_pastor: true, congregation_id: "c1" },
+      { email: "dean@lcm", full_name: "The Dean", role: "STAFF", is_pastor: true, congregation_id: "c1" },
+    ],
+  }, "pastor@lcm").then(c => assert.equal(c, "1:Head Pastor  2:The Dean"));
+});

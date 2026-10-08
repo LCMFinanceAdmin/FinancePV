@@ -244,8 +244,28 @@ export async function leaveRouting(
       if (dean) chainUp.push(dean);
     }
 
+    // One person, one rung.
+    //
+    // Every Dean also leads a congregation, so a pastor serving in the Dean's
+    // own church has the same man as Pastor in Charge and as Dean — six of the
+    // 52 congregations are in that position, one per district. Left alone the
+    // chain asks him to sign the same application twice, and between the two
+    // signatures it reads as "pending Tan Sink Dark" to the man who has just
+    // signed it.
+    //
+    // A second signature from the same person is not a second opinion. He keeps
+    // the earlier rung, which is the closer one to the applicant, and the chain
+    // is renumbered so the steps stay consecutive.
+    const seen = new Set<string>();
+    const oneRungEach = chainUp.filter(a => {
+      const key = a.email.trim().toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
     // Each rung is its own step, in the order they were added.
-    const anyOne = chainUp.map((a, i) => ({ ...a, step: i + 1 }));
+    const anyOne = oneRungEach.map((a, i) => ({ ...a, step: i + 1 }));
 
     // Nobody above them at all — no Dean recorded, no Pastor in Charge, or the
     // applicant is both. Falling back to the Bishop keeps an application from
