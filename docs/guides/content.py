@@ -460,15 +460,22 @@ SECTIONS = [
           voucher a year from now &mdash; that name is how spending finds its way back to this
           line.</li>
           <li><b>Attach the papers</b> behind any line that needs explaining.</li>
-          <li><b>Submit it.</b> It goes to the Treasurer, and you will be told when it is
-          approved or sent back.</li>
+          <li><b>Submit it.</b> It goes forward as a whole, to be decided by the EXCO at the
+          meeting held for the budget. You will be told when it is approved or sent back.</li>
         </ol>
+
+        <div class="note-box">
+          <p><b>The budget is settled in a meeting, not in the app.</b> The EXCO votes on the
+          year&rsquo;s budget at a meeting called for that and nothing else, and you have a voice
+          in it like every other member. What is entered afterwards records what was resolved
+          &mdash; which is why your proposal needs to be in before the meeting, not after.</p>
+        </div>
 
         <h3 id="budget-amend">Amending one during the year</h3>
         <p>On the same page, ask for a change to a line &mdash; more, less, or a new line
-        altogether &mdash; and say why. It goes to the Treasurer in the same way. The figures
-        on the page do not move until it is approved, which is deliberate: what you see is
-        always what was actually agreed.</p>
+        altogether &mdash; and say why. It goes forward the same way. The figures on the page do
+        not move until the change has been agreed and recorded, which is deliberate: what you see
+        is always what was actually decided.</p>
 
         <div class="note-box">
           <p><b>An unbudgeted claim is not refused automatically.</b> It is flagged to
@@ -479,21 +486,30 @@ SECTIONS = [
 
     dict(rank=1, id="budget-approve", title="Approving a budget",
          roles=["signatory", "gm"], body="""
-        <p class="lede">A ministry&rsquo;s proposed budget, and its requests to amend one
-        during the year, come to the Treasurer.</p>
+        <p class="lede">The annual budget is not yours to approve on your own. It is decided by
+        the EXCO, voting at a meeting called for that purpose and no other.</p>
 
-        <p>Open <b>Budget</b>. Proposals waiting on a decision are listed at the top, whatever
-        ministry they come from, so you do not have to go looking ministry by ministry.</p>
+        <p>Proposing and accepting the budget is the whole business of that meeting. The
+        Treasurer, the Secretary and the Bishop each have a voice in it, and so does the rest of
+        the EXCO. What happens in the app afterwards is the recording of what was resolved.</p>
+
+        <div class="note-box">
+          <p><b>What the button actually does.</b> Pressing <em>Approve</em> does not make the
+          budget approved &mdash; the meeting did that. It puts the agreed figures live so claims
+          can be charged against them. Press it after the meeting, not instead of one: approving
+          beforehand would leave the app disagreeing with the minute book, and the minute book is
+          the authority.</p>
+        </div>
 
         <ol class="steps">
-          <li><b>Read the lines and the papers attached to them.</b></li>
-          <li><b>Approve the budget</b>, and it becomes the figures everybody else sees; or
-          send it back with a reason, and the ministry revises it.</li>
+          <li><b>The EXCO meets and votes.</b><span class="note">A meeting for the budget alone, and the decision minuted.</span></li>
+          <li><b>Open <span class="path">Budget</span>.</b><span class="note">Proposals from every ministry are listed together, so the meeting can work through them without going ministry by ministry.</span></li>
+          <li><b>Record what was decided, with a note.</b><span class="note">Approving makes the lines live. Sending one back unlocks it so the ministry can revise it before the next meeting, and your note is what they are given to work from.</span></li>
         </ol>
 
-        <p>An amendment asked for mid-year works the same way, and says what is being changed
-        and why. Until you approve it, the ministry&rsquo;s page keeps showing the figures
-        that were agreed &mdash; a request does not quietly become a budget.</p>
+        <p>A change asked for mid-year works the same way and says what is being changed and why.
+        Until it is recorded, the ministry&rsquo;s page keeps showing the figures that were
+        actually agreed &mdash; a request does not quietly become a budget.</p>
     """),
 
     dict(rank=1, id="admin-records", title="Keeping the church&rsquo;s records",
