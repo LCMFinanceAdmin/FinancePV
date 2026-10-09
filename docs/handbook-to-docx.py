@@ -58,6 +58,9 @@ HEAD_FONT = "Segoe UI Semibold"
 MONO_FONT = "Consolas"
 
 TEXT_WIDTH_CM = 16.4
+# The tallest a picture may be before it starts shunting text onto the next
+# page. The text area is 25.3cm; this leaves room for a heading and a caption.
+MAX_FIGURE_CM = 15.5
 
 
 # ── Word plumbing that python-docx does not expose ─────────────────────────
@@ -218,7 +221,14 @@ def flatten_figure(fig, index):
     im.save(out, optimize=True)
     # A phone screenshot at full text width would be a caricature of itself.
     narrow = "phone" in fig.get("class", []) or im.width < im.height
-    return out, (Cm(7.5) if narrow else Cm(TEXT_WIDTH_CM))
+    width_cm = 7.5 if narrow else TEXT_WIDTH_CM
+    # And cap the height. A portrait screenshot — the sidebar is 560 by 1320 —
+    # is 17.7cm tall at 7.5cm wide, which fills two thirds of the text area and
+    # pushes everything after it onto the next page. MAX_FIGURE_CM keeps a
+    # figure to something a page can hold beside its own caption.
+    if im.height * (width_cm / im.width) > MAX_FIGURE_CM:
+        width_cm = MAX_FIGURE_CM * im.width / im.height
+    return out, Cm(width_cm)
 
 
 def add_figure(doc, fig, index):
@@ -269,12 +279,73 @@ def add_note_box(doc, el):
           el.find_all("p", recursive=False), title)
 
 
+def restart_numbering(doc, par):
+    """Give this paragraph's list a numbering of its own, beginning at 1.
+
+    Word's "List Number" style carries one numbering definition, which every
+    list in the document shares — so the steps under "Claiming money back"
+    carried on from the steps under "Getting in" and began at 4. The reader is
+    told to do step 7 of a list that starts at step 6.
+
+    The cure is a fresh <w:num> pointing at the same shape as the style, with
+    its level overridden to start again. Doing it this way rather than writing
+    the digits as text keeps the list a real Word list: somebody adding a step
+    in Word still gets the rest renumbered.
+    """
+    numbering = doc.part.numbering_part.element
+
+    # The shape the style already uses, so a new list looks like the old ones.
+    abstract_id = None
+    style = doc.styles["List Number"].element
+    num_pr = style.find(qn("w:pPr"))
+    if num_pr is not None:
+        ref = num_pr.find(qn("w:numPr"))
+        if ref is not None:
+            num_id_el = ref.find(qn("w:numId"))
+            if num_id_el is not None:
+                want = num_id_el.get(qn("w:val"))
+                for num in numbering.findall(qn("w:num")):
+                    if num.get(qn("w:numId")) == want:
+                        a = num.find(qn("w:abstractNumId"))
+                        if a is not None:
+                            abstract_id = a.get(qn("w:val"))
+    if abstract_id is None:
+        return  # No numbering to clone; leave the list as the style made it.
+
+    used = [int(n.get(qn("w:numId"))) for n in numbering.findall(qn("w:num"))]
+    new_id = str(max(used) + 1 if used else 1)
+
+    num = OxmlElement("w:num")
+    num.set(qn("w:numId"), new_id)
+    ref = OxmlElement("w:abstractNumId")
+    ref.set(qn("w:val"), abstract_id)
+    num.append(ref)
+    override = OxmlElement("w:lvlOverride")
+    override.set(qn("w:ilvl"), "0")
+    start = OxmlElement("w:startOverride")
+    start.set(qn("w:val"), "1")
+    override.append(start)
+    num.append(override)
+    numbering.append(num)
+
+    pPr = par._p.get_or_add_pPr()
+    for old in pPr.findall(qn("w:numPr")):
+        pPr.remove(old)
+    npr = OxmlElement("w:numPr")
+    ilvl = OxmlElement("w:ilvl"); ilvl.set(qn("w:val"), "0")
+    nid = OxmlElement("w:numId"); nid.set(qn("w:val"), new_id)
+    npr.append(ilvl); npr.append(nid)
+    pPr.append(npr)
+
+
 def add_steps(doc, ol):
     for i, li in enumerate(ol.find_all("li", recursive=False), 1):
         note = li.find("span", class_="note")
         if note:
             note.extract()
         p = doc.add_paragraph(style="List Number")
+        if i == 1:
+            restart_numbering(doc, p)
         p.paragraph_format.space_after = Pt(2)
         add_inline(p, li)
         for run in p.runs:
@@ -476,15 +547,20 @@ def render(doc, el, state):
 
     if name in ("h2", "h3", "h4"):
         level = {"h2": 1, "h3": 2, "h4": 3}[name]
-        if level == 1:
-            doc.add_page_break()
+        # Every section used to start on a fresh page. In a handbook of
+        # seventeen that is defensible; in a role guide of six, several of them
+        # a paragraph long, it meant a document that was mostly white — which
+        # is what prompted this. Sections now flow, separated by space rather
+        # than by paper, and keep_with_next stops a heading stranding itself at
+        # the foot of a page with its first line overleaf.
         h = doc.add_heading(el.get_text(" ", strip=True), level=level)
         for run in h.runs:
             run.font.name = HEAD_FONT
             run.font.color.rgb = BLUE if level == 1 else INK
             run.font.size = Pt({1: 17, 2: 12.5, 3: 11}[level])
-        h.paragraph_format.space_before = Pt(4 if level == 1 else 12)
+        h.paragraph_format.space_before = Pt(22 if level == 1 else 12)
         h.paragraph_format.space_after = Pt(6)
+        keep_with_next(h)
         return
 
     if name == "p":
@@ -622,7 +698,11 @@ def main() -> int:
 
     footer = soup.find("footer")
     if footer:
-        doc.add_page_break()
+        # Space, not a page of its own. On a six-section guide the break put
+        # three lines of small grey type alone on the last sheet.
+        rule = doc.add_paragraph()
+        rule.paragraph_format.space_before = Pt(26)
+        rule.paragraph_format.space_after = Pt(0)
         for body in footer.find_all("p"):
             para(doc, body, size=9, colour=GREY)
 
