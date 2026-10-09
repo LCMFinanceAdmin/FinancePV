@@ -346,6 +346,29 @@ BEGIN
     format($q$SELECT approve_budget_proposal(%L, %L, 'EXCO/9999/1', CURRENT_DATE, NULL)$q$,
            a_budget, treasurer),
     'approve naming the meeting', true);
+
+  -- Sending one back is the same meeting's decision, and went straight from
+  -- the browser as an UPDATE until 245 — so an EXCO member could reject any
+  -- ministry's budget, and the mandatory reason was enforced by the form alone.
+  INSERT INTO budget_proposals(ministry, year, status, created_by)
+  VALUES ('_probe', 2997, 'SUBMITTED', '_probe') RETURNING id INTO a_budget;
+
+  PERFORM pg_temp.try_call('budget', exco, 'EXCO member',
+    format($q$SELECT reject_budget_proposal(%L, %L, 'EXCO/9999/2', CURRENT_DATE, 'no')$q$,
+           a_budget, exco),
+    'send a budget back', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT reject_budget_proposal(%L, %L, 'EXCO/9999/2', CURRENT_DATE, '  ')$q$,
+           a_budget, treasurer),
+    'send back with no reason', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT reject_budget_proposal(%L, %L, '  ', CURRENT_DATE, 'Too high')$q$,
+           a_budget, treasurer),
+    'send back without naming the meeting', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT reject_budget_proposal(%L, %L, 'EXCO/9999/2', CURRENT_DATE, 'Trim the camp line')$q$,
+           a_budget, treasurer),
+    'send back naming the meeting', true);
 END $probe$;
 
 INSERT INTO result(seq, area, who, attempt, got, expected, verdict)

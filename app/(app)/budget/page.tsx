@@ -548,10 +548,17 @@ function BudgetInner() {
         showToast(`${selectedMinistry} ${selectedYear} budget approved — now live`);
       } else {
         if (!decisionNote.trim()) { showToast("Give a reason so the EXCO can revise it", false); return; }
-        const { error } = await supabase.from("budget_proposals").update({
-          status: "REJECTED", decided_by: userEmail,
-          decided_at: new Date().toISOString(), decision_note: decisionNote.trim(),
-        }).eq("id", proposal.id);
+        if (!resolutionRef.trim() || !resolutionDate) {
+          showToast("Name the EXCO meeting resolution and its date", false);
+          return;
+        }
+        const { error } = await supabase.rpc("reject_budget_proposal", {
+          proposal: proposal.id,
+          decided_by_email: userEmail,
+          p_resolution_ref: resolutionRef.trim(),
+          p_resolution_date: resolutionDate,
+          note: decisionNote.trim(),
+        });
         if (error) { showToast("Error: " + error.message, false); return; }
         showToast("Sent back to the EXCO for revision");
       }
@@ -889,7 +896,10 @@ function BudgetInner() {
               <p className="mt-0.5 max-w-xl text-xs text-stone-600">
                 {proposal.status === "DRAFT" && <>These lines aren&apos;t budget yet. Add every project for {proposal.year}, then submit the ministry&apos;s budget as one package for the EXCO meeting.</>}
                 {proposal.status === "SUBMITTED" && <>Locked while the Treasurer reviews it. Submitted {proposal.submitted_at ? new Date(proposal.submitted_at).toLocaleDateString("en-MY") : ""} by {proposal.created_by}.</>}
-                {proposal.status === "REJECTED" && <>Reason: <strong>{proposal.decision_note}</strong> — revise the lines below and submit again.</>}
+                {proposal.status === "REJECTED" && <>Reason: <strong>{proposal.decision_note}</strong>
+                  {proposal.resolution_ref ? <> — EXCO resolution {proposal.resolution_ref}
+                    {proposal.resolution_date ? ` of ${new Date(proposal.resolution_date).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}` : ""}</> : null}
+                  {" "}— revise the lines below and submit again.</>}
               </p>
             </div>
 
@@ -913,7 +923,7 @@ function BudgetInner() {
                     ✓ Approve budget
                   </button>
                   <button
-                    onClick={() => { setDecisionNote(""); setDecisionModal("REJECT"); }}
+                    onClick={() => { setDecisionNote(""); setResolutionRef(""); setResolutionDate(""); setDecisionModal("REJECT"); }}
                     disabled={proposalBusy}
                     className="rounded-xl border border-red-300 bg-white px-3.5 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50">
                     Send back
@@ -1299,7 +1309,7 @@ function BudgetInner() {
                   approved for {proposal.ministry} that year are replaced by this proposal.
                 </div>
               )}
-              {decisionModal === "APPROVE" && (
+              {(
                 <div className="grid grid-cols-5 gap-3">
                   <div className="col-span-3">
                     <label className="mb-1 block text-xs font-semibold text-stone-600">
@@ -1323,8 +1333,9 @@ function BudgetInner() {
                       className="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm focus:border-[#4a6da7] focus:outline-none" />
                   </div>
                   <p className="col-span-5 -mt-1 text-[11px] leading-snug text-stone-500">
-                    The EXCO decides the budget by vote at a meeting held for it. This records
-                    which meeting, so the figures and the minute book agree.
+                    The EXCO decides the budget by vote at a meeting held for it, and sending one
+                    back is that meeting&rsquo;s decision too. This records which meeting, so the
+                    figures and the minute book agree.
                   </p>
                 </div>
               )}
