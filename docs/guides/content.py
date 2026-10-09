@@ -25,67 +25,42 @@ GUIDES = {
     "exco": dict(
         title="For an EXCO Member",
         covers="asking for a payment, verifying your ministry's spending, and your ministry's budget",
-        standfirst="You hold a portfolio — Mission, Education, Orang Asli, Stewardship or another. "
-                   "Money spent in your ministry&rsquo;s name passes your desk, and its budget is yours to "
-                   "propose and to watch. This is what that looks like in the app.",
     ),
     "pastor": dict(
         title="For a Pastor",
         covers="claiming money back, applying for leave, and approving leave for the pastors under you",
-        standfirst="Claiming back what you have spent, applying for leave, and &mdash; if you are a "
-                   "Pastor in Charge or a Dean &mdash; signing the leave of the pastors who report to you.",
     ),
     "checker": dict(
         title="For a Checker",
         covers="checking that a voucher&rsquo;s particulars are right before the EXCO Member verifies it",
-        standfirst="An EXCO Member has asked you to check their ministry&rsquo;s claims: that the receipts "
-                   "match the figures and the spending is what it says it is. One job, done "
-                   "before anybody signs anything.",
     ),
     "staff": dict(
         title="For Office Staff",
         covers="claiming money back, applying for leave, and your payslips",
-        standfirst="Claiming back what you have paid for, applying for leave, and finding your "
-                   "payslip. Three things, each a few taps.",
     ),
     "admin": dict(
         title="For the Admin Executive",
         covers="the church&rsquo;s records &mdash; the directory, congregations and offices &mdash; alongside your own claims and leave",
-        standfirst="You keep the church&rsquo;s records: who the people are, which congregation they "
-                   "belong to, and who holds which office. None of the money is yours to move, "
-                   "and that is deliberate.",
     ),
     "gm": dict(
         title="For the General Manager",
         covers="verifying payments, approving leave, and the whole church&rsquo;s budget",
-        standfirst="Every payment passes you after Finance has reviewed it and before the signing "
-                   "officers see it, and every staff leave application starts with you.",
     ),
     "signatory": dict(
         title="For a Signing Officer",
         covers="signing payment vouchers, and the budget line behind each one",
-        standfirst="Bishop, Treasurer or Secretary. A voucher reaches you once the ministry has "
-                   "verified it, Finance has reviewed it and the General Manager has approved it "
-                   "&mdash; so what is in front of you is only ever waiting on your signature.",
     ),
     "finance": dict(
         title="For the Finance Executive",
         covers="reviewing vouchers, raising them from the GM&rsquo;s instructions, and the figures behind the budget",
-        standfirst="The desk every payment crosses. This guide is the path a voucher takes through "
-                   "your hands, not a description of the whole system.",
     ),
     "accounts": dict(
         title="For the Accounts Executive",
         covers="recording payments, keeping the reference series, and payroll",
-        standfirst="You record what has been paid and keep the references straight. You do not "
-                   "decide vouchers &mdash; that is the Finance Executive&rsquo;s &mdash; and the app is built "
-                   "around that difference.",
     ),
     "building": dict(
         title="For the Building &amp; Event Manager",
         covers="building and event vouchers, worksheets, bookings and facility income",
-        standfirst="The property side: raising BAM vouchers, recording the workers&rsquo; wages, taking "
-                   "bookings and recording what the facilities bring in.",
     ),
 }
 
@@ -110,30 +85,12 @@ GUIDES = {
 SECTIONS = [
 
     dict(rank=0, id="getting-in", title="Getting in", roles=EVERYONE, body="""
-        <p class="lede">There is no password to remember and none to lose. You sign in with a
-        Google account, and the church decides which address that is.</p>
-
-        <ol class="steps">
-          <li><b>Go to the address below.</b><span class="note">Any browser, on a phone or a
-          computer. Bookmark it the first time and you will not have to type it again.</span></li>
-          <li><b>Press <em>Sign in with Google</em>.</b><span class="note">One tap, the same as
-          opening your church email.</span></li>
-          <li><b>Use your <strong>@lcm.org.my</strong> Google account.</b><span class="note">That
-          is the address the church knows you by, and the one your approvals are recorded
-          against.</span></li>
-        </ol>
-
-        <p style="text-align:center;margin:1.2rem 0 .3rem;">
-          <a class="path" style="font-size:1.05rem;padding:.5rem 1rem;display:inline-block;"
+        <p style="text-align:center;margin:.2rem 0 .3rem;">
+          <a class="path" style="font-size:1.25rem;padding:.6rem 1.2rem;display:inline-block;"
              href="https://finance-pv.vercel.app">finance-pv.vercel.app</a>
         </p>
-
-        <div class="note-box">
-          <p><b>No @lcm.org.my address?</b> Contact the LCM team and they will grant access to the
-          personal email address you prefer to sign in with. This is usually the case for
-          volunteers, who serve the church without being employed by it. Once they have granted
-          it, sign in with Google using that address.</p>
-        </div>
+        <p class="figcap" style="text-align:center;">Open it in any browser, on a phone or a
+        computer. Bookmark it the first time and you will not have to type it again.</p>
 
         <figure class="shot">
           <div class="bar">
@@ -145,7 +102,22 @@ SECTIONS = [
                     then a card headed Sign in to continue with a blue Sign in with Google
                     button, the word or, and an outlined Sign in with email link button.">
         </figure>
-        <p class="figcap">The sign-in screen. <b>Sign in with Google</b> is the one to use.</p>
+        <p class="figcap">This is what you will see.</p>
+
+        <ol class="steps">
+          <li><b>Press <em>Sign in with Google</em>.</b><span class="note">One tap, the same as
+          opening your church email. Nothing to type.</span></li>
+          <li><b>Use your <strong>@lcm.org.my</strong> Google account.</b><span class="note">That
+          is the address the church knows you by, and the one your approvals are recorded
+          against.</span></li>
+        </ol>
+
+        <div class="note-box">
+          <p><b>No @lcm.org.my address?</b> Contact the LCM team and they will grant access to the
+          personal email address you prefer to sign in with. This is usually the case for
+          volunteers, who serve the church without being employed by it. Once they have granted
+          it, sign in with Google using that address.</p>
+        </div>
 
         <h3 id="first-time">If the app looks emptier than this guide describes</h3>
         <p>Your role has not been set yet. Signing in gets you through the door; what you may do

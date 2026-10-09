@@ -38,22 +38,6 @@ def sections_for(role: str):
     return [s for _, s in mine]
 
 
-def contents_rail(items) -> str:
-    """The rail, built from the headings each guide actually has.
-
-    Hand-written in the handbook, which is why it listed one section the page
-    no longer had. Here it cannot disagree with the page: it is the page.
-    """
-    rows = []
-    for s in items:
-        rows.append(f'        <li><a href="#{s["id"]}">{s["title"]}</a></li>')
-        for sub_id, sub_title in re.findall(
-                r'<h3 id="([^"]+)">(.*?)</h3>', s["body"], re.S):
-            clean = re.sub(r"<[^>]+>", "", sub_title).strip()
-            rows.append(f'        <li><a href="#{sub_id}" class="sub">{clean}</a></li>')
-    return "\n".join(rows)
-
-
 def build(role: str, guide: dict) -> pathlib.Path:
     items = sections_for(role)
     if not items:
@@ -73,17 +57,9 @@ def build(role: str, guide: dict) -> pathlib.Path:
   <header class="masthead">
     <p class="eyebrow">Lutheran Church in Malaysia &middot; LCM Finance</p>
     <h1>{guide["title"]}</h1>
-    <p class="standfirst">{guide["standfirst"]}</p>
   </header>
 
   <div class="layout">
-
-    <nav class="rail" aria-label="Contents">
-      <h2>Contents</h2>
-      <ol>
-{contents_rail(items)}
-      </ol>
-    </nav>
 
     <main>
 

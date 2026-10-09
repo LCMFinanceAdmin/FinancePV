@@ -687,8 +687,10 @@ def main() -> int:
         if stand:
             para(doc, stand, size=11.5, space_after=16, colour=RGBColor(0x3A, 0x4A, 0x60))
 
-    text_para(doc, "Contents", size=13, bold=True, colour=BLUE, space_after=4)
-    add_toc(doc)
+    # No contents page. It arrived as a field that says "Right-click here and
+    # choose Update Field" and does nothing until somebody does — a line of
+    # instructions standing where the first real instruction should be. These
+    # documents are six to ten pages and open on the thing you came for.
 
     main_el = soup.find("main")
     state = {"figures": 0}
@@ -710,7 +712,7 @@ def main() -> int:
     size = OUT.stat().st_size // 1024
     print(f"{state['figures']} figures flattened")
     print(f"Wrote {OUT.name} ({size} KB)")
-    print("Open it and press Ctrl+A then F9 to fill in the contents page.")
+    print("Headings are real Word styles, so the navigation pane works as it is.")
     return 0
 
 
