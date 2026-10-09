@@ -99,6 +99,9 @@ interface BudgetProposal {
   decided_by: string | null;
   decided_at: string | null;
   decision_note: string | null;
+  /** The EXCO meeting that approved it — see migration 244. */
+  resolution_ref: string | null;
+  resolution_date: string | null;
 }
 
 interface ChangeRequest {
@@ -183,6 +186,11 @@ function BudgetInner() {
   const [quickEdit, setQuickEdit] = useState<{ id: string; value: string } | null>(null);
   const [decisionModal, setDecisionModal] = useState<"APPROVE" | "REJECT" | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
+  // The EXCO meeting that approved the budget. The decision is the meeting's;
+  // these two say which one, so the figures and the minute book point at each
+  // other. Required by approve_budget_proposal (244), not only by this form.
+  const [resolutionRef, setResolutionRef] = useState("");
+  const [resolutionDate, setResolutionDate] = useState("");
 
   // Derived permissions
   const isFinanceAdmin = FINANCE_ADMIN_ROLES.includes(userRole);
@@ -521,12 +529,19 @@ function BudgetInner() {
     setProposalBusy(true);
     try {
       if (decision === "APPROVE") {
+        if (!resolutionRef.trim() || !resolutionDate) {
+          showToast("Name the EXCO meeting resolution and its date", false);
+          return;
+        }
         // A DB function so the lines go live in the same transaction as the
         // status change — otherwise a failure between the two would leave the
-        // year either double-budgeted or empty.
+        // year either double-budgeted or empty. It checks the caller and the
+        // resolution for itself: this form is a convenience, not the control.
         const { error } = await supabase.rpc("approve_budget_proposal", {
           proposal: proposal.id,
           decided_by_email: userEmail,
+          p_resolution_ref: resolutionRef.trim(),
+          p_resolution_date: resolutionDate,
           note: decisionNote || null,
         });
         if (error) { showToast("Error: " + error.message, false); return; }
@@ -892,7 +907,7 @@ function BudgetInner() {
               {proposal.status === "SUBMITTED" && canDecideProposal && (
                 <>
                   <button
-                    onClick={() => { setDecisionNote(""); setDecisionModal("APPROVE"); }}
+                    onClick={() => { setDecisionNote(""); setResolutionRef(""); setResolutionDate(""); setDecisionModal("APPROVE"); }}
                     disabled={proposalBusy}
                     className="rounded-xl bg-green-600 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
                     ✓ Approve budget
@@ -1053,6 +1068,19 @@ function BudgetInner() {
                       <span className="ml-2 text-[11px] text-stone-400">
                         {selectedYear} · all figures in RM
                       </span>
+                      {/* Which meeting made these the budget. Without it the
+                          page showed figures with no visible authority behind
+                          them, and the decision is the EXCO's, not the
+                          Treasurer's — see migration 244. */}
+                      {proposal?.status === "APPROVED" && proposal.resolution_ref && (
+                        <span className="ml-2 text-[11px] font-medium text-[#2f5b9c]">
+                          · approved by EXCO resolution {proposal.resolution_ref}
+                          {proposal.resolution_date
+                            ? ` of ${new Date(proposal.resolution_date).toLocaleDateString("en-MY",
+                                { day: "numeric", month: "short", year: "numeric" })}`
+                            : ""}
+                        </span>
+                      )}
                     </caption>
                     <thead>
                       <tr className="border-y border-[#cfe0f6] bg-[#f2f8ff]">
@@ -1269,6 +1297,35 @@ function BudgetInner() {
                 <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800 leading-relaxed">
                   Approving makes these the live budget for {proposal.year}. Any existing lines already
                   approved for {proposal.ministry} that year are replaced by this proposal.
+                </div>
+              )}
+              {decisionModal === "APPROVE" && (
+                <div className="grid grid-cols-5 gap-3">
+                  <div className="col-span-3">
+                    <label className="mb-1 block text-xs font-semibold text-stone-600">
+                      EXCO resolution <span className="text-red-400">* required</span>
+                    </label>
+                    <input
+                      value={resolutionRef}
+                      onChange={e => setResolutionRef(e.target.value)}
+                      placeholder="e.g. EXCO/2026/11"
+                      className="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm focus:border-[#4a6da7] focus:outline-none" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="mb-1 block text-xs font-semibold text-stone-600">
+                      Meeting date <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={resolutionDate}
+                      max={new Date().toISOString().slice(0, 10)}
+                      onChange={e => setResolutionDate(e.target.value)}
+                      className="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm focus:border-[#4a6da7] focus:outline-none" />
+                  </div>
+                  <p className="col-span-5 -mt-1 text-[11px] leading-snug text-stone-500">
+                    The EXCO decides the budget by vote at a meeting held for it. This records
+                    which meeting, so the figures and the minute book agree.
+                  </p>
                 </div>
               )}
               <div>

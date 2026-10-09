@@ -158,6 +158,10 @@ DECLARE
   secretary text := (SELECT email FROM user_roles WHERE role = 'SECRETARY'
                       ORDER BY email LIMIT 1);
   treasury  uuid := (SELECT id FROM offices WHERE grants_role = 'TREASURER' LIMIT 1);
+  treasurer text := (SELECT email FROM user_roles WHERE role = 'TREASURER'
+                      AND COALESCE(is_test_account, false) = false
+                      ORDER BY email LIMIT 1);
+  a_budget  uuid;
   -- The Secretary is deliberately not among them: 243 gave the office register
   -- back to that post, so a Secretary picked here would be expected to fail the
   -- "edit the offices" probe and would have passed it only by the accident of
@@ -317,6 +321,31 @@ BEGIN
   PERFORM pg_temp.try_call('records', desk, 'Ministry desk',
     format($q$SELECT seat_office_holder(%L, %L, NULL)$q$, treasury, desk),
     'seat a holder, taking the role from the office', false);
+  -- A budget is approved by the EXCO voting at a meeting held for it, and the
+  -- app records that rather than deciding it (244). approve_budget_proposal
+  -- holds definer rights, so it asks these for itself: hiding the button is
+  -- not the same as refusing the action.
+  -- A different year from the proposal the 'budget' probes above raise:
+  -- (ministry, year) is unique, and the two would collide.
+  INSERT INTO budget_proposals(ministry, year, status, created_by)
+  VALUES ('_probe', 2998, 'SUBMITTED', '_probe') RETURNING id INTO a_budget;
+
+  PERFORM pg_temp.try_call('budget', desk, 'Ministry desk',
+    format($q$SELECT approve_budget_proposal(%L, %L, 'EXCO/9999/1', CURRENT_DATE, NULL)$q$,
+           a_budget, desk),
+    'approve a budget', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT approve_budget_proposal(%L, %L, '  ', CURRENT_DATE, NULL)$q$,
+           a_budget, treasurer),
+    'approve without naming the meeting', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT approve_budget_proposal(%L, %L, 'EXCO/9999/1', CURRENT_DATE + 30, NULL)$q$,
+           a_budget, treasurer),
+    'approve dated after today', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT approve_budget_proposal(%L, %L, 'EXCO/9999/1', CURRENT_DATE, NULL)$q$,
+           a_budget, treasurer),
+    'approve naming the meeting', true);
 END $probe$;
 
 INSERT INTO result(seq, area, who, attempt, got, expected, verdict)
