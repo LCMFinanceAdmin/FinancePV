@@ -2079,7 +2079,7 @@ export default function BankingPage() {
               </div>
 
               <div className="text-center text-xs text-stone-400 border-t border-stone-200 pt-4">
-                LCM Finance System · Printed {new Date().toLocaleString("en-MY")}
+                LCM Finance and Human Resource System · Printed {new Date().toLocaleString("en-MY")}
               </div>
             </div>
           </div>

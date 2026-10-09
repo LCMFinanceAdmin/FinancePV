@@ -36,7 +36,7 @@ export interface NotifyInput {
   /** Adds a visible "urgent" marker to the email subject. */
   urgent?: boolean;
   /**
-   * Words on the email's button. "Open LCM Finance" is true but says nothing
+   * Words on the email's button. "Open LCM Finance & HR" is true but says nothing
    * about what is being asked, and a Dean who gets three of these a month
    * should be able to tell them apart without opening any.
    */
@@ -73,10 +73,10 @@ function emailHtml(subject: string, lines: string[], link: string, urgent: boole
       ${body}
       <a href="${link}" style="display:inline-block;margin-top:8px;background:#1d4ed8;color:#fff;
          text-decoration:none;font-size:17px;font-weight:700;padding:14px 26px;border-radius:10px">
-        ${cta ?? "Open LCM Finance"}
+        ${cta ?? "Open LCM Finance & HR"}
       </a>
       <p style="margin:22px 0 0;font-size:13px;color:#6b7280">
-        You are receiving this because of your role in the LCM Finance system.
+        You are receiving this because of your role in the LCM Finance and Human Resource System.
       </p>
     </div>
   </div>`;
@@ -121,7 +121,7 @@ export async function sendNotificationEmails(
   const link = `${siteUrl()}${path ?? "/dashboard"}`;
   const results = await Promise.allSettled(recipients.map(r =>
     transport.sendMail({
-      from: process.env.SMTP_FROM ?? `"LCM Finance" <${process.env.SMTP_USER}>`,
+      from: process.env.SMTP_FROM ?? `"LCM Finance & HR" <${process.env.SMTP_USER}>`,
       to: r.email,
       subject: urgent ? `Action needed: ${subject}` : subject,
       text: [

@@ -75,7 +75,7 @@ export function InstallApp() {
           <Download size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-bold text-stone-800">Install LCM Finance on this device</p>
+          <p className="text-[15px] font-bold text-stone-800">Install LCM Finance &amp; HR on this device</p>
           <p className="mt-0.5 text-[13px] leading-relaxed text-stone-500">
             Adds an icon to your home screen so you can open it like any other app —
             no browser address to remember, and you&apos;ll get alerts when something needs you.

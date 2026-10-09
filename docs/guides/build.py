@@ -55,7 +55,7 @@ def build(role: str, guide: dict) -> pathlib.Path:
 <div class="wrap">
 
   <header class="masthead">
-    <p class="eyebrow">Lutheran Church in Malaysia &middot; LCM Finance</p>
+    <p class="eyebrow">Lutheran Church in Malaysia &middot; LCM Finance &amp; HR</p>
     <h1>{guide["title"]}</h1>
   </header>
 
@@ -68,7 +68,7 @@ def build(role: str, guide: dict) -> pathlib.Path:
       <footer>
         <p>Prepared for the Lutheran Church in Malaysia. This guide covers
         {guide["covers"]} — the rest of the system is in the full
-        <b>LCM Finance Handbook</b>, which the HQ office can send you. Anything
+        <b>LCM Finance &amp; HR Handbook</b>, which the HQ office can send you. Anything
         unclear here is worth saying so: a step that needed explaining twice is
         a step written badly.</p>
       </footer>

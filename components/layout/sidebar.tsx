@@ -112,7 +112,7 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/lcm-logo.svg" width={38} height={38} alt="Lutheran Church in Malaysia" className="drop-shadow-sm" />
           <div>
-            <div className="text-[#173a72] font-bold text-lg tracking-tight">LCM Finance</div>
+            <div className="text-[#173a72] font-bold text-lg tracking-tight">LCM Finance &amp; HR</div>
             <div className="text-[11px] text-[#7187a6] mt-0.5">Church finance, made clear</div>
           </div>
         </div>

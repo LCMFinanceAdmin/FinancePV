@@ -1,7 +1,7 @@
 {
   "id": "/?source=pwa",
-  "name": "LCM Finance — Lutheran Church in Malaysia",
-  "short_name": "LCM Finance",
+  "name": "LCM Finance and Human Resource System — Lutheran Church in Malaysia",
+  "short_name": "LCM Finance & HR",
   "description": "Payment vouchers, budgets, payroll and leave for the Lutheran Church in Malaysia.",
   "start_url": "/dashboard?source=pwa",
   "scope": "/",

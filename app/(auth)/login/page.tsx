@@ -79,8 +79,8 @@ function LoginForm() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#4a6da7] mb-4">
             <span className="text-white font-bold text-2xl">L</span>
           </div>
-          <h1 className="text-2xl font-bold text-stone-800">LCM Finance</h1>
-          <p className="text-stone-500 text-sm mt-1">Payment Voucher System</p>
+          <h1 className="text-2xl font-bold text-stone-800">LCM Finance and Human Resource System</h1>
+          <p className="text-stone-500 text-sm mt-1">Lutheran Church in Malaysia</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6">

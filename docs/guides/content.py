@@ -98,7 +98,7 @@ SECTIONS = [
             <span class="url">finance-pv.vercel.app/login</span>
           </div>
           <img data-img="01-sign-in.png" src="img/01-sign-in.png"
-               alt="The LCM Finance sign-in screen: a blue tile above the words LCM Finance,
+               alt="The sign-in screen: a blue tile above the words LCM Finance and Human Resource System,
                     then a card headed Sign in to continue with a blue Sign in with Google
                     button, the word or, and an outlined Sign in with email link button.">
         </figure>
@@ -617,7 +617,7 @@ SECTIONS = [
 
         <div class="note-box">
           <p><b>The whole system, in one document.</b> This guide covers your part of it. The
-          full <b>LCM Finance Handbook</b> describes everything &mdash; every role, every
+          full <b>LCM Finance &amp; HR Handbook</b> describes everything &mdash; every role, every
           stage, the rules behind the approval limits &mdash; and the HQ office can send it to
           you.</p>
         </div>

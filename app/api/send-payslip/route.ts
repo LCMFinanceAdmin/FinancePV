@@ -4,7 +4,7 @@ import nodemailer from "nodemailer";
 // Required env vars (add to .env.local):
 //   SMTP_USER=finance@yourdomain.com
 //   SMTP_PASS=xxxx xxxx xxxx xxxx   ← 16-char Google App Password
-//   SMTP_FROM="LCM Finance <finance@yourdomain.com>"   ← optional display name
+//   SMTP_FROM="LCM Finance & HR <finance@yourdomain.com>"   ← optional display name
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     });
 
     await transporter.sendMail({
-      from: process.env.SMTP_FROM ?? `"LCM Finance" <${process.env.SMTP_USER}>`,
+      from: process.env.SMTP_FROM ?? `"LCM Finance & HR" <${process.env.SMTP_USER}>`,
       to,
       subject: `Your Salary Slip — ${monthLabel} ${year}`,
       text: [

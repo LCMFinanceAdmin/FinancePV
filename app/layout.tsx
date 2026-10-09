@@ -10,18 +10,18 @@ export const metadata: Metadata = {
   // metadataBase makes the icon path absolute in that card. It follows
   // NEXT_PUBLIC_SITE_URL so a custom domain needs no code change here.
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://finance-pv.vercel.app"),
-  title: "LCM Finance",
+  title: "LCM Finance and Human Resource System",
   description: "Payment vouchers, budgets, payroll and leave for the Lutheran Church in Malaysia.",
-  applicationName: "LCM Finance",
+  applicationName: "LCM Finance & HR",
   openGraph: {
     type: "website",
     siteName: "Lutheran Church in Malaysia",
-    title: "LCM Finance",
+    title: "LCM Finance and Human Resource System",
     description: "Payment vouchers, budgets, payroll and leave for the Lutheran Church in Malaysia.",
-    images: [{ url: "/icons/icon-512.png", width: 512, height: 512, alt: "LCM Finance" }],
+    images: [{ url: "/icons/icon-512.png", width: 512, height: 512, alt: "LCM Finance and Human Resource System" }],
   },
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "LCM Finance" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "LCM Finance & HR" },
 };
 
 export const viewport: Viewport = {
@@ -125,7 +125,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <NotificationSound />
 
         <div id="lcm-update-banner">
-          <span>A new version of LCM Finance is available.</span>
+          <span>A new version of LCM Finance &amp; HR is available.</span>
           <button id="lcm-update-refresh" type="button">Refresh</button>
           <button id="lcm-update-dismiss" type="button" aria-label="Dismiss">Later</button>
         </div>

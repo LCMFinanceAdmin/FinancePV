@@ -42,8 +42,8 @@ export default function NoAccessPage() {
           <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-[#4a6da7]">
             <span className="text-2xl font-bold text-white">L</span>
           </div>
-          <h1 className="text-2xl font-bold text-stone-800">LCM Finance</h1>
-          <p className="mt-1 text-sm text-stone-500">Payment Voucher System</p>
+          <h1 className="text-2xl font-bold text-stone-800">LCM Finance and Human Resource System</h1>
+          <p className="mt-1 text-sm text-stone-500">Lutheran Church in Malaysia</p>
         </div>
 
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">

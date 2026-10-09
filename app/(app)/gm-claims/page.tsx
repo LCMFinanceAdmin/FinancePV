@@ -368,7 +368,7 @@ function shareClaim(claim: GMClaim, stage: ClaimStage) {
   const stageLabel = STAGE_META[stage].label;
   const pvUrl = claim.pv ? `${window.location.origin}/my-pvs/${claim.pv.id}` : null;
   const lines = [
-    `LCM Finance — Claims Update`,
+    `LCM Finance & HR — Claims Update`,
     `Ref: ${claim.claim_no}`,
     `Claimant: ${claim.claimant_name}`,
     `Purpose: ${claim.purpose}`,

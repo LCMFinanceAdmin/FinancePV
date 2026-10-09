@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
           "This is for your information. The Bishop's leave does not require approval.",
         ],
         path: "/dashboard",
-        cta: "Open LCM Finance",
+        cta: "Open LCM Finance & HR",
       });
       return NextResponse.json({ ok: true, announced: result.recorded, emailed: result.emailed });
     }

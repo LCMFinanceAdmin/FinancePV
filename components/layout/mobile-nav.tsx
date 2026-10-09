@@ -117,8 +117,8 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
               <div className="flex items-center gap-3">
                 <LutherRose size={34} />
                 <div>
-                  <div className="text-white font-bold text-sm leading-tight">LCM Finance</div>
-                  <div className="text-white/50 text-[10px]">Payment Voucher System</div>
+                  <div className="text-white font-bold text-sm leading-tight">LCM Finance &amp; HR</div>
+                  <div className="text-white/50 text-[10px]">Lutheran Church in Malaysia</div>
                 </div>
               </div>
               <button onClick={() => setShowMore(false)}
