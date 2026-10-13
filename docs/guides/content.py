@@ -465,6 +465,14 @@ SECTIONS = [
         </ol>
 
         <div class="note-box">
+          <p><b>Submitting locks it.</b> Up to that moment the lines are yours to add, change and
+          remove as often as you like &mdash; it is a draft and nobody is reading it. Once you
+          submit, the figures stop moving, because the meeting is about to vote on them and they
+          must be the same figures when it does. If you need to change something after
+          submitting, ask for it to be sent back.</p>
+        </div>
+
+        <div class="note-box">
           <p><b>The budget is settled in a meeting, not in the app.</b> The EXCO votes on the
           year&rsquo;s budget at a meeting called for that and nothing else, and you have a voice
           in it like every other member. What is entered afterwards records what was resolved
@@ -472,10 +480,16 @@ SECTIONS = [
         </div>
 
         <h3 id="budget-amend">Amending one during the year</h3>
-        <p>On the same page, ask for a change to a line &mdash; more, less, or a new line
-        altogether &mdash; and say why. It goes forward the same way. The figures on the page do
-        not move until the change has been agreed and recorded, which is deliberate: what you see
-        is always what was actually decided.</p>
+        <p>Once the EXCO has approved your budget the lines are live, and they are no longer
+        yours to edit. The same page, the same buttons &mdash; but what you are now doing is
+        asking. Change a line, or add one, or remove one, say why, and it goes off as a
+        <b>change request</b>.</p>
+        <p>That is the difference worth holding on to: <b>while it is a draft you are writing
+        your budget; once it is approved you are asking to change one.</b> The page will tell you
+        which of the two you are doing.</p>
+        <p>A request is decided by the Treasurer, the Bishop, the Secretary, the General Manager
+        or the Finance Executive. The figures on the page do not move until it is, which is
+        deliberate: what you see is always what was actually agreed.</p>
 
         <div class="note-box">
           <p><b>An unbudgeted claim is not refused automatically.</b> It is flagged to
@@ -510,9 +524,13 @@ SECTIONS = [
         <p>Once recorded, the resolution is shown beside the ministry and year at the head of the
         budget, so anybody reading the figures can see which meeting made them the budget.</p>
 
-        <p>A change asked for mid-year works the same way and says what is being changed and why.
-        Until it is recorded, the ministry&rsquo;s page keeps showing the figures that were
-        actually agreed &mdash; a request does not quietly become a budget.</p>
+        <h3 id="budget-changes">Changes asked for during the year</h3>
+        <p>Once a budget is live a ministry cannot edit it, so a change arrives as a request
+        saying what is being changed and why. These you may decide yourself &mdash; you, the
+        Bishop, the Secretary, the General Manager and the Finance Executive &mdash; without
+        waiting for a meeting. Approving one applies it to the budget there and then.</p>
+        <p>Until it is decided, the ministry&rsquo;s page keeps showing the figures that were
+        actually agreed. A request does not quietly become a budget.</p>
     """),
 
     dict(rank=1, id="admin-records", title="Keeping the church&rsquo;s records",
