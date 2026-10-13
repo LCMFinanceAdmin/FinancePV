@@ -487,9 +487,11 @@ SECTIONS = [
         <p>That is the difference worth holding on to: <b>while it is a draft you are writing
         your budget; once it is approved you are asking to change one.</b> The page will tell you
         which of the two you are doing.</p>
-        <p>A request is decided by the Treasurer, the Bishop, the Secretary, the General Manager
-        or the Finance Executive. The figures on the page do not move until it is, which is
-        deliberate: what you see is always what was actually agreed.</p>
+        <p>A change to an approved budget changes what the EXCO approved, so it carries the
+        same authority: the request is decided at a meeting, and the resolution is recorded with
+        it. The Treasurer, the Bishop, the Secretary, the General Manager or the Finance
+        Executive enters that decision. The figures on the page do not move until they do, which
+        is deliberate: what you see is always what was actually agreed.</p>
 
         <div class="note-box">
           <p><b>An unbudgeted claim is not refused automatically.</b> It is flagged to
@@ -526,9 +528,10 @@ SECTIONS = [
 
         <h3 id="budget-changes">Changes asked for during the year</h3>
         <p>Once a budget is live a ministry cannot edit it, so a change arrives as a request
-        saying what is being changed and why. These you may decide yourself &mdash; you, the
-        Bishop, the Secretary, the General Manager and the Finance Executive &mdash; without
-        waiting for a meeting. Approving one applies it to the budget there and then.</p>
+        saying what is being changed and why. A change to an approved budget changes what the
+        EXCO approved, so it is decided the same way and recorded the same way: approving or
+        declining one asks for the meeting&rsquo;s resolution and date, exactly as the budget
+        itself does. Approving applies it to the budget there and then.</p>
         <p>Until it is decided, the ministry&rsquo;s page keeps showing the figures that were
         actually agreed. A request does not quietly become a budget.</p>
     """),

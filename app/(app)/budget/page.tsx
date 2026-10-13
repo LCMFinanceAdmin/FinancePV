@@ -716,9 +716,15 @@ function BudgetInner() {
   async function approveChangeRequest(req: ChangeRequest) {
     setSaving(true);
     try {
+      if (!resolutionRef.trim() || !resolutionDate) {
+        showToast("Name the EXCO meeting resolution and its date", false);
+        return;
+      }
       const { error } = await supabase.rpc("apply_budget_change_request", {
         request: req.id,
         p_year: selectedYear,
+        p_resolution_ref: resolutionRef.trim(),
+        p_resolution_date: resolutionDate,
       });
       if (error) { showToast("Error applying: " + error.message, false); return; }
       showToast("Approved and applied to budget");
@@ -730,9 +736,15 @@ function BudgetInner() {
   }
 
   async function rejectChangeRequest(req: ChangeRequest) {
+    if (!resolutionRef.trim() || !resolutionDate) {
+      showToast("Name the EXCO meeting resolution and its date", false);
+      return;
+    }
     const { error } = await supabase.rpc("decline_budget_change_request", {
       request: req.id,
       reason: rejectionReason,
+      p_resolution_ref: resolutionRef.trim(),
+      p_resolution_date: resolutionDate,
     });
     if (error) { showToast("Error: " + error.message, false); return; }
     showToast("Change request declined");
@@ -965,7 +977,7 @@ function BudgetInner() {
                       </div>
                     </div>
                     <button
-                      onClick={() => { setReviewModal(req); setRejectionReason(""); }}
+                      onClick={() => { setResolutionRef(""); setResolutionDate(""); setReviewModal(req); setRejectionReason(""); }}
                       className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors"
                     >
                       Review
@@ -1690,8 +1702,36 @@ function BudgetInner() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-5 gap-3">
+                <div className="col-span-3">
+                  <label className="mb-1 block text-xs font-bold text-stone-700">
+                    EXCO resolution <span className="text-red-400">* required</span>
+                  </label>
+                  <input
+                    value={resolutionRef}
+                    onChange={e => setResolutionRef(e.target.value)}
+                    placeholder="e.g. EXCO/2026/11"
+                    className="w-full rounded-lg border-2 border-stone-800 px-3 py-2 text-sm focus:border-[#2f5b9c] focus:outline-none" />
+                </div>
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-bold text-stone-700">
+                    Meeting date <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={resolutionDate}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={e => setResolutionDate(e.target.value)}
+                    className="w-full rounded-lg border-2 border-stone-800 px-3 py-2 text-sm focus:border-[#2f5b9c] focus:outline-none" />
+                </div>
+                <p className="col-span-5 -mt-1 text-[11px] leading-snug text-stone-500">
+                  A change to an approved budget changes what the EXCO approved, so it carries the
+                  same authority. Required either way &mdash; approving or declining.
+                </p>
+              </div>
+
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">Rejection Reason <span className="text-stone-400 font-normal">(if rejecting)</span></label>
+                <label className="block text-xs font-bold text-stone-700 mb-1">Reason <span className="text-stone-400 font-normal">(required if declining)</span></label>
                 <textarea
                   value={rejectionReason}
                   onChange={e => setRejectionReason(e.target.value)}
