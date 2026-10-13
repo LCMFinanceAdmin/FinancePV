@@ -704,33 +704,23 @@ function BudgetInner() {
     }
   }
 
+  // Applying a change used to write budget_items straight from here and then
+  // mark the request, in two round trips. budget_items may only be written by
+  // Finance, and a refused UPDATE or DELETE returns no error and no rows — so
+  // for the Treasurer, the Bishop, the Secretary and the General Manager, all
+  // of whom are offered this button, the budget stayed as it was while the
+  // request was recorded as applied and the page said so. 246 moved both steps
+  // into one function that holds definer rights and runs them in one
+  // transaction, so the people who may decide can also carry it out, and the
+  // request and the budget cannot end up disagreeing.
   async function approveChangeRequest(req: ChangeRequest) {
     setSaving(true);
     try {
-      if (req.change_type === "add") {
-        const { error } = await supabase.from("budget_items").insert({
-          ...req.proposed_data,
-          ministry: req.ministry,
-          year: selectedYear,
-          created_by: req.requested_by,
-        });
-        if (error) { showToast("Error applying: " + error.message, false); return; }
-      } else if (req.change_type === "edit" && req.budget_item_id) {
-        const { error } = await supabase.from("budget_items").update(req.proposed_data).eq("id", req.budget_item_id);
-        if (error) { showToast("Error applying: " + error.message, false); return; }
-      } else if (req.change_type === "delete" && req.budget_item_id) {
-        const { error } = await supabase.from("budget_items").delete().eq("id", req.budget_item_id);
-        if (error) { showToast("Error applying: " + error.message, false); return; }
-      }
-
-      await supabase.from("budget_change_requests").update({
-        status: "approved",
-        approved_by: userEmail,
-        approved_at: new Date().toISOString(),
-        applied_at: new Date().toISOString(),
-        applied_by: userEmail,
-      }).eq("id", req.id);
-
+      const { error } = await supabase.rpc("apply_budget_change_request", {
+        request: req.id,
+        p_year: selectedYear,
+      });
+      if (error) { showToast("Error applying: " + error.message, false); return; }
       showToast("Approved and applied to budget");
       setReviewModal(null);
       await loadBudgetData(selectedMinistry);
@@ -740,13 +730,12 @@ function BudgetInner() {
   }
 
   async function rejectChangeRequest(req: ChangeRequest) {
-    await supabase.from("budget_change_requests").update({
-      status: "rejected",
-      rejected_by: userEmail,
-      rejected_at: new Date().toISOString(),
-      rejection_reason: rejectionReason || "No reason provided",
-    }).eq("id", req.id);
-    showToast("Change request rejected");
+    const { error } = await supabase.rpc("decline_budget_change_request", {
+      request: req.id,
+      reason: rejectionReason,
+    });
+    if (error) { showToast("Error: " + error.message, false); return; }
+    showToast("Change request declined");
     setReviewModal(null);
     setRejectionReason("");
     await loadBudgetData(selectedMinistry);

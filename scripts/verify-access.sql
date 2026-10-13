@@ -201,9 +201,17 @@ BEGIN
     $q$INSERT INTO departments(name) VALUES ('_probe3')$q$, 'add a department', false);
 
   -- A ministry writes its own budget papers.
+  -- For a ministry they actually hold. Since 247 the ministry is part of the
+  -- question: proposing a budget for somebody else's is refused, which is the
+  -- probe below rather than this one.
   PERFORM pg_temp.try_insert('budget', exco, 'EXCO member',
-    $q$INSERT INTO budget_proposals(ministry,year,created_by) VALUES ('_probe',2999,'_probe')$q$,
-    'propose a budget', true);
+    format($q$INSERT INTO budget_proposals(ministry,year,created_by)
+              VALUES (%L,2999,'_probe')$q$,
+           (SELECT ministries[1] FROM user_roles WHERE email = pg_temp.a_portfolio_holder())),
+    'propose a budget for their own ministry', true);
+  PERFORM pg_temp.try_insert('budget', exco, 'EXCO member',
+    $q$INSERT INTO budget_proposals(ministry,year,created_by) VALUES ('_probe',2994,'_probe')$q$,
+    'propose a budget for a ministry they do not hold', false);
   PERFORM pg_temp.try_insert('budget', desk, 'Ministry desk',
     $q$INSERT INTO budget_proposals(ministry,year,created_by) VALUES ('_probe',2999,'_probe')$q$,
     'propose a budget', false);
@@ -369,6 +377,44 @@ BEGIN
     format($q$SELECT reject_budget_proposal(%L, %L, 'EXCO/9999/2', CURRENT_DATE, 'Trim the camp line')$q$,
            a_budget, treasurer),
     'send back naming the meeting', true);
+  -- A ministry writes its own budget while it is a draft (248), and nobody
+  -- else's, ever (247). 237 handed back the proposal and the change request
+  -- and left the lines behind, so from 1 October until 248 an EXCO member
+  -- could not add a line to their own budget at all.
+  DECLARE
+    v_mine  text;
+    v_other text;
+    v_draft uuid;
+    v_sub   uuid;
+  BEGIN
+    SELECT ministries[1] INTO v_mine FROM user_roles WHERE email = exco;
+    SELECT name INTO v_other FROM ministries WHERE lower(name) <> lower(v_mine)
+     ORDER BY name LIMIT 1;
+
+    INSERT INTO budget_proposals(ministry, year, status, created_by)
+    VALUES (v_mine, 2996, 'DRAFT', exco) RETURNING id INTO v_draft;
+    INSERT INTO budget_proposals(ministry, year, status, created_by)
+    VALUES (v_mine, 2995, 'SUBMITTED', exco) RETURNING id INTO v_sub;
+
+    PERFORM pg_temp.try_insert('budget', exco, 'EXCO member',
+      format($q$INSERT INTO budget_items(ministry, project_name, year, estimated_expenses, proposal_id, created_by)
+                VALUES (%L, '_probe', 2996, 100, %L, 'x')$q$, v_mine, v_draft),
+      'add a line to their own draft', true);
+
+    PERFORM pg_temp.try_insert('budget', exco, 'EXCO member',
+      format($q$INSERT INTO budget_items(ministry, project_name, year, estimated_expenses, proposal_id, created_by)
+                VALUES (%L, '_probe2', 2995, 100, %L, 'x')$q$, v_mine, v_sub),
+      'add a line once it is submitted', false);
+
+    PERFORM pg_temp.try_insert('budget', exco, 'EXCO member',
+      format($q$INSERT INTO budget_items(ministry, project_name, year, estimated_expenses, created_by)
+                VALUES (%L, '_probe3', 2996, 100, 'x')$q$, v_mine),
+      'add a line straight to the live budget', false);
+
+    PERFORM pg_temp.try_update('budget', exco, 'EXCO member',
+      format($q$UPDATE budget_proposals SET notes = notes WHERE ministry = %L$q$, v_other),
+      'edit another ministry''s proposal', $e$SELECT 0$e$);
+  END;
 END $probe$;
 
 INSERT INTO result(seq, area, who, attempt, got, expected, verdict)

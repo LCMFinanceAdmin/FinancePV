@@ -63,6 +63,7 @@ staff change.
 | `records` | a signing officer reads the directory and writes none of it; the Administrator and the General Manager still keep it |
 | `records` | the Secretary keeps the office register and nothing else — seating a holder moves the role, because the role comes from the office rather than from them |
 | `budget` | approving or sending back a budget takes somebody who may record a decision, names the EXCO meeting that made it, and will not accept a meeting that has not happened yet |
+| `budget` | a ministry writes the lines of its own budget while it is a draft, and nobody else's at any time; once submitted or live the lines are a change request |
 
 The `leave` area is the one that is not a policy. Leave is gated by a function,
 and it fails the same quiet way a policy does: somebody not entitled is offered
