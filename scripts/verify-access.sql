@@ -325,6 +325,15 @@ BEGIN
   PERFORM pg_temp.try_call('records', secretary, 'Secretary',
     format($q$SELECT seat_office_holder(%L, %L, NULL)$q$, treasury, secretary),
     'seat a holder, taking the role from the office', true);
+  -- The leave compliance list names people and their service dates, so it is
+  -- not for everybody who can sign in (250).
+  PERFORM pg_temp.try_call('leave', gm, 'General Manager',
+    $q$SELECT count(*) FROM leave_service_gaps()$q$,
+    'read the leave service gaps', true);
+  PERFORM pg_temp.try_call('leave', desk, 'Ministry desk',
+    $q$SELECT count(*) FROM leave_service_gaps()$q$,
+    'read the leave service gaps', false);
+
   -- And somebody who does not keep the register cannot use it as a way in.
   PERFORM pg_temp.try_call('records', desk, 'Ministry desk',
     format($q$SELECT seat_office_holder(%L, %L, NULL)$q$, treasury, desk),

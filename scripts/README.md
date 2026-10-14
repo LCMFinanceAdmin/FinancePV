@@ -60,6 +60,7 @@ staff change.
 | `banking` | Finance and the General Manager; not the Administrator |
 | `credentials` | nobody at all — PIN hashes and signatures are the service role's |
 | `leave` | a Trustees employee at HQ is offered leave but no staff claims; a volunteer officer is offered neither |
+| `leave` | the compliance list of missing service dates names people, so it is read by those with sight of everyone's leave and nobody else |
 | `records` | a signing officer reads the directory and writes none of it; the Administrator and the General Manager still keep it |
 | `records` | the Secretary keeps the office register and nothing else — seating a holder moves the role, because the role comes from the office rather than from them |
 | `budget` | approving or sending back a budget takes somebody who may record a decision, names the EXCO meeting that made it, and will not accept a meeting that has not happened yet |

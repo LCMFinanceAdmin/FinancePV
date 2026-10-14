@@ -17,7 +17,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import {
-  CalendarCheck, Search, AlertCircle, Clock, ChevronRight, Users,
+  CalendarCheck, Search, AlertCircle, AlertTriangle, Clock, ChevronRight, Users,
 } from "lucide-react";
 
 interface LeaveType { code: string; name: string; days_per_year: number; is_replacement: boolean; sort_order: number }
@@ -60,6 +60,22 @@ export default function LeaveOverviewPage() {
 
   const year = new Date().getFullYear();
 
+  /**
+   * What is missing before somebody's leave can be worked out properly.
+   *
+   * Leave reads the directory for two things and complains about neither when
+   * they are absent: gender, which decides whether maternity or paternity is
+   * offered, and the service start, which is what moves annual leave from 14
+   * days to 21. Without them a person is quietly given the base entitlement.
+   * Payroll has counted its own missing details for a while; this is the same
+   * idea for leave. Computed in the database (250) so this page does not need
+   * sight of payroll to find a commencement date.
+   */
+  const [gaps, setGaps] = useState<{
+    email: string; full_name: string; has_directory: boolean;
+    service_start: string | null; gender: string | null;
+  }[]>([]);
+
   // Who may open this at all. RLS already withholds other people's
   // applications, but without this check a staff member would reach the page
   // and see a balance table built from the one application they can read —
@@ -73,11 +89,12 @@ export default function LeaveOverviewPage() {
       .select("role").eq("email", session?.user?.email ?? "").maybeSingle();
     if (!ALLOWED.includes(me?.role ?? "")) { setDenied(true); setLoading(false); return; }
 
-    const [{ data: lt }, { data: la, error }, { data: ur }, { data: rd }] = await Promise.all([
+    const [{ data: lt }, { data: la, error }, { data: ur }, { data: rd }, { data: gp }] = await Promise.all([
       supabase.from("leave_types").select("code,name,days_per_year,is_replacement,sort_order").order("sort_order"),
       supabase.from("leave_applications").select("*").order("applied_at", { ascending: false }),
       supabase.from("user_roles").select("email,full_name,role,is_lcm_staff,leave_under_lcm").order("full_name"),
       supabase.from("replacement_days_earned").select("employee_email,days,work_date"),
+      supabase.rpc("leave_service_gaps"),
     ]);
     // An empty list with no error would look like a church where nobody takes
     // leave; a refusal should say so.
@@ -86,6 +103,7 @@ export default function LeaveOverviewPage() {
     setApps((la ?? []) as LeaveApp[]);
     setPeople((ur ?? []) as Person[]);
     setReplacements((rd ?? []) as Replacement[]);
+    setGaps((gp ?? []) as typeof gaps);
     setLoading(false);
   }, [supabase]);
 
@@ -127,6 +145,13 @@ export default function LeaveOverviewPage() {
       .filter(p => !q || (p.full_name ?? "").toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
       .sort((a, b) => (a.full_name ?? a.email).localeCompare(b.full_name ?? b.email));
   }, [people, query]);
+
+  // Only those entitled to leave are counted: a volunteer with no service date
+  // is not a gap, because they have no leave to be short of. leave_service_gaps
+  // has already made that distinction.
+  const missingService = useMemo(
+    () => gaps.filter(g => !g.service_start),
+    [gaps]);
 
   const pending = useMemo(
     () => apps.filter(a => a.status === "PENDING")
@@ -176,6 +201,33 @@ export default function LeaveOverviewPage() {
           Everyone&rsquo;s balances for {year}, and what each application in flight is waiting on.
         </p>
       </div>
+
+      {/* ── What is missing before leave can be worked out ─────────────── */}
+      {missingService.length > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-amber-900">
+            <AlertTriangle size={15} className="shrink-0" />
+            {missingService.length} {missingService.length === 1 ? "person has" : "people have"} no
+            service start date
+          </p>
+          <p className="mt-1 text-[12.5px] leading-snug text-amber-800">
+            Years of service decide how much annual and medical leave somebody is entitled to.
+            Without a date they are given the base entitlement and nothing says so &mdash; annual
+            leave at 14 days rather than the 21 that longer service earns. The date comes from
+            their payroll commencement, or from <b>Date joined</b> on their directory record.
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {missingService.map(g => (
+              <li key={g.email} className="text-[12.5px] font-semibold text-amber-900">
+                {g.full_name || g.email}
+                {!g.has_directory && (
+                  <span className="ml-1 font-normal text-amber-700">(no directory record at all)</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* ── In flight, oldest first: the ones going stale are the point ──── */}
       <div>
