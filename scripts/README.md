@@ -1,5 +1,22 @@
 # Scripts
 
+## `verify-budget.sql` — does the budget arithmetic say what we think it says?
+
+```
+npm run verify:budget
+```
+
+The EXCO votes a ministry an allocation and describes in general terms what it is
+for, without approving the individual projects. So the figures have to tell three
+things apart: a line running out while the allocation still has room, spending on
+a project nobody listed, and passing the allocation itself. Only the last is an
+overspend.
+
+Nineteen probes build a ministry with a voted allocation of 50,000, an outline
+worth 30,000 and three vouchers, then ask `budget_project_gate` where a payment
+stands. They also check that an approved allocation cannot be revised by hand and
+can be changed by resolution. Everything is rolled back.
+
 ## `verify-access.sql` — does the database refuse what it should refuse?
 
 ```bash
