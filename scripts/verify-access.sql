@@ -15,7 +15,9 @@
 -- until somebody says "I pressed save and nothing happened".
 --
 -- People are resolved by role rather than named, so this survives somebody
--- leaving. A role nobody holds is reported as skipped, not failed.
+-- leaving. A role nobody holds is reported as skipped, not failed -- and the
+-- tally says how many skipped, because a check that did not run has not
+-- passed, however much the bottom line would like to say so.
 
 BEGIN;
 
@@ -29,6 +31,21 @@ GRANT USAGE, SELECT ON SEQUENCE result_seq_seq TO authenticated;
 CREATE OR REPLACE FUNCTION pg_temp.whoever(p_role text) RETURNS text
 LANGUAGE sql STABLE AS $fn$
   SELECT email FROM user_roles WHERE role = p_role ORDER BY email LIMIT 1;
+$fn$;
+
+-- Some desks exist in numbered variants that the app treats as one for
+-- rights: FINANCE_ADMIN_2 is the Accounts Executive, and she sits inside
+-- isFinanceAdmin alongside the Finance Executive. Resolving only the exact
+-- role meant that when nobody held FINANCE_ADMIN the Finance probes skipped,
+-- and a skipped probe reads like a passing one. The roles are tried in the
+-- order given, so the proper holder is still preferred where there is one.
+CREATE OR REPLACE FUNCTION pg_temp.whoever_any(p_roles text[]) RETURNS text
+LANGUAGE sql STABLE AS $fn$
+  SELECT u.email
+    FROM unnest(p_roles) WITH ORDINALITY AS r(role, ord)
+    JOIN user_roles u ON u.role = r.role
+   ORDER BY r.ord, u.email
+   LIMIT 1;
 $fn$;
 
 CREATE OR REPLACE FUNCTION pg_temp.a_portfolio_holder() RETURNS text
@@ -145,7 +162,8 @@ END $fn$;
 
 DO $probe$
 DECLARE
-  finance  text := pg_temp.whoever('FINANCE_ADMIN');
+  finance  text := pg_temp.whoever_any(
+    ARRAY['FINANCE_ADMIN', 'FINANCE_ADMIN_2', 'FINANCE_ADMIN_3']);
   accounts text := pg_temp.whoever('FINANCE_ADMIN_2');
   admin    text := pg_temp.whoever('ADMINISTRATOR');
   gm       text := pg_temp.whoever('GENERAL_MANAGER');
@@ -429,9 +447,18 @@ END $probe$;
 INSERT INTO result(seq, area, who, attempt, got, expected, verdict)
 SELECT 0, '-- TALLY --', '', '',
        COUNT(*) FILTER (WHERE verdict = 'PASS') || ' passed',
-       COUNT(*) FILTER (WHERE verdict = 'FAIL') || ' failed',
-       CASE WHEN COUNT(*) FILTER (WHERE verdict = 'FAIL') = 0
-            THEN 'ALL OK' ELSE 'LOOK AT THE FAILURES BELOW' END
+       COUNT(*) FILTER (WHERE verdict = 'FAIL') || ' failed'
+         || CASE WHEN COUNT(*) FILTER (WHERE verdict = 'SKIP') > 0
+                 THEN ', ' || COUNT(*) FILTER (WHERE verdict = 'SKIP') || ' skipped'
+                 ELSE '' END,
+       -- A probe that did not run has not passed. Saying "ALL OK" while a role
+       -- nobody holds quietly took two checks with it is how this script would
+       -- come to be trusted for something it never did.
+       CASE WHEN COUNT(*) FILTER (WHERE verdict = 'FAIL') > 0
+                 THEN 'LOOK AT THE FAILURES BELOW'
+            WHEN COUNT(*) FILTER (WHERE verdict = 'SKIP') > 0
+                 THEN 'NO FAILURES, BUT SOME CHECKS DID NOT RUN'
+            ELSE 'ALL OK' END
   FROM result;
 
 SELECT area, who, attempt, got, expected, verdict FROM result ORDER BY seq;
