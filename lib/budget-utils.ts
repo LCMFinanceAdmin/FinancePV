@@ -1,5 +1,8 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { sameBudgetLine, SPENT_STATUSES, IN_FLIGHT_STATUSES } from "@/lib/budget-line";
+import {
+  sameBudgetLine, SPENT_STATUSES, IN_FLIGHT_STATUSES,
+  ministryPosition, verdictFor, type MinistryPosition, type SpendVerdict,
+} from "@/lib/budget-line";
 
 /**
  * Ensures the budget_items table exists in the database.
@@ -103,7 +106,8 @@ export async function loadBudgetProjects(
 export const BUDGET_SPENT_STATUSES: readonly string[] = SPENT_STATUSES;
 export const BUDGET_IN_FLIGHT_STATUSES: readonly string[] = IN_FLIGHT_STATUSES;
 
-export type BudgetVerdict = "WITHIN" | "EXCEEDS" | "UNBUDGETED";
+// The four answers are described where they are decided, in lib/budget-line.
+export type BudgetVerdict = SpendVerdict;
 
 export interface BudgetTotals {
   budget: number;
@@ -116,15 +120,20 @@ export interface BudgetImpactResult extends BudgetTotals {
   verdict: BudgetVerdict;
   projectName: string | null;
   amount: number;      // the transaction being decided
+  /** What is left of the project line afterwards. Negative draws on the rest. */
   balanceAfter: number;
-  overBy: number;      // > 0 only when the verdict is EXCEEDS
+  /** What is left of the ministry allocation afterwards. */
+  ministryBalanceAfter: number;
+  /** How far past the allocation — the figure the EXCO voted. EXCEEDS only. */
+  overBy: number;
+  /** How far past the line, which the allocation absorbs. Spill-over only. */
+  overLineBy: number;
   /**
-   * The whole ministry for context — the decision is made against the project
-   * line, but knowing the ministry's overall position matters when a line is
-   * tight or the spend could be moved.
+   * Where the ministry stands. This carries the approved figure now: the EXCO
+   * votes an allocation, and the project lines are the outline beneath it, so
+   * the ministry's position is the one that decides the verdict.
    */
-  ministryTotals: BudgetTotals;
-  ministryProjectCount: number;
+  ministry: MinistryPosition;
 }
 
 /**
@@ -151,17 +160,18 @@ export async function getBudgetImpact(
   const { ministry, projectName, amount, excludePvId } = opts;
   const year = opts.year ?? new Date().getFullYear();
   const zero: BudgetTotals = { budget: 0, spent: 0, committed: 0, remaining: 0 };
+  const nowhere = ministryPosition([], [], null);
   const empty: BudgetImpactResult = {
-    verdict: "UNBUDGETED", projectName: projectName ?? null,
-    ...zero, amount, balanceAfter: -amount, overBy: 0,
-    ministryTotals: { ...zero }, ministryProjectCount: 0,
+    verdict: "UNPLANNED", projectName: projectName ?? null,
+    ...zero, amount, balanceAfter: -amount, ministryBalanceAfter: -amount,
+    overBy: 0, overLineBy: 0, ministry: nowhere,
   };
 
   if (!ministry) return empty;
 
   // Pulled per ministry rather than per project, so the same two queries give
   // both the specific budget line and the ministry-wide position.
-  const [{ data: items }, { data: pvs }] = await Promise.all([
+  const [{ data: items }, { data: pvs }, { data: approved }] = await Promise.all([
     // Budgets are year-scoped, and a decision is always made against the year
     // currently in force. Proposal lines awaiting the Treasurer are excluded —
     // they aren't budget yet.
@@ -178,6 +188,18 @@ export async function getBudgetImpact(
       .from("pvs")
       .select("id, amount, status, project, date, submitted_at")
       .eq("ministry", ministry),
+    // What the EXCO voted this ministry for the year. Where nothing was
+    // recorded the outline's total stands in for it, which is how every
+    // ministry was measured before an allocation could be recorded at all.
+    supabase
+      .from("budget_proposals")
+      .select("allocation, decided_at")
+      .eq("ministry", ministry)
+      .eq("year", year)
+      .eq("status", "APPROVED")
+      .not("allocation", "is", null)
+      .order("decided_at", { ascending: false })
+      .limit(1),
   ]);
 
   const rows = (items ?? []) as { project_name: string; estimated_income: number; estimated_expenses: number }[];
@@ -200,36 +222,57 @@ export async function getBudgetImpact(
     return { spent, committed };
   };
 
-  const ministryBudget = rows.reduce((s, r) => s + (r.estimated_income || 0) + (r.estimated_expenses || 0), 0);
-  const ministryTally = tally(() => true);
-  const ministryTotals: BudgetTotals = {
-    budget: ministryBudget,
-    spent: ministryTally.spent,
-    committed: ministryTally.committed,
-    remaining: ministryBudget - ministryTally.spent - ministryTally.committed,
-  };
-  const ministryProjectCount = rows.length;
+  const allocation = (approved ?? [])[0]?.allocation ?? null;
+  const position = ministryPosition(
+    rows.map(r => ({
+      project_name: r.project_name,
+      estimated_income: r.estimated_income,
+      estimated_expenses: r.estimated_expenses,
+    })),
+    pvRows
+      .filter(pv => !(excludePvId && pv.id === excludePvId))
+      .map(pv => ({ project: pv.project, amount: pv.amount, status: pv.status })),
+    allocation,
+  );
+  const ministryBalanceAfter = position.remaining - amount;
 
   const item = projectName
     ? rows.find(r => sameBudgetLine(projectName, r.project_name))
     : undefined;
 
-  // No budget line on record — the spend sits outside the approved budget,
-  // which is exactly what the GM and Treasurer need flagged. Ministry context
-  // is still returned so they can see whether there is room elsewhere.
-  if (!item) return { ...empty, ministryTotals, ministryProjectCount };
+  // The line's own figures, where the voucher names one in the outline.
+  const line = item
+    ? (() => {
+        const t = tally(p => sameBudgetLine(p, item.project_name));
+        const budget = (item.estimated_income || 0) + (item.estimated_expenses || 0);
+        return { budget, ...t, remaining: budget - t.spent - t.committed };
+      })()
+    : null;
 
-  const { spent, committed } = tally(p => sameBudgetLine(p, item.project_name));
-  const budget = (item.estimated_income || 0) + (item.estimated_expenses || 0);
-  const remaining = budget - spent - committed;
-  const balanceAfter = remaining - amount;
+  const verdict = verdictFor({
+    hasLine: !!line,
+    lineRemaining: line?.remaining ?? 0,
+    amount,
+    ministry: position,
+  });
+
+  // A voucher naming no line is measured against the allocation, so its own
+  // row shows the allocation's figures rather than a column of zeroes that
+  // reads as though there were no money anywhere.
+  const totals: BudgetTotals = line
+    ? { budget: line.budget, spent: line.spent, committed: line.committed, remaining: line.remaining }
+    : { ...zero };
 
   return {
-    verdict: balanceAfter < 0 ? "EXCEEDS" : "WITHIN",
-    projectName: item.project_name,
-    budget, spent, committed, remaining, amount, balanceAfter,
-    overBy: balanceAfter < 0 ? Math.abs(balanceAfter) : 0,
-    ministryTotals, ministryProjectCount,
+    verdict,
+    projectName: item?.project_name ?? (projectName ?? null),
+    ...totals,
+    amount,
+    balanceAfter: (line?.remaining ?? 0) - amount,
+    ministryBalanceAfter,
+    overBy: verdict === "EXCEEDS" ? amount - position.remaining : 0,
+    overLineBy: verdict === "DRAWN_FROM_MINISTRY" ? amount - (line?.remaining ?? 0) : 0,
+    ministry: position,
   };
 }
 

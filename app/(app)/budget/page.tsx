@@ -102,6 +102,15 @@ interface BudgetProposal {
   /** The EXCO meeting that approved it — see migration 244. */
   resolution_ref: string | null;
   resolution_date: string | null;
+  /**
+   * What the EXCO votes this ministry for the year — see migration 251.
+   *
+   * This is the approved figure. The lines below are the outline of what it is
+   * for, and may add up to less: the EXCO approves the allocation, not each
+   * project. Null for a ministry budgeted before the allocation existed, and
+   * then the lines are added up to stand in for one.
+   */
+  allocation: number | null;
 }
 
 interface ChangeRequest {
@@ -191,6 +200,10 @@ function BudgetInner() {
   // other. Required by approve_budget_proposal (244), not only by this form.
   const [resolutionRef, setResolutionRef] = useState("");
   const [resolutionDate, setResolutionDate] = useState("");
+  // The allocation, while the budget is still being drafted. Held as text so a
+  // half-typed figure doesn't keep re-rendering as a number.
+  const [allocationInput, setAllocationInput] = useState("");
+  const [allocationBusy, setAllocationBusy] = useState(false);
 
   // Derived permissions
   const isFinanceAdmin = FINANCE_ADMIN_ROLES.includes(userRole);
@@ -489,6 +502,35 @@ function BudgetInner() {
     if (error) { showToast("Couldn't start the budget proposal: " + error.message, false); return null; }
     setProposal(data as BudgetProposal);
     return data.id as string;
+  }
+
+  /**
+   * Record the allocation while the budget is a draft.
+   *
+   * After the EXCO has approved it the figure is theirs: the database refuses a
+   * bare update (migration 251) and it takes a change request carrying the
+   * resolution that agreed the new figure.
+   */
+  async function saveAllocation() {
+    if (!proposal) return;
+    const typed = allocationInput.trim();
+    const value = typed === "" ? null : Number(typed);
+    if (value !== null && (!Number.isFinite(value) || value < 0)) {
+      showToast("Give the allocation as a number, or leave it blank.", false);
+      return;
+    }
+    setAllocationBusy(true);
+    try {
+      const { error } = await supabase.from("budget_proposals")
+        .update({ allocation: value }).eq("id", proposal.id);
+      if (error) { showToast("Couldn't save the allocation: " + error.message, false); return; }
+      setProposal({ ...proposal, allocation: value });
+      showToast(value === null
+        ? "Allocation cleared — the lines will be added up instead."
+        : `Allocation for ${proposal.ministry} set to ${formatCurrency(value)}.`, true);
+    } finally {
+      setAllocationBusy(false);
+    }
   }
 
   async function submitProposal() {
@@ -904,6 +946,49 @@ function BudgetInner() {
               </p>
             </div>
 
+            {/* The figure the EXCO votes. The lines are the outline beneath it,
+                so the two are shown together and the difference named. */}
+            {(proposal.status === "DRAFT" || proposal.status === "REJECTED") && (
+              <div className="w-full rounded-xl border border-violet-200 bg-white/70 px-3 py-2.5">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                  Allocation for {proposal.ministry} · {proposal.year}
+                </label>
+                <p className="mt-0.5 mb-2 text-[11px] leading-snug text-stone-600">
+                  What the EXCO is being asked to vote this ministry for the year. The lines below
+                  are the outline of what it is for and may come to less — the remainder stays
+                  available for what is too early to plan. Leave it blank to have the lines added up
+                  instead.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="number" min="0" step="0.01" inputMode="decimal"
+                    value={allocationInput}
+                    onChange={e => setAllocationInput(e.target.value)}
+                    placeholder={proposal.allocation != null ? String(proposal.allocation) : "e.g. 50000"}
+                    className="w-40 rounded-lg border-2 border-stone-300 px-2.5 py-1.5 text-sm tabular-nums focus:border-violet-400 focus:outline-none" />
+                  <button
+                    onClick={saveAllocation}
+                    disabled={allocationBusy}
+                    className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700 disabled:opacity-50">
+                    {allocationBusy ? "Saving…" : "Save allocation"}
+                  </button>
+                  {proposal.allocation != null && (
+                    <span className="text-[11px] text-stone-600">
+                      Now <strong className="tabular-nums">{formatCurrency(proposal.allocation)}</strong>
+                      {" · outline "}<span className="tabular-nums">{formatCurrency(totalBudget)}</span>
+                      {proposal.allocation - totalBudget !== 0 && (
+                        proposal.allocation - totalBudget > 0
+                          ? <> · <span className="font-semibold text-green-700 tabular-nums">
+                              {formatCurrency(proposal.allocation - totalBudget)}</span> not yet set against a project</>
+                          : <> · <span className="font-semibold text-red-600 tabular-nums">
+                              {formatCurrency(totalBudget - proposal.allocation)}</span> more planned than allocated</>
+                      )}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex shrink-0 flex-wrap gap-2">
               {/* EXCO submits; only once there is something to submit. */}
               {(proposal.status === "DRAFT" || proposal.status === "REJECTED") && (
@@ -1299,7 +1384,10 @@ function BudgetInner() {
                 {decisionModal === "APPROVE" ? "Approve this budget?" : "Send back for revision?"}
               </h2>
               <p className="mt-0.5 text-xs text-stone-600">
-                {proposal.ministry} · {proposal.year} · {budgetItems.length} line{budgetItems.length === 1 ? "" : "s"} · {formatCurrency(totalBudget)}
+                {proposal.ministry} · {proposal.year} · {budgetItems.length} line{budgetItems.length === 1 ? "" : "s"} ·{" "}
+                {proposal.allocation != null
+                  ? <>allocation {formatCurrency(proposal.allocation)}, outline {formatCurrency(totalBudget)}</>
+                  : <>{formatCurrency(totalBudget)}</>}
               </p>
             </div>
 
