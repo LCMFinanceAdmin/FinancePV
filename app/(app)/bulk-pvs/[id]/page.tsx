@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { bankAbbr } from "@/lib/banks";
 import { formatDateTime, roleLabel, formatCurrency } from "@/lib/utils";
 import type { PV, UserProfile, PVApproval, BulkRun } from "@/lib/types";
 import dynamic from "next/dynamic";
@@ -15,15 +16,8 @@ import {
 } from "lucide-react";
 
 
-const BANK_ABBR: Record<string, string> = {
-  "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",
-  "public bank": "PBB", "rhb": "RHB", "hong leong bank": "HLB",
-  "ambank": "AMB", "bank islam": "BIMB", "bank rakyat": "BPR",
-  "ocbc": "OCBC", "affin bank": "AFFIN", "alliance bank": "ABB", "uob": "UOB", "bsn": "BSN",
-};
 function bankStr(pv: Partial<PV>) {
-  const n = (pv.payee_bank_name ?? "").toLowerCase().trim();
-  const abbr = BANK_ABBR[n] ?? pv.payee_bank_name ?? "";
+  const abbr = bankAbbr(pv.payee_bank_name);
   return pv.payment_method?.toLowerCase() === "jompay"
     ? `JomPay — Biller: ${pv.biller_code ?? ""}  Ref: ${pv.ref_no ?? ""}`
     : pv.cheque_no ? `Cheque ${pv.cheque_no}` : abbr;

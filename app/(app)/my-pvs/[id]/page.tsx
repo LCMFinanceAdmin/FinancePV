@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { bankAbbr } from "@/lib/banks";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatDateTime, getLOATier, roleLabel, computedBadgeStatus } from "@/lib/utils";
 import { nextOfficeRef, checkOfficeRef } from "@/lib/pv/office-ref";
@@ -53,15 +54,6 @@ function fmtDate(s?: string | null) {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
-const BANK_ABBR: Record<string, string> = {
-  "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",
-  "public bank": "PBB", "rhb": "RHB", "hong leong bank": "HLB",
-  "ambank": "AMB", "bank islam": "BIMB", "bank rakyat": "BPR",
-  "ocbc": "OCBC", "affin bank": "AFFIN", "alliance bank": "ABB", "uob": "UOB", "bsn": "BSN",
-};
-function getBankAbbr(name: string) {
-  return BANK_ABBR[(name || "").toLowerCase().trim()] ?? name;
-}
 
 
 // ── Workflow progress bar ──────────────────────────────────────────────
@@ -894,7 +886,7 @@ export default function PVDetailPage() {
   const bankLine = pv.payment_method?.toLowerCase() === "jompay"
     ? `Biller Code: ${pv.biller_code ?? "—"}   |   Ref No: ${pv.ref_no ?? "—"}`
     : pv.payee_bank_name
-      ? `${getBankAbbr(pv.payee_bank_name)}${pv.payee_bank_acct ? "   |   A/C: " + pv.payee_bank_acct : ""}`
+      ? `${bankAbbr(pv.payee_bank_name)}${pv.payee_bank_acct ? "   |   A/C: " + pv.payee_bank_acct : ""}`
       : pv.cheque_no ? `Cheque No: ${pv.cheque_no}` : "";
 
   const projectLabel = [pv.ministry, pv.dept, pv.project].filter(Boolean).join("  /  ");

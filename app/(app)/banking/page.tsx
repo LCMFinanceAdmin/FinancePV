@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { bankOptionGroups } from "@/lib/banks";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   Landmark, Plus, X, AlertTriangle, Clock, Pencil, RefreshCw,
@@ -89,13 +90,6 @@ const ENTITY_LABELS: Record<string, { label: string; color: string }> = {
   GENERAL:         { label: "General",         color: "bg-stone-100 text-stone-600" },
 };
 
-const BANKS = [
-  "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
-  "AmBank", "Bank Islam", "Affin Bank", "Alliance Bank",
-  "OCBC Bank Malaysia", "Standard Chartered Malaysia", "HSBC Bank Malaysia",
-  "UOB Malaysia", "Bank Rakyat", "Bank Simpanan Nasional (BSN)",
-  "Agro Bank", "Bank Muamalat", "MBSB Bank",
-];
 
 const TERM_OPTIONS = [1, 3, 6, 9, 12, 24, 36];
 
@@ -1325,7 +1319,11 @@ export default function BankingPage() {
                 <select value={accForm.bank_name} onChange={e => setAccForm(f => ({ ...f, bank_name: e.target.value }))}
                   className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30">
                   <option value="">— Select —</option>
-                  {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                  {bankOptionGroups(accForm.bank_name).map(g => (
+                    <optgroup key={g.label} label={g.label}>
+                      {g.names.map(b => <option key={b} value={b}>{b}</option>)}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
               <div>

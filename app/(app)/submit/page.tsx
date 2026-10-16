@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { bankOptionGroups } from "@/lib/banks";
 import { formatCurrency, getLOATier } from "@/lib/utils";
 import {
   Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle,
@@ -30,11 +31,6 @@ const WORKSHEET_TYPE_LABEL = {
 };
 
 const PAYMENT_METHODS = ["Online Transfer", "Cheque", "Cash", "JomPay", "Auto Debit"];
-const BANKS = [
-  "Maybank", "CIMB", "Public Bank", "RHB", "Hong Leong Bank",
-  "AmBank", "Bank Islam", "Bank Rakyat", "OCBC", "Standard Chartered",
-  "Affin Bank", "Alliance Bank", "UOB", "BSN",
-];
 
 const MILEAGE_RATE = 0.70;
 const LCM_LOCATIONS = [
@@ -1267,7 +1263,11 @@ export default function SubmitPVPage() {
             <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.payee_bank_name}
               onChange={e => setField("payee_bank_name", e.target.value)}>
               <option value="">— Select bank —</option>
-              {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+              {bankOptionGroups(form.payee_bank_name).map(g => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.names.map(b => <option key={b} value={b}>{b}</option>)}
+                </optgroup>
+              ))}
             </select>
             <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
           </div>
@@ -1926,7 +1926,11 @@ export default function SubmitPVPage() {
               <Row label="Payee Bank A/C No 收款人账户号码">
                 <InlineSelect value={form.payee_bank_name} onChange={v => setField("payee_bank_name", v)} className="max-w-[180px]">
                   <option value="">— Select bank —</option>
-                  {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                  {bankOptionGroups(form.payee_bank_name).map(g => (
+                    <optgroup key={g.label} label={g.label}>
+                      {g.names.map(b => <option key={b} value={b}>{b}</option>)}
+                    </optgroup>
+                  ))}
                 </InlineSelect>
                 <span className="text-stone-400 text-xs shrink-0">A/C:</span>
                 <input className={`${uline} flex-1`} value={form.payee_bank_acct}

@@ -1,4 +1,5 @@
 import type { PV, PVApproval } from "@/lib/types";
+import { bankAbbr } from "@/lib/banks";
 import { getLOATier, roleLabel } from "@/lib/utils";
 import { isHqOffice } from "@/lib/ministries";
 
@@ -14,16 +15,6 @@ import { isHqOffice } from "@/lib/ministries";
 // bundles PDF attachments as extra pages, the react-pdf "Download" path
 // remains available.
 
-const BANK_ABBR: Record<string, string> = {
-  "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",
-  "public bank": "PBB", "rhb": "RHB", "hong leong bank": "HLB",
-  "ambank": "AMB", "bank islam": "BIMB", "bank rakyat": "BPR",
-  "ocbc": "OCBC", "standard chartered": "SCB", "affin bank": "AFFIN",
-  "alliance bank": "ABB", "uob": "UOB", "bsn": "BSN",
-};
-function getBankAbbr(name: string) {
-  return BANK_ABBR[(name || "").toLowerCase().trim()] ?? name;
-}
 function fmt(n: number) {
   return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
@@ -106,7 +97,7 @@ export function pvPrintHtml(pv: PV, logoDataUri = "", pdfPages: PdfPageImages = 
   const bankLine = pv.payment_method?.toLowerCase() === "jompay"
     ? `Biller: ${pv.biller_code ?? "—"} | Ref: ${pv.ref_no ?? "—"}`
     : pv.payee_bank_name
-      ? `${getBankAbbr(pv.payee_bank_name)}${pv.payee_bank_acct ? " | " + pv.payee_bank_acct : ""}`
+      ? `${bankAbbr(pv.payee_bank_name)}${pv.payee_bank_acct ? " | " + pv.payee_bank_acct : ""}`
       : "";
   // The ministry and the budget line it is drawn against, stated separately.
   //

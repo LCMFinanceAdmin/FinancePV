@@ -5,6 +5,7 @@ import {
   AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, CalendarClock, CheckCircle2, ChevronRight, Church, FileText, HandCoins, Pencil, Percent, Plus, Search, Trash2, UserX, Users, Wallet, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { SALARY_BANK_NAMES } from "@/lib/banks";
 import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
@@ -45,11 +46,6 @@ function postingLabel(e: PayrollEmployee): string {
 }
 
 // Malaysian banks for the Bank Name dropdown (free text still allowed)
-const BANKS = [
-  "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank", "AmBank",
-  "Bank Islam", "Bank Rakyat", "Affin Bank", "Alliance Bank", "Bank Simpanan Nasional (BSN)",
-  "OCBC Bank", "HSBC Bank", "Standard Chartered", "UOB Bank", "Bank Muamalat", "Agrobank", "MBSB Bank",
-];
 
 // Marital-status options encode spouse-working for the Married variants.
 const MARITAL_OPTIONS: { value: string; marital: string; spouseWorking: boolean }[] = [
@@ -614,7 +610,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
               <div>
                 <label className={labelCls}>Bank Name</label>
                 <input className={inputCls} list="bank-options" value={bankName} onChange={e => setBankName(e.target.value)} placeholder="Select or type…" />
-                <datalist id="bank-options">{BANKS.map(b => <option key={b} value={b} />)}</datalist>
+                <datalist id="bank-options">{SALARY_BANK_NAMES.map(b => <option key={b} value={b} />)}</datalist>
               </div>
               <div><label className={labelCls}>Bank Account</label><input className={inputCls} value={bankAcct} onChange={e => setBankAcct(e.target.value)} /></div>
               <div><label className={labelCls}>WhatsApp / Phone No.</label><input className={inputCls} value={phoneNo} onChange={e => setPhoneNo(e.target.value)} placeholder="0123456789" /></div>

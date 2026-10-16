@@ -5,35 +5,12 @@
 // full account and IC numbers are confidential.
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { bankBic, findBank, isHomeBank } from "@/lib/banks";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { X, FileSpreadsheet, AlertTriangle, Download, CheckCircle2, Loader2 } from "lucide-react";
 import type { PayrollEmployee, PayrollLine } from "@/lib/types";
 
-// SWIFT/BIC codes for the bank dropdown values used on employee records.
-const BANK_BIC: Record<string, string> = {
-  "Maybank": "MBBEMYKL",
-  "CIMB Bank": "CIBBMYKL",
-  "Public Bank": "PBBEMYKL",
-  "RHB Bank": "RHBBMYKL",
-  "Hong Leong Bank": "HLBBMYKL",
-  "AmBank": "ARBKMYKL",
-  "Bank Islam": "BIMBMYKL",
-  "Bank Rakyat": "BKRMMYKL",
-  "Affin Bank": "PHBMMYKL",
-  "Alliance Bank": "MFBBMYKL",
-  "Bank Simpanan Nasional (BSN)": "BSNAMYK1",
-  "OCBC Bank": "OCBCMYKL",
-  "HSBC Bank": "HBMBMYKL",
-  "Standard Chartered": "SCBLMYKX",
-  "UOB Bank": "UOVBMYKL",
-  "Bank Muamalat": "BMMBMYKL",
-  "Agrobank": "AGOBMYKL",
-  "MBSB Bank": "MBSBMYKL",
-};
 
-// The paying account is with Public Bank — intrabank transfers use PBB mode,
-// everything else goes out as IBG.
-const HOME_BANK = "Public Bank";
 
 export interface BankExportRow {
   mode: string;
@@ -66,13 +43,17 @@ export function buildBankRows(lines: PayrollLine[], empById: Record<string, Payr
     if (!bankName) problems.push("no bank name");
     if (!account) problems.push("no account number");
     if (!ic) problems.push("no IC number");
-    if (bankName && !BANK_BIC[bankName]) problems.push(`no BIC mapping for "${bankName}"`);
+    if (bankName && !findBank(bankName)) {
+      problems.push(`bank not recognised: "${bankName}"`);
+    } else if (bankName && !bankBic(bankName)) {
+      problems.push(`no BIC on file for ${findBank(bankName)!.name}`);
+    }
     const net = Number(l.net);
     if (!(net > 0)) problems.push("net pay is zero");
     return {
-      mode: bankName === HOME_BANK ? "PBB" : "IBG",
+      mode: isHomeBank(bankName) ? "PBB" : "IBG",
       account,
-      bic: BANK_BIC[bankName] ?? "",
+      bic: bankBic(bankName) ?? "",
       name: (l.employee_name || emp?.full_name || "").toUpperCase(),
       idType: "NI",
       idNo: ic,

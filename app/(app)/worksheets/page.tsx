@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { bankOptionGroups } from "@/lib/banks";
 import { Button } from "@/components/ui/button";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { CommitteePicker } from "@/components/gm/committee-picker";
@@ -59,11 +60,6 @@ const DEFAULT_PAYEE: Partial<Record<WorkerType, { name: string; bank: string; ac
   RELA_PERSONNEL: { name: "Kwan Kam Peng", bank: "Public Bank", account: "4665215114" },
 };
 
-const BANKS = [
-  "Maybank", "CIMB", "Public Bank", "RHB", "Hong Leong Bank",
-  "AmBank", "Bank Islam", "Bank Rakyat", "OCBC", "Standard Chartered",
-  "Affin Bank", "Alliance Bank", "UOB", "BSN",
-];
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -1016,7 +1012,11 @@ export default function WorksheetsPage() {
                     <label className={label}>Bank</label>
                     <select className={inp} value={form.bank_name ?? ""} onChange={e => setForm(f => ({ ...f, bank_name: e.target.value }))}>
                       <option value="">— Select bank —</option>
-                      {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                      {bankOptionGroups(form.bank_name ?? "").map(g => (
+                        <optgroup key={g.label} label={g.label}>
+                          {g.names.map(b => <option key={b} value={b}>{b}</option>)}
+                        </optgroup>
+                      ))}
                     </select>
                   </div>
                   <div>

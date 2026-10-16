@@ -4,6 +4,7 @@ import { ClaimsPrintModal } from "@/components/gm/claims-print-modal";
 import { CommitteePicker } from "@/components/gm/committee-picker";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
+import { bankOptionGroups } from "@/lib/banks";
 import { formatCurrency, formatDate, workingDaysBetween } from "@/lib/utils";
 import type { PVApproval } from "@/lib/types";
 import type { POLineItem } from "@/components/gm/po-pdf";
@@ -39,16 +40,6 @@ const LCM_MINISTRIES = [
   "Bishop",
 ];
 
-const MALAYSIA_BANKS = [
-  "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
-  "AmBank", "Bank Islam", "Affin Bank", "Alliance Bank",
-  "OCBC Bank Malaysia", "Standard Chartered Malaysia", "HSBC Bank Malaysia",
-  "UOB Malaysia", "Citibank Malaysia", "Bank Rakyat",
-  "Bank Simpanan Nasional (BSN)", "Agro Bank", "Bank Muamalat", "MBSB Bank",
-  "Kuwait Finance House Malaysia", "Al Rajhi Bank Malaysia",
-  "Bank of China (Malaysia)", "ICBC Malaysia",
-  "TNG eWallet (Touch 'n Go)", "Boost", "GrabPay", "ShopeePay",
-];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -2024,7 +2015,11 @@ export default function GMClaimsPage() {
                 <select value={form.payee_bank} onChange={e => setF("payee_bank", e.target.value)}
                   className="w-full border-2 border-stone-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30 bg-white">
                   <option value="">— Select bank —</option>
-                  {MALAYSIA_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                  {bankOptionGroups(form.payee_bank).map(g => (
+                    <optgroup key={g.label} label={g.label}>
+                      {g.names.map(b => <option key={b} value={b}>{b}</option>)}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
               <div>

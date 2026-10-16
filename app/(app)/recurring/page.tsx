@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { bankOptionGroups } from "@/lib/banks";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatDateTime, computedBadgeStatus } from "@/lib/utils";
@@ -17,16 +18,6 @@ import {
   periodsForYear, currentPeriod, periodVoucherDate, type PeriodOption,
 } from "@/lib/recurring-periods";
 
-const MALAYSIA_BANKS = [
-  "Maybank", "CIMB Bank", "Public Bank", "RHB Bank", "Hong Leong Bank",
-  "AmBank", "Bank Islam", "Affin Bank", "Alliance Bank",
-  "OCBC Bank Malaysia", "Standard Chartered Malaysia", "HSBC Bank Malaysia",
-  "UOB Malaysia", "Citibank Malaysia", "Bank Rakyat",
-  "Bank Simpanan Nasional (BSN)", "Agro Bank", "Bank Muamalat", "MBSB Bank",
-  "Kuwait Finance House Malaysia", "Al Rajhi Bank Malaysia",
-  "Bank of China (Malaysia)", "ICBC Malaysia",
-  "TNG eWallet (Touch 'n Go)", "Boost", "GrabPay", "ShopeePay",
-];
 
 const FREQ_LABELS: Record<string, string> = {
   WEEKLY: "Weekly", MONTHLY: "Monthly", QUARTERLY: "Quarterly",
@@ -2495,7 +2486,11 @@ export default function RecurringPage() {
                       <Field label="Bank Name">
                         <select className={inp} value={form.payee_bank_name} onChange={e => setField("payee_bank_name", e.target.value)}>
                           <option value="">— Select bank —</option>
-                          {MALAYSIA_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                          {bankOptionGroups(form.payee_bank_name).map(g => (
+                            <optgroup key={g.label} label={g.label}>
+                              {g.names.map(b => <option key={b} value={b}>{b}</option>)}
+                            </optgroup>
+                          ))}
                         </select>
                       </Field>
                       <Field label="Account No.">

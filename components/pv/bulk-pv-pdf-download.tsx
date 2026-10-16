@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { Eye, Download, X } from "lucide-react";
 import type { PV, PVApproval, BulkRun } from "@/lib/types";
+import { bankAbbr } from "@/lib/banks";
 import {
   pdf, Document, Page, Text, View, StyleSheet, Image,
 } from "@react-pdf/renderer";
@@ -18,12 +19,6 @@ function fmtDate(s?: string | null): string {
 function fmt(n: number): string {
   return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
-const BANK_ABBR: Record<string, string> = {
-  "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB", "public bank": "PBB",
-  "rhb": "RHB", "hong leong bank": "HLB", "ambank": "AMB", "bank islam": "BIMB",
-  "bank rakyat": "BPR", "ocbc": "OCBC", "standard chartered": "SCB",
-  "affin bank": "AFFIN", "alliance bank": "ABB", "uob": "UOB", "bsn": "BSN",
-};
 
 // ── Styles ────────────────────────────────────────────────────────────────
 const st = StyleSheet.create({
@@ -168,7 +163,7 @@ function BatchSummaryDocument({
               ? "JomPay"
               : pv.cheque_no
                 ? "Cheque"
-                : BANK_ABBR[(pv.payee_bank_name ?? "").toLowerCase().trim()] ?? pv.payee_bank_name ?? "";
+                : bankAbbr(pv.payee_bank_name);
             const acctNo = pv.payment_method?.toLowerCase() === "jompay"
               ? `Biller: ${pv.biller_code ?? ""}  Ref: ${pv.ref_no ?? ""}`
               : pv.cheque_no ? pv.cheque_no : pv.payee_bank_acct ?? "";

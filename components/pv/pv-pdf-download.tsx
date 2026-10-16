@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, Eye } from "lucide-react";
 import type { PV, PVApproval } from "@/lib/types";
+import { bankAbbr } from "@/lib/banks";
 import { pvEntity } from "@/lib/entities";
 import { getLOATier, roleLabel } from "@/lib/utils";
 import {
@@ -14,17 +15,7 @@ import { svgToPngDataUri } from "@/lib/svg-to-png";
 
 export { svgToPngDataUri } from "@/lib/svg-to-png";
 
-const BANK_ABBR: Record<string, string> = {
-  "maybank": "MBB", "cimb": "CIMB", "cimb bank": "CIMB",
-  "public bank": "PBB", "rhb": "RHB", "hong leong bank": "HLB",
-  "ambank": "AMB", "bank islam": "BIMB", "bank rakyat": "BPR",
-  "ocbc": "OCBC", "standard chartered": "SCB", "affin bank": "AFFIN",
-  "alliance bank": "ABB", "uob": "UOB", "bsn": "BSN",
-};
 
-function getBankAbbr(name: string) {
-  return BANK_ABBR[(name || "").toLowerCase().trim()] ?? name;
-}
 function fmt(n: number) {
   return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
@@ -120,7 +111,7 @@ export function PVDocument({ pv, logoDataUri }: { pv: PV; logoDataUri?: string }
   const bankLine = pv.payment_method?.toLowerCase() === "jompay"
     ? `Biller: ${pv.biller_code ?? "—"} | Ref: ${pv.ref_no ?? "—"}`
     : pv.payee_bank_name
-      ? `${getBankAbbr(pv.payee_bank_name)}${pv.payee_bank_acct ? " | " + pv.payee_bank_acct : ""}`
+      ? `${bankAbbr(pv.payee_bank_name)}${pv.payee_bank_acct ? " | " + pv.payee_bank_acct : ""}`
       : "";
 
   const projectLabel = [pv.ministry, pv.dept, pv.project].filter(Boolean).join(" / ");
