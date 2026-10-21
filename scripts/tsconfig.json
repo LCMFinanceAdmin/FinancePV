@@ -1,0 +1,15 @@
+{
+  "//": "verify-flow runs under Node's own type stripping, which requires imports to carry the .ts extension. The app's config forbids that, so the two are kept apart \u2014 this one exists so an editor still typechecks it. Same arrangement as tests/.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "**/*.ts"
+  ],
+  "exclude": []
+}

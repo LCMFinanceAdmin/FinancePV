@@ -1,12 +1,13 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
+import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import {
   ladder, labelOf, scaleMove,
@@ -22,7 +23,16 @@ import { PayItemModal } from "@/components/payroll/pay-item-modal";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
-function monthShort(m: number): string { return MONTH_SHORT[m - 1] ?? String(m); }
+function monthShort(m: number): string { return m === 13 ? "13th" : (MONTH_SHORT[m - 1] ?? String(m)); }
+/**
+ * The months a run covers, written the way somebody would say them: "May–Dec",
+ * or "May–Jun, Aug" where there is a gap. The 13th month never joins a run.
+ */
+function monthsLabel(months: readonly number[]): string {
+  return compressMonths(months)
+    .map(([a, b]) => (a === b ? monthShort(a) : `${monthShort(a)}–${monthShort(b)}`))
+    .join(", ");
+}
 
 function itemAppliesToMonth(item: { year: number; month: number; is_recurring: boolean; recur_until_year: number | null; recur_until_month: number | null }, targetYear: number, targetMonth: number): boolean {
   if (!item.is_recurring) return item.year === targetYear && item.month === targetMonth;
@@ -160,6 +170,13 @@ export default function PayrollEmployeePage() {
   const [payItemModal, setPayItemModal] = useState<{ month: number; editing: PayrollEmployeeCustomItem | null } | null>(null);
   const [adjustments, setAdjustments] = useState<PayrollAdjustment[]>([]);
   const [adjModal, setAdjModal] = useState<{ month: number; editing: PayrollAdjustment | null } | null>(null);
+  // Which gathered run has been opened to its individual months.
+  const [openAdjGroup, setOpenAdjGroup] = useState<string | null>(null);
+
+  // One line per revision rather than one per payslip. An allowance folded into
+  // salary from May is eight identical entries, and a second category beside it
+  // makes sixteen — at which point the list stops being read.
+  const adjustmentGroups = useMemo(() => groupAdjustments(adjustments), [adjustments]);
   const [showYearlySheet, setShowYearlySheet] = useState(false);
   const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "documents">("overview");
 
@@ -935,9 +952,18 @@ export default function PayrollEmployeePage() {
                 <h3 className="flex items-center gap-1.5 text-[17px] font-bold text-amber-900">
                   <Scale size={18} /> Adjustments — {year}
                   {adjustments.length > 0 && (
-                    <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[13px] font-bold text-white">
-                      {adjustments.length}
-                    </span>
+                    <>
+                      {/* The badge counts decisions. Sixteen above two lines
+                          reads as a mistake, so the payslips are said separately. */}
+                      <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[13px] font-bold text-white">
+                        {adjustmentGroups.length}
+                      </span>
+                      {adjustmentGroups.length !== adjustments.length && (
+                        <span className="text-[13px] font-medium text-amber-700">
+                          across {adjustments.length} payslips
+                        </span>
+                      )}
+                    </>
                   )}
                 </h3>
                 {canEdit && (
@@ -963,43 +989,91 @@ export default function PayrollEmployeePage() {
                 </p>
               ) : (
                 <ul className="mt-2 space-y-1.5">
-                  {adjustments.map(a => {
-                    const amt = Number(a.amount);
+                  {adjustmentGroups.map(g => {
+                    const amt = g.amount;
                     // What it does to take-home, spelled out. The sign on the
                     // figure says what happens to that column, which is not the
                     // same thing and is the easy mistake to make when reading.
-                    const takeHome = a.category === "EPF_ER" || a.category === "SOCSO_ER" || a.category === "EIS_ER"
+                    const takeHome = g.category === "EPF_ER" || g.category === "SOCSO_ER" || g.category === "EIS_ER"
                       ? "no change to take-home — employer side"
-                      : (a.category === "GROSS" || a.category === "NET") === (amt > 0)
+                      : (g.category === "GROSS" || g.category === "NET") === (amt > 0)
                         ? `${num(Math.abs(amt))} more in hand`
                         : `${num(Math.abs(amt))} less in hand`;
+                    const spread = g.months.length > 1;
+                    const open = openAdjGroup === g.key;
                     return (
-                      <li key={a.id} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 rounded-lg border border-amber-200 bg-white px-2.5 py-2">
-                        <span className="rounded bg-stone-800 px-2 py-0.5 text-[13px] font-bold text-white">
-                          {monthShort(a.month)}
-                        </span>
-                        <span className="text-[15px] font-semibold text-stone-800">{adjustmentLabel(a.category)}</span>
-                        <span className={`font-mono text-[15px] font-bold ${amt > 0 ? "text-red-600" : "text-green-700"}`}>
-                          {amt > 0 ? "+" : "−"}{num(Math.abs(amt))}
-                        </span>
-                        <span className="text-[14px] text-stone-500">({takeHome})</span>
-                        <span className="w-full text-[14px] text-stone-600">
-                          {a.reason}
-                          {a.origin_month != null && (
-                            <span className="text-stone-400"> · corrects {monthShort(a.origin_month)} {a.origin_year ?? year}</span>
-                          )}
-                        </span>
-                        {canEdit && (
-                          <span className="ml-auto flex items-center gap-1">
-                            <button onClick={() => setAdjModal({ month: a.month, editing: a })}
-                              title="Edit" className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-[#2f5b9c]">
-                              <Pencil size={12} />
-                            </button>
-                            <button onClick={() => deleteAdjustment(a)}
-                              title="Delete" className="rounded p-1 text-stone-400 hover:bg-red-50 hover:text-red-600">
-                              <Trash2 size={12} />
-                            </button>
+                      <li key={g.key} className="rounded-lg border border-amber-200 bg-white px-2.5 py-2">
+                        <div className="flex flex-wrap items-start gap-x-2 gap-y-0.5">
+                          <span className="rounded bg-stone-800 px-2 py-0.5 text-[13px] font-bold text-white">
+                            {monthsLabel(g.months)}
                           </span>
+                          <span className="text-[15px] font-semibold text-stone-800">{adjustmentLabel(g.category)}</span>
+                          <span className={`font-mono text-[15px] font-bold ${amt > 0 ? "text-red-600" : "text-green-700"}`}>
+                            {amt > 0 ? "+" : "−"}{num(Math.abs(amt))}
+                          </span>
+                          <span className="text-[14px] text-stone-500">({takeHome})</span>
+                          {/* The figure above is what one payslip carries. This
+                              is what the run comes to, which is the number
+                              somebody is usually trying to work out. */}
+                          {spread && (
+                            <span className="text-[14px] font-semibold text-stone-700">
+                              × {g.months.length} months · {num(Math.abs(g.total))} in all
+                            </span>
+                          )}
+                          <span className="w-full text-[14px] text-stone-600">
+                            {g.reason}
+                            {g.origin_month != null && (
+                              <span className="text-stone-400"> · corrects {monthShort(g.origin_month)} {g.origin_year ?? year}</span>
+                            )}
+                          </span>
+                          {canEdit && !spread && (
+                            <span className="ml-auto flex items-center gap-1">
+                              <button onClick={() => setAdjModal({ month: g.items[0].month, editing: g.items[0] })}
+                                title="Edit" className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-[#2f5b9c]">
+                                <Pencil size={12} />
+                              </button>
+                              <button onClick={() => deleteAdjustment(g.items[0])}
+                                title="Delete" className="rounded p-1 text-stone-400 hover:bg-red-50 hover:text-red-600">
+                                <Trash2 size={12} />
+                              </button>
+                            </span>
+                          )}
+                          {spread && (
+                            <button type="button" onClick={() => setOpenAdjGroup(open ? null : g.key)}
+                              aria-expanded={open}
+                              className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[13px] font-semibold text-stone-500 hover:bg-stone-100 hover:text-stone-700">
+                              {open ? "Hide the months" : "Each month"}
+                              <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Each month is still its own adjustment and can be put
+                            right or dropped on its own: the run is how they are
+                            read, not how they are stored. */}
+                        {spread && open && (
+                          <ul className="mt-1.5 space-y-0.5 border-t border-amber-100 pt-1.5">
+                            {g.items.map(a => (
+                              <li key={a.id} className="flex items-center gap-2 text-[14px]">
+                                <span className="w-12 shrink-0 font-semibold text-stone-600">{monthShort(a.month)}</span>
+                                <span className="font-mono text-stone-700">
+                                  {Number(a.amount) > 0 ? "+" : "−"}{num(Math.abs(Number(a.amount)))}
+                                </span>
+                                {canEdit && (
+                                  <span className="ml-auto flex items-center gap-1">
+                                    <button onClick={() => setAdjModal({ month: a.month, editing: a })}
+                                      title="Edit this month" className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-[#2f5b9c]">
+                                      <Pencil size={12} />
+                                    </button>
+                                    <button onClick={() => deleteAdjustment(a)}
+                                      title="Delete this month" className="rounded p-1 text-stone-400 hover:bg-red-50 hover:text-red-600">
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
                         )}
                       </li>
                     );

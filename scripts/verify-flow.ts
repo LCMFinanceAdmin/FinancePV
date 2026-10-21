@@ -52,7 +52,27 @@ function buildScenario(): any {
   return JSON.parse(m[1])[0].scenario;
 }
 
-const sc = buildScenario();
+// The shapes the scenario comes back in. Narrow enough that the rules are
+// typechecked against them rather than against `any`, which is the point of
+// running this through the real functions at all.
+interface SalaryRow {
+  employee_id: string; effective_from: string; created_at: string;
+  base_salary: number; increment_carried: number; increment_current: number;
+  experience_bonus: number; family_allowance: number; stm_allowance: number;
+  qualification_code: string | null; special_arrangement: string | null;
+}
+interface EmployeeRow { id: string; emp_no: string; full_name: string; qualification_code: string | null }
+interface Scenario {
+  rungs: { code: string; label: string; rank: number }[];
+  points: { qualification_code: string; base_salary: number; effective_from: string }[];
+  employees: EmployeeRow[];
+  salaries: SalaryRow[];
+  ptptn: any[];
+  ptptn_taken: { ptptn_id: string; year: number; month: number; amount: number }[];
+  adjustments: { month: number; category: string; amount: number }[];
+}
+
+const sc: Scenario = buildScenario();
 
 let failed = 0;
 const money = (n: number) => n.toLocaleString("en-MY", { minimumFractionDigits: 2 });
@@ -64,14 +84,14 @@ function check(label: string, got: unknown, want: unknown) {
 }
 const section = (s: string) => console.log(`\n── ${s} ${"─".repeat(Math.max(0, 58 - s.length))}`);
 
-const empBy = (no: string) => sc.employees.find((e: any) => e.emp_no === no);
-const salariesOf = (no: string) =>
-  sc.salaries.filter((s: any) => s.employee_id === empBy(no).id);
+const empBy = (no: string) => sc.employees.find(e => e.emp_no === no)!;
+const salariesOf = (no: string): SalaryRow[] =>
+  sc.salaries.filter(s => s.employee_id === empBy(no).id);
 
 // ───────────────────────────────────────────────────────────────────────────
 section("The ladder and what it is worth");
 
-check("two rungs, lowest first", ladder(sc.rungs).map((r: any) => r.code), ["ZZ_MMIN", "ZZ_DMIN"]);
+check("two rungs, lowest first", ladder(sc.rungs).map(r => r.code), ["ZZ_MMIN", "ZZ_DMIN"]);
 check("the Master's figure in force mid-2026",
   Number(salaryPointOn("ZZ_MMIN", "2026-07-01", sc.points)!.base_salary), 4400);
 check("and what it was before the 2026 revision",
@@ -98,7 +118,7 @@ check("increments carry forward untouched",
   [Number(july.increment_carried), Number(july.increment_current)],
   [Number(june.increment_carried), Number(june.increment_current)]);
 check("so gross rises by exactly the scale difference",
-  Math.round((fullGross(july as any) - fullGross(june as any)) * 100) / 100, 1100);
+  Math.round((fullGross(july) - fullGross(june)) * 100) / 100, 1100);
 
 // A raise dated July must not reach June's payslip.
 check("the July salary is not in force in June",
@@ -140,7 +160,7 @@ section("PTPTN");
 const direction = sc.ptptn[0];
 const taken = sc.ptptn_taken;
 check("four months taken against the advised balance",
-  taken.reduce((s: number, d: any) => s + Number(d.amount), 0), 800);
+  taken.reduce((s, d) => s + Number(d.amount), 0), 800);
 check("so the record stands at 200", recordedBalance(direction, taken), 200);
 
 const may = ptptnDue(direction, taken, 2026, 5);
@@ -158,18 +178,18 @@ check("the 13th month is never deducted", ptptnDue(direction, taken, 2026, 13).a
 // ───────────────────────────────────────────────────────────────────────────
 section("The adjustment across a range of months");
 
-const months = sc.adjustments.map((a: any) => a.month).sort((a: number, b: number) => a - b);
+const months = sc.adjustments.map(a => a.month).sort((a: number, b: number) => a - b);
 check("eight rows were written, one per payslip", months.length, 8);
 check("May through December", months, [5, 6, 7, 8, 9, 10, 11, 12]);
 check("which is what the range rule says", adjustmentMonths(5, 12), months);
 check("the 13th month was not swept in", months.includes(13), false);
 check("each row carries the full amount, not a share of it",
-  [...new Set(sc.adjustments.map((a: any) => Number(a.amount)))], [381]);
+  [...new Set(sc.adjustments.map(a => Number(a.amount)))], [381]);
 
 // ───────────────────────────────────────────────────────────────────────────
 section("One payslip, with all of it on at once");
 
-const julyGross = fullGross(july as any);
+const julyGross = fullGross(july);
 const adjustments = [{ category: "EPF_EE" as const, amount: 381, reason: "allowance mixed in" }];
 const base = { gross: julyGross, age: 40, employmentType: "PERMANENT" as const,
   isOrangAsli: false, voluntaryEpf: 0, manualPcb: 0, eplDeduction: 0,
