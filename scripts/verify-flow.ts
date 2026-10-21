@@ -32,8 +32,11 @@ import {
 } from "../lib/payroll/qualification-scale.ts";
 import { inForceFor } from "../lib/payroll/salary-in-force.ts";
 import { ptptnDue, recordedBalance, needsAttention } from "../lib/payroll/ptptn.ts";
-import { adjustmentMonths } from "../lib/payroll/adjustment-range.ts";
-import { calcLine, fullGross } from "../lib/payroll/calc.ts";
+import {
+  adjustmentMonths, groupAdjustments, stepsToTarget, stepsToWrite, sharedDelta,
+} from "../lib/payroll/adjustment-range.ts";
+import { calcLine, fullGross, figureOf } from "../lib/payroll/calc.ts";
+import type { AdjustmentCategory } from "../lib/types.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -69,7 +72,7 @@ interface Scenario {
   salaries: SalaryRow[];
   ptptn: any[];
   ptptn_taken: { ptptn_id: string; year: number; month: number; amount: number }[];
-  adjustments: { month: number; category: string; amount: number }[];
+  adjustments: { month: number; category: string; amount: number; reason: string }[];
 }
 
 const sc: Scenario = buildScenario();
@@ -178,13 +181,66 @@ check("the 13th month is never deducted", ptptnDue(direction, taken, 2026, 13).a
 // ───────────────────────────────────────────────────────────────────────────
 section("The adjustment across a range of months");
 
-const months = sc.adjustments.map(a => a.month).sort((a: number, b: number) => a - b);
+const months = sc.adjustments.filter(a => a.category === "EPF_EE")
+  .map(a => a.month).sort((a: number, b: number) => a - b);
 check("eight rows were written, one per payslip", months.length, 8);
 check("May through December", months, [5, 6, 7, 8, 9, 10, 11, 12]);
 check("which is what the range rule says", adjustmentMonths(5, 12), months);
 check("the 13th month was not swept in", months.includes(13), false);
 check("each row carries the full amount, not a share of it",
-  [...new Set(sc.adjustments.map(a => Number(a.amount)))], [381]);
+  [...new Set(sc.adjustments.filter(a => a.category === "EPF_EE").map(a => Number(a.amount)))], [381]);
+
+// ───────────────────────────────────────────────────────────────────────────
+section("Reading the year back");
+
+const groups = groupAdjustments(sc.adjustments);
+check("sixteen rows read as two decisions", [sc.adjustments.length, groups.length], [16, 2]);
+check("each covering the same eight months", groups.map(g => g.months.length), [8, 8]);
+check("the employee side first, as the sheet reads",
+  groups.map(g => g.category), ["EPF_EE", "EPF_ER"]);
+check("and each says what the run comes to", groups.map(g => g.total), [3048, 4432]);
+check("the rows stay reachable so one month can still be put right",
+  groups[0].items.map(i => i.month), [5, 6, 7, 8, 9, 10, 11, 12]);
+
+// ───────────────────────────────────────────────────────────────────────────
+section("Typing the figure, across a promotion");
+
+// The figure this column comes to in a month, from the salary in force then.
+// The promotion in July is the point: the same target needs a different
+// correction either side of it.
+function figureFor(month: number, category: AdjustmentCategory): number | null {
+  const sal = inForceFor(promoted, 2026, month);
+  if (!sal) return null;
+  return figureOf(calcLine({
+    gross: fullGross(sal), age: 40, employmentType: "PERMANENT", isOrangAsli: false,
+    voluntaryEpf: 0, manualPcb: 0, eplDeduction: 0, is13thMonth: false, month,
+  } as any), category);
+}
+
+const beforeJuly = figureFor(6, "EPF_EE")!;
+const afterJuly = figureFor(7, "EPF_EE")!;
+check("the promotion moves the EPF the correction is measured against",
+  beforeJuly !== afterJuly, true);
+
+const TARGET = 1234;
+const targetSteps = stepsToTarget(
+  [5, 6, 7, 8, 9, 10, 11, 12].map(m => ({ month: m, before: figureFor(m, "EPF_EE") })), TARGET);
+
+check("every month is written, none already at the figure", stepsToWrite(targetSteps).length, 8);
+check("they do not share one difference, because the salary changed",
+  sharedDelta(targetSteps), null);
+check("the two months before the promotion need the same correction",
+  targetSteps[0].delta, targetSteps[1].delta);
+check("the six after it need the same as each other",
+  [...new Set(targetSteps.slice(2).map(s => s.delta))].length, 1);
+check("and a different one from before it",
+  targetSteps[0].delta !== targetSteps[2].delta, true);
+
+// The invariant the whole change rests on: whatever a month started at, it
+// ends at the figure that was typed.
+check("every month lands exactly on the figure typed",
+  targetSteps.map(s => Math.round((s.before! + s.delta!) * 100) / 100),
+  targetSteps.map(() => TARGET));
 
 // ───────────────────────────────────────────────────────────────────────────
 section("One payslip, with all of it on at once");

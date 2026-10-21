@@ -65,10 +65,18 @@ SELECT p.id, 2026, m.month, 200, 1000 - 200 * m.month
   JOIN payroll_employees e ON e.id = p.employee_id AND e.emp_no = 'ZZ-1'
   CROSS JOIN (VALUES (1), (2), (3), (4)) AS m(month);
 
--- An adjustment running May to December: eight rows, one per payslip.
+-- Two adjustments running May to December: sixteen rows, one per payslip per
+-- figure. This is the screen that prompted the grouping — sixteen cards saying
+-- two things.
 INSERT INTO payroll_adjustments(employee_id, year, month, category, amount, reason)
 SELECT e.id, 2026, m.month, 'EPF_EE', 381,
-       'Her allowance is mixed with her salary effective May 2026'
+       'Salary and allowance combined'
+  FROM payroll_employees e
+  CROSS JOIN generate_series(5, 12) AS m(month)
+ WHERE e.emp_no = 'ZZ-1'
+UNION ALL
+SELECT e.id, 2026, m.month, 'EPF_ER', 554,
+       'Salary and allowance increase'
   FROM payroll_employees e
   CROSS JOIN generate_series(5, 12) AS m(month)
  WHERE e.emp_no = 'ZZ-1';
@@ -101,10 +109,10 @@ SELECT jsonb_build_object(
         JOIN employee_ptptn p ON p.id = pd.ptptn_id
         JOIN payroll_employees e ON e.id = p.employee_id AND e.emp_no LIKE 'ZZ-%') t),
   'adjustments', (SELECT jsonb_agg(to_jsonb(a)) FROM (
-      SELECT pa.month, pa.category, pa.amount
+      SELECT pa.month, pa.category, pa.amount, pa.reason
         FROM payroll_adjustments pa
         JOIN payroll_employees e ON e.id = pa.employee_id AND e.emp_no LIKE 'ZZ-%'
-       ORDER BY pa.month) a)
+       ORDER BY pa.category, pa.month) a)
 ) AS scenario;
 
 ROLLBACK;
