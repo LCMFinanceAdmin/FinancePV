@@ -1,5 +1,23 @@
 # Scripts
 
+## `verify-flow.ts` — does the whole thing still work, end to end?
+
+```
+npm run verify:flow
+```
+
+The checks above each watch one thing. This one walks a person through the
+system: a pastor promoted from a Master of Ministry to a Doctor of Ministry,
+somebody left behind on an old scale, somebody on a salary agreed deliberately,
+a PTPTN direction four months into its advised balance, an adjustment running
+May to December — and then one payslip carrying all of it at once.
+
+The scenario is built in the real database by `flow-scenario.sql` and rolled
+back; the rows it produces are put through the application's own rules. So what
+runs is the code that runs in the app, against data shaped by the constraints
+that actually exist, rather than stand-ins for either. The figures in it are
+invented: real salaries are not kept in the repository.
+
 ## `verify-budget.sql` — does the budget arithmetic say what we think it says?
 
 ```
