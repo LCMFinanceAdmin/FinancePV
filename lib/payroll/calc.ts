@@ -597,3 +597,28 @@ export function ageAt(dob: string | null, year: number, month: number): number {
   if (month < d.getMonth() + 1) age--;
   return age;
 }
+
+/**
+ * The figure an adjustment names, read off a computed line.
+ *
+ * An adjustment says "this column, this much". Until now only the arithmetic
+ * needed to know which column; now the form does too, because somebody typing
+ * the figure they want has to be shown the one they have.
+ *
+ * Kept beside the arithmetic deliberately: if a category is ever added to the
+ * list without a column to land in, this is where it fails to compile.
+ */
+export function figureOf(line: CalcLine, category: AdjustmentCategory): number {
+  switch (category) {
+    case "GROSS":    return line.gross;
+    case "NET":      return line.net;
+    case "PCB":      return line.pcb;
+    case "EPF_EE":   return line.epf.ee;
+    case "EPF_ER":   return line.epf.er;
+    case "SOCSO_EE": return line.socso.ee;
+    case "SOCSO_ER": return line.socso.er;
+    case "SKBBK":    return line.skbbk;
+    case "EIS_EE":   return line.eis.ee;
+    case "EIS_ER":   return line.eis.er;
+  }
+}

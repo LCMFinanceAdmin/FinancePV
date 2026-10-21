@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, figureOf, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { logPayrollAudit } from "@/lib/payroll/audit";
@@ -415,44 +415,79 @@ export default function PayrollEmployeePage() {
     adjAmt(m, c) !== 0
       ? { className: " bg-amber-100/70 font-semibold text-amber-900", title: adjWhy(m, c) }
       : { className: "", title: undefined as string | undefined };
-  const monthLines: CalcLine[] = current ? MONTHS.map((_, i) => calcLine({
-    // The sheet is the same arithmetic as a run, so a month somebody joined
-    // or left part-way through is pro-rated here too. Without this the
-    // sheet and the run disagree about the same month, and the sheet is
-    // what people check the run against.
-    gross: grossForMonth(current, emp.date_commenced, i + 1, false, emp.increment_month_override,
-      monthDays(emp.date_commenced, emp.resigned_date, year, i + 1)),
-    age: ageAt(emp.dob, year, i + 1),
-    month: i + 1,
-    bands,
-    employmentType: emp.employment_type,
-    isOrangAsli: emp.is_orang_asli,
-    voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
-    skbbkOptedOut: emp.skbbk_opted_out,
-    epfOver60Contributing: emp.epf_over60_contributing,
-    manualPcb: pcb[i] || 0,
-    eplDeduction: eplForMonth(i + 1),
-    is13thMonth: false,
-    rates,
-    customItems: (customItemsByMonth[i + 1] ?? []).map(c => ({ label: c.label, type: c.type, amount: Number(c.amount) })),
-    adjustments: adjInput(i + 1),
-  })) : [];
+  /**
+   * One month's arithmetic. Taken out of the sheet so it can be asked a second
+   * question — what would this figure be without the adjustment being written —
+   * which is what somebody typing a figure rather than a difference needs to
+   * see. The sheet itself passes its own adjustments and is unchanged.
+   */
+  const lineForMonth = (m: number, adj: ReturnType<typeof adjInput>): CalcLine | null => {
+    if (!current) return null;
+    // The 13th month is a payment of its own: a full gross, no pro-rating, no
+    // loan instalment, and Orang Asli are excluded from it altogether.
+    if (m === 13) {
+      if (emp.is_orang_asli) return null;
+      return calcLine({
+        gross: fullGrossVal,
+        age: ageAt(emp.dob, year, 12),
+        employmentType: emp.employment_type,
+        isOrangAsli: emp.is_orang_asli,
+        voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
+        skbbkOptedOut: emp.skbbk_opted_out,
+        epfOver60Contributing: emp.epf_over60_contributing,
+        manualPcb: pcb[12] || 0,
+        eplDeduction: 0,
+        is13thMonth: true,
+        rates,
+        bands,
+        adjustments: adj,
+      });
+    }
+    return calcLine({
+      // The sheet is the same arithmetic as a run, so a month somebody joined
+      // or left part-way through is pro-rated here too. Without this the
+      // sheet and the run disagree about the same month, and the sheet is
+      // what people check the run against.
+      gross: grossForMonth(current, emp.date_commenced, m, false, emp.increment_month_override,
+        monthDays(emp.date_commenced, emp.resigned_date, year, m)),
+      age: ageAt(emp.dob, year, m),
+      month: m,
+      bands,
+      employmentType: emp.employment_type,
+      isOrangAsli: emp.is_orang_asli,
+      voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
+      skbbkOptedOut: emp.skbbk_opted_out,
+      epfOver60Contributing: emp.epf_over60_contributing,
+      manualPcb: pcb[m - 1] || 0,
+      eplDeduction: eplForMonth(m),
+      is13thMonth: false,
+      rates,
+      customItems: (customItemsByMonth[m] ?? []).map(c => ({ label: c.label, type: c.type, amount: Number(c.amount) })),
+      adjustments: adj,
+    });
+  };
+
+  const monthLines: CalcLine[] = current
+    ? MONTHS.map((_, i) => lineForMonth(i + 1, adjInput(i + 1))!)
+    : [];
+  /**
+   * What a figure stands at for a month, leaving out the adjustments of that
+   * category. Only that category is set aside: a correction to EPF must not
+   * quietly re-open one made to PCB in the same month.
+   *
+   * Null where there is no salary to compute from, in which case the form asks
+   * for the difference instead of the figure, there being nothing to subtract
+   * a target from.
+   */
+  const figureBefore = (m: number, c: AdjustmentCategory): number | null => {
+    const line = lineForMonth(m, adjInput(m).filter(a => a.category !== c));
+    return line ? figureOf(line, c) : null;
+  };
+
   // Orang Asli are excluded from the 13th month.
-  const thirteenth: CalcLine | null = current && !emp.is_orang_asli ? calcLine({
-    gross: fullGrossVal,
-    age: ageAt(emp.dob, year, 12),
-    employmentType: emp.employment_type,
-    isOrangAsli: emp.is_orang_asli,
-    voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
-    skbbkOptedOut: emp.skbbk_opted_out,
-    epfOver60Contributing: emp.epf_over60_contributing,
-    manualPcb: pcb[12] || 0,
-    eplDeduction: 0,
-    is13thMonth: true,
-    rates,
-    bands,
-    adjustments: adjInput(13),
-  }) : null;
+  // The same function as every other month, so the sheet and the form can
+  // never disagree about what the 13th month comes to.
+  const thirteenth: CalcLine | null = lineForMonth(13, adjInput(13));
   const allLines = thirteenth ? [...monthLines, thirteenth] : monthLines;
   const sum = (pick: (l: CalcLine) => number) => allLines.reduce((s, l) => s + pick(l), 0);
 
@@ -1397,6 +1432,7 @@ export default function PayrollEmployeePage() {
         <AdjustmentModal
           employeeId={emp.id} employeeName={emp.full_name} year={year}
           month={adjModal.month} editing={adjModal.editing}
+          figureBefore={figureBefore}
           onClose={() => setAdjModal(null)}
           onSaved={async () => { setAdjModal(null); await refreshAdjustments(); }}
         />

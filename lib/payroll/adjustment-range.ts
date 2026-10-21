@@ -125,3 +125,65 @@ export function groupAdjustments<T extends GroupableAdjustment>(
   out.sort((a, b) => (a.months[0] - b.months[0]) || a.category.localeCompare(b.category));
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Reaching a figure
+//
+// The form asks what a figure should come to, not what to add to it: nobody
+// knows a payroll by its differences, and asking for the difference made the
+// person do a subtraction on the very figure they were correcting.
+//
+// What is stored is still the difference, because that is what an adjustment
+// is — it lands inside the column it names rather than replacing it, so the
+// statutory arithmetic underneath stays visible. This does the subtraction,
+// once, per month, because each month may start somewhere different: a salary
+// that changed in July means July needs a different correction from June to
+// reach the same figure.
+// ---------------------------------------------------------------------------
+
+export interface MonthFigure {
+  month: number;
+  /** What it stands at before this adjustment; null where it cannot be worked out. */
+  before: number | null;
+}
+
+export interface TargetStep extends MonthFigure {
+  /** What has to be added to reach the target. Null where `before` is. */
+  delta: number | null;
+}
+
+/** What each month needs in order to come to `target`. */
+export function stepsToTarget(
+  months: readonly MonthFigure[],
+  target: number,
+): TargetStep[] {
+  return months.map(({ month, before }) => ({
+    month,
+    before,
+    // Rounded to the sen, so a figure typed to two decimal places does not
+    // produce a correction with a tail of floating point behind it.
+    delta: before === null || !Number.isFinite(target)
+      ? null
+      : Math.round((target - before) * 100) / 100,
+  }));
+}
+
+/**
+ * The months that actually need writing: a delta that is known and not zero.
+ *
+ * A month already at the figure needs no adjustment, and could not have one —
+ * payroll_adjustments refuses an amount of zero, which is right: an adjustment
+ * that changes nothing is a row somebody has to explain later.
+ */
+export function stepsToWrite(steps: readonly TargetStep[]): TargetStep[] {
+  return steps.filter(s => s.delta !== null && s.delta !== 0);
+}
+
+/** The one difference they all share, or null where they differ. */
+export function sharedDelta(steps: readonly TargetStep[]): number | null {
+  const written = stepsToWrite(steps);
+  if (written.length === 0) return null;
+  if (steps.some(s => s.before === null)) return null;
+  const first = written[0].delta!;
+  return written.every(s => s.delta === first) ? first : null;
+}

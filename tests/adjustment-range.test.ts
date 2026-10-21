@@ -170,3 +170,86 @@ test("the 13th month never joins a run", () => {
   assert.deepEqual(compressMonths([12, 13]), [[12, 12], [13, 13]]);
   assert.deepEqual(compressMonths([13]), [[13, 13]]);
 });
+
+// ---------------------------------------------------------------------------
+// Reaching a figure
+//
+// The form asks what a figure should come to; what gets stored is still the
+// difference. This is the subtraction that bridges the two, and it decides
+// what lands in somebody's pay, so the cases that matter are the ones where a
+// month does not start where you would assume.
+// ---------------------------------------------------------------------------
+import { stepsToTarget, stepsToWrite, sharedDelta } from "@/lib/payroll/adjustment-range";
+
+const at = (pairs: [number, number | null][]) =>
+  pairs.map(([month, before]) => ({ month, before }));
+
+test("the difference is the figure wanted less the figure held", () => {
+  const steps = stepsToTarget(at([[5, 853]]), 1234);
+  assert.equal(steps[0].delta, 381);
+  assert.equal(steps[0].before, 853);
+});
+
+test("a figure below the one held is a correction downwards", () => {
+  assert.equal(stepsToTarget(at([[5, 1234]]), 853)[0].delta, -381);
+});
+
+test("each month is measured from where it stands, not from the first", () => {
+  // A salary that changed in July means July needs a different correction
+  // from June to come to the same figure. Applying June's difference to July
+  // would land it somewhere nobody asked for.
+  const steps = stepsToTarget(at([[6, 853], [7, 900], [8, 900]]), 1234);
+  assert.deepEqual(steps.map(s => s.delta), [381, 334, 334]);
+  assert.equal(sharedDelta(steps), null, "they do not share one difference");
+});
+
+test("where every month starts the same, they share one difference", () => {
+  const steps = stepsToTarget(at([[5, 853], [6, 853], [7, 853]]), 1234);
+  assert.equal(sharedDelta(steps), 381);
+});
+
+test("a month already at the figure is not written", () => {
+  // An adjustment of zero changes nothing and is a row somebody has to
+  // explain later; the table refuses it, and so does this.
+  const steps = stepsToTarget(at([[5, 1234], [6, 853]]), 1234);
+  assert.deepEqual(steps.map(s => s.delta), [0, 381]);
+  assert.deepEqual(stepsToWrite(steps).map(s => s.month), [6]);
+});
+
+test("every month already at the figure means nothing to write", () => {
+  const steps = stepsToTarget(at([[5, 1234], [6, 1234]]), 1234);
+  assert.deepEqual(stepsToWrite(steps), []);
+  assert.equal(sharedDelta(steps), null);
+});
+
+test("a month with no figure to work from is left alone", () => {
+  // No salary on record: there is nothing to subtract a target from, and
+  // guessing would put a figure on a payslip that nothing supports.
+  const steps = stepsToTarget(at([[5, null], [6, 853]]), 1234);
+  assert.equal(steps[0].delta, null);
+  assert.deepEqual(stepsToWrite(steps).map(s => s.month), [6]);
+  // And one unknown month means the rest do not claim to share a difference.
+  assert.equal(sharedDelta(steps), null);
+});
+
+test("a target that is not a number produces nothing to write", () => {
+  const steps = stepsToTarget(at([[5, 853]]), Number.NaN);
+  assert.equal(steps[0].delta, null);
+  assert.deepEqual(stepsToWrite(steps), []);
+});
+
+test("the difference is rounded to the sen", () => {
+  // 1234.10 − 853.03 is 381.07 and not 381.06999999999994, which would reach
+  // the database and then the payslip.
+  const steps = stepsToTarget(at([[5, 853.03]]), 1234.10);
+  assert.equal(steps[0].delta, 381.07);
+  assert.equal(stepsToTarget(at([[5, 0.1]]), 0.3)[0].delta, 0.2);
+});
+
+test("a target of zero is a real instruction, not an empty box", () => {
+  // Setting a figure to nothing — an EPF correction that cancels it — has to
+  // be possible, and is a difference like any other.
+  const steps = stepsToTarget(at([[5, 853]]), 0);
+  assert.equal(steps[0].delta, -853);
+  assert.equal(stepsToWrite(steps).length, 1);
+});

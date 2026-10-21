@@ -5,10 +5,11 @@
 // real salaries.
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
+import { figureOf,
   calcLine, monthDays, monthFraction, grossForMonth, grossComponentsForMonth,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
+import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
 
 const line = (o: Partial<CalcInput>) => calcLine({
   gross: 3000, age: 40, employmentType: "PERMANENT", isOrangAsli: false,
@@ -163,4 +164,33 @@ test("no PTPTN direction is zero, not undefined, on the line", () => {
   // The payslip and the yearly sheet read this field; undefined would print
   // as blank where a figure is expected.
   assert.equal(line({}).ptptnDeduction, 0);
+});
+
+// ── Which column an adjustment names ─────────────────────────────────────
+
+test("every adjustment category reads its own figure off the line", () => {
+  // The form shows somebody the figure they hold before they type the one they
+  // want, so a category reading the wrong column would offer the wrong
+  // subtraction and write a correction nobody asked for.
+  const l = line({ gross: 6000, eplDeduction: 100, ptptnDeduction: 50 });
+  const pairs: [AdjustmentCategory, number][] = [
+    ["GROSS", l.gross], ["NET", l.net], ["PCB", l.pcb],
+    ["EPF_EE", l.epf.ee], ["EPF_ER", l.epf.er],
+    ["SOCSO_EE", l.socso.ee], ["SOCSO_ER", l.socso.er],
+    ["SKBBK", l.skbbk], ["EIS_EE", l.eis.ee], ["EIS_ER", l.eis.er],
+  ];
+  for (const [category, expected] of pairs) {
+    assert.equal(figureOf(l, category), expected, category);
+  }
+  // Every category in the list is covered: a new one added without a column
+  // to land in should fail here as well as at compile time.
+  assert.equal(pairs.length, ADJUSTMENT_CATEGORIES.length);
+});
+
+test("the employee and employer sides of one scheme are different figures", () => {
+  // They are adjacent in the dropdown and adjacent on the sheet, which is
+  // exactly why reading one for the other would go unnoticed.
+  const l = line({ gross: 6000 });
+  assert.notEqual(figureOf(l, "EPF_EE"), figureOf(l, "EPF_ER"));
+  assert.notEqual(figureOf(l, "SOCSO_EE"), figureOf(l, "SOCSO_ER"));
 });

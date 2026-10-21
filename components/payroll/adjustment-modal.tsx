@@ -1,33 +1,44 @@
 "use client";
-// Adding or editing a correction to the months of a payroll year.
+// Correcting what a figure comes to, for one month or a stretch of them.
 //
-// The hard part of this form is not the fields, it is the sign. "SKBBK +50"
-// means fifty more deducted, and so fifty less in hand; "Gross +50" means fifty
-// more in hand. Same sign, opposite effect on the person being paid.
+// You type the figure you want. The sheet will show that figure, and the form
+// works out what has to be added or taken away to get there.
 //
-// Rather than pick a convention and hope whoever uses this remembers it, the
-// form works out what the entry does to take-home and says it in a sentence,
-// live, directly under the amount. Getting this backwards puts the wrong figure
-// in somebody's salary and is only found when they say so, which is worth
-// spending a paragraph of screen on.
+// It used to ask for the difference, and that was the wrong question. Nobody
+// knows a payroll by its differences: the thing somebody has in front of them
+// is a statement saying EPF should be 1,234.00 for May, not a note saying it
+// should be 381.00 more than whatever the system currently thinks. Asking for
+// the difference made the person do a subtraction, on the figure they were
+// trying to correct, which is where the error they were correcting came from.
 //
-// An adjustment can run across a stretch of months, because most of them do:
-// an allowance folded into salary from May, a loan recovered over six months.
-// Each month still gets its own row, so a single month can be corrected or
-// dropped later without disturbing the rest — a range is a way of writing
-// several adjustments at once, not a different kind of adjustment.
+// What is stored is still the difference, because that is what an adjustment
+// is: it lands inside the column it names rather than replacing it, so the
+// statutory arithmetic underneath stays visible and the correction stays
+// separable from it. The form does the subtraction, once, and shows its
+// working.
 //
-// That makes one mistake easy and expensive. Writing a range over months that
-// already carry the same adjustment would leave two rows for those months and
-// both would apply, quietly doubling a deduction in somebody's pay. So the
-// months already spoken for are looked up before anything is written, named,
-// and the choice to replace or keep them is made deliberately.
+// The sign still matters and is still spelled out. "EPF — employee 1,234.00"
+// where it was 853.00 means 381.00 more deducted, and so 381.00 less in hand.
+// Same figure going up, opposite effect on the person being paid, which is the
+// mistake this form exists to prevent.
+//
+// An adjustment can run across a stretch of months. Each month still gets its
+// own row, so one can be corrected or dropped later without disturbing the
+// rest — and because each month reaches the same figure from wherever it
+// started, the difference is worked out per month and can differ between them.
+//
+// Writing a range over months that already carry the same adjustment would
+// leave two rows for those months and both would apply, so the figure would
+// overshoot. The months already spoken for are looked up before anything is
+// written, named, and replaced or left alone by an explicit choice.
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { ADJUSTMENT_CATEGORIES, adjustmentLabel } from "@/lib/types";
-import { adjustmentMonths } from "@/lib/payroll/adjustment-range";
+import {
+  adjustmentMonths, stepsToTarget, stepsToWrite, sharedDelta, type TargetStep,
+} from "@/lib/payroll/adjustment-range";
 import type { PayrollAdjustment, AdjustmentCategory } from "@/lib/types";
 import { Scale, X, AlertTriangle } from "lucide-react";
 
@@ -43,130 +54,145 @@ const GROUPS = ["Pay", "EPF", "SOCSO", "EIS", "LHDN"];
 type Conflict = { id: string; month: number; amount: number };
 
 export function AdjustmentModal({
-  employeeId, employeeName, year, month, editing, onClose, onSaved,
+  employeeId, employeeName, year, month, editing, figureBefore, onClose, onSaved,
 }: {
   employeeId: string;
   employeeName: string;
   year: number;
   month: number;
   editing: PayrollAdjustment | null;
+  /**
+   * What the figure stands at for a month, leaving out the adjustments of that
+   * category — so the target is absolute and editing an adjustment does not
+   * measure against itself. Null where there is no salary to compute from.
+   */
+  figureBefore: (month: number, category: AdjustmentCategory) => number | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const supabase = createClient();
   const [mth, setMth] = useState(editing?.month ?? month);
-  // The last month the adjustment lands in. Equal to `mth` for the single
-  // month that most adjustments are.
   const [toMth, setToMth] = useState(editing?.month ?? month);
   const [category, setCategory] = useState<AdjustmentCategory>(editing?.category ?? "SKBBK");
-  // Held as a string so a half-typed "-" or "." survives; parsed only on save.
-  const [amount, setAmount] = useState(editing ? String(editing.amount) : "");
   const [reason, setReason] = useState(editing?.reason ?? "");
   const [correctsEarlier, setCorrectsEarlier] = useState(editing?.origin_month != null);
   const [originMonth, setOriginMonth] = useState(editing?.origin_month ?? 1);
   const [originYear, setOriginYear] = useState(editing?.origin_year ?? year);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  // Months in the range that already carry this adjustment, and what to do
-  // about them. Nothing is written until that has been answered.
   const [conflicts, setConflicts] = useState<Conflict[] | null>(null);
 
-  const amt = parseFloat(amount);
   const meta = ADJUSTMENT_CATEGORIES.find(c => c.key === category);
 
-  // The 13th month is a payment of its own, not the month after December, so
-  // it is chosen on its own and never swept up in a range.
   const rangeable = !editing && mth <= 12;
   const months = adjustmentMonths(mth, toMth, { editing: !!editing });
   const lastMth = months[months.length - 1];
   const spread = months.length > 1;
 
-  const valid = !Number.isNaN(amt) && amt !== 0 && reason.trim().length > 0 && months.length > 0;
+  // Editing starts at the figure that adjustment currently produces, so the
+  // box opens showing what the sheet shows.
+  const [target, setTarget] = useState(() => {
+    if (!editing) return "";
+    const before = figureBefore(editing.month, editing.category);
+    return before === null ? "" : String(Math.round((before + Number(editing.amount)) * 100) / 100);
+  });
 
-  // The one sentence that matters: what this does to the person's pay.
-  const effect = (() => {
-    if (Number.isNaN(amt) || amt === 0) return null;
-    const abs = num(Math.abs(amt));
-    const total = num(Math.abs(amt) * months.length);
-    const over = spread
-      ? ` in each of ${monthShort(mth)}–${monthShort(lastMth)} ${year}` +
-        ` — ${months.length} months, RM ${total} in all`
-      : ` in ${monthShort(mth)}`;
+  const wanted = parseFloat(target);
+  const hasTarget = !Number.isNaN(wanted);
 
+  const steps: TargetStep[] = stepsToTarget(
+    months.map(m => ({ month: m, before: figureBefore(m, category) })), wanted);
+
+  const payable = stepsToWrite(steps);
+  const already = steps.filter(s => s.delta === 0);
+  const unknown = steps.filter(s => s.before === null);
+  // Where every month starts from the same figure, one sentence says it all.
+  const uniformDelta = sharedDelta(steps);
+
+  const valid = hasTarget && reason.trim().length > 0 && payable.length > 0;
+
+  /** What a change to this figure does to take-home. */
+  const effectOf = (delta: number) => {
+    const abs = num(Math.abs(delta));
     if (meta?.side === "employer") {
-      return {
-        text: `Take-home is unchanged. LCM pays RM ${abs} ${amt > 0 ? "more" : "less"}${over}.`,
-        good: true,
-      };
+      return { text: `Take-home is unchanged. LCM pays RM ${abs} ${delta > 0 ? "more" : "less"}.`, good: true };
     }
     // A pay figure moves take-home the same way as its sign. A deduction moves
     // it the opposite way, because a bigger deduction is a smaller salary.
-    const morePay = meta?.side === "pay" ? amt > 0 : amt < 0;
+    const morePay = meta?.side === "pay" ? delta > 0 : delta < 0;
     return {
-      text: `${employeeName} is paid RM ${abs} ${morePay ? "MORE" : "LESS"}${over}.`,
+      text: `${employeeName} is paid RM ${abs} ${morePay ? "MORE" : "LESS"}`
+          + (spread ? ` in each of ${monthShort(mth)}–${monthShort(lastMth)}` : ` in ${monthShort(mth)}`)
+          + ".",
       good: morePay,
     };
-  })();
+  };
 
-  /** Write the adjustment. `replace` decides the months already spoken for. */
   async function commit(replace: boolean | null) {
     setErr(""); setSaving(true);
     try {
-      const base = {
-        employee_id: employeeId, year, category, amount: amt, reason: reason.trim(),
+      const common = {
+        employee_id: employeeId, year, category, reason: reason.trim(),
         origin_year: correctsEarlier ? originYear : null,
         origin_month: correctsEarlier ? originMonth : null,
       };
       const { data: { session } } = await supabase.auth.getSession();
       const me = session?.user?.email ?? "";
+      const deltaFor = (m: number) => steps.find(s => s.month === m)?.delta ?? null;
 
-      // Editing stays what it was: one row, one month.
       if (editing) {
+        const delta = deltaFor(mth);
+        if (delta === null || delta === 0) {
+          setErr("That is already what the figure comes to, so there is nothing to correct.");
+          return;
+        }
         const { error } = await supabase.from("payroll_adjustments")
-          .update({ ...base, month: mth, updated_at: new Date().toISOString() })
+          .update({ ...common, month: mth, amount: delta, updated_at: new Date().toISOString() })
           .eq("id", editing.id);
         if (error) { setErr(error.message); return; }
         await logPayrollAudit(supabase, {
           action: "ADJUSTMENT_UPDATED", employeeId, entity: employeeName,
-          detail: `${monthShort(mth)} ${year} · ${adjustmentLabel(category)} `
-                + `${amt > 0 ? "+" : ""}${num(amt)} — ${reason.trim()}`,
+          detail: `${monthShort(mth)} ${year} · ${adjustmentLabel(category)} set to ${num(wanted)} `
+                + `(${delta > 0 ? "+" : ""}${num(delta)}) — ${reason.trim()}`,
         });
         onSaved();
         return;
       }
 
       const taken = new Map((conflicts ?? []).map(c => [c.month, c]));
-      const toInsert = months.filter(m => !taken.has(m));
-      const toUpdate = replace ? (conflicts ?? []) : [];
+      const toInsert = payable.filter(s => !taken.has(s.month));
+      const toUpdate = replace
+        ? (conflicts ?? []).filter(c => (deltaFor(c.month) ?? 0) !== 0)
+        : [];
 
       if (toInsert.length === 0 && toUpdate.length === 0) {
-        setErr("Every month in that range already has this adjustment, and you chose to keep them.");
+        setErr(already.length > 0 && payable.length === 0
+          ? "Every month already comes to that figure, so there is nothing to correct."
+          : "Every month in that range already has this adjustment, and you chose to keep them.");
         return;
       }
 
       if (toInsert.length > 0) {
         const { error } = await supabase.from("payroll_adjustments")
-          .insert(toInsert.map(m => ({ ...base, month: m, created_by: me })));
+          .insert(toInsert.map(s => ({ ...common, month: s.month, amount: s.delta!, created_by: me })));
         if (error) { setErr(error.message); return; }
       }
       for (const c of toUpdate) {
         const { error } = await supabase.from("payroll_adjustments")
-          .update({ ...base, month: c.month, updated_at: new Date().toISOString() })
+          .update({ ...common, month: c.month, amount: deltaFor(c.month)!, updated_at: new Date().toISOString() })
           .eq("id", c.id);
         if (error) { setErr(error.message); return; }
       }
 
-      // One entry for one action. Which months it touched is the useful part
-      // at audit, so it is spelled out rather than counted.
       const span = spread ? `${monthShort(mth)}–${monthShort(lastMth)} ${year}` : `${monthShort(mth)} ${year}`;
-      const replaced = toUpdate.length > 0 ? `, replacing ${toUpdate.length}` : "";
-      const kept = !replace && (conflicts?.length ?? 0) > 0
-        ? `, leaving ${conflicts!.length} already set` : "";
+      const written = toInsert.length + toUpdate.length;
       await logPayrollAudit(supabase, {
         action: "ADJUSTMENT_ADDED", employeeId, entity: employeeName,
-        detail: `${span} · ${adjustmentLabel(category)} ${amt > 0 ? "+" : ""}${num(amt)}`
-              + `${spread ? ` × ${toInsert.length + toUpdate.length} months` : ""}`
-              + `${replaced}${kept} — ${reason.trim()}`,
+        detail: `${span} · ${adjustmentLabel(category)} set to ${num(wanted)}`
+              + (spread ? ` × ${written} months` : "")
+              + (uniformDelta !== null ? ` (${uniformDelta > 0 ? "+" : ""}${num(uniformDelta)} each)` : "")
+              + (already.length > 0 ? `, ${already.length} already at it` : "")
+              + ` — ${reason.trim()}`,
       });
       onSaved();
     } finally {
@@ -174,16 +200,21 @@ export function AdjustmentModal({
     }
   }
 
-  /** Look first. Writing over a month that already has one doubles it. */
+  /** Look first. A second row for the same month would overshoot the figure. */
   async function save() {
-    if (!valid) { setErr("An amount other than zero, and a reason."); return; }
+    if (!valid) {
+      setErr(hasTarget && payable.length === 0
+        ? "That is already what the figure comes to."
+        : "A figure, and a reason.");
+      return;
+    }
     if (editing) { await commit(null); return; }
 
     setErr(""); setSaving(true);
     const { data, error } = await supabase.from("payroll_adjustments")
       .select("id, month, amount")
       .eq("employee_id", employeeId).eq("year", year).eq("category", category)
-      .in("month", months);
+      .in("month", payable.map(s => s.month));
     setSaving(false);
     if (error) { setErr(error.message); return; }
 
@@ -219,7 +250,6 @@ export function AdjustmentModal({
                 onChange={e => {
                   const m = Number(e.target.value);
                   setMth(m);
-                  // Keep the end of the range at or after its start.
                   if (m > toMth || m === 13) setToMth(m);
                   setConflicts(null);
                 }}>
@@ -249,8 +279,6 @@ export function AdjustmentModal({
             </div>
           </div>
 
-          {/* Most adjustments run for a while. Each month still gets its own
-              row, so one of them can be put right later on its own. */}
           {rangeable && (
             <div>
               <label className={lbl}>Through to</label>
@@ -270,20 +298,82 @@ export function AdjustmentModal({
             </div>
           )}
 
+          {/* The figure itself. Not the difference — the figure the sheet will
+              show once this is saved. */}
           <div>
-            <label className={lbl}>Amount (RM){spread ? " — per month" : ""}</label>
+            <label className={lbl}>
+              What {meta?.label ?? "the figure"} should come to (RM)
+            </label>
             <input className={`${fld} font-mono`} type="number" step="0.01" autoFocus
-              value={amount} onChange={e => setAmount(e.target.value)}
-              placeholder="e.g. 150.00 or -150.00" />
+              value={target} onChange={e => setTarget(e.target.value)}
+              placeholder="e.g. 1234.00" />
             <p className="mt-1 text-[10.5px] text-stone-400">
-              Positive adds to {meta?.label ?? "the figure"}; negative takes away from it.
-              {spread && " This much in each month, not shared between them."}
+              {spread
+                ? "Every month in the range will come to this. What has to move is worked out for each."
+                : "The sheet will show this figure. What has to move is worked out for you."}
             </p>
-            {effect && (
-              <div className={`mt-2 rounded-lg border-2 px-2.5 py-2 text-[12px] font-semibold ${
-                effect.good ? "border-green-300 bg-green-50 text-green-800"
-                            : "border-amber-300 bg-amber-50 text-amber-900"}`}>
-                {effect.text}
+
+            {hasTarget && (
+              <div className="mt-2 space-y-1.5">
+                {/* The signage: where it stands, and what this moves. */}
+                {uniformDelta !== null ? (
+                  <div className={`rounded-lg border-2 px-2.5 py-2 text-[12px] ${
+                    effectOf(uniformDelta).good
+                      ? "border-green-300 bg-green-50 text-green-800"
+                      : "border-amber-300 bg-amber-50 text-amber-900"}`}>
+                    <div className="font-semibold">
+                      {spread ? "Each month: " : `${monthShort(mth)}: `}
+                      <span className="font-mono">{num(steps[0].before!)}</span>
+                      {" → "}
+                      <span className="font-mono">{num(wanted)}</span>
+                      <span className="ml-1 font-mono">
+                        ({uniformDelta > 0 ? "+" : "−"}{num(Math.abs(uniformDelta))})
+                      </span>
+                    </div>
+                    <div className="mt-0.5 font-semibold">{effectOf(uniformDelta).text}</div>
+                    {spread && (
+                      <div className="mt-0.5 text-[11px] font-normal opacity-80">
+                        {payable.length} months · {num(Math.abs(uniformDelta) * payable.length)} in all
+                      </div>
+                    )}
+                  </div>
+                ) : payable.length > 0 ? (
+                  // The months do not all start in the same place — a salary
+                  // changed part way through, most likely — so each is shown.
+                  <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-900">
+                    <div className="font-semibold">
+                      Every month comes to <span className="font-mono">{num(wanted)}</span>, from where it stands:
+                    </div>
+                    <ul className="mt-1 space-y-0.5 font-mono text-[11.5px]">
+                      {steps.filter(s => s.before !== null).map(s => (
+                        <li key={s.month} className="flex gap-2">
+                          <span className="w-10 shrink-0 font-sans font-semibold">{monthShort(s.month)}</span>
+                          <span>{num(s.before!)}</span>
+                          <span className="opacity-60">&rarr;</span>
+                          <span>{s.delta === 0 ? "already there" : `${s.delta! > 0 ? "+" : "−"}${num(Math.abs(s.delta!))}`}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {already.length > 0 && payable.length > 0 && (
+                  <p className="text-[11px] text-stone-500">
+                    {already.length} of them already come to that and are left alone.
+                  </p>
+                )}
+                {payable.length === 0 && unknown.length === 0 && (
+                  <p className="text-[12px] font-medium text-stone-600">
+                    That is already what the figure comes to. Nothing to correct.
+                  </p>
+                )}
+                {unknown.length > 0 && (
+                  <p className="text-[11px] font-medium text-amber-700">
+                    {unknown.length === months.length
+                      ? "There is no salary on record to work this out from."
+                      : `${unknown.length} of these months have no salary on record and are left alone.`}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -325,9 +415,8 @@ export function AdjustmentModal({
             </div>
           )}
 
-          {/* Two rows for one month in one column both apply, so this is the
-              difference between recovering a loan once and recovering it
-              twice. It is named rather than resolved quietly. */}
+          {/* Two rows for one month in one column both apply, so leaving an old
+              one in place would carry the figure past what was asked for. */}
           {conflicts && conflicts.length > 0 && (
             <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3">
               <div className="flex items-start gap-2">
@@ -340,13 +429,12 @@ export function AdjustmentModal({
                   <ul className="mt-1 space-y-0.5">
                     {conflicts.map(c => (
                       <li key={c.id} className="tabular-nums">
-                        {monthShort(c.month)} {year}: {Number(c.amount) > 0 ? "+" : ""}{num(Number(c.amount))}
-                        {" → "}{amt > 0 ? "+" : ""}{num(amt)}
+                        {monthShort(c.month)} {year}: {Number(c.amount) > 0 ? "+" : "−"}{num(Math.abs(Number(c.amount)))}
                       </li>
                     ))}
                   </ul>
                   <p className="mt-1.5">
-                    Adding another would leave both on the payslip, and both would count.
+                    Both would apply, so the figure would end up past {num(wanted)}.
                   </p>
                 </div>
               </div>
@@ -375,7 +463,7 @@ export function AdjustmentModal({
             <button onClick={save} disabled={!valid || saving}
               className="flex-1 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-40">
               {saving ? "Saving…" : editing ? "Save changes"
-                : spread ? `Add to ${months.length} months` : "Add adjustment"}
+                : payable.length > 1 ? `Set ${payable.length} months to ${num(wanted || 0)}` : "Add adjustment"}
             </button>
             <button onClick={onClose}
               className="rounded-lg px-3 py-2 text-sm font-semibold text-stone-500 hover:bg-stone-100">
