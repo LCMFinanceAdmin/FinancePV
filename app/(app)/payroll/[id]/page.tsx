@@ -2330,6 +2330,10 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
   const [rungs, setRungs] = useState<QualificationRung[]>([]);
   const [points, setPoints] = useState<SalaryPoint[]>([]);
   const [qualification, setQualification] = useState<string>(latest.qualification_code ?? "");
+  // What they hold going in. The last salary row says it once a revision
+  // has been made against the scale; before that only the employee record
+  // does, which is where an existing qualification is first written down.
+  const [heldCode, setHeldCode] = useState<string>(latest.qualification_code ?? "");
   const [reason, setReason] = useState("");
   const [vals, setVals] = useState({
     base_salary: String(latest.base_salary),
@@ -2342,21 +2346,27 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
 
   useEffect(() => {
     (async () => {
-      const [{ data: q }, { data: p }] = await Promise.all([
+      const [{ data: q }, { data: p }, { data: emp }] = await Promise.all([
         supabase.from("qualifications").select("code, label, rank").order("rank"),
         supabase.from("qualification_salary_points").select("qualification_code, base_salary, effective_from"),
+        supabase.from("payroll_employees").select("qualification_code").eq("id", employeeId).maybeSingle(),
       ]);
       setRungs((q ?? []) as QualificationRung[]);
       setPoints((p ?? []) as SalaryPoint[]);
+      const current = latest.qualification_code
+        ?? ((emp as { qualification_code?: string | null } | null)?.qualification_code ?? "");
+      setHeldCode(current);
+      setQualification(chosen => chosen || current);
     })();
-  }, [supabase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, employeeId]);
 
   // What the scale says for the qualification chosen, on the day the revision
   // takes effect. Offered rather than applied: the figure goes in only when
   // somebody presses the button, because a salary is not always the scale
   // point — a special arrangement is a real thing and overwriting it silently
   // would be worse than making this a second click.
-  const held = latest.qualification_code ?? "";
+  const held = heldCode;
   const move = scaleMove(held, qualification, effectiveFrom, points, rungs);
   const scaleFigure = move.to;
   const matchesScale = scaleFigure !== null

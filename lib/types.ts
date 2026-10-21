@@ -484,6 +484,11 @@ export interface PayrollEmployee {
   ic_no: string;
   dob: string | null;
   designation: string;
+  /**
+   * The highest qualification held, which sets base salary — migration 252.
+   * Null where none has been recorded.
+   */
+  qualification_code?: string | null;
   employment_type: EmploymentType;
   is_pastor: boolean;
   is_staff: boolean;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, CalendarClock, CheckCircle2, ChevronRight, Church, FileText, HandCoins, Pencil, Percent, Plus, Search, Trash2, UserX, Users, Wallet, X, GraduationCap } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { ladder, type QualificationRung } from "@/lib/payroll/qualification-scale";
 import { SALARY_BANK_NAMES } from "@/lib/banks";
 import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
@@ -103,17 +104,26 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("payroll_employers")
-        .select("*").eq("active", true).order("sort_order");
+      const [{ data }, { data: q }] = await Promise.all([
+        supabase.from("payroll_employers")
+          .select("*").eq("active", true).order("sort_order"),
+        supabase.from("qualifications").select("code, label, rank").order("rank"),
+      ]);
       const list = (data as Employer[]) ?? [];
       setFormEmployers(list);
       setEmployerId(cur => cur || list[0]?.id || "");
+      setRungs((q as QualificationRung[]) ?? []);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [icNo, setIcNo] = useState(existing?.ic_no ?? "");
   const [dob, setDob] = useState(existing?.dob ?? "");
   const [designation, setDesignation] = useState(existing?.designation ?? "");
+  // What they hold now. Base salary follows it, so it has to be settable
+  // here: recording an existing qualification through a salary revision
+  // would mean inventing a pay change that never happened.
+  const [qualificationCode, setQualificationCode] = useState(existing?.qualification_code ?? "");
+  const [rungs, setRungs] = useState<QualificationRung[]>([]);
   const [employmentType, setEmploymentType] = useState<EmploymentType>(existing?.employment_type ?? "PERMANENT");
   // Who employs them. Immovable once set: changing it mid-life would detach the
   // person from the runs that have already paid them, so a move between
@@ -347,6 +357,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         ic_no: icNo.trim(),
         dob: dob || null,
         designation: designation.trim(),
+        qualification_code: qualificationCode || null,
         employment_type: employmentType,
         employer_id: employerId,
         is_pastor: isPastor,
@@ -504,6 +515,16 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
             <div><label className={labelCls}>I/C No</label><input className={inputCls} value={icNo} onChange={e => setIcNo(e.target.value)} /></div>
             <div><label className={labelCls}>Date of Birth</label><input type="date" className={inputCls} value={dob ?? ""} onChange={e => setDob(e.target.value)} /></div>
             <div><label className={labelCls}>Designation</label><input className={inputCls} value={designation} onChange={e => setDesignation(e.target.value)} /></div>
+            {rungs.length > 0 && (
+              <div>
+                <label className={labelCls}>Qualification</label>
+                <select className={inputCls} value={qualificationCode}
+                  onChange={e => setQualificationCode(e.target.value)}>
+                  <option value="">— none recorded —</option>
+                  {ladder(rungs).map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+                </select>
+              </div>
+            )}
             <div><label className={labelCls}>Date Commenced</label><input type="date" className={inputCls} value={dateCommenced ?? ""} onChange={e => setDateCommenced(e.target.value)} /></div>
             <div>
               <label className={labelCls}>Increment Month</label>
