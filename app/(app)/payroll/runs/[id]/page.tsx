@@ -12,6 +12,7 @@ import { calcLine, ageAt, grossForMonth, monthDays, type CalcLine, type RateConf
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
 import { ptptnDue, type PtptnDirection, type PtptnDeduction } from "@/lib/payroll/ptptn";
+import { inForceByPerson } from "@/lib/payroll/salary-in-force";
 
 /**
  * A handful of names in a warning, without becoming a wall of them: three, then
@@ -122,9 +123,11 @@ export default function PayrollRunDetailPage() {
     setBands((bandRows as ContributionBand[]) ?? []);
     setEmployees((emps as PayrollEmployee[]) ?? []);
 
-    const latest: Record<string, PayrollSalary> = {};
-    for (const s of (sals as PayrollSalary[]) ?? []) if (!(s.employee_id in latest)) latest[s.employee_id] = s;
-    setSalByEmp(latest);
+    // The salary in force for the month being paid, not simply the newest on
+    // record. A rise agreed in advance belongs to the month it is dated from:
+    // taking the newest row regardless would pay January's figure in December.
+    setSalByEmp(inForceByPerson(
+      (sals as PayrollSalary[]) ?? [], s => s.employee_id, runRow.year, runRow.month));
 
     const byEmp: Record<string, EmployeeLoan[]> = {};
     for (const ln of (lns as EmployeeLoan[]) ?? []) (byEmp[ln.employee_id] ??= []).push(ln);

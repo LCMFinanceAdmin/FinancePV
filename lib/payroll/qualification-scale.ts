@@ -32,13 +32,13 @@ export interface SalaryPoint {
 }
 
 /** The scale point in force for a rung on a day, or null if none is yet. */
-export function salaryPointOn(
+export function salaryPointOn<T extends SalaryPoint>(
   code: string | null | undefined,
   onDate: string,
-  points: readonly SalaryPoint[],
-): SalaryPoint | null {
+  points: readonly T[],
+): T | null {
   if (!code) return null;
-  let best: SalaryPoint | null = null;
+  let best: T | null = null;
   for (const p of points) {
     if (p.qualification_code !== code) continue;
     if (p.effective_from > onDate) continue;          // not in force yet
@@ -101,6 +101,38 @@ export function scaleMove(
     change: from === null || to === null ? null : to - from,
     direction,
   };
+}
+
+/**
+ * Where one person's salary stands against the figure for the rung they hold.
+ *
+ * Four answers, and the difference between two of them decides whether
+ * somebody's pay is changed in a bulk revision:
+ *
+ *   on           already the scale figure; nothing to do.
+ *   off          a different figure, with no reason recorded. This is what a
+ *                scale revision is for.
+ *   arrangement  a figure somebody agreed deliberately, recorded in
+ *                payroll_salary.special_arrangement. The revision form allows
+ *                a salary off the scale on purpose, so this is not an error
+ *                and is never swept up by a change made to everybody.
+ *   none         no salary in force, or no figure on the scale to compare to.
+ *                Nothing to carry forward, so nothing to do either.
+ */
+export type ScaleStanding = "on" | "off" | "arrangement" | "none";
+
+export function standingAgainstScale(
+  salary: { base_salary: number | string; special_arrangement?: string | null } | null,
+  figure: number | null,
+): { state: ScaleStanding; difference: number } {
+  if (!salary) return { state: "none", difference: 0 };
+  if ((salary.special_arrangement ?? "").trim() !== "") {
+    return { state: "arrangement", difference: 0 };
+  }
+  if (figure === null) return { state: "none", difference: 0 };
+  const difference = Number(salary.base_salary) - figure;
+  // Half a sen apart is the same figure stored two ways, not a pay difference.
+  return { state: Math.abs(difference) < 0.005 ? "on" : "off", difference };
 }
 
 /** What a rung is called, or null where the code names nothing. */

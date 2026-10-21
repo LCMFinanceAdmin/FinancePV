@@ -113,3 +113,70 @@ test("the ladder reads lowest rung first, equal rungs alphabetically", () => {
   // And the caller's array is left alone.
   assert.equal(RUNGS[0].code, "BTH");
 });
+
+// ---------------------------------------------------------------------------
+// Who is on the scale, and who is not
+//
+// If base salary follows the qualification, the scale and the salaries it
+// governs can drift apart. This decides whose pay a bulk revision changes, so
+// the line between "off the scale" and "agreed deliberately" is the whole of
+// it: cross that line the wrong way and somebody's negotiated salary is
+// quietly overwritten.
+// ---------------------------------------------------------------------------
+import { standingAgainstScale } from "@/lib/payroll/qualification-scale";
+
+test("the scale figure exactly is on the scale", () => {
+  assert.equal(standingAgainstScale({ base_salary: 4400 }, 4400).state, "on");
+  assert.equal(standingAgainstScale({ base_salary: 4400 }, 4400).difference, 0);
+});
+
+test("a different figure is off it, and says by how much", () => {
+  const under = standingAgainstScale({ base_salary: 4000 }, 4400);
+  assert.equal(under.state, "off");
+  assert.equal(under.difference, -400);
+
+  const over = standingAgainstScale({ base_salary: 4600 }, 4400);
+  assert.equal(over.state, "off");
+  assert.equal(over.difference, 200);
+});
+
+test("half a sen apart is the same figure stored two ways", () => {
+  // numeric comes back from the database as a string often enough that this
+  // has to survive both, and floating point has to not create work.
+  assert.equal(standingAgainstScale({ base_salary: "4400.00" }, 4400).state, "on");
+  assert.equal(standingAgainstScale({ base_salary: 4400.001 }, 4400).state, "on");
+  assert.equal(standingAgainstScale({ base_salary: 4400.01 }, 4400).state, "off");
+});
+
+test("a salary by special arrangement is never swept up", () => {
+  // The revision form allows a figure off the scale on purpose. Changing it
+  // because a scale moved would overwrite something somebody agreed.
+  const arranged = standingAgainstScale(
+    { base_salary: 5200, special_arrangement: "Agreed on appointment, EXCO 4 Feb 2025" }, 4400);
+  assert.equal(arranged.state, "arrangement");
+  // And no difference is reported, because there is nothing to reconcile.
+  assert.equal(arranged.difference, 0);
+});
+
+test("an empty arrangement note is not an arrangement", () => {
+  // Otherwise a stray space would exempt somebody from every scale revision
+  // for the rest of their employment.
+  for (const note of ["", "   ", null, undefined]) {
+    assert.equal(
+      standingAgainstScale({ base_salary: 4000, special_arrangement: note }, 4400).state,
+      "off", JSON.stringify(note));
+  }
+});
+
+test("nothing to compare means nothing to do", () => {
+  // No salary in force: there is nothing to carry forward.
+  assert.equal(standingAgainstScale(null, 4400).state, "none");
+  // No figure on the scale: there is nothing to move them to.
+  assert.equal(standingAgainstScale({ base_salary: 4000 }, null).state, "none");
+});
+
+test("an arrangement is left alone even with no figure on the scale", () => {
+  assert.equal(
+    standingAgainstScale({ base_salary: 5200, special_arrangement: "by agreement" }, null).state,
+    "arrangement");
+});
