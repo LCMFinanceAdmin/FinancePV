@@ -2,8 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, CalendarClock, CheckCircle2, ChevronRight, Church, FileText, HandCoins, Pencil, Percent, Plus, Search, Trash2, UserX, Users, Wallet, X,
-} from "lucide-react";
+  AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, CalendarClock, CheckCircle2, ChevronRight, Church, FileText, HandCoins, Pencil, Percent, Plus, Search, Trash2, UserX, Users, Wallet, X, GraduationCap } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { SALARY_BANK_NAMES } from "@/lib/banks";
 import { formatCurrency } from "@/lib/utils";
@@ -1024,6 +1023,10 @@ export default function PayrollPage() {
           </Link>
           <Link href="/payroll/rates" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50 hover:border-[#4a6da7]/40 hover:text-[#4a6da7] transition-colors">
             <Percent size={15} /> Rates
+          </Link>
+          {/* The statutory rates are the government's; the scale is LCM's. */}
+          <Link href="/payroll/scale" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50 hover:border-[#4a6da7]/40 hover:text-[#4a6da7] transition-colors">
+            <GraduationCap size={15} /> Salary scale
           </Link>
           {canEdit && (
             <button onClick={() => { setModalEmp(null); setShowModal(true); }}

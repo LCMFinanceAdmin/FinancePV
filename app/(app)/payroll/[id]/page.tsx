@@ -8,6 +8,10 @@ import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
+import {
+  ladder, labelOf, scaleMove,
+  type QualificationRung, type SalaryPoint,
+} from "@/lib/payroll/qualification-scale";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem,
   PayrollAdjustment, AdjustmentCategory } from "@/lib/types";
 import { ADJUSTMENT_CATEGORIES, adjustmentLabel } from "@/lib/types";
@@ -2320,6 +2324,12 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
+  // The ladder and what each rung is worth. Base salary follows the
+  // qualification somebody holds, so a revision usually begins by saying which
+  // one they now hold and letting the scale supply the figure.
+  const [rungs, setRungs] = useState<QualificationRung[]>([]);
+  const [points, setPoints] = useState<SalaryPoint[]>([]);
+  const [qualification, setQualification] = useState<string>(latest.qualification_code ?? "");
   const [reason, setReason] = useState("");
   const [vals, setVals] = useState({
     base_salary: String(latest.base_salary),
@@ -2330,6 +2340,28 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
     stm_allowance: String(latest.stm_allowance),
   });
 
+  useEffect(() => {
+    (async () => {
+      const [{ data: q }, { data: p }] = await Promise.all([
+        supabase.from("qualifications").select("code, label, rank").order("rank"),
+        supabase.from("qualification_salary_points").select("qualification_code, base_salary, effective_from"),
+      ]);
+      setRungs((q ?? []) as QualificationRung[]);
+      setPoints((p ?? []) as SalaryPoint[]);
+    })();
+  }, [supabase]);
+
+  // What the scale says for the qualification chosen, on the day the revision
+  // takes effect. Offered rather than applied: the figure goes in only when
+  // somebody presses the button, because a salary is not always the scale
+  // point — a special arrangement is a real thing and overwriting it silently
+  // would be worse than making this a second click.
+  const held = latest.qualification_code ?? "";
+  const move = scaleMove(held, qualification, effectiveFrom, points, rungs);
+  const scaleFigure = move.to;
+  const matchesScale = scaleFigure !== null
+    && Math.abs((parseFloat(vals.base_salary) || 0) - scaleFigure) < 0.005;
+
   async function save() {
     setError(""); setSaving(true);
     try {
@@ -2337,6 +2369,7 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
       const { error: e } = await supabase.from("payroll_salary").insert({
         employee_id: employeeId,
         effective_from: effectiveFrom,
+        qualification_code: qualification || null,
         base_salary: parseFloat(vals.base_salary) || 0,
         increment_carried: parseFloat(vals.increment_carried) || 0,
         increment_current: parseFloat(vals.increment_current) || 0,
@@ -2347,11 +2380,23 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
         created_by: session?.user?.email ?? "",
       });
       if (e) throw new Error(e.message);
+      // The employee record carries what they hold now; the salary rows carry
+      // what each salary was set against. Both have to move together or the
+      // next revision would start from the old qualification.
+      if ((qualification || null) !== (latest.qualification_code ?? null)) {
+        await supabase.from("payroll_employees")
+          .update({ qualification_code: qualification || null })
+          .eq("id", employeeId);
+      }
       const newGross = (["base_salary", "increment_carried", "increment_current", "experience_bonus", "family_allowance", "stm_allowance"] as const)
         .reduce((s, k) => s + (parseFloat(vals[k]) || 0), 0);
       await logPayrollAudit(supabase, {
         action: "SALARY_CHANGE", employeeId,
-        detail: `Revision effective ${effectiveFrom} — gross RM ${num(newGross)} (${reason.trim() || "Salary revision"})`,
+        detail: `Revision effective ${effectiveFrom} — gross RM ${num(newGross)}`
+              + (qualification && qualification !== held
+                  ? ` · ${labelOf(rungs, held) ?? "no qualification"} → ${labelOf(rungs, qualification)}`
+                  : "")
+              + ` (${reason.trim() || "Salary revision"})`,
       });
       onSaved();
     } catch (e: unknown) {
@@ -2383,11 +2428,62 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className={labelCls}>Effective From</label><input type="date" className={inputCls} value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)} /></div>
             <div><label className={labelCls}>Reason</label><input className={inputCls} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Annual increment 2026" /></div>
+            {rungs.length > 0 && (
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Qualification</label>
+                <select className={inputCls} value={qualification}
+                  onChange={e => setQualification(e.target.value)}>
+                  <option value="">— none recorded —</option>
+                  {ladder(rungs).map(r => (
+                    <option key={r.code} value={r.code}>{r.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-stone-400">
+                  Base salary follows the qualification held. Changing it here records what
+                  this salary was set against.
+                </p>
+              </div>
+            )}
             {fields.map(f => (
               <div key={f.key}><label className={labelCls}>{f.label}</label>
                 <input type="number" className={inputCls} value={vals[f.key]} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))} /></div>
             ))}
           </div>
+
+          {/* What the scale says for the rung chosen, on the day this takes
+              effect. A rung nobody has priced says so rather than offering
+              nothing and letting the old figure stand unremarked. */}
+          {qualification && (
+            <div className={`rounded-xl border-2 px-3 py-2.5 text-[12px] ${
+              scaleFigure === null ? "border-amber-300 bg-amber-50 text-amber-900"
+              : matchesScale ? "border-green-200 bg-green-50 text-green-800"
+              : "border-[#bcd3f0] bg-[#eef5ff] text-[#173a72]"}`}>
+              {scaleFigure === null ? (
+                <>No figure is set for {labelOf(rungs, qualification)} on {effectiveFrom}.{" "}
+                  <Link href="/payroll/scale" className="font-semibold underline">Set the scale</Link>,
+                  or type the base salary below if this one is by arrangement.</>
+              ) : matchesScale ? (
+                <>Base salary matches the scale for {labelOf(rungs, qualification)}.</>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    The scale for {labelOf(rungs, qualification)} on this date is{" "}
+                    <b className="tabular-nums">RM {num(scaleFigure)}</b>
+                    {move.from !== null && qualification !== held && (
+                      <> — {move.direction === "down" ? "down" : "up"} RM{" "}
+                        <b className="tabular-nums">{num(Math.abs(move.change ?? 0))}</b>{" "}
+                        from {labelOf(rungs, held)}</>
+                    )}.
+                  </span>
+                  <button type="button"
+                    onClick={() => setVals(v => ({ ...v, base_salary: String(scaleFigure) }))}
+                    className="shrink-0 rounded-lg bg-[#4a6da7] px-2.5 py-1 text-[11.5px] font-semibold text-white hover:bg-[#3d5c8f]">
+                    Use the scale figure
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex gap-2 px-5 py-4 border-t border-stone-200">
           <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">{saving ? "Saving…" : "Save Revision"}</button>

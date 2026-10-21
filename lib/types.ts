@@ -557,6 +557,15 @@ export interface PayrollSalary {
   increment_carried: number;
   increment_current: number;
   reason: string;
+  /**
+   * The qualification this salary was set against — see migration 252.
+   *
+   * LCM sets base salary by the qualification somebody holds, so recording it
+   * on the salary row makes the salary history double as the record of when
+   * somebody's qualification changed and what it did to their pay. Null for
+   * rows written before the scale existed, and for salaries not set this way.
+   */
+  qualification_code?: string | null;
   created_by: string;
   created_at: string;
 }
