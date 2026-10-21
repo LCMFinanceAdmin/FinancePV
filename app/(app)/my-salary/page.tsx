@@ -43,7 +43,7 @@ interface Line {
   id: string; run_id: string; employee_id: string; employee_name: string;
   gross: number; pcb: number; epf_ee: number; epf_er: number;
   socso_ee: number; socso_er: number; eis_ee: number; eis_er: number;
-  epl: number; net: number; skbbk: number;
+  epl: number; ptptn?: number; net: number; skbbk: number;
   custom_items: unknown; adjustments: unknown;
 }
 
@@ -149,6 +149,7 @@ function MySalaryInner() {
           eisEe={Number(line.eis_ee)} eisEr={Number(line.eis_er)}
           skbbk={Number(line.skbbk) || 0}
           eplDeduction={Number(line.epl)}
+          ptptnDeduction={Number(line.ptptn ?? 0)}
           net={Number(line.net)}
           month={run.month}
           is13thMonth={run.month === 13}

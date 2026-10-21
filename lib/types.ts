@@ -631,6 +631,8 @@ export interface PayrollLine {
   socso_ee: number; socso_er: number;
   eis_ee: number; eis_er: number;
   epl: number;
+  /** PTPTN withheld and remitted — see migration 253. */
+  ptptn?: number;
   net: number;
   total_lcm: number;
   custom_items: CustomPayrollItem[];

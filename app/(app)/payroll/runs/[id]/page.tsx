@@ -11,6 +11,7 @@ import { generateStatutorySummary } from "@/components/payroll/statutory-summary
 import { calcLine, ageAt, grossForMonth, monthDays, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
+import { ptptnDue, type PtptnDirection, type PtptnDeduction } from "@/lib/payroll/ptptn";
 
 /**
  * A handful of names in a warning, without becoming a wall of them: three, then
@@ -26,6 +27,7 @@ function listNames(names: string[]): string {
 
 /** Only the fields the balance needs; the full row lives in the table. */
 interface LoanRepaymentRow { loan_id: string; amount: number; payroll_run_id: string | null }
+type PtptnRow = PtptnDirection & { employee_id: string };
 import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem, PayrollAdjustmentSnapshot } from "@/lib/types";
 
 const MONTH_LABELS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "13th Month"];
@@ -49,6 +51,11 @@ export default function PayrollRunDetailPage() {
   const [employees, setEmployees] = useState<PayrollEmployee[]>([]);
   const [salByEmp, setSalByEmp] = useState<Record<string, PayrollSalary>>({});
   const [loansByEmp, setLoansByEmp] = useState<Record<string, EmployeeLoan[]>>({});
+  // PTPTN directions and what has been deducted against them. LCM is not
+  // the lender, so the amount comes from what PTPTN advised and what has
+  // been taken since, and never exceeds that record.
+  const [ptptnByEmp, setPtptnByEmp] = useState<Record<string, PtptnRow[]>>({});
+  const [ptptnTaken, setPtptnTaken] = useState<PtptnDeduction[]>([]);
   const [repayments, setRepayments] = useState<LoanRepaymentRow[]>([]);
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [lines, setLines] = useState<PayrollLine[]>([]);
@@ -90,7 +97,8 @@ export default function PayrollRunDetailPage() {
     setRun(runRow);
     if (!runRow) { setLoading(false); return; }
 
-    const [{ data: rateRow }, { data: bandRows }, { data: emps }, { data: sals }, { data: lns }, { data: reps }] = await Promise.all([
+    const [{ data: rateRow }, { data: bandRows }, { data: emps }, { data: sals }, { data: lns }, { data: reps },
+           { data: ptptnRows }, { data: ptptnDeds }] = await Promise.all([
       supabase.from("payroll_statutory_rates").select("*").eq("year", runRow.year).maybeSingle(),
       // PERKESO's schedule for the year. calcLine uses it where it covers the
       // wage and falls back to the percentage where it does not.
@@ -106,6 +114,9 @@ export default function PayrollRunDetailPage() {
       // What has actually been repaid — the deduction is worked out from the
       // balance, not from where the schedule says we ought to be by now.
       supabase.from("loan_repayments").select("loan_id,amount,payroll_run_id"),
+      // Directed by PTPTN, collected by LCM, handed on.
+      supabase.from("employee_ptptn").select("*").eq("status", "ACTIVE"),
+      supabase.from("ptptn_deductions").select("ptptn_id,year,month,amount,payroll_run_id"),
     ]);
     setRates((rateRow as RateConfig) ?? undefined);
     setBands((bandRows as ContributionBand[]) ?? []);
@@ -119,6 +130,11 @@ export default function PayrollRunDetailPage() {
     for (const ln of (lns as EmployeeLoan[]) ?? []) (byEmp[ln.employee_id] ??= []).push(ln);
     setLoansByEmp(byEmp);
     setRepayments((reps as LoanRepaymentRow[]) ?? []);
+
+    const ptptnBy: Record<string, PtptnRow[]> = {};
+    for (const d of (ptptnRows as PtptnRow[]) ?? []) (ptptnBy[d.employee_id] ??= []).push(d);
+    setPtptnByEmp(ptptnBy);
+    setPtptnTaken((ptptnDeds as PtptnDeduction[]) ?? []);
 
     if (runRow.status !== "DRAFT") {
       const [{ data: pl }, { data: pv }] = await Promise.all([
@@ -219,12 +235,17 @@ export default function PayrollRunDetailPage() {
       const gross = grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override, days);
       const epl = is13th ? 0 : (loansByEmp[e.id] ?? []).reduce((s, ln) =>
         s + dueFromBalance(ln, repayments, run.year, run.month, run.id).amount, 0);
+      // This run's own rows are excluded so recalculating a draft does not
+      // count what it already took against the balance it is working from.
+      const ptptn = (ptptnByEmp[e.id] ?? []).reduce((s, d) =>
+        s + ptptnDue(d, ptptnTaken, run.year, run.month, run.id).amount, 0);
       const line = calcLine({
         gross, age: ageAt(e.dob, run.year, ageMonth), employmentType: e.employment_type,
         month: run.month, bands,
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
         skbbkOptedOut: e.skbbk_opted_out, epfOver60Contributing: e.epf_over60_contributing,
-        manualPcb: pcb[e.id] || 0, eplDeduction: epl, is13thMonth: is13th, rates,
+        manualPcb: pcb[e.id] || 0, eplDeduction: epl, ptptnDeduction: ptptn,
+        is13thMonth: is13th, rates,
         customItems: empCustomItems[e.id] ?? [],
         adjustments: empAdjustments[e.id] ?? [],
       });
@@ -268,7 +289,7 @@ export default function PayrollRunDetailPage() {
         epfEe: line.epf.ee, epfEr: line.epf.er,
         socsoEe: line.socso.ee, socsoEr: line.socso.er,
         eisEe: line.eis.ee, eisEr: line.eis.er, skbbk: line.skbbk,
-        eplDeduction: line.eplDeduction, net: line.net,
+        eplDeduction: line.eplDeduction, ptptnDeduction: line.ptptnDeduction, net: line.net,
         customItems: (line.customItems as CustomPayrollItem[]),
         adjustments: line.adjustments,
       }))
@@ -281,7 +302,7 @@ export default function PayrollRunDetailPage() {
           epfEe: Number(l.epf_ee), epfEr: Number(l.epf_er),
           socsoEe: Number(l.socso_ee), socsoEr: Number(l.socso_er),
           eisEe: Number(l.eis_ee), eisEr: Number(l.eis_er), skbbk: Number(l.skbbk ?? 0),
-          eplDeduction: Number(l.epl), net: Number(l.net),
+          eplDeduction: Number(l.epl), ptptnDeduction: Number(l.ptptn ?? 0), net: Number(l.net),
           customItems: (l.custom_items as CustomPayrollItem[]) ?? [],
           // The snapshot, not today's adjustment rows: an issued payslip must
           // keep saying what it said when it was issued.
@@ -335,7 +356,8 @@ export default function PayrollRunDetailPage() {
         socso_ee: line.socso.ee, socso_er: line.socso.er,
         skbbk: line.skbbk,
         eis_ee: line.eis.ee, eis_er: line.eis.er,
-        epl: line.eplDeduction, net: line.net, total_lcm: line.totalLcmPayment,
+        epl: line.eplDeduction, ptptn: line.ptptnDeduction,
+        net: line.net, total_lcm: line.totalLcmPayment,
         custom_items: line.customItems,
         // Snapshotted with the rest. The figures above are already corrected;
         // this is what lets a payslip issued today still say why, after the
@@ -372,11 +394,24 @@ export default function PayrollRunDetailPage() {
             : [];
         }));
 
+      // PTPTN taken this month. Written by the same call that writes the
+      // lines: money shown as withheld on a payslip and not recorded as taken
+      // is the one outcome worth a transaction.
+      const ptptnRowsOut = is13th ? [] : computed.flatMap(({ emp }) =>
+        (ptptnByEmp[emp.id] ?? []).flatMap(d => {
+          const due = ptptnDue(d, ptptnTaken, run.year, run.month, run.id);
+          return due.amount > 0
+            ? [{ ptptn_id: d.id, year: run.year, month: run.month,
+                 amount: due.amount, balance_after: due.balanceAfter }]
+            : [];
+        }));
+
       const { error } = await supabase.rpc("finalize_payroll_run", {
         p_run_id: run.id,
         p_lines: lineRows,
         p_vouchers: voucherRows,
         p_repayments: repaymentRows,
+        p_ptptn: ptptnRowsOut,
         p_totals: {
           total_gross: tGross, total_net: tNet,
           total_employer: tEr, total_lcm: tGross + tEr,
@@ -457,7 +492,7 @@ export default function PayrollRunDetailPage() {
             socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
             month={run.month} is13thMonth={run.month === 13}
             eisEe={row.eisEe} eisEr={row.eisEr}
-            eplDeduction={row.eplDeduction} net={row.net}
+            eplDeduction={row.eplDeduction} ptptnDeduction={row.ptptnDeduction} net={row.net}
             customItems={row.customItems}
           />
         ).toBlob();
@@ -595,6 +630,7 @@ export default function PayrollRunDetailPage() {
       await supabase.from("payroll_vouchers").delete().eq("run_id", run.id);
       await supabase.from("payroll_lines").delete().eq("run_id", run.id);
       await supabase.from("loan_repayments").delete().eq("payroll_run_id", run.id);
+      await supabase.from("ptptn_deductions").delete().eq("payroll_run_id", run.id);
 
       await supabase.from("payroll_runs").update({
         status: "DRAFT", finalized_at: null,
@@ -1091,7 +1127,7 @@ interface PayslipRow {
   socsoEe: number; socsoEr: number;
   skbbk?: number;
   eisEe: number; eisEr: number;
-  eplDeduction: number; net: number;
+  eplDeduction: number; ptptnDeduction: number; net: number;
   customItems: CustomPayrollItem[];
   adjustments?: PayrollAdjustmentSnapshot[];
 }
@@ -1148,7 +1184,7 @@ function SendPayslipModal({ run, rows, onClose }: {
           socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
             month={run.month} is13thMonth={run.month === 13}
           eisEe={row.eisEe} eisEr={row.eisEr}
-          eplDeduction={row.eplDeduction} net={row.net}
+          eplDeduction={row.eplDeduction} ptptnDeduction={row.ptptnDeduction} net={row.net}
           customItems={row.customItems}
         />
       ).toBlob();
@@ -1220,7 +1256,8 @@ function SendPayslipModal({ run, rows, onClose }: {
             salary={row.salary} gross={row.gross} pcbVal={row.pcbVal}
             epfEe={row.epfEe} epfEr={row.epfEr} socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
             month={run.month} is13thMonth={run.month === 13}
-            eisEe={row.eisEe} eisEr={row.eisEr} eplDeduction={row.eplDeduction} net={row.net}
+            eisEe={row.eisEe} eisEr={row.eisEr} eplDeduction={row.eplDeduction}
+            ptptnDeduction={row.ptptnDeduction} net={row.net}
             customItems={row.customItems} />
         ).toBlob();
         const fileName = `Payslip_${row.emp.full_name.replace(/\s+/g, "_")}_${monthLabel}_${run.year}.pdf`;

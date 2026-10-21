@@ -150,6 +150,10 @@ export interface CalcInput {
   voluntaryEpf: number;        // fixed RM, added to employee EPF
   manualPcb: number;           // keyed by Finance
   eplDeduction: number;        // monthly loan installment
+  // Directed by PTPTN and remitted to them. A deduction like EPF or SOCSO in
+  // handling, but owed by the employee to a third party rather than to LCM,
+  // which is why it is its own figure and not an EPL instalment.
+  ptptnDeduction?: number;
   is13thMonth: boolean;        // 13th month: EPF + PCB only, no SOCSO/EIS
   skbbkOptedOut?: boolean;     // opted out of SKBBK (Lindung 24) — then nothing is deducted
   /**
@@ -214,7 +218,8 @@ export interface CalcLine {
   skbbk: number;
   totalContrib: StatPortion;   // EPF + EIS + SOCSO, per side
   eplDeduction: number;
-  net: number;                 // gross − pcb − employee contributions − SKBBK − EPL ± custom items
+  ptptnDeduction: number;
+  net: number;                 // gross − pcb − employee contributions − SKBBK − EPL − PTPTN ± custom items
   totalLcmPayment: number;     // gross + employer contributions + custom allowances
   customAllowances: number;
   customDeductions: number;
@@ -458,6 +463,7 @@ function epfContribution(gross: number, rate: number, threshold: number): number
 
 export function calcLine(input: CalcInput): CalcLine {
   const { gross, voluntaryEpf, manualPcb, eplDeduction, is13thMonth } = input;
+  const ptptn = Number(input.ptptnDeduction) || 0;
   const rates = input.rates ?? DEFAULT_RATES;
 
   // EPF — applies to both normal and 13th-month
@@ -562,7 +568,7 @@ export function calcLine(input: CalcInput): CalcLine {
   // and on what the church pays out. Every other category has already moved net
   // by moving the figure it names.
   const net = round2(grossAdj - pcbAdj - totalContrib.ee - skbbkAdj - (eplDeduction || 0)
-    - customDeductions + customAllowances + adj.NET);
+    - ptptn - customDeductions + customAllowances + adj.NET);
   const totalLcmPayment = round2(grossAdj + totalContrib.er + customAllowances + adj.NET);
 
   return {
@@ -570,6 +576,7 @@ export function calcLine(input: CalcInput): CalcLine {
     pcb: pcbAdj,
     epf: epfAdj, eis: eisAdj, socso: socsoAdj, skbbk: skbbkAdj, totalContrib,
     eplDeduction: round2(eplDeduction || 0),
+    ptptnDeduction: round2(ptptn),
     net,
     totalLcmPayment,
     customAllowances,

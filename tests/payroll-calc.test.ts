@@ -131,3 +131,36 @@ test("a part month is paid in proportion, and says so on the payslip", () => {
   assert.equal(parts[parts.length - 1].label, "Incomplete month (17 of 31 days, joined)",
     "the reduction is named rather than shrinking every line");
 });
+
+// ── PTPTN ────────────────────────────────────────────────────────────────
+
+test("PTPTN comes off take-home and nothing else", () => {
+  // It is the employee's debt to a third party. LCM holds the money back and
+  // hands it on, so it reduces what reaches the employee and leaves every
+  // contribution, and what LCM pays out in total, exactly where they were.
+  const without = line({});
+  const with_ = line({ ptptnDeduction: 150 });
+
+  assert.equal(with_.net, Number((without.net - 150).toFixed(2)));
+  assert.equal(with_.ptptnDeduction, 150);
+  assert.equal(with_.gross, without.gross, "gross is untouched");
+  assert.equal(with_.epf.ee, without.epf.ee, "EPF is on gross, not on what is left");
+  assert.equal(with_.socso.ee, without.socso.ee);
+  assert.equal(with_.pcb, without.pcb);
+  assert.equal(with_.totalLcmPayment, without.totalLcmPayment,
+    "LCM pays out the same; it simply hands part of it to PTPTN");
+});
+
+test("PTPTN and a staff loan both come off, and neither swallows the other", () => {
+  const both = line({ eplDeduction: 300, ptptnDeduction: 150 });
+  const neither = line({});
+  assert.equal(both.net, Number((neither.net - 450).toFixed(2)));
+  assert.equal(both.eplDeduction, 300);
+  assert.equal(both.ptptnDeduction, 150);
+});
+
+test("no PTPTN direction is zero, not undefined, on the line", () => {
+  // The payslip and the yearly sheet read this field; undefined would print
+  // as blank where a figure is expected.
+  assert.equal(line({}).ptptnDeduction, 0);
+});

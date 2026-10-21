@@ -1024,6 +1024,10 @@ export default function PayrollPage() {
           <Link href="/payroll/rates" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50 hover:border-[#4a6da7]/40 hover:text-[#4a6da7] transition-colors">
             <Percent size={15} /> Rates
           </Link>
+          {/* PTPTN sits beside Loans, not inside it: LCM is not the lender. */}
+          <Link href="/payroll/ptptn" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50 hover:border-[#4a6da7]/40 hover:text-[#4a6da7] transition-colors">
+            <GraduationCap size={15} /> PTPTN
+          </Link>
           {/* The statutory rates are the government's; the scale is LCM's. */}
           <Link href="/payroll/scale" className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50/50 hover:border-[#4a6da7]/40 hover:text-[#4a6da7] transition-colors">
             <GraduationCap size={15} /> Salary scale

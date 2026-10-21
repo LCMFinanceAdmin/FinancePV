@@ -123,6 +123,8 @@ export interface PayslipPDFProps {
   eisEe: number; eisEr: number;
   skbbk?: number;
   eplDeduction: number;
+  /** Withheld for PTPTN and remitted to them. */
+  ptptnDeduction?: number;
   net: number;
   customItems: { label: string; type: "allowance" | "deduction"; amount: number }[];
   /**
@@ -150,7 +152,7 @@ export interface PayslipPDFProps {
 export function PayslipPDF({
   emp, monthLabel, year, salary,
   gross, pcbVal, epfEe, epfEr, socsoEe, socsoEr, eisEe, eisEr, skbbk = 0,
-  eplDeduction, net, customItems, adjustments = [], month, is13thMonth = false,
+  eplDeduction, ptptnDeduction = 0, net, customItems, adjustments = [], month, is13thMonth = false,
 }: PayslipPDFProps) {
   const dept = emp.posting_type === "CHURCH"
     ? `${(emp.designation || "PASTOR").toUpperCase()} - ${(emp.church_name || "").toUpperCase()}`
@@ -199,6 +201,9 @@ export function PayslipPDF({
     { label: "Employee EIS", amount: eisEe },
     ...(pcbVal !== 0 ? [{ label: "PCB (Income Tax)", amount: pcbVal }] : []),
     ...(eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: eplDeduction }] : []),
+    // Named in full: the person reading this is the borrower, and "PTPTN" is
+    // what their own statement from PTPTN will call it.
+    ...(ptptnDeduction > 0 ? [{ label: "PTPTN", amount: ptptnDeduction }] : []),
     ...customItems.filter(i => i.type === "deduction").map(i => ({ label: i.label, amount: i.amount })),
     // A net-only correction belongs to no scheme, so it has no figure of its
     // own to sit inside. It goes here with its sign flipped — paying somebody
@@ -207,7 +212,7 @@ export function PayslipPDF({
     ...netAdjustments.map(a => ({ label: a.reason || "Adjustment", amount: -Number(a.amount) })),
   ];
 
-  const totalDeductions = epfEe + socsoEe + skbbk + eisEe + pcbVal + eplDeduction +
+  const totalDeductions = epfEe + socsoEe + skbbk + eisEe + pcbVal + eplDeduction + ptptnDeduction +
     customItems.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0)
     - netAdjustments.reduce((s, a) => s + Number(a.amount), 0);
 
@@ -401,10 +406,16 @@ export function PayslipPDF({
           <View style={s.p2}>
             <Text style={s.p2Title}>—DEDUCTION—</Text>
             <Text style={s.p2Sub}>-Amt-</Text>
-            {eplDeduction > 0 ? (
+            {eplDeduction > 0 || ptptnDeduction > 0 ? (
               <>
-                <Text style={s.p2Item}>EPL</Text>
-                <Text style={s.p2Amt}>{n(eplDeduction)}</Text>
+                {eplDeduction > 0 && (<>
+                  <Text style={s.p2Item}>EPL</Text>
+                  <Text style={s.p2Amt}>{n(eplDeduction)}</Text>
+                </>)}
+                {ptptnDeduction > 0 && (<>
+                  <Text style={s.p2Item}>PTPTN</Text>
+                  <Text style={s.p2Amt}>{n(ptptnDeduction)}</Text>
+                </>)}
               </>
             ) : (
               <Text style={[s.p2Item, { color: "#d6d3d1" }]}>—</Text>
