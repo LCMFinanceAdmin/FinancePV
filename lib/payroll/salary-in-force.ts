@@ -79,3 +79,32 @@ export function inForceByPerson<T extends EffectiveDated>(
   }
   return out;
 }
+
+/**
+ * The version in force, or the earliest on record where the month precedes
+ * all of them.
+ *
+ * For a payroll run, `inForceFor` is right: paying somebody a salary that had
+ * not taken effect is a real mistake, and a missing one should stop the run
+ * rather than be guessed.
+ *
+ * A yearly sheet is a different question. It shows a year that mostly happened
+ * before this system held the figures — an import brings one run's worth of
+ * history across, so a record effective in August does not mean somebody was
+ * unpaid until August. Emptying those months would be a different wrong
+ * answer, and a louder one, so the earliest figure held stands in for them.
+ */
+export function inForceOrEarliest<T extends EffectiveDated>(
+  rows: readonly T[],
+  year: number,
+  month: number,
+): T | null {
+  const held = inForceFor(rows, year, month);
+  if (held) return held;
+  let earliest: T | null = null;
+  for (const row of rows) {
+    if (!row.effective_from) continue;
+    if (!earliest || row.effective_from < earliest.effective_from) earliest = row;
+  }
+  return earliest;
+}

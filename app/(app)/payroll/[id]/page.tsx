@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, figureOf, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
+import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import {
   ladder, labelOf, scaleMove,
@@ -343,6 +344,30 @@ export default function PayrollEmployeePage() {
   if (!emp) return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Employee not found.</div>;
 
   const current = salaries[0] ?? null;
+  // `salaries` is newest first, so the last of them is the earliest on record.
+  const earliestSalary = salaries.length > 0 ? salaries[salaries.length - 1] : null;
+
+  /**
+   * The salary in force for a month of this year.
+   *
+   * The sheet used to put the newest salary against every month, so a rise
+   * effective in November was shown as though it had been paid since January —
+   * eleven months of a figure nobody was on. A revision is dated, and the sheet
+   * has to read those dates or it contradicts the payslips it is there to be
+   * checked against.
+   *
+   * Months before the earliest record fall back to it rather than emptying.
+   * A record effective 1 August does not mean somebody was unpaid until
+   * August; it means that is the earliest figure held, because the import
+   * brought one run's worth of history across. Showing nothing for the months
+   * before it would be a different wrong answer, and a louder one.
+   */
+  const salaryForMonth = (m: number): PayrollSalary | null =>
+    inForceOrEarliest(salaries, year, m);
+
+  /** Months of this year that sit before anything on record. */
+  const inferredBefore: string | null =
+    earliestSalary && !inForceFor(salaries, year, 1) ? earliestSalary.effective_from : null;
   // "Other" is where a pastor sits until their congregation is recorded, so it
   // falls back to the department rather than printing a dash beside the word.
   const posting = emp.posting_type === "CHURCH" ? emp.church_name : emp.department;
@@ -422,13 +447,16 @@ export default function PayrollEmployeePage() {
    * see. The sheet itself passes its own adjustments and is unchanged.
    */
   const lineForMonth = (m: number, adj: ReturnType<typeof adjInput>): CalcLine | null => {
-    if (!current) return null;
+    const sal = salaryForMonth(m);
+    if (!sal) return null;
     // The 13th month is a payment of its own: a full gross, no pro-rating, no
     // loan instalment, and Orang Asli are excluded from it altogether.
     if (m === 13) {
       if (emp.is_orang_asli) return null;
       return calcLine({
-        gross: fullGrossVal,
+        // The 13th month is paid on December's salary, being a payment for the
+        // year rather than a fourteenth month of it.
+        gross: grossOf(salaryForMonth(12) ?? sal),
         age: ageAt(emp.dob, year, 12),
         employmentType: emp.employment_type,
         isOrangAsli: emp.is_orang_asli,
@@ -448,7 +476,7 @@ export default function PayrollEmployeePage() {
       // or left part-way through is pro-rated here too. Without this the
       // sheet and the run disagree about the same month, and the sheet is
       // what people check the run against.
-      gross: grossForMonth(current, emp.date_commenced, m, false, emp.increment_month_override,
+      gross: grossForMonth(sal, emp.date_commenced, m, false, emp.increment_month_override,
         monthDays(emp.date_commenced, emp.resigned_date, year, m)),
       age: ageAt(emp.dob, year, m),
       month: m,
@@ -468,7 +496,7 @@ export default function PayrollEmployeePage() {
   };
 
   const monthLines: CalcLine[] = current
-    ? MONTHS.map((_, i) => lineForMonth(i + 1, adjInput(i + 1))!)
+    ? MONTHS.map((_, i) => lineForMonth(i + 1, adjInput(i + 1))!).filter(Boolean)
     : [];
   /**
    * What a figure stands at for a month, leaving out the adjustments of that
@@ -1116,6 +1144,17 @@ export default function PayrollEmployeePage() {
                 </ul>
               )}
             </div>
+
+            {/* Said once, under the sheet, rather than on each of seven cells:
+                the figures before the first record are the earliest one held,
+                not something anybody entered for those months. */}
+            {inferredBefore && (
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-1.5 text-[11.5px] text-amber-900">
+                No salary is recorded before {new Date(inferredBefore + "T00:00:00").toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" })}.
+                The months before it are shown at the earliest figure on record, which is what
+                the import brought across — not a figure entered for those months.
+              </p>
+            )}
 
             <p className="text-[11px] text-stone-400 mt-3">
               EPF / SOCSO / EIS auto-calculated from the {rates ? year : "default"} rate table (<Link href="/payroll/rates" className="text-[#4a6da7] hover:underline">edit rates</Link>);

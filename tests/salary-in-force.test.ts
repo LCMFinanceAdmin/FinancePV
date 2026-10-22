@@ -89,3 +89,57 @@ test("each person gets their own, and somebody with none is left out", () => {
 test("the order rows arrive in does not matter", () => {
   assert.equal(inForceFor([...HISTORY].reverse(), 2026, 6)?.tag, "2026 scale");
 });
+
+// ---------------------------------------------------------------------------
+// The yearly sheet's version of the question
+//
+// A run must not pay a salary that had not taken effect. A yearly sheet shows
+// a year that mostly happened before this system held the figures, so the two
+// want different answers for a month with nothing in force.
+// ---------------------------------------------------------------------------
+import { inForceOrEarliest } from "@/lib/payroll/salary-in-force";
+
+// EMP-070 as the records actually stand: an import effective 1 August 2026,
+// then a rise on 1 November for a doctorate. He has been employed since 2006.
+const IMPORTED = [
+  { effective_from: "2026-08-01", base: 6120, created_at: "" },
+  { effective_from: "2026-11-01", base: 6670, created_at: "" },
+];
+
+test("the rise shows in the months it was effective for, and no earlier", () => {
+  // The bug: the sheet put 6,670 against every month of 2026, so a rise
+  // effective in November read as though it had been paid since January.
+  for (const m of [11, 12]) {
+    assert.equal(inForceOrEarliest(IMPORTED, 2026, m)?.base, 6670, `month ${m}`);
+  }
+  for (const m of [8, 9, 10]) {
+    assert.equal(inForceOrEarliest(IMPORTED, 2026, m)?.base, 6120, `month ${m}`);
+  }
+});
+
+test("months before anything on record stand at the earliest figure held", () => {
+  // An import brings one run's worth of history across, so a record effective
+  // in August does not mean he was unpaid from January to July. Emptying
+  // those months would be a different wrong answer, and a louder one.
+  for (const m of [1, 5, 7]) {
+    assert.equal(inForceOrEarliest(IMPORTED, 2026, m)?.base, 6120, `month ${m}`);
+  }
+  // Which a run must not do: there it is nothing, and nothing is correct.
+  assert.equal(inForceFor(IMPORTED, 2026, 1), null);
+});
+
+test("the 13th month follows December", () => {
+  assert.equal(inForceOrEarliest(IMPORTED, 2026, 13)?.base, 6670);
+});
+
+test("the earliest is found whatever order the rows arrive in", () => {
+  assert.equal(inForceOrEarliest([...IMPORTED].reverse(), 2026, 3)?.base, 6120);
+});
+
+test("no records at all is still nothing", () => {
+  assert.equal(inForceOrEarliest([], 2026, 6), null);
+});
+
+test("a later year still reads the latest, not the earliest", () => {
+  assert.equal(inForceOrEarliest(IMPORTED, 2027, 6)?.base, 6670);
+});
