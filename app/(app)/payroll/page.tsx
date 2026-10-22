@@ -123,6 +123,9 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
   // here: recording an existing qualification through a salary revision
   // would mean inventing a pay change that never happened.
   const [qualificationCode, setQualificationCode] = useState(existing?.qualification_code ?? "");
+  // When they got it. The rise runs from the month after, so the date the
+  // certificate is dated matters more than the day it reaches the office.
+  const [qualificationOn, setQualificationOn] = useState(existing?.qualification_on ?? "");
   const [rungs, setRungs] = useState<QualificationRung[]>([]);
   const [employmentType, setEmploymentType] = useState<EmploymentType>(existing?.employment_type ?? "PERMANENT");
   // Who employs them. Immovable once set: changing it mid-life would detach the
@@ -358,6 +361,7 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
         dob: dob || null,
         designation: designation.trim(),
         qualification_code: qualificationCode || null,
+        qualification_on: qualificationCode ? (qualificationOn || null) : null,
         employment_type: employmentType,
         employer_id: employerId,
         is_pastor: isPastor,
@@ -523,6 +527,17 @@ function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpMod
                   <option value="">— none recorded —</option>
                   {ladder(rungs).map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
                 </select>
+              </div>
+            )}
+            {rungs.length > 0 && qualificationCode && (
+              <div>
+                <label className={labelCls}>Attained on</label>
+                <input type="date" className={inputCls} value={qualificationOn ?? ""}
+                  onChange={e => setQualificationOn(e.target.value)} />
+                <p className="mt-1 text-[11px] text-stone-400">
+                  The date on the award, not the day it reached the office. The rise runs from
+                  the month after it.
+                </p>
               </div>
             )}
             <div><label className={labelCls}>Date Commenced</label><input type="date" className={inputCls} value={dateCommenced ?? ""} onChange={e => setDateCommenced(e.target.value)} /></div>

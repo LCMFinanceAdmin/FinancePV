@@ -148,3 +148,48 @@ export function labelOf(
 export function ladder(rungs: readonly QualificationRung[]): QualificationRung[] {
   return [...rungs].sort((x, y) => x.rank - y.rank || x.label.localeCompare(y.label));
 }
+
+// ---------------------------------------------------------------------------
+// When they graduated
+//
+// Two dates, and the gap between them is where this goes wrong: the day a
+// qualification was attained, and the day somebody started being paid for it.
+// A certificate reaches the office months after the award, and by then nothing
+// on record says the rise should have run from March rather than from the day
+// it was finally typed in.
+// ---------------------------------------------------------------------------
+
+/**
+ * The first day of the month after a date.
+ *
+ * Which is how LCM has done it: a doctorate conferred in October was paid from
+ * 1 November. A rise part way through a month would otherwise have to be split
+ * across two rates, and this payroll pro-rates by days employed rather than by
+ * days on a rate, so a whole month is the only thing it can honestly pay.
+ */
+export function monthAfter(isoDate: string): string {
+  const year = Number(isoDate.slice(0, 4));
+  const month = Number(isoDate.slice(5, 7));
+  const next = new Date(Date.UTC(year, month, 1));
+  return next.toISOString().slice(0, 10);
+}
+
+/**
+ * Has somebody gained a qualification that their salary has not caught up
+ * with?
+ *
+ * Both halves are needed: a qualification attained after the salary in force
+ * was set means the rise has not been paid, and that is a question for a
+ * person rather than something to apply on its own — the figure may be under
+ * discussion, or the scale may not be set for that rung yet.
+ */
+export function awaitingRevision(
+  qualificationOn: string | null | undefined,
+  salaryEffectiveFrom: string | null | undefined,
+): boolean {
+  if (!qualificationOn) return false;
+  // No salary at all is a different problem, reported elsewhere.
+  if (!salaryEffectiveFrom) return false;
+  // The salary has to start on or after the month the rise would run from.
+  return salaryEffectiveFrom < monthAfter(qualificationOn);
+}

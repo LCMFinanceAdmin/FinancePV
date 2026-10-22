@@ -489,6 +489,8 @@ export interface PayrollEmployee {
    * Null where none has been recorded.
    */
   qualification_code?: string | null;
+  /** When that qualification was attained — see migration 255. */
+  qualification_on?: string | null;
   employment_type: EmploymentType;
   is_pastor: boolean;
   is_staff: boolean;
@@ -571,6 +573,8 @@ export interface PayrollSalary {
    * rows written before the scale existed, and for salaries not set this way.
    */
   qualification_code?: string | null;
+  /** The date behind this salary row: when the qualification was attained. */
+  qualification_on?: string | null;
   created_by: string;
   created_at: string;
 }

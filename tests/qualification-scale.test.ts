@@ -180,3 +180,60 @@ test("an arrangement is left alone even with no figure on the scale", () => {
     standingAgainstScale({ base_salary: 5200, special_arrangement: "by agreement" }, null).state,
     "arrangement");
 });
+
+// ---------------------------------------------------------------------------
+// When they graduated
+//
+// The day a qualification was attained and the day somebody started being paid
+// for it are different dates, and the gap between them is where the money goes
+// missing: a certificate reaching the office in October, for an award made in
+// March, with nothing on record to say the rise should have run from March.
+// ---------------------------------------------------------------------------
+import { monthAfter, awaitingRevision } from "@/lib/payroll/qualification-scale";
+
+test("the rise runs from the first of the month after the award", () => {
+  // Which is what LCM did: a doctorate conferred in October, paid from
+  // 1 November.
+  assert.equal(monthAfter("2026-10-15"), "2026-11-01");
+  assert.equal(monthAfter("2026-10-01"), "2026-11-01");
+  assert.equal(monthAfter("2026-10-31"), "2026-11-01");
+});
+
+test("December rolls into the next year", () => {
+  assert.equal(monthAfter("2026-12-20"), "2027-01-01");
+});
+
+test("February is handled on its own length, leap year included", () => {
+  assert.equal(monthAfter("2026-02-28"), "2026-03-01");
+  assert.equal(monthAfter("2028-02-29"), "2028-03-01");
+  assert.equal(monthAfter("2026-01-31"), "2026-02-01");
+});
+
+test("a qualification newer than the salary is waiting to be paid", () => {
+  // Graduated in March, still on a salary set in January.
+  assert.equal(awaitingRevision("2026-03-10", "2026-01-01"), true);
+});
+
+test("a salary set from the month after the award has caught up", () => {
+  assert.equal(awaitingRevision("2026-10-15", "2026-11-01"), false);
+  // And anything later is plainly past it.
+  assert.equal(awaitingRevision("2026-10-15", "2027-01-01"), false);
+});
+
+test("a salary set in the month of the award has not caught up", () => {
+  // The rise runs from 1 November, so a salary effective 20 October is still
+  // the old one — being told about it is the point.
+  assert.equal(awaitingRevision("2026-10-15", "2026-10-20"), true);
+});
+
+test("no date on the qualification is not a question to ask", () => {
+  // Most of the directory predates any of this. Treating an unknown date as
+  // an unpaid rise would flag eighty people over nothing.
+  assert.equal(awaitingRevision(null, "2026-01-01"), false);
+  assert.equal(awaitingRevision(undefined, "2026-01-01"), false);
+  assert.equal(awaitingRevision("", "2026-01-01"), false);
+});
+
+test("no salary at all is a different problem, reported elsewhere", () => {
+  assert.equal(awaitingRevision("2026-03-10", null), false);
+});

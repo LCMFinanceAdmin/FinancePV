@@ -35,13 +35,16 @@ import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { inForceFor } from "@/lib/payroll/salary-in-force";
 import {
-  ladder, salaryPointOn, standingAgainstScale,
+  ladder, salaryPointOn, standingAgainstScale, awaitingRevision, monthAfter,
   type QualificationRung, type SalaryPoint, type ScaleStanding,
 } from "@/lib/payroll/qualification-scale";
 
 type Rung = QualificationRung & { note: string | null };
 type Point = SalaryPoint & { id: string; note: string | null; created_by: string | null };
-type Employee = { id: string; full_name: string; qualification_code: string | null };
+type Employee = {
+  id: string; full_name: string;
+  qualification_code: string | null; qualification_on: string | null;
+};
 type Salary = {
   employee_id: string; effective_from: string; created_at: string;
   base_salary: number; increment_carried: number; increment_current: number;
@@ -55,6 +58,8 @@ type Standing = {
   salary: Salary | null;
   state: ScaleStanding;
   difference: number;
+  /** Graduated, and the salary in force still predates the rise. */
+  waiting: boolean;
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -94,7 +99,8 @@ export default function SalaryScalePage() {
     const [{ data: q }, { data: p }, { data: emps }, { data: sals }] = await Promise.all([
       supabase.from("qualifications").select("*").order("rank"),
       supabase.from("qualification_salary_points").select("*").order("effective_from", { ascending: false }),
-      supabase.from("payroll_employees").select("id, full_name, qualification_code").order("full_name"),
+      supabase.from("payroll_employees")
+        .select("id, full_name, qualification_code, qualification_on").order("full_name"),
       supabase.from("payroll_salary").select(
         "employee_id, effective_from, created_at, base_salary, increment_carried, "
         + "increment_current, experience_bonus, family_allowance, stm_allowance, "
@@ -120,7 +126,11 @@ export default function SalaryScalePage() {
       .map(employee => {
         const mine = salaries.filter(s => s.employee_id === employee.id);
         const salary = inForceFor(mine, year, month);
-        return { employee, salary, ...standingAgainstScale(salary, figure) };
+        return {
+          employee, salary,
+          ...standingAgainstScale(salary, figure),
+          waiting: awaitingRevision(employee.qualification_on, salary?.effective_from),
+        };
       });
   }
 
@@ -281,6 +291,9 @@ export default function SalaryScalePage() {
               .sort((a, b) => b.effective_from.localeCompare(a.effective_from));
             const standings = standingsFor(rung.code, figure);
             const off = standings.filter(s => s.state === "off");
+            // Different from being off the figure: the salary may be right for
+            // what they held, and out of date for what they now hold.
+            const waiting = standings.filter(s => s.waiting);
             const arranged = standings.filter(s => s.state === "arrangement");
             const unpaid = standings.filter(s => s.state === "none");
             const open = showing === rung.code;
@@ -345,6 +358,9 @@ export default function SalaryScalePage() {
                         {arranged.length > 0 && (
                           <span className="text-stone-500">· {arranged.length} by arrangement</span>
                         )}
+                        {waiting.length > 0 && (
+                          <span className="text-sky-700">· {waiting.length} graduated, not yet paid for it</span>
+                        )}
                       </button>
                       {canEdit && off.length > 0 && inForce && (
                         <button onClick={() => { setErr(""); setApplyTo(rung.code); }}
@@ -358,7 +374,15 @@ export default function SalaryScalePage() {
                       <ul className="mt-2 space-y-1 border-t border-stone-200/70 pt-2">
                         {standings.map(s => (
                           <li key={s.employee.id} className="flex items-center justify-between gap-2 text-[11.5px]">
-                            <span className="min-w-0 truncate text-stone-700">{s.employee.full_name}</span>
+                            <span className="min-w-0 truncate text-stone-700">
+                              {s.employee.full_name}
+                              {s.waiting && s.employee.qualification_on && (
+                                <span className="ml-1.5 text-sky-700">
+                                  · graduated {fmtDate(s.employee.qualification_on)}, due from{" "}
+                                  {fmtDate(monthAfter(s.employee.qualification_on))}
+                                </span>
+                              )}
+                            </span>
                             <span className="shrink-0 tabular-nums">
                               {s.state === "none" ? (
                                 <span className="text-stone-400">no salary in force</span>

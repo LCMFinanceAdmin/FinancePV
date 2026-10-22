@@ -11,7 +11,7 @@ import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import {
-  ladder, labelOf, scaleMove,
+  ladder, labelOf, scaleMove, monthAfter,
   type QualificationRung, type SalaryPoint,
 } from "@/lib/payroll/qualification-scale";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem,
@@ -2483,6 +2483,9 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
   // has been made against the scale; before that only the employee record
   // does, which is where an existing qualification is first written down.
   const [heldCode, setHeldCode] = useState<string>(latest.qualification_code ?? "");
+  // When the qualification being recorded was attained. The rise runs from the
+  // month after, which is the date this form then proposes.
+  const [qualifiedOn, setQualifiedOn] = useState<string>("");
   const [reason, setReason] = useState("");
   const [vals, setVals] = useState({
     base_salary: String(latest.base_salary),
@@ -2498,14 +2501,17 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
       const [{ data: q }, { data: p }, { data: emp }] = await Promise.all([
         supabase.from("qualifications").select("code, label, rank").order("rank"),
         supabase.from("qualification_salary_points").select("qualification_code, base_salary, effective_from"),
-        supabase.from("payroll_employees").select("qualification_code").eq("id", employeeId).maybeSingle(),
+        supabase.from("payroll_employees").select("qualification_code, qualification_on").eq("id", employeeId).maybeSingle(),
       ]);
       setRungs((q ?? []) as QualificationRung[]);
       setPoints((p ?? []) as SalaryPoint[]);
-      const current = latest.qualification_code
-        ?? ((emp as { qualification_code?: string | null } | null)?.qualification_code ?? "");
+      const row = emp as { qualification_code?: string | null; qualification_on?: string | null } | null;
+      const current = latest.qualification_code ?? (row?.qualification_code ?? "");
       setHeldCode(current);
       setQualification(chosen => chosen || current);
+      // Only carried over where the record already names a date: an empty box
+      // is a question, and a guessed date would be an answer to it.
+      if (row?.qualification_on) setQualifiedOn(row.qualification_on);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase, employeeId]);
@@ -2529,6 +2535,7 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
         employee_id: employeeId,
         effective_from: effectiveFrom,
         qualification_code: qualification || null,
+        qualification_on: qualification ? (qualifiedOn || null) : null,
         base_salary: parseFloat(vals.base_salary) || 0,
         increment_carried: parseFloat(vals.increment_carried) || 0,
         increment_current: parseFloat(vals.increment_current) || 0,
@@ -2542,9 +2549,13 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
       // The employee record carries what they hold now; the salary rows carry
       // what each salary was set against. Both have to move together or the
       // next revision would start from the old qualification.
-      if ((qualification || null) !== (latest.qualification_code ?? null)) {
+      if ((qualification || null) !== (latest.qualification_code ?? null)
+          || (qualifiedOn || null) !== (latest.qualification_on ?? null)) {
         await supabase.from("payroll_employees")
-          .update({ qualification_code: qualification || null })
+          .update({
+            qualification_code: qualification || null,
+            qualification_on: qualification ? (qualifiedOn || null) : null,
+          })
           .eq("id", employeeId);
       }
       const newGross = (["base_salary", "increment_carried", "increment_current", "experience_bonus", "family_allowance", "stm_allowance"] as const)
@@ -2600,6 +2611,31 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
                 <p className="mt-1 text-[11px] text-stone-400">
                   Base salary follows the qualification held. Changing it here records what
                   this salary was set against.
+                </p>
+              </div>
+            )}
+            {rungs.length > 0 && qualification && (
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Attained on</label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input type="date" className={`${inputCls} max-w-[200px]`} value={qualifiedOn}
+                    onChange={e => setQualifiedOn(e.target.value)} />
+                  {/* The gap between graduating and being paid for it is where
+                      this goes wrong, so the date the rise should run from is
+                      offered rather than left to be worked out. */}
+                  {qualifiedOn && monthAfter(qualifiedOn) !== effectiveFrom && (
+                    <button type="button" onClick={() => setEffectiveFrom(monthAfter(qualifiedOn))}
+                      className="rounded-lg bg-[#4a6da7] px-2.5 py-1 text-[11.5px] font-semibold text-white hover:bg-[#3d5c8f]">
+                      Pay it from {new Date(monthAfter(qualifiedOn) + "T00:00:00").toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 text-[11px] text-stone-400">
+                  The date on the award, not the day it reached the office. A certificate that
+                  arrives late does not change when it was earned
+                  {qualifiedOn && monthAfter(qualifiedOn) < effectiveFrom
+                    ? " — this rise is being paid from later than the month after it."
+                    : "."}
                 </p>
               </div>
             )}
