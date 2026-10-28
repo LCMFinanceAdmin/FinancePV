@@ -9,6 +9,7 @@ import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, gro
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
+import { FigureCell } from "@/components/payroll/figure-cell";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import {
   ladder, labelOf, scaleMove, monthAfter,
@@ -161,6 +162,10 @@ export default function PayrollEmployeePage() {
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [bands, setBands] = useState<ContributionBand[]>([]);
   const [canEdit, setCanEdit] = useState(false);
+  // The six who may change a payroll figure, per can_edit_payroll_figures()
+  // in migration 256. The database enforces it; this decides whether to
+  // offer the box, and a hidden box was never the control.
+  const [canEditFigures, setCanEditFigures] = useState(false);
   const [showRevision, setShowRevision] = useState(false);
   const [slipMonth, setSlipMonth] = useState<number | null>(null); // 0-11 for months
   const [customItemsByMonth, setCustomItemsByMonth] = useState<Record<number, PayrollEmployeeCustomItem[]>>({});
@@ -173,6 +178,11 @@ export default function PayrollEmployeePage() {
   const [adjModal, setAdjModal] = useState<{ month: number; editing: PayrollAdjustment | null } | null>(null);
   // Which gathered run has been opened to its individual months.
   const [openAdjGroup, setOpenAdjGroup] = useState<string | null>(null);
+  const [figureError, setFigureError] = useState("");
+  const [showLog, setShowLog] = useState(false);
+  const [auditLog, setAuditLog] = useState<
+    { id: string; action: string; detail: string | null; actor: string | null; created_at: string }[]
+  >([]);
 
   // One line per revision rather than one per payslip. An allowance folded into
   // salary from May is eight identical entries, and a second category beside it
@@ -221,9 +231,24 @@ export default function PayrollEmployeePage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
       const { data } = await supabase.from("user_roles").select("role").eq("email", session.user.email).single();
-      setCanEdit(["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(data?.role ?? ""));
+      const role = data?.role ?? "";
+      setCanEdit(["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role));
+      setCanEditFigures([
+        "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
+        "GENERAL_MANAGER", "TREASURER", "SECRETARY", "BISHOP",
+      ].includes(role));
     })();
   }, [supabase]);
+
+  const loadLog = useCallback(async () => {
+    const { data } = await supabase.from("payroll_audit_log")
+      .select("id, action, detail, actor, created_at")
+      .eq("employee_id", id)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    setAuditLog((data ?? []) as typeof auditLog);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, id]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -342,6 +367,10 @@ export default function PayrollEmployeePage() {
 
   if (loading) return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Loading…</div>;
   if (!emp) return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Employee not found.</div>;
+
+  /** The correction already standing against one figure in one month. */
+  const adjFor = (m: number, c: AdjustmentCategory): PayrollAdjustment | null =>
+    adjustmentsFor(m).find(a => a.category === c) ?? null;
 
   const current = salaries[0] ?? null;
   // `salaries` is newest first, so the last of them is the earliest on record.
@@ -735,7 +764,7 @@ export default function PayrollEmployeePage() {
           <>
             <div className="overflow-auto max-h-[72vh] rounded-lg">
               <style>{gridCss}</style>
-              <table className="ysheet w-full text-[14px] border-collapse" style={{ minWidth: 1000 }}>
+              <table className="ysheet w-full text-[12px] border-collapse" style={{ minWidth: 1000 }}>
                 <thead>
                   {/* Two header rows: the scheme, then the side of it. Without
                       the grouping, eight look-alike money columns sit in a row
@@ -744,37 +773,37 @@ export default function PayrollEmployeePage() {
                       both rows so the reading order stays one column, one
                       heading. */}
                   <tr className="text-stone-600 [&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:bg-stone-100">
-                    <th rowSpan={2} className="border border-stone-200 px-1.5 py-1 text-left align-bottom">Month</th>
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">Gross</th>
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">PCB</th>
-                    <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">EPF</th>
+                    <th rowSpan={2} className="border border-stone-200 px-1 py-0.5 text-left align-bottom">Month</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">Gross</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">PCB</th>
+                    <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4a6da7]">EPF</th>
                     {/* SKBBK sits inside SOCSO because that is what it is —
                         Lindung 24 tops up the employee's SOCSO contribution and
                         is filed on PERKESO's return. It keeps its own column
                         and its own tint because it is not SOCSO EE: the two are
                         reported as separate figures and reconciled separately. */}
-                    <th colSpan={3} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">SOCSO</th>
-                    <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-[#4a6da7]">EIS</th>
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom">EPL</th>
+                    <th colSpan={3} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4a6da7]">SOCSO</th>
+                    <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4a6da7]">EIS</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">EPL</th>
                     {customCols.map(col => (
-                      <th key={col.label} rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right align-bottom max-w-[90px]">
-                        <div className="truncate text-[11px]">{col.label}</div>
-                        <div className={`text-[9px] font-normal ${col.type === "allowance" ? "text-green-600" : "text-red-500"}`}>{col.type === "allowance" ? "+ allowance" : "− deduction"}</div>
+                      <th key={col.label} rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom max-w-[90px]">
+                        <div className="truncate text-[9px]">{col.label}</div>
+                        <div className={`text-[8px] font-normal ${col.type === "allowance" ? "text-green-600" : "text-red-500"}`}>{col.type === "allowance" ? "+ allowance" : "− deduction"}</div>
                       </th>
                     ))}
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right font-bold align-bottom">Net</th>
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right font-bold align-bottom">Total LCM</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right font-bold align-bottom">Net</th>
+                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right font-bold align-bottom">Total LCM</th>
                     <th rowSpan={2} className="border border-stone-200 px-1 py-1 print:hidden w-14"></th>
                   </tr>
                   <tr className="text-stone-600 [&>th]:sticky [&>th]:top-[29px] [&>th]:z-20 [&>th]:bg-stone-100 [&>th]:shadow-[inset_0_-2px_0_#d6d3d1]">
-                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
-                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold !bg-amber-50 text-amber-800"
+                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right text-[9px] font-semibold">EE</th>
+                    <th className="border border-stone-200 px-1 py-0.5 text-right text-[9px] font-semibold">ER</th>
+                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right text-[9px] font-semibold">EE</th>
+                    <th className="border border-stone-200 px-1 py-0.5 text-right text-[9px] font-semibold !bg-amber-50 text-amber-800"
                         title="SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution">SKBBK</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
-                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1.5 py-1 text-right text-[11px] font-semibold">EE</th>
-                    <th className="border border-stone-200 px-1.5 py-1 text-right text-[11px] font-semibold">ER</th>
+                    <th className="border border-stone-200 px-1 py-0.5 text-right text-[9px] font-semibold">ER</th>
+                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right text-[9px] font-semibold">EE</th>
+                    <th className="border border-stone-200 px-1 py-0.5 text-right text-[9px] font-semibold">ER</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -783,8 +812,18 @@ export default function PayrollEmployeePage() {
                     const monthItems = customItemsByMonth[monthNum] ?? [];
                     return (
                     <tr key={i} className="odd:bg-stone-50/50 hover:bg-blue-50/40">
-                      <td className="border border-stone-200 px-1.5 py-1 font-semibold text-stone-600">{MONTHS[i]}</td>
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "GROSS").className}`} title={adjCell(monthNum, "GROSS").title}>{num(l.gross)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 font-semibold text-stone-600">{MONTHS[i]}</td>
+                      <FigureCell
+                        employeeId={emp.id} employeeName={emp.full_name}
+                        year={year} month={monthNum} category="GROSS"
+                        shown={l.gross} before={figureBefore(monthNum, "GROSS")}
+                        existing={adjFor(monthNum, "GROSS")}
+                        canEdit={canEditFigures}
+                        className={adjCell(monthNum, "GROSS").className}
+                        title={adjCell(monthNum, "GROSS").title}
+                        onSaved={() => { setFigureError(""); refreshAdjustments(); if (showLog) loadLog(); }}
+                        onError={setFigureError}
+                      />
                       {/* The box keeps the figure Finance keyed; a correction is
                           shown under it rather than folded in, or the number on
                           screen would stop matching the one that was typed. */}
@@ -793,36 +832,61 @@ export default function PayrollEmployeePage() {
                         <input type="number" value={pcb[i] || ""} onChange={e => setPcb(p => { const n = [...p]; n[i] = parseFloat(e.target.value) || 0; return n; })}
                           className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
                         {adjAmt(monthNum, "PCB") !== 0 && (
-                          <div className="pr-1 text-[9px] font-semibold text-amber-800">
+                          <div className="pr-1 text-[8px] font-semibold text-amber-800">
                             {adjAmt(monthNum, "PCB") > 0 ? "+" : "−"}{num(Math.abs(adjAmt(monthNum, "PCB")))} → {num(l.pcb)}
                           </div>
                         )}
                       </td>
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "EPF_EE").className}`} title={adjCell(monthNum, "EPF_EE").title}>{num(l.epf.ee)}</td>
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "EPF_ER").className}`} title={adjCell(monthNum, "EPF_ER").title}>{num(l.epf.er)}</td>
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "SOCSO_EE").className}`} title={adjCell(monthNum, "SOCSO_EE").title}>{num(l.socso.ee)}</td>
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono bg-amber-50/60${adjCell(monthNum, "SKBBK").className}`} title={adjCell(monthNum, "SKBBK").title}>{num(l.skbbk)}</td>
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "SOCSO_ER").className}`} title={adjCell(monthNum, "SOCSO_ER").title}>{num(l.socso.er)}</td>
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "EIS_EE").className}`} title={adjCell(monthNum, "EIS_EE").title}>{num(l.eis.ee)}</td>
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono${adjCell(monthNum, "EIS_ER").className}`} title={adjCell(monthNum, "EIS_ER").title}>{num(l.eis.er)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
+                      {([
+                        ["EPF_EE",   l.epf.ee,   ""],
+                        ["EPF_ER",   l.epf.er,   ""],
+                        ["SOCSO_EE", l.socso.ee, ""],
+                        ["SKBBK",    l.skbbk,    "bg-amber-50/60"],
+                        ["SOCSO_ER", l.socso.er, ""],
+                        ["EIS_EE",   l.eis.ee,   ""],
+                        ["EIS_ER",   l.eis.er,   ""],
+                      ] as [AdjustmentCategory, number, string][]).map(([cat, value, extra]) => (
+                        <FigureCell
+                          key={cat}
+                          employeeId={emp.id} employeeName={emp.full_name}
+                          year={year} month={monthNum} category={cat}
+                          shown={value} before={figureBefore(monthNum, cat)}
+                          existing={adjFor(monthNum, cat)}
+                          canEdit={canEditFigures}
+                          className={`${extra}${adjCell(monthNum, cat).className}`}
+                          title={adjCell(monthNum, cat).title}
+                          onSaved={() => { setFigureError(""); refreshAdjustments(); if (showLog) loadLog(); }}
+                          onError={setFigureError}
+                        />
+                      ))}
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
                       {customCols.map(col => {
                         const amt = customAmt(monthNum, col);
                         return (
-                          <td key={col.label} className="border border-stone-200 px-1.5 py-1 text-right font-mono">
+                          <td key={col.label} className="border border-stone-200 px-1 py-0.5 text-right font-mono">
                             {amt !== 0
                               ? <span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{col.type === "allowance" ? "+" : "−"}{num(amt)}</span>
                               : <span className="text-stone-200">—</span>}
                           </td>
                         );
                       })}
-                      <td className={`border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold${adjCell(monthNum, "NET").className}`} title={adjCell(monthNum, "NET").title}>{num(l.net)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(l.totalLcmPayment)}</td>
+                      <FigureCell
+                        employeeId={emp.id} employeeName={emp.full_name}
+                        year={year} month={monthNum} category="NET"
+                        shown={l.net} before={figureBefore(monthNum, "NET")}
+                        existing={adjFor(monthNum, "NET")}
+                        canEdit={canEditFigures}
+                        className={`font-semibold${adjCell(monthNum, "NET").className}`}
+                        title={adjCell(monthNum, "NET").title}
+                        onSaved={() => { setFigureError(""); refreshAdjustments(); if (showLog) loadLog(); }}
+                        onError={setFigureError}
+                      />
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono font-semibold text-[#4a6da7]">{num(l.totalLcmPayment)}</td>
                       <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
                         <div className="flex items-center justify-center gap-0.5">
                           {canEdit && (
                             <button onClick={() => setPayItemModal({ month: monthNum, editing: null })} title="Add an allowance or deduction from this month"
-                              className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-semibold ${monthItems.length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
+                              className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-semibold ${monthItems.length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
                               <ListPlus size={11} />
                             </button>
                           )}
@@ -838,58 +902,58 @@ export default function PayrollEmployeePage() {
                   {/* Sub-total (12 months) */}
                   <tr className="bg-stone-100 font-semibold [&>td]:border-t-2 [&>td]:border-t-stone-300">
                     <td className="border border-stone-200 px-1.5 py-1">SUB-T (12)</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.gross, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.pcb, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.ee, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.er, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.ee, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.skbbk, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.gross, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.pcb, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.ee, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.er, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.ee, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.skbbk, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.socso.er, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
                     {customCols.map(col => {
                       const t = customColSubTotal(col);
-                      return <td key={col.label} className="border border-stone-200 px-1.5 py-1 text-right font-mono"><span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</span></td>;
+                      return <td key={col.label} className="border border-stone-200 px-1 py-0.5 text-right font-mono"><span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</span></td>;
                     })}
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.net, 0))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-[#4a6da7]">{num(monthLines.reduce((s, l) => s + l.totalLcmPayment, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.net, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-[#4a6da7]">{num(monthLines.reduce((s, l) => s + l.totalLcmPayment, 0))}</td>
                     <td className="border border-stone-200 px-1 py-1 print:hidden"></td>
                   </tr>
                   {/* 13th month */}
                   {thirteenth ? (
                     <tr className="bg-blue-50/40">
-                      <td className="border border-stone-200 px-1.5 py-1 font-semibold text-stone-600">13th MTH</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.gross)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 font-semibold text-stone-600">13th MTH</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(thirteenth.gross)}</td>
                       <td className="border border-stone-200 px-0.5 py-0.5 text-right">
                         <input type="number" value={pcb[12] || ""} onChange={e => setPcb(p => { const n = [...p]; n[12] = parseFloat(e.target.value) || 0; return n; })}
                           className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
                       </td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.epf.ee)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(thirteenth.epf.er)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.socso.ee)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.skbbk)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.socso.er)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.eis.ee)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-300">{num(thirteenth.eis.er)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(thirteenth.epf.ee)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(thirteenth.epf.er)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.socso.ee)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.skbbk)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.socso.er)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.eis.ee)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.eis.er)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
                       {customCols.map(col => {
                         const amt = customAmt(13, col);
                         return (
-                          <td key={col.label} className="border border-stone-200 px-1.5 py-1 text-right font-mono">
+                          <td key={col.label} className="border border-stone-200 px-1 py-0.5 text-right font-mono">
                             {amt !== 0
                               ? <span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{col.type === "allowance" ? "+" : "−"}{num(amt)}</span>
                               : <span className="text-stone-200">—</span>}
                           </td>
                         );
                       })}
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold">{num(thirteenth.net)}</td>
-                      <td className="border border-stone-200 px-1.5 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(thirteenth.totalLcmPayment)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono font-semibold">{num(thirteenth.net)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono font-semibold text-[#4a6da7]">{num(thirteenth.totalLcmPayment)}</td>
                       <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
                         <div className="flex items-center justify-center gap-0.5">
                           {canEdit && (
                             <button onClick={() => setPayItemModal({ month: 13, editing: null })} title="Add an allowance or deduction for the 13th month"
-                              className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-semibold ${(customItemsByMonth[13] ?? []).length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
+                              className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-semibold ${(customItemsByMonth[13] ?? []).length > 0 ? "bg-amber-50 text-amber-600 hover:bg-amber-100" : "text-stone-300 hover:text-stone-500 hover:bg-stone-50"}`}>
                               <ListPlus size={11} />
                             </button>
                           )}
@@ -898,27 +962,27 @@ export default function PayrollEmployeePage() {
                       </td>
                     </tr>
                   ) : (
-                    <tr><td colSpan={13 + customCols.length} className="border border-stone-200 px-1.5 py-1 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
+                    <tr><td colSpan={13 + customCols.length} className="border border-stone-200 px-1 py-0.5 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
                   )}
                   {/* Annual total */}
                   <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7] [&>td]:border-t-2 [&>td]:border-t-[#4a6da7]/40">
                     <td className="border border-stone-200 px-1.5 py-1">ANNUAL</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.gross))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.pcb))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.epf.ee))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.epf.er))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.socso.ee))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.skbbk))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.socso.er))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eis.er))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.gross))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.pcb))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.epf.ee))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.epf.er))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.socso.ee))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.skbbk))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.socso.er))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eis.er))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
                     {customCols.map(col => {
                       const t = customColTotal(col);
-                      return <td key={col.label} className="border border-stone-200 px-1.5 py-1 text-right font-mono"><span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</span></td>;
+                      return <td key={col.label} className="border border-stone-200 px-1 py-0.5 text-right font-mono"><span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</span></td>;
                     })}
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.net))}</td>
-                    <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(sum(l => l.totalLcmPayment))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.net))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.totalLcmPayment))}</td>
                     <td className="border border-stone-200 px-1 py-1 print:hidden"></td>
                   </tr>
                 </tbody>
@@ -931,17 +995,17 @@ export default function PayrollEmployeePage() {
                 twelve. */}
             <div className="mt-4 rounded-xl border-2 border-[#2f5b9c] bg-[#f4f7fb] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="flex items-center gap-1.5 text-[17px] font-bold text-[#1e3f75]">
+                <h3 className="flex items-center gap-1.5 text-[15px] font-bold text-[#1e3f75]">
                   <ListPlus size={18} /> Allowances &amp; deductions — {year}
                   {yearPayItems.length > 0 && (
-                    <span className="rounded-full bg-[#2f5b9c] px-2 py-0.5 text-[13px] font-bold text-white">
+                    <span className="rounded-full bg-[#2f5b9c] px-2 py-0.5 text-[11px] font-bold text-white">
                       {yearPayItems.length}
                     </span>
                   )}
                 </h3>
                 {canEdit && (
                   <button onClick={() => setPayItemModal({ month: 1, editing: null })}
-                    className="flex items-center gap-1 rounded-lg bg-[#2f5b9c] px-3 py-2 text-[14px] font-semibold text-white hover:bg-[#254a80]">
+                    className="flex items-center gap-1 rounded-lg bg-[#2f5b9c] px-3 py-2 text-[12px] font-semibold text-white hover:bg-[#254a80]">
                     <Plus size={12} /> Add
                   </button>
                 )}
@@ -951,7 +1015,7 @@ export default function PayrollEmployeePage() {
                   the other panel instead. Each used to describe itself without
                   reference to the other, which is what made them hard to tell
                   apart — the pointer does more work here than more detail would. */}
-              <p className="mt-1.5 text-[15px] text-stone-700">
+              <p className="mt-1.5 text-[13px] text-stone-700">
                 Money added to or taken from pay for a given month, either recurring or one-off.
                 Each one becomes its own column above, and shows on the payslip and in the payroll run.
                 <span className="mt-1 block font-medium text-[#1e3f75]">
@@ -960,7 +1024,7 @@ export default function PayrollEmployeePage() {
               </p>
 
               {yearPayItems.length === 0 ? (
-                <p className="mt-2 text-[15px] font-medium text-stone-500">
+                <p className="mt-2 text-[13px] font-medium text-stone-500">
                   None set up for {year}.
                 </p>
               ) : (
@@ -974,15 +1038,15 @@ export default function PayrollEmployeePage() {
                       : `${monthShort(it.month)} ${it.year} only`;
                     return (
                       <li key={it.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-stone-200 bg-white px-2.5 py-2">
-                        <span className={`rounded px-1.5 py-0.5 text-[13px] font-bold uppercase text-white ${
+                        <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold uppercase text-white ${
                           isAllow ? "bg-green-700" : "bg-red-700"}`}>
                           {isAllow ? "Allowance" : "Deduction"}
                         </span>
-                        <span className="text-[16px] font-semibold text-stone-800">{it.label}</span>
-                        <span className={`font-mono text-[16px] font-bold ${isAllow ? "text-green-700" : "text-red-700"}`}>
+                        <span className="text-[14px] font-semibold text-stone-800">{it.label}</span>
+                        <span className={`font-mono text-[14px] font-bold ${isAllow ? "text-green-700" : "text-red-700"}`}>
                           {isAllow ? "+" : "−"}{num(Number(it.amount))}
                         </span>
-                        <span className="inline-flex items-center gap-1 text-[14px] text-stone-500">
+                        <span className="inline-flex items-center gap-1 text-[12px] text-stone-500">
                           {it.is_recurring && <Repeat size={10} />} {span}
                         </span>
                         {canEdit && (
@@ -1012,17 +1076,17 @@ export default function PayrollEmployeePage() {
                 one nobody can reconstruct a year later without a record. */}
             <div className="mt-4 rounded-xl border-2 border-amber-300 bg-amber-50/40 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="flex items-center gap-1.5 text-[17px] font-bold text-amber-900">
+                <h3 className="flex items-center gap-1.5 text-[15px] font-bold text-amber-900">
                   <Scale size={18} /> Adjustments — {year}
                   {adjustments.length > 0 && (
                     <>
                       {/* The badge counts decisions. Sixteen above two lines
                           reads as a mistake, so the payslips are said separately. */}
-                      <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[13px] font-bold text-white">
+                      <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[11px] font-bold text-white">
                         {adjustmentGroups.length}
                       </span>
                       {adjustmentGroups.length !== adjustments.length && (
-                        <span className="text-[13px] font-medium text-amber-700">
+                        <span className="text-[11px] font-medium text-amber-700">
                           across {adjustments.length} payslips
                         </span>
                       )}
@@ -1031,13 +1095,13 @@ export default function PayrollEmployeePage() {
                 </h3>
                 {canEdit && (
                   <button onClick={() => setAdjModal({ month: 1, editing: null })}
-                    className="flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-2 text-[14px] font-semibold text-white hover:bg-amber-700">
+                    className="flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-amber-700">
                     <Plus size={12} /> Add an adjustment
                   </button>
                 )}
               </div>
 
-              <p className="mt-1.5 text-[15px] text-amber-900">
+              <p className="mt-1.5 text-[13px] text-amber-900">
                 For salaries already paid that need putting right — where too much was deducted,
                 or more was paid than agreed. It settles what is owed to or by the employee, landing
                 inside the column it names rather than adding a new one.
@@ -1047,7 +1111,7 @@ export default function PayrollEmployeePage() {
               </p>
 
               {adjustments.length === 0 ? (
-                <p className="mt-2 text-[15px] font-medium text-amber-700">
+                <p className="mt-2 text-[13px] font-medium text-amber-700">
                   None for {year}.
                 </p>
               ) : (
@@ -1067,23 +1131,23 @@ export default function PayrollEmployeePage() {
                     return (
                       <li key={g.key} className="rounded-lg border border-amber-200 bg-white px-2.5 py-2">
                         <div className="flex flex-wrap items-start gap-x-2 gap-y-0.5">
-                          <span className="rounded bg-stone-800 px-2 py-0.5 text-[13px] font-bold text-white">
+                          <span className="rounded bg-stone-800 px-2 py-0.5 text-[11px] font-bold text-white">
                             {monthsLabel(g.months)}
                           </span>
-                          <span className="text-[15px] font-semibold text-stone-800">{adjustmentLabel(g.category)}</span>
-                          <span className={`font-mono text-[15px] font-bold ${amt > 0 ? "text-red-600" : "text-green-700"}`}>
+                          <span className="text-[13px] font-semibold text-stone-800">{adjustmentLabel(g.category)}</span>
+                          <span className={`font-mono text-[13px] font-bold ${amt > 0 ? "text-red-600" : "text-green-700"}`}>
                             {amt > 0 ? "+" : "−"}{num(Math.abs(amt))}
                           </span>
-                          <span className="text-[14px] text-stone-500">({takeHome})</span>
+                          <span className="text-[12px] text-stone-500">({takeHome})</span>
                           {/* The figure above is what one payslip carries. This
                               is what the run comes to, which is the number
                               somebody is usually trying to work out. */}
                           {spread && (
-                            <span className="text-[14px] font-semibold text-stone-700">
+                            <span className="text-[12px] font-semibold text-stone-700">
                               × {g.months.length} months · {num(Math.abs(g.total))} in all
                             </span>
                           )}
-                          <span className="w-full text-[14px] text-stone-600">
+                          <span className="w-full text-[12px] text-stone-600">
                             {g.reason}
                             {g.origin_month != null && (
                               <span className="text-stone-400"> · corrects {monthShort(g.origin_month)} {g.origin_year ?? year}</span>
@@ -1104,7 +1168,7 @@ export default function PayrollEmployeePage() {
                           {spread && (
                             <button type="button" onClick={() => setOpenAdjGroup(open ? null : g.key)}
                               aria-expanded={open}
-                              className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[13px] font-semibold text-stone-500 hover:bg-stone-100 hover:text-stone-700">
+                              className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-stone-500 hover:bg-stone-100 hover:text-stone-700">
                               {open ? "Hide the months" : "Each month"}
                               <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
                             </button>
@@ -1117,7 +1181,7 @@ export default function PayrollEmployeePage() {
                         {spread && open && (
                           <ul className="mt-1.5 space-y-0.5 border-t border-amber-100 pt-1.5">
                             {g.items.map(a => (
-                              <li key={a.id} className="flex items-center gap-2 text-[14px]">
+                              <li key={a.id} className="flex items-center gap-2 text-[12px]">
                                 <span className="w-12 shrink-0 font-semibold text-stone-600">{monthShort(a.month)}</span>
                                 <span className="font-mono text-stone-700">
                                   {Number(a.amount) > 0 ? "+" : "−"}{num(Math.abs(Number(a.amount)))}
@@ -1145,6 +1209,64 @@ export default function PayrollEmployeePage() {
               )}
             </div>
 
+            {figureError && (
+              <p className="mt-2 rounded-lg bg-red-600 px-2.5 py-1.5 text-[10px] font-medium text-white" role="alert">
+                {figureError}
+              </p>
+            )}
+
+            {/* Every change to a figure, with who and when. The sheet shows
+                what a figure is; this shows how it got there, which is the
+                question asked months later and the one nobody can reconstruct
+                without a record. */}
+            <div className="mt-3 rounded-xl border border-stone-200 bg-white">
+              <button type="button"
+                onClick={() => { setShowLog(o => !o); if (!showLog) loadLog(); }}
+                aria-expanded={showLog}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left">
+                <span className="flex items-center gap-1.5 text-[11px] font-bold text-stone-700">
+                  <Clock size={13} className="text-stone-400" /> Change log
+                </span>
+                <span className="flex items-center gap-1.5 text-[9px] text-stone-400">
+                  {showLog ? "Hide" : "Every change to a figure, with who and when"}
+                  <ChevronDown size={12} className={`transition-transform ${showLog ? "rotate-180" : ""}`} />
+                </span>
+              </button>
+              {showLog && (
+                auditLog.length === 0 ? (
+                  <p className="border-t border-stone-100 px-3 py-2.5 text-[10px] text-stone-500">
+                    Nothing recorded against {emp.full_name} yet.
+                  </p>
+                ) : (
+                  <ul className="max-h-72 overflow-y-auto border-t border-stone-100">
+                    {auditLog.map(e => {
+                      // The direction is what somebody is looking for, so it is
+                      // coloured rather than left inside the sentence.
+                      const up = (e.detail ?? "").includes("(+");
+                      const down = (e.detail ?? "").includes("(\u2212") || (e.detail ?? "").includes("(-");
+                      return (
+                        <li key={e.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-stone-50 px-3 py-1.5 last:border-b-0">
+                          <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${
+                            up ? "bg-red-50 text-red-700"
+                            : down ? "bg-green-50 text-green-700"
+                            : "bg-stone-100 text-stone-500"}`}>
+                            {e.action.replace(/_/g, " ").toLowerCase()}
+                          </span>
+                          <span className="text-[10px] text-stone-700">{e.detail}</span>
+                          <span className="ml-auto whitespace-nowrap text-[9px] text-stone-400">
+                            {e.actor ?? "unknown"} · {new Date(e.created_at).toLocaleString("en-MY", {
+                              day: "numeric", month: "short", year: "numeric",
+                              hour: "2-digit", minute: "2-digit",
+                            })}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )
+              )}
+            </div>
+
             {/* Said once, under the sheet, rather than on each of seven cells:
                 the figures before the first record are the earliest one held,
                 not something anybody entered for those months. */}
@@ -1156,7 +1278,7 @@ export default function PayrollEmployeePage() {
               </p>
             )}
 
-            <p className="text-[11px] text-stone-400 mt-3">
+            <p className="text-[9px] text-stone-400 mt-3">
               EPF / SOCSO / EIS auto-calculated from the {rates ? year : "default"} rate table (<Link href="/payroll/rates" className="text-[#4a6da7] hover:underline">edit rates</Link>);
               <span className="font-semibold"> PCB entered manually</span> per month (click a PCB cell).
               Current-year increment takes effect from <span className="font-semibold">{MONTHS[effMonth - 1]}</span>{" "}
