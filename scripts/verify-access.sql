@@ -180,6 +180,9 @@ DECLARE
                       AND COALESCE(is_test_account, false) = false
                       ORDER BY email LIMIT 1);
   a_budget  uuid;
+  -- A real employee, read as postgres so every probe below inserts an actual
+  -- row rather than nothing at all.
+  an_employee uuid := (SELECT id FROM payroll_employees ORDER BY emp_no LIMIT 1);
   -- The Secretary is deliberately not among them: 243 gave the office register
   -- back to that post, so a Secretary picked here would be expected to fail the
   -- "edit the offices" probe and would have passed it only by the accident of
@@ -442,6 +445,63 @@ BEGIN
       format($q$UPDATE budget_proposals SET notes = notes WHERE ministry = %L$q$, v_other),
       'edit another ministry''s proposal', $e$SELECT 0$e$);
   END;
+
+  -- Captured outside the role switch, so the probe inserts a real row. An
+  -- INSERT ... SELECT reading a table the probed person cannot see inserts
+  -- nothing, raises nothing, and reads as permission: the refusal this file
+  -- exists to catch, catching the file itself.
+  -- ── Payroll figures ──────────────────────────────────────────────────
+  -- Six people may change one: Finance, Accounts, the General Manager, the
+  -- Treasurer, the Secretary and the Bishop. The first three keep and run the
+  -- payroll; the last three answer for it.
+  --
+  -- Three tables here carried a FOR ALL policy of `NOT is_guest()` until 256.
+  -- Permissive policies are OR-ed, so on the allowances table it sat beside a
+  -- policy requiring a finance role and cancelled it, and anybody signed in
+  -- could put a monthly allowance on anybody's pay. These probe the thing
+  -- itself rather than the policy text, which is the whole point of this file:
+  -- the policy text looked right while the table was open.
+  PERFORM pg_temp.try_insert('payroll', finance, 'Finance Executive',
+    format($q$INSERT INTO payroll_employee_custom_items(employee_id, year, month, label, type, amount)
+             VALUES (%L, 2998, 1, '_probe', 'allowance', 1)$q$, an_employee),
+    'add an allowance to somebody''s pay', true);
+  PERFORM pg_temp.try_insert('payroll', signer, 'Bishop or Treasurer',
+    format($q$INSERT INTO payroll_employee_custom_items(employee_id, year, month, label, type, amount)
+             VALUES (%L, 2998, 2, '_probe', 'allowance', 1)$q$, an_employee),
+    'add an allowance to somebody''s pay', true);
+  PERFORM pg_temp.try_insert('payroll', exco, 'EXCO member',
+    format($q$INSERT INTO payroll_employee_custom_items(employee_id, year, month, label, type, amount)
+             VALUES (%L, 2998, 3, '_probe', 'allowance', 1)$q$, an_employee),
+    'add an allowance to somebody''s pay', false);
+  PERFORM pg_temp.try_insert('payroll', desk, 'Ministry desk',
+    format($q$INSERT INTO payroll_employee_custom_items(employee_id, year, month, label, type, amount)
+             VALUES (%L, 2998, 4, '_probe', 'allowance', 1)$q$, an_employee),
+    'add an allowance to somebody''s pay', false);
+
+  -- A correction to a figure already paid, which is the same question.
+  PERFORM pg_temp.try_insert('payroll', signer, 'Bishop or Treasurer',
+    format($q$INSERT INTO payroll_adjustments(employee_id, year, month, category, amount, reason)
+             VALUES (%L, 2998, 1, 'EPF_EE', 1, '_probe')$q$, an_employee),
+    'correct a figure already paid', true);
+  PERFORM pg_temp.try_insert('payroll', exco, 'EXCO member',
+    format($q$INSERT INTO payroll_adjustments(employee_id, year, month, category, amount, reason)
+             VALUES (%L, 2998, 2, 'EPF_EE', 1, '_probe')$q$, an_employee),
+    'correct a figure already paid', false);
+
+  -- Changing a figure means seeing it. Oversight could read a run and its
+  -- vouchers but not the salaries behind them, so the sheet they are now
+  -- asked to correct would have been empty.
+  PERFORM pg_temp.try_count('payroll', signer, 'Bishop or Treasurer',
+    'SELECT count(*) FROM payroll_salary', 'read the salaries', 'some');
+  PERFORM pg_temp.try_count('payroll', exco, 'EXCO member',
+    'SELECT count(*) FROM payroll_salary', 'read the salaries', 'none');
+
+  -- A column heading on a run names no figure, so it stays readable; adding
+  -- one does not.
+  PERFORM pg_temp.try_insert('payroll', exco, 'EXCO member',
+    $q$INSERT INTO payroll_run_custom_defs(label, type) VALUES ('_probe','allowance')$q$,
+    'add a column to a payroll run', false);
+
 END $probe$;
 
 INSERT INTO result(seq, area, who, attempt, got, expected, verdict)
