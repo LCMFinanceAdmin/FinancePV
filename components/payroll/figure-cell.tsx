@@ -24,6 +24,7 @@ import { useState, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { adjustmentLabel } from "@/lib/types";
+import { cellAction } from "@/lib/payroll/adjustment-range";
 import type { AdjustmentCategory, PayrollAdjustment } from "@/lib/types";
 
 const num = (n: number) =>
@@ -68,12 +69,12 @@ export function FigureCell({
 
   async function save() {
     const wanted = parseFloat(draft);
-    if (Number.isNaN(wanted) || before === null) { setEditing(false); return; }
-    const delta = Math.round((wanted - before) * 100) / 100;
+    const action = cellAction(before, wanted, !!existing);
+    if (action.kind === "none") { setEditing(false); return; }
 
-    // Already there: nothing to write, and an adjustment of zero is a row
-    // somebody would have to explain later.
-    if (delta === 0) {
+    // Typing back the figure that was there takes the correction away rather
+    // than writing one of zero, which the table refuses anyway.
+    if (action.kind === "remove") {
       if (existing) {
         setSaving(true);
         const { error } = await supabase.from("payroll_adjustments").delete().eq("id", existing.id);
@@ -90,6 +91,10 @@ export function FigureCell({
       return;
     }
 
+    // cellAction already declined a null base; saying so narrows the type and
+    // records why this cannot be reached with one.
+    if (before === null) { setEditing(false); return; }
+    const delta = action.delta;
     setSaving(true);
     const { data: { session } } = await supabase.auth.getSession();
     const row = {

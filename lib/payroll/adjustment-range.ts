@@ -187,3 +187,30 @@ export function sharedDelta(steps: readonly TargetStep[]): number | null {
   const first = written[0].delta!;
   return written.every(s => s.delta === first) ? first : null;
 }
+
+/**
+ * What typing a figure into a cell should do.
+ *
+ * Three answers, and the third is the one that is easy to get wrong. Typing
+ * the figure a cell already shows means there is nothing to correct — and if a
+ * correction is standing there, the right response is to take it away rather
+ * than to write one of zero. payroll_adjustments refuses a zero amount, so
+ * writing one fails; leaving the old correction in place while reporting
+ * success would be worse, because the figure on screen would go back to what
+ * it was with nothing to say why.
+ */
+export type CellAction =
+  | { kind: "none" }
+  | { kind: "remove" }
+  | { kind: "write"; delta: number };
+
+export function cellAction(
+  before: number | null,
+  typed: number,
+  hasCorrection: boolean,
+): CellAction {
+  if (before === null || !Number.isFinite(typed)) return { kind: "none" };
+  const delta = Math.round((typed - before) * 100) / 100;
+  if (delta === 0) return hasCorrection ? { kind: "remove" } : { kind: "none" };
+  return { kind: "write", delta };
+}

@@ -33,7 +33,7 @@ import {
 import { inForceFor } from "../lib/payroll/salary-in-force.ts";
 import { ptptnDue, recordedBalance, needsAttention } from "../lib/payroll/ptptn.ts";
 import {
-  adjustmentMonths, groupAdjustments, stepsToTarget, stepsToWrite, sharedDelta,
+  adjustmentMonths, groupAdjustments, stepsToTarget, stepsToWrite, sharedDelta, cellAction,
 } from "../lib/payroll/adjustment-range.ts";
 import { calcLine, fullGross, figureOf } from "../lib/payroll/calc.ts";
 import type { AdjustmentCategory } from "../lib/types.ts";
@@ -241,6 +241,38 @@ check("and a different one from before it",
 check("every month lands exactly on the figure typed",
   targetSteps.map(s => Math.round((s.before! + s.delta!) * 100) / 100),
   targetSteps.map(() => TARGET));
+
+// ───────────────────────────────────────────────────────────────────────────
+section("Changing a figure in the sheet");
+
+// EPF on the promoted pastor's July salary, which is what a cell would show
+// if nothing had been corrected.
+const julyEpf = figureFor(7, "EPF_EE")!;
+
+check("a cell starts at the computed figure", julyEpf > 0, true);
+check("typing a different figure writes the difference",
+  cellAction(julyEpf, julyEpf + 18, false), { kind: "write", delta: 18 });
+check("typing a lower one writes a negative difference",
+  cellAction(julyEpf, julyEpf - 50, false), { kind: "write", delta: -50 });
+
+// The cell measures from the computed figure, not from what it is showing, so
+// a second edit replaces the first rather than compounding it.
+check("a second edit replaces the first, it does not compound",
+  cellAction(julyEpf, julyEpf + 30, true), { kind: "write", delta: 30 });
+
+check("typing the computed figure back takes the correction away",
+  cellAction(julyEpf, julyEpf, true), { kind: "remove" });
+check("and does nothing where there was no correction",
+  cellAction(julyEpf, julyEpf, false), { kind: "none" });
+
+// Whatever is typed, the figure afterwards is the figure that was typed —
+// the same invariant the form rests on, now reached from the sheet.
+for (const typed of [julyEpf + 18, julyEpf - 50, 0]) {
+  const action = cellAction(julyEpf, typed, false);
+  const after = action.kind === "write" ? julyEpf + action.delta : julyEpf;
+  check(`a cell set to ${typed.toFixed(2)} ends at that figure`,
+    Math.round(after * 100) / 100, Math.round(typed * 100) / 100);
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 section("One payslip, with all of it on at once");

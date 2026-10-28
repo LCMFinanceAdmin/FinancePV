@@ -253,3 +253,54 @@ test("a target of zero is a real instruction, not an empty box", () => {
   assert.equal(steps[0].delta, -853);
   assert.equal(stepsToWrite(steps).length, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Typing a figure into a cell
+//
+// Three answers, and the third is the one that is easy to get wrong: typing
+// back the figure that was already there means taking a correction away, not
+// writing one of zero. The table refuses a zero amount, so writing one fails —
+// and leaving the old correction in place while reporting success would be
+// worse, because the figure on screen would go back with nothing to say why.
+// ---------------------------------------------------------------------------
+import { cellAction } from "@/lib/payroll/adjustment-range";
+
+test("a different figure is written as the difference", () => {
+  assert.deepEqual(cellAction(682, 700, false), { kind: "write", delta: 18 });
+  assert.deepEqual(cellAction(682, 600, false), { kind: "write", delta: -82 });
+});
+
+test("a corrected cell typed to a new figure updates the correction", () => {
+  // The difference is measured from the computed figure, not from what the
+  // cell currently shows, or each edit would compound the last.
+  assert.deepEqual(cellAction(682, 750, true), { kind: "write", delta: 68 });
+});
+
+test("typing back the computed figure takes the correction away", () => {
+  assert.deepEqual(cellAction(682, 682, true), { kind: "remove" });
+});
+
+test("typing the computed figure where there is no correction does nothing", () => {
+  // Not a removal of something that was never there, and not a row of zero.
+  assert.deepEqual(cellAction(682, 682, false), { kind: "none" });
+});
+
+test("a cell with nothing to measure against does nothing", () => {
+  assert.deepEqual(cellAction(null, 700, false), { kind: "none" });
+  assert.deepEqual(cellAction(null, 700, true), { kind: "none" });
+});
+
+test("an empty or unreadable box does nothing", () => {
+  assert.deepEqual(cellAction(682, Number.NaN, true), { kind: "none" });
+});
+
+test("the difference is rounded to the sen", () => {
+  assert.deepEqual(cellAction(853.03, 1234.10, false), { kind: "write", delta: 381.07 });
+  // And a difference smaller than a sen is no difference at all.
+  assert.deepEqual(cellAction(682, 682.001, true), { kind: "remove" });
+});
+
+test("a figure typed as zero is a real correction, not an empty box", () => {
+  // Cancelling a deduction outright has to be possible.
+  assert.deepEqual(cellAction(44.65, 0, false), { kind: "write", delta: -44.65 });
+});
