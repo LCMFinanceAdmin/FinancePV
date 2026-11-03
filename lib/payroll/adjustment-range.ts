@@ -8,6 +8,11 @@
 // payment of its own, not the month after December, so it is never swept into a
 // range: a correction meant for May through December must not quietly land on
 // somebody's bonus as well.
+//
+// It can still be reached deliberately. A bonus paid in December carries EPF
+// and PCB of its own, so a correction to those may genuinely need to run from
+// some month through to the 13th — but that has to be said rather than implied,
+// which is what `throughThirteenth` is. Without it the old clamp stands.
 
 /**
  * The months between `from` and `to`, inclusive.
@@ -19,14 +24,18 @@
 export function adjustmentMonths(
   from: number,
   to: number,
-  opts?: { editing?: boolean },
+  opts?: { editing?: boolean; throughThirteenth?: boolean },
 ): number[] {
   // Editing is always the one row it already was.
   if (opts?.editing) return [from];
   // The 13th month stands alone, and nothing runs into it.
   if (from >= 13) return [13];
   const last = Math.max(from, Math.min(to, 12));
-  return Array.from({ length: last - from + 1 }, (_, i) => from + i);
+  const run = Array.from({ length: last - from + 1 }, (_, i) => from + i);
+  // A `to` of 13 on its own is still clamped away above: that is what a range
+  // typed past the end of the year looks like, and it must not reach a bonus.
+  // The flag is the form saying somebody chose the 13th month from the list.
+  return opts?.throughThirteenth ? [...run, 13] : run;
 }
 
 // ---------------------------------------------------------------------------

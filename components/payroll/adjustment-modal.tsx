@@ -85,7 +85,12 @@ export function AdjustmentModal({
   const meta = ADJUSTMENT_CATEGORIES.find(c => c.key === category);
 
   const rangeable = !editing && mth <= 12;
-  const months = adjustmentMonths(mth, toMth, { editing: !!editing });
+  const months = adjustmentMonths(mth, toMth, {
+    editing: !!editing,
+    // The list offers the 13th month after December, so picking it is a
+    // deliberate "and the bonus too" rather than a range run off the end.
+    throughThirteenth: toMth === 13,
+  });
   const lastMth = months[months.length - 1];
   const spread = months.length > 1;
 
@@ -284,9 +289,10 @@ export function AdjustmentModal({
               <label className={lbl}>Through to</label>
               <select className={fld} value={lastMth}
                 onChange={e => { setToMth(Number(e.target.value)); setConflicts(null); }}>
-                {Array.from({ length: 12 - mth + 1 }, (_, i) => mth + i).map(m => (
+                {Array.from({ length: 13 - mth + 1 }, (_, i) => mth + i).map(m => (
                   <option key={m} value={m}>
-                    {MONTHS[m - 1]} {year}{m === mth ? " — this month only" : ""}
+                    {m === 13 ? "13th month" : `${MONTHS[m - 1]} ${year}`}
+                    {m === mth ? " — this month only" : ""}
                   </option>
                 ))}
               </select>

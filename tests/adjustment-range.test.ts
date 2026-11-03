@@ -34,6 +34,34 @@ test("the 13th month stands on its own", () => {
   assert.deepEqual(adjustmentMonths(13, 5), [13]);
 });
 
+test("the 13th month can be chosen as the far end of a range", () => {
+  // A bonus carries EPF and PCB of its own, so a correction to those may need
+  // to run through to it — but only because somebody picked it from the list.
+  assert.deepEqual(
+    adjustmentMonths(10, 13, { throughThirteenth: true }), [10, 11, 12, 13]);
+  // The whole year and the bonus: thirteen payslips, not twelve.
+  assert.deepEqual(adjustmentMonths(1, 13, { throughThirteenth: true }).length, 13);
+  // December and the bonus are two payments, and both are named.
+  assert.deepEqual(
+    adjustmentMonths(12, 13, { throughThirteenth: true }), [12, 13]);
+});
+
+test("asking through the 13th still writes each month once, in order", () => {
+  for (let from = 1; from <= 12; from++) {
+    const months = adjustmentMonths(from, 13, { throughThirteenth: true });
+    assert.equal(months[0], from, `${from}->13 did not start where asked`);
+    assert.equal(months[months.length - 1], 13, `${from}->13 lost the bonus`);
+    assert.deepEqual([...new Set(months)], months, `${from}->13 repeated a month`);
+    assert.deepEqual([...months].sort((a, b) => a - b), months, `${from}->13 out of order`);
+  }
+});
+
+test("editing still ignores the flag", () => {
+  // An existing row is one row. Opening it to edit must not grow it a bonus.
+  assert.deepEqual(
+    adjustmentMonths(5, 13, { editing: true, throughThirteenth: true }), [5]);
+});
+
 test("an end before the start is one month, not an error", () => {
   // Either end can be chosen first, so "May to March" means somebody is still
   // deciding — it should not write eleven rows backwards or none at all.
