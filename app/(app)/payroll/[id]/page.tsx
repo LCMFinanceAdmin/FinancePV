@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, figureOf, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
+import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
 import { FigureCell } from "@/components/payroll/figure-cell";
 import { logPayrollAudit } from "@/lib/payroll/audit";
@@ -1604,7 +1605,7 @@ export default function PayrollEmployeePage() {
           emp={emp} year={year} salary={current}
           monthLines={monthLines} thirteenth={thirteenth}
           pcbArr={pcb} customItemsByMonth={customItemsByMonth}
-          effMonth={effMonth}
+          effMonth={effMonth} adjustments={adjustments} loans={loans}
           onClose={() => setShowYearlySheet(false)}
         />
       )}
@@ -1613,7 +1614,7 @@ export default function PayrollEmployeePage() {
 }
 
 // ─── Yearly Sheet Modal ──────────────────────────────────────────────────────
-function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, onClose }: {
+function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, adjustments, loans, onClose }: {
   emp: PayrollEmployee;
   year: number;
   salary: PayrollSalary;
@@ -1622,11 +1623,27 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   pcbArr: number[];
   customItemsByMonth: Record<number, PayrollEmployeeCustomItem[]>;
   effMonth: number;
+  /** This year's corrections. Already scoped to the year by the query. */
+  adjustments: PayrollAdjustment[];
+  loans: EmployeeLoan[];
   onClose: () => void;
 }) {
   const MONTH_LABELS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
   const [whatsappHint, setWhatsappHint] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  /**
+   * When this copy was produced.
+   *
+   * Taken once, when the sheet is opened, rather than read fresh as it prints:
+   * the paper and the screen have to agree, and a stamp that moved between
+   * looking at it and printing it would be the one thing on the page nobody
+   * could check. Opening the sheet is producing the copy.
+   */
+  const [producedAt] = useState(() => new Date());
+  const producedStamp = producedAt.toLocaleString("en-MY", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+  });
 
   /**
    * Print the sheet and nothing else.
@@ -1700,6 +1717,17 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       #ys-print-area .ys-caption { font-size: 22px !important; }
       #ys-print-area .ys-notes,
       #ys-print-area .ys-notes p { font-size: 20px !important; }
+      #ys-print-area .ys-revisions div,
+      #ys-print-area .ys-revisions span { font-size: 19px !important; }
+      #ys-print-area .ys-revisions .ys-rev-head { font-size: 17px !important; }
+      /* The label column is sized for the 9.5px it wears on screen. Print
+         scales the type and not the width, so "STATUTORY" ran straight under
+         the first box; the column has to be restated at the size it is
+         actually set in. */
+      #ys-print-area .ys-revisions .ys-rev-lab {
+        width: 140px !important;
+        font-size: 17px !important;
+      }
       #ys-print-area .ys-signatures div { font-size: 21px !important; }
 
       /* The annual line is the one somebody looks for first. Black fill and
@@ -1883,6 +1911,28 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const annualEpl = sum(l => l.eplDeduction);
   const hasEpl = annualEpl > 0;
   const specialCustom = customCols; // all custom items are "special"
+
+  /**
+   * What was changed on this year, reduced to what a signed sheet can carry.
+   *
+   * The app holds the long form — every correction, every month, with its
+   * reason. On paper that is unreadable: an allowance folded in from May is
+   * eight identical lines before a second figure doubles them. So the statutory
+   * schemes collapse to one box each, a loan says the four things anybody asks
+   * of it, and everything else gets a line of its own.
+   */
+  const statRevisions = statutoryRevisions(adjustments);
+  const otherRevisions = [...payRevisions(adjustments), ...itemRevisions(customItemsByMonth)];
+  const loanRevisions = loans
+    .filter(l => l.status === "ACTIVE")
+    .map(l => ({ id: l.id, rev: loanRevision(l) }))
+    .filter((r): r is { id: string; rev: NonNullable<ReturnType<typeof loanRevision>> } => r.rev !== null)
+    // A repayment that does not reach this year is not a revision to it.
+    .filter(r => r.rev.start.year <= year && r.rev.final.year >= year);
+  const hasRevisions = statRevisions.length > 0 || otherRevisions.length > 0 || loanRevisions.length > 0;
+  /** "Mar 2025" — a loan runs across years, so the year has to be said. */
+  const ym = (d: { year: number; month: number }) => `${MONTH_SHORT[d.month - 1]} ${d.year}`;
+  const revLabel = "ys-rev-lab w-[76px] shrink-0 text-[9.5px] font-bold uppercase tracking-wider text-stone-400";
 
   const hasAnySpecial = hasFamily || hasStm || hasExp || hasEpl || specialCustom.length > 0;
 
@@ -2221,12 +2271,69 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
           {customCols.filter(c => c.type === "deduction").length > 0 && <p className="text-red-500">Red columns: additional deductions subtracted from net.</p>}
         </div>
 
+        {/* Revisions — what was changed on this year. See the note where they
+            are worked out for why the paper gets the short form. */}
+        {hasRevisions && (
+          <div className="ys-revisions ys-keep mb-5 rounded border border-stone-300 px-3 py-2">
+            <div className="ys-rev-head text-[9.5px] font-bold uppercase tracking-wider text-stone-500 mb-1.5">
+              Revisions this year
+            </div>
+            <div className="space-y-1">
+              {/* Every statutory correction on one line: a box per scheme, the
+                  months beside it. The figures themselves are in the table, in
+                  the cells the correction moved. */}
+              {statRevisions.length > 0 && (
+                <div className="flex items-baseline gap-2">
+                  <div className={revLabel}>Statutory</div>
+                  <div className="flex flex-wrap gap-1">
+                    {statRevisions.map(r => (
+                      <span key={r.bucket}
+                        className="inline-flex items-baseline gap-1 rounded border border-stone-300 px-1.5 py-[1px]">
+                        <span className="text-[10px] font-bold text-stone-700">{r.bucket}</span>
+                        <span className="text-[10px] font-mono text-stone-500">{monthsLabel(r.months)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {loanRevisions.map(({ id, rev }) => (
+                <div key={id} className="flex items-baseline gap-2">
+                  <div className={revLabel}>Loan</div>
+                  <div className="text-[10px] text-stone-600">
+                    RM {num(rev.principal)} from <span className="font-semibold">{ym(rev.start)}</span>
+                    {" · "}RM {num(rev.monthly)}/month
+                    {" · "}final RM {num(rev.final.amount)} in <span className="font-semibold">{ym(rev.final)}</span>
+                    {/* Only worth saying where it is not simply the principal
+                        back again, which is what an interest-free loan comes to. */}
+                    {rev.total !== rev.principal && <>{" · "}RM {num(rev.total)} repayable</>}
+                  </div>
+                </div>
+              ))}
+              {otherRevisions.map(r => (
+                <div key={`${r.kind}-${r.label}`} className="flex items-baseline gap-2">
+                  <div className={revLabel}>
+                    {r.kind === "allowance" ? "Allowance" : r.kind === "deduction" ? "Deduction" : "Pay"}
+                  </div>
+                  <div className="text-[10px] text-stone-600">
+                    <span className="font-semibold">{r.label}</span>
+                    {" · "}
+                    {r.amount === null
+                      ? "varies by month"
+                      : `RM ${num(r.amount)}${r.months.length > 1 ? " each" : ""}`}
+                    {" · "}{monthsLabel(r.months)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Signature section */}
         <div className="ys-signatures ys-keep grid grid-cols-2 gap-8 mt-8 print:mt-12">
           <div>
             <div className="ys-sig-line h-12 border-b border-stone-400 mb-1.5"></div>
             <div className="text-[11px] text-stone-500">Prepared by / Finance Executive</div>
-            <div className="text-[11px] text-stone-400 mt-0.5">Date: ___________________</div>
+            <div className="text-[11px] text-stone-400 mt-0.5">Date: {producedStamp}</div>
           </div>
           <div>
             <div className="ys-sig-line h-12 border-b border-stone-400 mb-1.5"></div>
