@@ -94,8 +94,12 @@ export function TodoList({ userEmail }: { userEmail: string }) {
   const done = useMemo(() => tasks.filter(t => t.done), [tasks]);
   const shown = showDone ? [...open, ...done] : open;
 
+  // A hairline, like the two panels beside it. The heavy blue border this wore
+  // was right while the list stood alone in a side column; in a row of three it
+  // reads as the other two being broken rather than as this one mattering more.
+  // The blue icon still carries that.
   return (
-    <div className="rounded-2xl border-2 border-[#2f5b9c] bg-white p-4 shadow-[0_2px_12px_rgba(47,91,156,0.10)]">
+    <div className="rounded-2xl border border-stone-100 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <ListChecks size={17} className="text-[#2f5b9c]" />

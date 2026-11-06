@@ -4,16 +4,16 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import type { UserProfile } from "@/lib/types";
-import { FeatureDirectory } from "@/components/layout/feature-directory";
 import { InstallApp } from "@/components/install-app";
 import { NotificationsOptIn } from "@/components/notifications-optin";
 import { TodoList } from "@/components/dashboard/todo-list";
 import { NewJoinerWelcome } from "@/components/dashboard/new-joiner-welcome";
+import { RecentUpdates } from "@/components/dashboard/recent-updates";
 import {
   FilePlus, Clock, CheckCircle2, XCircle, ShieldCheck,
   FileText, X, Inbox, AlertCircle,
   Building2, RefreshCw, Landmark, ArrowRight, TrendingUp,
-  Activity, PiggyBank, Wallet, CreditCard,
+  Activity, PiggyBank, Wallet, CreditCard, Zap, Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -180,6 +180,22 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
     );
   }
 
+  /**
+   * The quiet version of a shortcut's colour.
+   *
+   * Each shortcut names a gradient it used to be painted with; the middle word
+   * of it is the hue, and that is all the tile needs. Read from the existing
+   * field rather than a second one beside it, so a shortcut cannot end up with
+   * two colours that disagree.
+   */
+  const TILE_TINT: Record<string, string> = {
+    blue: "bg-blue-50 text-blue-600", violet: "bg-violet-50 text-violet-600",
+    amber: "bg-amber-50 text-amber-600", emerald: "bg-emerald-50 text-emerald-600",
+    sky: "bg-sky-50 text-sky-600", teal: "bg-teal-50 text-teal-600",
+    cyan: "bg-cyan-50 text-cyan-700", stone: "bg-stone-100 text-stone-600",
+  };
+  const tintOf = (color: string) => TILE_TINT[color.split("-")[1] ?? ""] ?? TILE_TINT.stone;
+
   // ── Quick shortcuts by role ────────────────────────────────────────────
   const shortcuts = isFinanceAdmin ? [
     { href: "/payments",       icon: <CreditCard size={18} />, label: "Payments",     desc: "Mark vouchers paid",       color: "from-blue-500 to-blue-700" },
@@ -201,8 +217,7 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
     { href: "/hod-activity",   icon: <FileText size={18} />,     label: "My Approvals",    desc: "Vouchers you've acted on", color: "from-violet-500 to-violet-700" },
   ] : [
     { href: "/submit",         icon: <FilePlus size={18} />,    label: "New Request",     desc: "Request a payment",      color: "from-blue-500 to-blue-700" },
-    { href: "/my-pvs",         icon: <FileText size={18} />,    label: "My PVs",          desc: "Track your submissions", color: "from-violet-500 to-violet-700" },
-    { href: "/my-pvs",         icon: <FileText size={18} />,     label: "My Submissions",  desc: "Vouchers and requests you raised", color: "from-sky-500 to-sky-700" },
+    { href: "/my-pvs",         icon: <FileText size={18} />,    label: "My Submissions",  desc: "Vouchers and requests you raised", color: "from-violet-500 to-violet-700" },
     { href: "/payment-requests",icon: <AlertCircle size={18} />,label: "Payment Req.",    desc: "Track your requests",    color: "from-amber-500 to-amber-600" },
     { href: "/my-leaves",      icon: <Clock size={18} />,       label: "My Leaves",       desc: "Leave applications",     color: "from-emerald-500 to-emerald-700" },
   ];
@@ -212,8 +227,14 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
 
       {/* ── Greeting ──────────────────────────────────────────────────── */}
       <div>
-        <h1 className="text-xl font-bold text-stone-800">{greeting(firstName)}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-stone-800">{greeting(firstName)}</h1>
         <p className="text-sm text-stone-400 mt-0.5">Here&apos;s what needs your attention today</p>
+      </div>
+
+      {/* The one line that says why the figures below are the ones shown. */}
+      <div className="flex items-center gap-1.5">
+        <Sparkles size={15} className="text-amber-400" />
+        <h2 className="text-[13px] font-bold text-stone-700">Needs attention today</h2>
       </div>
 
       {/* ── Needs attention cards ─────────────────────────────────────── */}
@@ -360,41 +381,49 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
       <InstallApp />
       <NotificationsOptIn />
 
-      {/* ── Quick shortcuts ───────────────────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="order-2 lg:order-1">
-        <div className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Quick Actions</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {shortcuts.map(s => {
-            const badge = "badge" in s ? (s.badge as number) : 0;
-            return (
-              <Link key={s.href} href={s.href}
-                className={`relative bg-gradient-to-br ${s.color} rounded-lg p-2.5 text-white group hover:shadow-lg hover:scale-[1.02] transition-all`}>
-                {badge > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-white text-red-600 text-[9px] font-bold grid place-items-center leading-none shadow-sm">
-                    {badge}
-                  </span>
-                )}
-                <div className="mb-0.5 opacity-90 [&>svg]:h-4 [&>svg]:w-4">{s.icon}</div>
-                <div className="text-[11px] font-bold leading-tight">{s.label}</div>
-                <div className="text-[9px] text-white/65 mt-0.5 leading-tight">
-                  {badge > 0 && s.href === "/gm-claims" ? `${badge} to process` : s.desc}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-        </div>
+      {/* ── The three questions, in the order somebody asks them ───────
+             What is on me, what has moved, and what did I come here to do.
+             The full feature directory used to sit below this: the sidebar
+             already lists every page this person can open, and a second copy
+             of it was the longest thing on a page meant for the day's work. */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {profile && <TodoList userEmail={profile.email} />}
 
-        <div className="order-1 lg:order-2">
-          {profile && <TodoList userEmail={profile.email} />}
-        </div>
+        {profile && (
+          <RecentUpdates
+            email={profile.email}
+            isFinanceAdmin={isFinanceAdmin}
+            isBam={isBamRole}
+          />
+        )}
+
+        <section className="rounded-2xl border border-stone-100 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-stone-100 px-4 py-3">
+            <Zap size={15} className="text-stone-400" />
+            <h2 className="text-[13px] font-bold text-stone-700">Quick actions</h2>
+          </div>
+          {/* Six at most, two abreast. The gradients these wore were the
+              loudest thing on the page and said nothing the label did not;
+              a quiet tint reads as a button rather than a advertisement. */}
+          <div className="grid grid-cols-2 gap-2 p-3">
+            {shortcuts.slice(0, 6).map(s => {
+              const badge = "badge" in s ? (s.badge as number) : 0;
+              return (
+                <Link key={s.href + s.label} href={s.href}
+                  className={`relative flex flex-col gap-1.5 rounded-xl p-2.5 transition-transform hover:scale-[1.02] ${tintOf(s.color)}`}>
+                  {badge > 0 && (
+                    <span className="absolute right-1.5 top-1.5 grid h-[15px] min-w-[15px] place-items-center rounded-full bg-white px-1 text-[9px] font-bold leading-none text-red-600 shadow-sm">
+                      {badge}
+                    </span>
+                  )}
+                  <span className="[&>svg]:h-4 [&>svg]:w-4">{s.icon}</span>
+                  <span className="text-[11px] font-bold leading-tight text-stone-700">{s.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
       </div>
-
-      {/* ── Everything this person can reach ──────────────────────────
-          The sidebar shows a handful of groups, collapsed; this is the full
-          map for when you know the app does something but not where. */}
-      {profile && <FeatureDirectory user={profile} />}
 
       {/* ── Main content: PV list + Banking panel ─────────────────────── */}
       <div className={`grid gap-5 ${isFinanceAdmin && bankAccounts.length > 0 ? "md:grid-cols-[1fr_280px]" : "grid-cols-1"}`}>
