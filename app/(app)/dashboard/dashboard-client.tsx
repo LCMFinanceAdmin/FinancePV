@@ -8,6 +8,7 @@ import { FeatureDirectory } from "@/components/layout/feature-directory";
 import { InstallApp } from "@/components/install-app";
 import { NotificationsOptIn } from "@/components/notifications-optin";
 import { TodoList } from "@/components/dashboard/todo-list";
+import { NewJoinerWelcome } from "@/components/dashboard/new-joiner-welcome";
 import {
   FilePlus, Clock, CheckCircle2, XCircle, ShieldCheck,
   FileText, X, Inbox, AlertCircle,
@@ -314,6 +315,12 @@ export default function DashboardPage({ profile }: { profile?: UserProfile | nul
         )}
       </div>
       )}
+
+      {/* Who has just joined, for their first month. Sits under the figures
+          rather than above them: what needs doing today is why somebody opened
+          this page, and a welcome is the better thing to meet once that is
+          answered. It renders nothing at all when nobody is new. */}
+      <NewJoinerWelcome />
 
       {/* ── GM Claim notifications ────────────────────────────────────── */}
       {isFinanceAdmin && gmNotifs.length > 0 && (
