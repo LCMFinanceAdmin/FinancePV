@@ -6,41 +6,82 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import type { PurchaseRequest, PRStatus } from "@/lib/types";
 import {
   Plus, FileText, ExternalLink, ChevronDown, ChevronUp, Check, RefreshCw, ShieldCheck, BellRing,
+  Search, Hourglass, CheckCircle2, XCircle, Store, CalendarDays, Users,
 } from "lucide-react";
 
 // "My Payment Requests" — the applicant's tracker. The request itself is now
 // raised from the shared payment form (/submit), which mirrors the PV form, so
 // this page only follows a request through the approval chain.
 
+// Each status says who is holding the request right now, because that is the
+// question somebody opens this page to ask.
 const STATUS_LABELS: Record<PRStatus, string> = {
-  SUBMITTED:     "Awaiting EXCO verification",
-  EXCO_VERIFIED: "With the General Manager",
-  GM_APPROVED:   "Approved — Finance raising PV",
+  SUBMITTED:     "Awaiting EXCO",
+  EXCO_VERIFIED: "Awaiting GM approval",
+  GM_APPROVED:   "Finance raising PV",
   PV_RAISED:     "PV raised",
   REJECTED:      "Rejected",
   CANCELLED:     "Cancelled",
 };
 const STATUS_COLORS: Record<PRStatus, string> = {
-  SUBMITTED:     "bg-amber-100 text-amber-800",
-  EXCO_VERIFIED: "bg-sky-100 text-sky-800",
-  GM_APPROVED:   "bg-green-100 text-green-800",
-  PV_RAISED:     "bg-blue-100 text-blue-800",
-  REJECTED:      "bg-red-100 text-red-800",
-  CANCELLED:     "bg-stone-100 text-stone-500",
+  SUBMITTED:     "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+  EXCO_VERIFIED: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+  GM_APPROVED:   "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
+  PV_RAISED:     "bg-green-50 text-green-700 ring-1 ring-green-200",
+  REJECTED:      "bg-red-50 text-red-700 ring-1 ring-red-200",
+  CANCELLED:     "bg-stone-100 text-stone-500 ring-1 ring-stone-200",
+};
+const STATUS_ICONS: Record<PRStatus, typeof Hourglass> = {
+  SUBMITTED: Hourglass, EXCO_VERIFIED: Hourglass, GM_APPROVED: FileText,
+  PV_RAISED: CheckCircle2, REJECTED: XCircle, CANCELLED: XCircle,
 };
 
 // Mirrors the constitutional chain: the ministry's own committee verifies
 // before the request ever reaches the finance desk.
 const STAGES = ["Submitted", "Ministry EXCO", "General Manager", "Finance / PV"];
-function stageIndex(status: PRStatus): number {
+
+/**
+ * Which stage is holding the request now — not the last one it cleared.
+ *
+ * These were the same number before, and it made the chain say the wrong
+ * thing: a request the EXCO had verified lit up "Ministry EXCO" as the stage
+ * in hand, directly above a green line reading "Verified by … (Mission EXCO)".
+ * The status chip said it was with the General Manager and the chain said it
+ * was not. Clearing a stage and standing on it are different facts, so they
+ * are different numbers: everything below `cur` is done, `cur` is who has it.
+ *
+ * Past the end means nobody is holding it — the voucher exists and the chain
+ * is finished, so every stage reads as cleared.
+ */
+function currentStage(status: PRStatus): number {
   switch (status) {
-    case "SUBMITTED":     return 0;
-    case "EXCO_VERIFIED": return 1;
-    case "GM_APPROVED":   return 2;
-    case "PV_RAISED":     return 3;
-    default:              return -1;
+    case "SUBMITTED":     return 1;              // with the ministry's EXCO
+    case "EXCO_VERIFIED": return 2;              // with the General Manager
+    case "GM_APPROVED":   return 3;              // with Finance, to raise it
+    case "PV_RAISED":     return STAGES.length;  // done
+    default:              return -1;             // rejected or cancelled
   }
 }
+
+/**
+ * The shelf a request sits on, for the filter tabs.
+ *
+ * Rejected and cancelled share one, and it is only offered when something is
+ * actually on it: a claim that was turned down has to stay findable, and a tab
+ * that is empty for almost everybody is clutter for almost everybody.
+ */
+type Bucket = "progress" | "approved" | "done" | "closed";
+const BUCKET_OF: Record<PRStatus, Bucket> = {
+  SUBMITTED: "progress", EXCO_VERIFIED: "progress",
+  GM_APPROVED: "approved", PV_RAISED: "done",
+  REJECTED: "closed", CANCELLED: "closed",
+};
+const BUCKET_LABELS: { key: Bucket; label: string }[] = [
+  { key: "progress", label: "In Progress" },
+  { key: "approved", label: "Approved" },
+  { key: "done",     label: "Completed" },
+  { key: "closed",   label: "Closed" },
+];
 
 /**
  * Who sees the whole requisition book rather than only their own requests.
@@ -98,6 +139,8 @@ export default function PaymentRequestsPage() {
   const [myEmail, setMyEmail] = useState("");
   const oversees = SEES_EVERY_REQUEST.includes(role);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<Bucket | "all">("all");
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -124,9 +167,27 @@ export default function PaymentRequestsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const shown = scope === "all"
+  // Scope first, because the tab counts have to count what is on screen.
+  const inScope = scope === "all"
     ? prs
     : prs.filter(pr => (pr.submitted_by_email ?? "").toLowerCase() === myEmail.toLowerCase());
+
+  const counts = inScope.reduce((acc, pr) => {
+    acc[BUCKET_OF[pr.status]] = (acc[BUCKET_OF[pr.status]] ?? 0) + 1;
+    return acc;
+  }, {} as Record<Bucket, number>);
+
+  // Everything somebody might have in mind when they go looking for one of
+  // these: its number, what it was for, who is being paid, whose budget it
+  // comes out of, and — where the page shows everybody's — who raised it.
+  const needle = query.trim().toLowerCase();
+  const shown = inScope.filter(pr => {
+    if (tab !== "all" && BUCKET_OF[pr.status] !== tab) return false;
+    if (!needle) return true;
+    return [pr.request_no, pr.title, pr.vendor_name, pr.project, pr.ministry,
+            pr.submitted_by_name, pr.submitted_by_email]
+      .some(f => (f ?? "").toLowerCase().includes(needle));
+  });
 
   function toggleExpand(id: string) {
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -137,31 +198,58 @@ export default function PaymentRequestsPage() {
   }
 
   return (
-    <div className="cloudlight-page max-w-4xl space-y-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4f7fc3]">Requests</p>
-          <h1 className="text-xl font-bold text-stone-800">
-            {oversees && scope === "all" ? "Payment Requests" : "My Payment Requests"}
-          </h1>
-          <p className="text-sm text-stone-400">
-            Verified by the ministry&apos;s EXCO, then approved by the General Manager
-          </p>
-          {oversees && (
-            <div className="mt-2 inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
-              {([["all", "Everyone’s"], ["mine", "Mine"]] as const).map(([k, label]) => (
-                <button key={k} type="button" onClick={() => setScope(k)}
-                  className={scope === k
-                    ? "rounded-md bg-[#4a6da7] px-2.5 py-1 text-xs font-semibold text-white"
-                    : "rounded-md px-2.5 py-1 text-xs font-medium text-stone-500 hover:text-stone-700"}>
-                  {label}
+    <div className="cloudlight-page max-w-5xl space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-stone-800">
+          {oversees && scope === "all" ? "Payment Requests" : "My Payment Requests"}
+        </h1>
+        <p className="mt-0.5 text-sm text-stone-400">
+          Track every request from submission to payment voucher
+        </p>
+        {oversees && (
+          <div className="mt-2.5 inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
+            {([["all", "Everyone’s"], ["mine", "Mine"]] as const).map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setScope(k)}
+                className={scope === k
+                  ? "rounded-md bg-[#4a6da7] px-2.5 py-1 text-xs font-semibold text-white"
+                  : "rounded-md px-2.5 py-1 text-xs font-medium text-stone-500 hover:text-stone-700"}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Which shelf, what you are hunting for, and the way to raise another.
+          The counts are of what the scope above is showing, so they agree with
+          the list rather than with the database. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {([{ key: "all" as const, label: "All" },
+             ...BUCKET_LABELS.filter(b => b.key !== "closed" || (counts.closed ?? 0) > 0)])
+            .map(b => {
+              const n = b.key === "all" ? inScope.length : (counts[b.key as Bucket] ?? 0);
+              const on = tab === b.key;
+              return (
+                <button key={b.key} type="button" onClick={() => setTab(b.key as Bucket | "all")}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    on ? "bg-[#4a6da7] text-white"
+                       : "bg-white text-stone-500 ring-1 ring-stone-200 hover:text-stone-700"}`}>
+                  {b.label}
+                  <span className={`rounded-full px-1.5 text-[10px] font-bold ${
+                    on ? "bg-white/25 text-white" : "bg-stone-100 text-stone-500"}`}>{n}</span>
                 </button>
-              ))}
-            </div>
-          )}
+              );
+            })}
+        </div>
+        <div className="relative min-w-[200px] flex-1">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" />
+          <input value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Search requests (e.g. PR-2026-002, vendor, title…)"
+            className="w-full rounded-full border border-stone-200 bg-white py-1.5 pl-8 pr-3 text-xs text-stone-700 outline-none placeholder:text-stone-300 focus:border-[#4a6da7]" />
         </div>
         <Link href="/submit"
-          className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#4a6da7] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#3d5a8e]">
+          className="flex shrink-0 items-center gap-1.5 rounded-full bg-[#4a6da7] px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#3d5a8e]">
           <Plus size={14} /> New Request
         </Link>
       </div>
@@ -178,39 +266,46 @@ export default function PaymentRequestsPage() {
         <div className="space-y-3">
           {shown.map(pr => {
             const isOpen = expanded.has(pr.id);
-            const idx = stageIndex(pr.status);
+            const cur = currentStage(pr.status);
+            const StatusIcon = STATUS_ICONS[pr.status];
             const rejection = [...(pr.approvals ?? [])].reverse().find(a => a.action === "REJECTED");
             return (
               <div key={pr.id} className="cloudlight-card overflow-hidden rounded-2xl">
                 <div className="px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="text-xs font-semibold text-stone-500">{pr.request_no}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[pr.status]}`}>
-                          {STATUS_LABELS[pr.status]}
+                      <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                        <span className="rounded-md bg-stone-100 px-1.5 py-0.5 text-[11px] font-semibold text-stone-500">{pr.request_no}</span>
+                        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_COLORS[pr.status]}`}>
+                          <StatusIcon size={11} /> {STATUS_LABELS[pr.status]}
                         </span>
-                        <span className="text-xs bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium">{pr.ministry}</span>
+                        <span className="text-[11px] bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium">{pr.ministry}</span>
                         {pr.is_recurring && (
-                          <span className="flex items-center gap-1 text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                          <span className="flex items-center gap-1 text-[11px] bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
                             <RefreshCw size={10} /> {(pr.recurrence_frequency ?? "MONTHLY").toLowerCase()}
                           </span>
                         )}
                       </div>
-                      <div className="text-sm font-semibold text-stone-800">{pr.title}</div>
-                      {pr.vendor_name && <div className="text-xs text-stone-500 mt-0.5">Vendor: {pr.vendor_name}</div>}
-                      {/* Who asked. Invisible while this page only ever showed
-                          your own requests, and the first thing wanted once it
-                          shows everybody's. */}
-                      <div className="text-xs text-stone-400 mt-0.5">
-                        {scope === "all" && (pr.submitted_by_name || pr.submitted_by_email)
-                          ? <>Raised by <span className="font-medium text-stone-500">{pr.submitted_by_name || pr.submitted_by_email}</span> &middot; </>
-                          : null}
-                        Submitted {formatDate(pr.submitted_at)}
+                      <div className="text-base font-bold text-stone-800">{pr.title}</div>
+                      {/* The facts somebody checks before reading any further,
+                          on one line. Who asked was invisible while this page
+                          only ever showed your own requests, and is the first
+                          thing wanted once it shows everyone else's too. */}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-400">
+                        {pr.vendor_name && (
+                          <span className="flex items-center gap-1"><Store size={11} /> Vendor: {pr.vendor_name}</span>
+                        )}
+                        <span className="flex items-center gap-1">
+                          <CalendarDays size={11} /> Submitted: {formatDate(pr.submitted_at)}
+                        </span>
+                        <span className="flex items-center gap-1"><Users size={11} /> Ministry: {pr.ministry}</span>
+                        {scope === "all" && (pr.submitted_by_name || pr.submitted_by_email) && (
+                          <span>Raised by <span className="font-medium text-stone-500">{pr.submitted_by_name || pr.submitted_by_email}</span></span>
+                        )}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-base font-bold text-stone-800">{formatCurrency(pr.estimated_amount)}</div>
+                      <div className="text-lg font-bold text-stone-800">{formatCurrency(pr.estimated_amount)}</div>
                       {pr.project && <div className="text-xs text-stone-400 mt-0.5">{pr.project}</div>}
                       {pr.status === "SUBMITTED" && (
                         <button onClick={() => remind(pr.id)} disabled={reminding === pr.id}
@@ -229,23 +324,38 @@ export default function PaymentRequestsPage() {
                     </p>
                   )}
 
-                  {/* Where it has got to */}
-                  {idx >= 0 && (
-                    <ol className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                      {STAGES.map((stage, i) => (
-                        <li key={stage} className="flex items-center gap-1.5">
-                          <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full text-[9px] font-bold ${
-                            i < idx ? "bg-green-100 text-green-700"
-                            : i === idx ? "bg-[#2563eb] text-white"
-                            : "bg-stone-100 text-stone-400"}`}>
-                            {i < idx ? <Check size={9} strokeWidth={3} /> : i + 1}
-                          </span>
-                          <span className={`text-[11px] ${i === idx ? "font-semibold text-[#1e4f95]" : i < idx ? "text-green-700" : "text-stone-400"}`}>
-                            {stage}
-                          </span>
-                          {i < STAGES.length - 1 && <span className="text-stone-300 text-[11px]">›</span>}
-                        </li>
-                      ))}
+                  {/* Where it has got to.
+                      Each stage is an equal column with its dot centred, so a
+                      joining line is simply "half a column back, one column
+                      wide", and the chain stays aligned however the labels
+                      wrap. The line into a stage carries that stage's state:
+                      green behind it, blue into the one holding it now, grey
+                      ahead of that. */}
+                  {cur >= 0 && (
+                    <ol className="mt-4 flex items-start">
+                      {STAGES.map((stage, i) => {
+                        const done = i < cur;
+                        const now = i === cur;
+                        return (
+                          <li key={stage} className="relative flex flex-1 flex-col items-center">
+                            {i > 0 && (
+                              <span aria-hidden className={`absolute left-[-50%] top-[9px] h-[2px] w-full ${
+                                done ? "bg-green-500" : now ? "bg-[#2563eb]" : "bg-stone-200"}`} />
+                            )}
+                            <span className={`relative z-[1] grid h-5 w-5 place-items-center rounded-full ${
+                              done ? "bg-green-500 text-white"
+                              : now ? "border-[3px] border-[#2563eb] bg-white"
+                              : "border-2 border-stone-200 bg-white"}`}>
+                              {done && <Check size={11} strokeWidth={3.5} />}
+                            </span>
+                            <span className={`mt-1.5 px-1 text-center text-[11px] leading-tight ${
+                              now ? "font-bold text-[#2563eb]"
+                              : done ? "font-semibold text-green-700" : "text-stone-400"}`}>
+                              {stage}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ol>
                   )}
 
