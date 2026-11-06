@@ -13,6 +13,7 @@ import {
   Plus, X, ChevronDown, ChevronUp, Paperclip, Link2, ExternalLink,
   CheckCircle, Clock, FileText, CreditCard, AlertCircle, Banknote,
   Package, Trash2, LayoutList, Table2, Printer, Share2, Upload, Eye, Camera, ShieldCheck,
+  Maximize2, Minimize2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -396,6 +397,27 @@ export default function GMClaimsPage() {
   // was one tap away — is what a narrow screen opens on. The toggle still
   // works; this only changes where it starts.
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  /**
+   * The table, filling the window.
+   *
+   * Nine columns do not fit beside a sidebar on a laptop, so the thing the
+   * GM actually reads was permanently scrolled sideways. This is a view,
+   * not a route: no navigation, and Escape puts it back.
+   */
+  const [fullScreen, setFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (!fullScreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFullScreen(false); };
+    window.addEventListener("keydown", onKey);
+    // The page behind must not scroll while the table is over it.
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [fullScreen]);
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) setViewMode("cards");
   }, []);
@@ -1094,7 +1116,24 @@ export default function GMClaimsPage() {
 
           /* ── TABLE VIEW ── */
           <>
-          <div className="bg-white rounded-2xl border-2 border-gray-400 shadow-sm overflow-hidden print:shadow-none">
+          <div className="flex items-center justify-end print:hidden">
+            <button type="button" onClick={() => setFullScreen(v => !v)}
+              className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-stone-600 transition-colors hover:bg-stone-50">
+              {fullScreen ? <><Minimize2 size={13} /> Exit full screen (Esc)</> : <><Maximize2 size={13} /> Full screen</>}
+            </button>
+          </div>
+          <div className={fullScreen
+            ? "fixed inset-0 z-50 flex flex-col bg-white p-3 print:static print:p-0"
+            : "bg-white rounded-2xl border-2 border-gray-400 shadow-sm overflow-hidden print:shadow-none"}>
+            {fullScreen && (
+              <div className="mb-2 flex shrink-0 items-center justify-between print:hidden">
+                <div className="text-sm font-bold text-stone-700">Claims Requests Processing</div>
+                <button type="button" onClick={() => setFullScreen(false)}
+                  className="flex items-center gap-1.5 rounded-lg border border-stone-200 px-2.5 py-1.5 text-[11px] font-semibold text-stone-600 hover:bg-stone-50">
+                  <Minimize2 size={13} /> Exit full screen (Esc)
+                </button>
+              </div>
+            )}
             {/* Print header */}
             <div className="hidden print:block text-center py-4 border-b border-gray-400">
               <div className="text-base font-bold uppercase tracking-widest">Lutheran Church in Malaysia</div>
@@ -1104,7 +1143,7 @@ export default function GMClaimsPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className={fullScreen ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"}>
               <table className="w-full text-xs border-collapse min-w-[1000px]" style={{ fontFamily: "Arial, sans-serif" }}>
                 <thead>
                   <tr className="bg-[#4a6da7] text-white">
@@ -1118,11 +1157,11 @@ export default function GMClaimsPage() {
                       { label: "Status",                           w: "w-44" },
                       { label: "Aging",                            w: "w-24" },
                     ].map(col => (
-                      <th key={col.label} className={`${col.w} px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide border-r-2 border-[#3a5d97] last:border-r-0 whitespace-nowrap`}>
+                      <th key={col.label} className={`${col.w} px-2 py-1.5 text-left text-[10.5px] font-bold uppercase tracking-wide border-r-2 border-[#3a5d97] last:border-r-0 whitespace-nowrap`}>
                         {col.label}
                       </th>
                     ))}
-                    <th className="w-24 px-2 py-3 text-center text-[11px] font-bold uppercase tracking-wide print:hidden">Actions</th>
+                    <th className="w-24 px-2 py-1.5 text-center text-[10.5px] font-bold uppercase tracking-wide print:hidden">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1148,54 +1187,57 @@ export default function GMClaimsPage() {
                       <Fragment key={claim.id}>
                       <tr id={`claim-row-${claim.id}`} className={`${rowBg} transition-colors ${highlightedClaimId === claim.id ? "ring-2 ring-inset ring-amber-400" : ""} ${awaitingGm ? "ring-2 ring-inset ring-yellow-400 hover:bg-yellow-200/70" : isPaid ? "hover:bg-green-100" : isRejectedRow ? "hover:bg-red-100" : isCancelledRow ? "hover:bg-amber-100" : "hover:bg-blue-50/50"}`}>
                         {/* No. */}
-                        <td className="px-3 py-3 text-center text-stone-500 font-medium border border-gray-300 align-middle text-[13px]">
+                        <td className="px-2 py-1.5 text-center text-stone-500 font-medium border border-gray-300 align-middle text-[10.5px]">
                           {idx + 1}
                         </td>
 
                         {/* Date of Submission */}
-                        <td className="px-3 py-3 border border-gray-300 align-middle whitespace-nowrap">
+                        <td className="px-2 py-1.5 border border-gray-300 align-middle whitespace-nowrap">
                           <EditCell value={claim.received_at} type="date"
                             displayValue={formatDate(claim.received_at)}
                             onSave={v => updateClaimField(claim.id, "received_at", v ? new Date(v).toISOString() : claim.received_at)}
-                            canEdit={isGM} className="text-stone-700 font-medium text-[15px]" />
+                            canEdit={isGM} className="text-stone-700 font-medium text-[12.5px]" />
                         </td>
 
                         {/* Claims/Payments */}
-                        <td className="px-3 py-3 border border-gray-300 align-middle">
+                        <td className="px-2 py-1.5 border border-gray-300 align-middle">
                           <EditCell value={claim.purpose} onSave={v => updateClaimField(claim.id, "purpose", v)}
-                            canEdit={isGM} className="font-semibold text-stone-800 text-[15px] leading-tight" />
+                            canEdit={isGM} className="font-semibold text-stone-800 text-[12.5px] leading-tight" />
+                          {/* Truncated: notes run to paragraphs and were
+                              setting the height of every row around them. The
+                              whole of it is still there to read and to edit. */}
                           <EditCell value={claim.description ?? ""} placeholder="notes…"
                             onSave={v => updateClaimField(claim.id, "description", v)} type="textarea"
-                            canEdit={isGM} className="text-stone-600 text-[13px] mt-0.5 leading-tight" />
+                            canEdit={isGM} className="text-stone-600 text-[10.5px] leading-tight line-clamp-1" />
                           <div className="flex flex-wrap gap-1 mt-1">
-                            <span className="text-[13px] font-mono text-stone-400">{claim.claim_no}</span>
+                            <span className="text-[10.5px] font-mono text-stone-400">{claim.claim_no}</span>
                             {isPOClaim && (
-                              <span className="flex items-center gap-0.5 text-[13px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                              <span className="flex items-center gap-0.5 text-[10.5px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">
                                 <Package size={10} /> PO
                               </span>
                             )}
                             {claim.is_fixed_asset && (
-                              <span className="text-[13px] font-semibold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
+                              <span className="text-[10.5px] font-semibold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Fixed Asset</span>
                             )}
                           </div>
 
                           {/* New arrival from the ministry EXCO — the GM accepts
                               here, which is the instruction to Finance. */}
+                          {/* One line: who verified it, whether it is budgeted,
+                              and the button that commits Finance to paying it.
+                              The budget wears its chip rather than its panel —
+                              the panel is four lines of the same fact, and the
+                              chip opens if the GM wants the workings. */}
                           {awaitingGm && (
-                            <div className="mt-2 rounded-lg border border-yellow-300 bg-yellow-50 px-2 py-1.5">
-                              <div className="flex items-center gap-1 text-[13px] font-bold text-yellow-800">
-                                <ShieldCheck size={12} className="shrink-0" /> New — awaiting your acceptance
-                              </div>
-                              {claim.exco_verified_by && (
-                                <div className="mt-0.5 text-[12px] text-yellow-700">
-                                  Verified by {claim.exco_verified_by}
-                                  {claim.ministry ? ` (${claim.ministry} EXCO)` : ""}
-                                </div>
-                              )}
-                              {/* Budgeted or not — shown before the GM accepts
-                                  and commits Finance to paying it. */}
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 rounded bg-yellow-200/70 px-1.5 py-0.5 text-[10px] font-bold text-yellow-900"
+                                title={claim.exco_verified_by
+                                  ? `Verified by ${claim.exco_verified_by}${claim.ministry ? ` (${claim.ministry} EXCO)` : ""}`
+                                  : "Awaiting your acceptance"}>
+                                <ShieldCheck size={9} className="shrink-0" /> NEW
+                              </span>
                               <BudgetImpact
-                                className="mt-2"
+                                variant="expandable"
                                 ministry={claim.ministry}
                                 projectName={claim.project}
                                 amount={Number(claim.amount) || 0}
@@ -1204,8 +1246,8 @@ export default function GMClaimsPage() {
                                 <button
                                   onClick={() => acceptClaim(claim)}
                                   disabled={acceptingClaimId === claim.id}
-                                  className="mt-1.5 w-full rounded-lg bg-green-600 px-2 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
-                                  {acceptingClaimId === claim.id ? "Accepting…" : "✓ Accept & instruct Finance"}
+                                  className="rounded bg-green-600 px-2 py-0.5 text-[10px] font-bold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
+                                  {acceptingClaimId === claim.id ? "Accepting…" : "✓ Accept"}
                                 </button>
                               )}
                             </div>
@@ -1213,66 +1255,69 @@ export default function GMClaimsPage() {
                         </td>
 
                         {/* Value */}
-                        <td className="px-3 py-3 border border-gray-300 align-middle">
+                        <td className="px-2 py-1.5 border border-gray-300 align-middle">
                           <EditCell value={String(claim.amount)} type="number"
                             displayValue={`RM ${Number(claim.amount).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             onSave={v => updateClaimField(claim.id, "amount", v)} canEdit={isGM}
-                            className="font-bold text-stone-800 tabular-nums text-[15px]" />
+                            className="font-bold text-stone-800 tabular-nums text-[12.5px]" />
                         </td>
 
                         {/* Claimant Name */}
-                        <td className="px-3 py-3 border border-gray-300 align-middle">
+                        <td className="px-2 py-1.5 border border-gray-300 align-middle">
                           <EditCell value={claim.claimant_name} onSave={v => updateClaimField(claim.id, "claimant_name", v)}
-                            canEdit={isGM} className="font-medium text-stone-800 text-[15px]" />
+                            canEdit={isGM} className="font-medium text-stone-800 text-[12.5px]" />
                           <SelectCell value={claim.claimant_type ?? ""} options={CLAIMANT_TYPES}
                             onSave={v => updateClaimField(claim.id, "claimant_type", v)}
-                            canEdit={isGM} className="text-stone-500 text-[13px] mt-0.5" />
-                          {claim.claimant_email && <div className="text-stone-400 text-[13px] mt-0.5">{claim.claimant_email}</div>}
+                            canEdit={isGM} className="text-stone-500 text-[10.5px] mt-0.5" />
+                          {claim.claimant_email && <div className="text-stone-400 text-[10.5px] mt-0.5">{claim.claimant_email}</div>}
                         </td>
 
                         {/* Committee/District/Personal */}
-                        <td className="px-3 py-3 border border-gray-300 align-middle">
+                        <td className="px-2 py-1.5 border border-gray-300 align-middle">
                           <EditCell value={claim.ministry ?? ""} placeholder="ministry…"
                             onSave={v => updateClaimField(claim.id, "ministry", v)}
-                            canEdit={isGM} className="text-stone-700 text-[15px]" />
-                          {claim.project && <div className="text-stone-400 text-[13px] mt-0.5">{claim.project}</div>}
+                            canEdit={isGM} className="text-stone-700 text-[12.5px]" />
+                          {claim.project && <div className="text-stone-400 text-[10.5px] mt-0.5">{claim.project}</div>}
                         </td>
 
                         {/* Status */}
-                        <td className="px-3 py-3 border border-gray-300 align-middle">
+                        <td className="px-2 py-1.5 border border-gray-300 align-middle">
                           {claim.pv && stage === "PV_PREPARED" && isGM ? (
                             <Link href={`/my-pvs/${claim.pv.id}`}
                               className="inline-flex flex-col items-start gap-1 group w-fit">
-                              <span className={`inline-flex items-center gap-1.5 text-[14px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
+                              <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
                                 {meta.icon} {meta.label}
                               </span>
-                              <span className="inline-flex items-center gap-1 text-[14px] font-bold px-2.5 py-1 rounded-lg bg-green-600 text-white group-hover:bg-green-700 whitespace-nowrap transition-colors">
+                              <span className="inline-flex items-center gap-1 text-[12px] font-bold px-2.5 py-1 rounded-lg bg-green-600 text-white group-hover:bg-green-700 whitespace-nowrap transition-colors">
                                 <CheckCircle size={12} /> Tap to Verify →
                               </span>
                             </Link>
                           ) : (
-                            <span className={`inline-flex items-center gap-1.5 text-[14px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
+                            <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.color}`}>
                               {meta.icon} {meta.label}
                             </span>
                           )}
                           {claim.pv && stage !== "PV_PREPARED" && (
                             <Link href={`/my-pvs/${claim.pv.id}`}
-                              className="flex items-center gap-1 text-[13px] text-[#4a6da7] hover:underline mt-1">
+                              className="flex items-center gap-1 text-[10.5px] text-[#4a6da7] hover:underline mt-1">
                               <ExternalLink size={11} /> {claim.pv.pv_no}
                             </Link>
                           )}
-                          {/* Full processing log with timestamps */}
+                          {/* The processing log, as the four marks it actually
+                              is. It was four lines of prose in every row, which
+                              is the single biggest reason a claim took a screen
+                              to itself; each mark keeps its label and timestamp
+                              on hover, and the colour says it at a glance. */}
                           {claim.pv && (
-                            <div className="mt-1.5 space-y-0.5">
+                            <div className="mt-1 flex items-center gap-1">
                               {claimTimeline(claim).map((ev, i) => (
-                                <div key={i} className={`flex items-start gap-1 text-[11px] leading-tight ${ev.done ? "text-stone-600" : "text-stone-300"}`}>
-                                  {ev.done
-                                    ? <CheckCircle size={10} className="text-green-500 shrink-0 mt-[1px]" />
-                                    : <Clock size={10} className="text-stone-300 shrink-0 mt-[1px]" />}
-                                  <span className="font-medium">{ev.label}</span>
-                                  {ev.done && ev.at && <span className="text-stone-400 tabular-nums whitespace-nowrap">· {fmtStamp(ev.at)}</span>}
-                                </div>
+                                <span key={i}
+                                  title={`${ev.label}${ev.done && ev.at ? ` · ${fmtStamp(ev.at)}` : " · not yet"}`}
+                                  className={`h-1.5 w-5 rounded-full ${ev.done ? "bg-green-500" : "bg-stone-200"}`} />
                               ))}
+                              <span className="ml-0.5 text-[10px] tabular-nums text-stone-400">
+                                {claimTimeline(claim).filter(e => e.done).length}/{claimTimeline(claim).length}
+                              </span>
                             </div>
                           )}
                           {stage === "PAID" && claim.claimant_informed_at && (
@@ -1283,64 +1328,65 @@ export default function GMClaimsPage() {
                         </td>
 
                         {/* Aging — working days from submission to payment (or running) */}
-                        <td className="px-3 py-3 border border-gray-300 align-middle text-center">
+                        <td className="px-2 py-1.5 border border-gray-300 align-middle text-center">
                           {(() => {
                             const ag = claimAging(claim);
                             return (
-                              <div className={`inline-flex flex-col items-center leading-tight ${ag.overdue ? "text-red-600" : ag.paid ? "text-green-700" : "text-stone-500"}`}>
-                                <span className={`text-[15px] font-bold tabular-nums ${ag.overdue ? "text-red-600" : ""}`}>{ag.days}</span>
-                                <span className="text-[10px] font-medium">{ag.days === 1 ? "day" : "days"}</span>
-                                <span className="text-[9px] mt-0.5">{ag.paid ? "to paid" : "& counting"}</span>
-                              </div>
+                              <span
+                                title={ag.paid ? `${ag.days} working days to payment` : `${ag.days} working days and counting`}
+                                className={`inline-block font-bold tabular-nums text-[12.5px] ${
+                                  ag.overdue ? "text-red-600" : ag.paid ? "text-green-700" : "text-stone-500"}`}>
+                                {ag.days}d{ag.paid ? "" : "+"}
+                              </span>
                             );
                           })()}
                         </td>
 
                         {/* Actions */}
-                        <td className="px-2 py-3 border border-gray-300 align-middle print:hidden">
+                        <td className="px-2 py-1.5 border border-gray-300 align-middle print:hidden">
                           <div className="flex flex-col gap-1.5 items-start">
                             {isFinanceAdmin && stage === "NOT_PREPARED" && (
                               <Link
                                 href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
-                                className="flex items-center gap-1 text-[13px] font-bold px-2 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] whitespace-nowrap">
+                                className="flex items-center gap-1 text-[10.5px] font-bold px-2 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] whitespace-nowrap">
                                 <FileText size={11} /> Create PV
                               </Link>
                             )}
                             {isFinanceAdmin && (
                               <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
-                                className="text-[13px] text-stone-400 hover:text-stone-600 text-left">
+                                className="text-[10.5px] text-stone-400 hover:text-stone-600 text-left">
                                 {claim.pv_id ? "Change PV" : "Link PV"}
                               </button>
                             )}
                             <button onClick={() => handleShare(claim, stage)}
-                              className="flex items-center gap-1 text-[13px] text-stone-500 hover:text-[#4a6da7] text-left">
+                              className="flex items-center gap-1 text-[10.5px] text-stone-500 hover:text-[#4a6da7] text-left">
                               <Share2 size={12} /> Share
                             </button>
                             {/* Attachments — always-visible toggle */}
                             <button
                               onClick={() => setOpenAttachments(prev => { const n = new Set(prev); n.has(claim.id) ? n.delete(claim.id) : n.add(claim.id); return n; })}
-                              className={`flex items-center gap-1 text-[11px] transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : uploadError?.id === claim.id ? "text-red-500" : (claim.attachments?.length ?? 0) > 0 ? "text-[#4a6da7] font-semibold" : "text-stone-500 hover:text-[#4a6da7]"}`}>
+                              className={`flex items-center gap-1 text-[10.5px] transition-colors ${uploadingClaimId === claim.id ? "text-stone-300" : uploadError?.id === claim.id ? "text-red-500" : (claim.attachments?.length ?? 0) > 0 ? "text-[#4a6da7] font-semibold" : "text-stone-500 hover:text-[#4a6da7]"}`}>
                               <Paperclip size={11} />
                               {uploadingClaimId === claim.id ? "Uploading…" : `Attachments${(claim.attachments?.length ?? 0) > 0 ? ` (${claim.attachments!.length})` : ""}`}
                             </button>
                             {uploadError?.id === claim.id && (
-                              <div className="text-[11px] text-red-600 max-w-[160px] leading-tight">{uploadError.msg}</div>
+                              <div className="text-[10.5px] text-red-600 max-w-[160px] leading-tight">{uploadError.msg}</div>
                             )}
                             {isGM && (
                               deleteConfirm === claim.id ? (
                                 <div className="flex items-center gap-1 mt-0.5">
                                   <button onClick={() => deleteClaim(claim.id)}
-                                    className="text-[11px] font-bold px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 whitespace-nowrap">
+                                    className="text-[10.5px] font-bold px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 whitespace-nowrap">
                                     Confirm
                                   </button>
                                   <button onClick={() => setDeleteConfirm(null)}
-                                    className="text-[11px] text-stone-400 hover:text-stone-600">
+                                    className="text-[10.5px] text-stone-400 hover:text-stone-600">
                                     Cancel
                                   </button>
                                 </div>
                               ) : (
                                 <button onClick={() => setDeleteConfirm(claim.id)}
-                                  className="flex items-center gap-1 text-[13px] text-red-400 hover:text-red-600 text-left transition-colors">
+                                  className="flex items-center gap-1 text-[10.5px] text-red-400 hover:text-red-600 text-left transition-colors">
                                   <Trash2 size={11} /> Delete
                                 </button>
                               )
@@ -1370,11 +1416,11 @@ export default function GMClaimsPage() {
                         <tr className={rowBg}>
                           <td colSpan={9} className="px-4 py-3 border border-gray-300 bg-stone-50/60">
                             <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-stone-400">
+                              <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-widest text-stone-400">
                                 <Paperclip size={10} /> Attachments {(claim.attachments?.length ?? 0) > 0 ? `(${claim.attachments!.length})` : ""}
                               </div>
                               <div className="flex items-center gap-1">
-                                <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`}>
+                                <label className={`flex items-center gap-1 text-[10.5px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`}>
                                   <input type="file" className="hidden"
                                     accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
                                     disabled={uploadingClaimId === claim.id}
@@ -1382,7 +1428,7 @@ export default function GMClaimsPage() {
                                     onChange={e => { const f = e.target.files?.[0]; if (f) uploadAttachment(claim.id, f); e.target.value = ""; }} />
                                   <Upload size={10} /> {uploadingClaimId === claim.id ? "Uploading…" : "Add File"}
                                 </label>
-                                <label className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`} title="Take Photo">
+                                <label className={`flex items-center gap-1 text-[10.5px] font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-colors ${uploadingClaimId === claim.id ? "text-stone-300 border-stone-100" : "border-[#4a6da7]/40 text-[#4a6da7] hover:bg-blue-50"}`} title="Take Photo">
                                   <input type="file" accept="image/*" capture="environment" className="hidden"
                                     disabled={uploadingClaimId === claim.id}
                                     onClick={() => { pickerOpenRef.current = true; }}
@@ -1393,7 +1439,7 @@ export default function GMClaimsPage() {
                             </div>
                             {/* Upload status — shows step-by-step progress or error */}
                             {uploadStatus?.id === claim.id && (
-                              <div className={`mb-2 text-[11px] px-2 py-1.5 rounded-lg font-medium ${uploadStatus.ok ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                              <div className={`mb-2 text-[10.5px] px-2 py-1.5 rounded-lg font-medium ${uploadStatus.ok ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700 border border-red-200"}`}>
                                 {uploadStatus.step}
                               </div>
                             )}
@@ -1444,33 +1490,33 @@ export default function GMClaimsPage() {
                   {isGM && (
                     <tr className="bg-blue-50/60 border-t-2 border-[#4a6da7]/30">
                       <td className="px-2 py-2 text-center border border-gray-300 align-top pt-3">
-                        <span className="text-[11px] text-stone-400">{claims.length + 1}</span>
+                        <span className="text-[10.5px] text-stone-400">{claims.length + 1}</span>
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <input type="date" value={newRow.received_at}
                           onChange={e => setNewRow(r => ({ ...r, received_at: e.target.value }))}
-                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[10.5px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white" />
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <input type="text" placeholder="Purpose / Claims description…" value={newRow.purpose}
                           onChange={e => setNewRow(r => ({ ...r, purpose: e.target.value }))}
-                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[10.5px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
                         <input type="text" placeholder="Notes (optional)…" value={newRow.description}
                           onChange={e => setNewRow(r => ({ ...r, description: e.target.value }))}
-                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[11px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 bg-white text-stone-500" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[10.5px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/30 bg-white text-stone-500" />
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <input type="number" placeholder="0.00" value={newRow.amount}
                           onChange={e => setNewRow(r => ({ ...r, amount: e.target.value }))}
-                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white text-right font-bold" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[10.5px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white text-right font-bold" />
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <input type="text" placeholder="Claimant name…" value={newRow.claimant_name}
                           onChange={e => setNewRow(r => ({ ...r, claimant_name: e.target.value }))}
-                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[13px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[10.5px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
                         <select value={newRow.claimant_type}
                           onChange={e => setNewRow(r => ({ ...r, claimant_type: e.target.value }))}
-                          className="border-2 border-stone-800 rounded px-1 py-1 text-[11px] w-full focus:outline-none bg-white text-stone-500">
+                          className="border-2 border-stone-800 rounded px-1 py-1 text-[10.5px] w-full focus:outline-none bg-white text-stone-500">
                           <option value="">Type…</option>
                           {CLAIMANT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
@@ -1485,16 +1531,16 @@ export default function GMClaimsPage() {
                           onDelete={deleteCommittee}
                         />
                       </td>
-                      <td className="px-2 py-2 border border-gray-300 align-top text-[11px] text-stone-300 italic">—</td>
-                      <td className="px-2 py-2 border border-gray-300 align-top text-[11px] text-stone-300 italic text-center">—</td>
+                      <td className="px-2 py-2 border border-gray-300 align-top text-[10.5px] text-stone-300 italic">—</td>
+                      <td className="px-2 py-2 border border-gray-300 align-top text-[10.5px] text-stone-300 italic text-center">—</td>
                       <td className="px-2 py-2 border border-gray-300 align-top print:hidden">
                         <div className="flex flex-col gap-1.5">
                           <button onClick={saveNewRow} disabled={savingNewRow}
-                            className="flex items-center gap-1 text-[13px] font-bold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] disabled:opacity-50 whitespace-nowrap transition-colors">
+                            className="flex items-center gap-1 text-[10.5px] font-bold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] disabled:opacity-50 whitespace-nowrap transition-colors">
                             <Plus size={11} /> {savingNewRow ? "Saving…" : "Add"}
                           </button>
                           <button onClick={() => setNewRow(defaultNewRow())}
-                            className="text-[11px] text-stone-400 hover:text-stone-600">
+                            className="text-[10.5px] text-stone-400 hover:text-stone-600">
                             Clear
                           </button>
                         </div>
@@ -1505,9 +1551,9 @@ export default function GMClaimsPage() {
                   {/* Empty rows */}
                   {Array.from({ length: Math.max(0, 5 - (claims.length % 5 === 0 ? 5 : claims.length % 5)) }).map((_, i) => (
                     <tr key={`empty-${i}`} className={(claims.length + i) % 2 === 0 ? "bg-white" : "bg-blue-50/30"}>
-                      <td className="px-3 py-3 text-center text-stone-300 border border-gray-300">{claims.length + i + 1}</td>
+                      <td className="px-2 py-1.5 text-center text-stone-300 border border-gray-300">{claims.length + i + 1}</td>
                       {Array.from({ length: 8 }).map((_, j) => (
-                        <td key={j} className="px-3 py-3 border border-gray-300" />
+                        <td key={j} className="px-2 py-1.5 border border-gray-300" />
                       ))}
                     </tr>
                   ))}
