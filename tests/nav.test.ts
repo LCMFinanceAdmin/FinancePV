@@ -25,21 +25,25 @@ const DEPT_HEAD = who({ role: "STAFF" as never, isLeaveApprover: true });
 const VOLUNTEER = who({ role: "MINISTRY_HEAD" as never, isMinistryHead: true });
 const GM        = who({ role: "GENERAL_MANAGER" as never, isSignatory: true, isGeneralManager: true });
 const ADMIN     = who({ role: "ADMINISTRATOR" as never, isAdministrator: true });
+const FINANCE   = who({ role: "FINANCE_ADMIN" as never, isFinanceAdmin: true });
+const STAFF     = who({ role: "STAFF" as never });
 
 const pinned = (u: UserProfile) => visiblePinned(u).map(i => i.href);
 /** What the sidebar renders: groups, with anything already pinned removed. */
 const nested = (u: UserProfile) => visibleGroups(u, true).flatMap(g => g.items.map(i => i.href));
 
 test("a signatory reaches vouchers, leave and the budget without opening a group", () => {
-  // The three things they asked for, each one click from anywhere.
-  assert.deepEqual(pinned(BISHOP),
-    ["/signatory", "/leave-queue", "/budget", "/submit"]);
+  // The three things they asked for, each one click from anywhere. /submit was
+  // in this list only because it used to be pinned for every role; it is now
+  // in the claim group, which is where a signatory claiming petrol looks for
+  // it. The three decisions are what this test is about and they are unmoved.
+  assert.deepEqual(pinned(BISHOP), ["/signatory", "/leave-queue", "/budget"]);
 });
 
 test("a signatory who does not sign leave is not offered the leave queue", () => {
   // The Treasurer is on nobody's chain, and a queue that is always empty is
   // worse than no entry at all.
-  assert.deepEqual(pinned(TREASURER), ["/signatory", "/budget", "/submit"]);
+  assert.deepEqual(pinned(TREASURER), ["/signatory", "/budget"]);
 });
 
 test("an assigned approver finds the leave queue although no role grants it", () => {
@@ -125,4 +129,53 @@ test("a signatory's whole sidebar is short enough to read without scrolling", ()
   // it, raise it deliberately rather than by accident.
   const total = pinned(BISHOP).length + nested(BISHOP).length;
   assert.ok(total <= 16, `a Bishop is offered ${total} entries`);
+});
+
+// ── Claiming, and who is told they are doing it ────────────────────────────
+//
+// The submit page has always written a payment request rather than a voucher
+// for anyone outside Finance and the GM. The sidebar said "Submit PV" to all
+// of them, which named something the page would not do for the person reading
+// it, and parked the only way of tracking it in a "Payments" group that sounds
+// like Finance's own work.
+
+test("a claimant is offered the claim form, not a voucher", () => {
+  assert.ok(!pinned(STAFF).includes("/submit"));
+  const claims = visibleGroups(STAFF, true).find(g => g.id === "claims");
+  assert.ok(claims, "no claim group for staff");
+  assert.equal(claims.label, "Submit PR (Claim Form)");
+  assert.deepEqual(claims.items.map(i => i.href), ["/submit", "/payment-requests"]);
+});
+
+test("Finance raises vouchers, so keeps the pinned entry and the Payments group", () => {
+  assert.ok(pinned(FINANCE).includes("/submit"));
+  assert.ok(!visibleGroups(FINANCE, true).some(g => g.id === "claims"));
+  assert.ok(nested(FINANCE).includes("/payment-requests"));
+});
+
+test("the General Manager raises vouchers directly and is not a claimant", () => {
+  // Same branch as the submit page's canRaisePvDirectly. Getting this wrong
+  // would also strip Banking from him, which only he and Finance can open.
+  assert.ok(pinned(GM).includes("/submit"));
+  assert.ok(!visibleGroups(GM, true).some(g => g.id === "claims"));
+  assert.ok(nested(GM).includes("/banking"));
+});
+
+test("Payments disappears for a claimant rather than standing empty", () => {
+  assert.ok(!visibleGroups(STAFF, true).some(g => g.id === "payments"));
+});
+
+test("the Administrator may claim, and still cannot reach the money", () => {
+  // She keeps the church's records. Moving an entry is no reason to hand her
+  // one she was deliberately kept out of.
+  const claims = visibleGroups(ADMIN, true).find(g => g.id === "claims");
+  assert.deepEqual(claims?.items.map(i => i.href), ["/submit"]);
+  assert.ok(!nested(ADMIN).includes("/payment-requests"));
+});
+
+test("a claimant is never offered the same page twice", () => {
+  for (const u of [STAFF, ADMIN, BISHOP, VOLUNTEER]) {
+    const all = [...pinned(u), ...nested(u)];
+    assert.deepEqual([...new Set(all)], all, `${u.role} sees a duplicate`);
+  }
 });

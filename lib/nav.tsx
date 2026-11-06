@@ -81,6 +81,19 @@ const financeNotAcct = (u: UserProfile) => u.isFinanceAdmin && !isAcct(u);
 const isAdmin = (u: UserProfile) => !!u.isAdministrator;
 
 /**
+ * Who raises a voucher, and who raises a request for one.
+ *
+ * Finance and the General Manager write a payment voucher straight off; for
+ * everybody else the same page is a claim form, and what it produces is a
+ * payment request that goes to their EXCO first. That is not a nav rule — it
+ * is `canRaisePvDirectly` on the submit page, and has been all along. The
+ * sidebar simply said "Submit PV" to all of them, so the entry named something
+ * the page would not do for the person reading it.
+ */
+const raisesPvDirectly = (u: UserProfile) => u.isFinanceAdmin || u.isGeneralManager;
+const isClaimant = (u: UserProfile) => !raisesPvDirectly(u);
+
+/**
  * The church's own structure, offered to guests.
  *
  * Shown to them rather than to everybody only because it is what they
@@ -139,13 +152,47 @@ export const PINNED: NavItem[] = [
   // Anyone can be owed money — a volunteer who bought refreshments, a council
   // member who paid for petrol. Raising a voucher is not an employment
   // entitlement, so it is offered to every role. (Leave, below, is not.)
+  //
+  // Only the two roles it is accurate for, though. Everybody else gets the
+  // claim group below, which says what their submission actually becomes and
+  // keeps the tracking beside it.
   {
     href: "/submit", label: "Submit PV", desc: "Raise a payment voucher",
-    icon: <FilePlus size={size} />, show: () => true,
+    icon: <FilePlus size={size} />, show: raisesPvDirectly,
   },
 ];
 
 export const NAV_GROUPS: NavGroup[] = [
+  {
+    /**
+     * Raising a claim, and finding out where it got to.
+     *
+     * These two were a sidebar apart: the form was pinned at the top as
+     * "Submit PV", and the only way to see what had become of it was a
+     * "Payments" group holding one entry. Payments is what Finance does to a
+     * voucher; it is not what a claimant is doing, and nobody looking for
+     * their own claim would open it. Submitting and tracking are one task, so
+     * they are one group, named for the form the person actually fills in.
+     */
+    id: "claims",
+    label: "Submit PR (Claim Form)",
+    desc: "Claim what you are owed, and track it",
+    icon: <ReceiptText size={size} />,
+    accent: "#2563eb",
+    items: [
+      {
+        href: "/submit", label: "New Claim Form", desc: "Claim money you have spent or are owed",
+        icon: <FilePlus size={size} />, show: isClaimant,
+      },
+      {
+        // Gated exactly as it was under Payments, the Administrator included:
+        // she keeps the church's records and has no part in the money, and
+        // moving an entry is no reason to hand her one.
+        href: "/payment-requests", label: "Track Progress", desc: "Where each claim has reached",
+        icon: <ClipboardList size={size} />, show: (u) => isClaimant(u) && !isAdmin(u),
+      },
+    ],
+  },
   {
     id: "church",
     label: "The Church",
@@ -225,8 +272,10 @@ export const NAV_GROUPS: NavGroup[] = [
       // not — a Rejected view and the supporting documents — moved across, and
       // the entry is gone. The page itself stays for older links.
       {
+        // Claimants reach this under Submit PR (Claim Form); for them this
+        // group empties out and visibleGroups drops it.
         href: "/payment-requests", label: "Payment Requests", desc: "Request a payment from your ministry",
-        icon: <ShoppingCart size={size} />, show: (u) => !isAdmin(u),
+        icon: <ShoppingCart size={size} />, show: (u) => !isAdmin(u) && raisesPvDirectly(u),
       },
       {
         href: "/recurring", label: "Recurring Expenses", desc: "Scheduled monthly and yearly payments",
