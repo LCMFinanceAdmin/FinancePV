@@ -121,27 +121,40 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
       {/* Nav — a short list of groups rather than one long list of pages.
           Only the group you're working in is expanded, so the sidebar stays
           roughly the same height however many features exist. */}
+      {/* Every group already carried an accent colour, used nowhere. The
+          sidebar was twenty entries of the same pale blue-grey, which is
+          legible one line at a time and a wall of fog at a glance: nothing
+          told you where you were without reading it. Each group now wears its
+          own colour on the icon and on whatever is open, and the labels are
+          near-black rather than a tint of the background. Tailwind cannot
+          build a class from a value it has not seen, so the accents are set
+          inline — they come from data, not from the stylesheet. */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           {pinned.map(n => {
             const active = current === n.href;
             return (
               <Link key={n.href} href={n.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-all duration-200",
+                  "flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[14px] transition-colors",
                   active
-                    ? "bg-gradient-to-r from-[#e4f2ff] to-[#f1edff] font-semibold text-[#1d4ed8] shadow-[0_5px_12px_rgba(72,130,214,.10)]"
-                    : "text-[#526985] hover:bg-[#eef6ff] hover:text-[#244b80]",
+                    ? "bg-[#eaf2ff] font-bold text-[#0f2d5c]"
+                    : "font-semibold text-stone-700 hover:bg-[#f3f8ff] hover:text-[#15396f]",
                 )}>
-                {n.icon}
+                <span className={cn(
+                  "grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors",
+                  active ? "bg-[#2563eb] text-white" : "bg-[#eef4fd] text-[#2563eb]",
+                )}>
+                  {n.icon}
+                </span>
                 <span className="flex-1">{n.label}</span>
-                {active && <ChevronRight size={13} />}
+                {active && <ChevronRight size={13} className="text-[#2563eb]" />}
               </Link>
             );
           })}
         </div>
 
-        <div className="mt-4 space-y-1">
+        <div className="mt-3 space-y-1">
           {groups.map(g => {
             const isActiveGroup = activeGroup === g.id;
             const open = isActiveGroup || openGroups.has(g.id);
@@ -153,12 +166,15 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
                   onClick={() => toggleGroup(g.id)}
                   aria-expanded={open}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-colors",
-                    isActiveGroup
-                      ? "font-semibold text-[#244b80]"
-                      : "text-[#526985] hover:bg-[#eef6ff] hover:text-[#244b80]",
+                    "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[14px] transition-colors",
+                    open ? "font-bold text-stone-900" : "font-semibold text-stone-700 hover:bg-stone-50",
                   )}>
-                  <span className={isActiveGroup ? "text-[#1d4ed8]" : "text-[#8ba0bb]"}>{g.icon}</span>
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors"
+                    style={open
+                      ? { background: g.accent, color: "#fff" }
+                      : { background: `${g.accent}16`, color: g.accent }}>
+                    {g.icon}
+                  </span>
                   <span className="flex-1 text-left">{g.label}</span>
                   {badge > 0 && !open && (
                     <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
@@ -166,24 +182,28 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
                     </span>
                   )}
                   {open
-                    ? <ChevronDown size={13} className="text-[#a8bcd4]" />
-                    : <ChevronRight size={13} className="text-[#a8bcd4]" />}
+                    ? <ChevronDown size={14} className="text-stone-400" />
+                    : <ChevronRight size={14} className="text-stone-300" />}
                 </button>
 
                 {open && (
-                  <div className="ml-[1.55rem] space-y-0.5 border-l border-[#e1edfb] pb-1 pl-2">
+                  // The rule down the left is the group's own colour, so an
+                  // open group reads as one block rather than as loose lines.
+                  <div className="ml-[1.4rem] mt-0.5 space-y-0.5 border-l-2 pb-1 pl-2"
+                    style={{ borderColor: `${g.accent}33` }}>
                     {g.items.map(n => {
                       const active = current === n.href;
                       const count = n.badge === "gmClaims" ? gmClaimCount : 0;
                       return (
                         <Link key={n.href} href={n.href}
                           className={cn(
-                            "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
+                            "flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-colors",
                             active
-                              ? "bg-[#eaf2ff] font-semibold text-[#1d4ed8]"
-                              : "text-[#61779a] hover:bg-[#f2f8ff] hover:text-[#244b80]",
-                          )}>
-                          <span className={cn("shrink-0", active ? "text-[#1d4ed8]" : "text-[#a8bcd4]")}>
+                              ? "font-bold text-stone-900"
+                              : "font-medium text-stone-600 hover:bg-stone-50 hover:text-stone-900",
+                          )}
+                          style={active ? { background: `${g.accent}18` } : undefined}>
+                          <span className="shrink-0" style={{ color: active ? g.accent : "#a8a29e" }}>
                             {n.icon}
                           </span>
                           <span className="flex-1">{n.label}</span>

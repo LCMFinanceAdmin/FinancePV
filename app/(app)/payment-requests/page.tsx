@@ -3,79 +3,49 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import type { PurchaseRequest, PRStatus } from "@/lib/types";
+import type { PurchaseRequest, PRStatus, PVStatus } from "@/lib/types";
+import {
+  STAGES, currentStage, statusLabel, bucketOf, type Bucket,
+} from "@/lib/pr-progress";
 import {
   Plus, FileText, ExternalLink, ChevronDown, ChevronUp, Check, RefreshCw, ShieldCheck, BellRing,
-  Search, Hourglass, CheckCircle2, XCircle, Store, CalendarDays, Users,
+  Search, Hourglass, CheckCircle2, XCircle, Store, CalendarDays, Users, Wallet,
 } from "lucide-react";
 
 // "My Payment Requests" — the applicant's tracker. The request itself is now
 // raised from the shared payment form (/submit), which mirrors the PV form, so
 // this page only follows a request through the approval chain.
 
-// Each status says who is holding the request right now, because that is the
-// question somebody opens this page to ask.
-const STATUS_LABELS: Record<PRStatus, string> = {
-  SUBMITTED:     "Awaiting EXCO",
-  EXCO_VERIFIED: "Awaiting GM approval",
-  GM_APPROVED:   "Finance raising PV",
-  PV_RAISED:     "PV raised",
-  REJECTED:      "Rejected",
-  CANCELLED:     "Cancelled",
-};
-const STATUS_COLORS: Record<PRStatus, string> = {
-  SUBMITTED:     "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
-  EXCO_VERIFIED: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
-  GM_APPROVED:   "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
-  PV_RAISED:     "bg-green-50 text-green-700 ring-1 ring-green-200",
-  REJECTED:      "bg-red-50 text-red-700 ring-1 ring-red-200",
-  CANCELLED:     "bg-stone-100 text-stone-500 ring-1 ring-stone-200",
-};
-const STATUS_ICONS: Record<PRStatus, typeof Hourglass> = {
-  SUBMITTED: Hourglass, EXCO_VERIFIED: Hourglass, GM_APPROVED: FileText,
-  PV_RAISED: CheckCircle2, REJECTED: XCircle, CANCELLED: XCircle,
-};
-
-// Mirrors the constitutional chain: the ministry's own committee verifies
-// before the request ever reaches the finance desk.
-const STAGES = ["Submitted", "Ministry EXCO", "General Manager", "Finance / PV"];
-
 /**
- * Which stage is holding the request now — not the last one it cleared.
+ * The chip's colour and mark.
  *
- * These were the same number before, and it made the chain say the wrong
- * thing: a request the EXCO had verified lit up "Ministry EXCO" as the stage
- * in hand, directly above a green line reading "Verified by … (Mission EXCO)".
- * The status chip said it was with the General Manager and the chain said it
- * was not. Clearing a stage and standing on it are different facts, so they
- * are different numbers: everything below `cur` is done, `cur` is who has it.
- *
- * Past the end means nobody is holding it — the voucher exists and the chain
- * is finished, so every stage reads as cleared.
+ * Presentation, so it stays here; where the request actually is lives in
+ * lib/pr-progress, which the chain and the tabs read from the same call.
  */
-function currentStage(status: PRStatus): number {
-  switch (status) {
-    case "SUBMITTED":     return 1;              // with the ministry's EXCO
-    case "EXCO_VERIFIED": return 2;              // with the General Manager
-    case "GM_APPROVED":   return 3;              // with Finance, to raise it
-    case "PV_RAISED":     return STAGES.length;  // done
-    default:              return -1;             // rejected or cancelled
+function chipStyle(status: PRStatus, pv: PVStatus | null) {
+  const AMBER = "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
+  const SKY = "bg-sky-50 text-sky-700 ring-1 ring-sky-200";
+  const INDIGO = "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200";
+  const EMERALD = "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
+  const GREEN = "bg-green-50 text-green-700 ring-1 ring-green-200";
+  const RED = "bg-red-50 text-red-700 ring-1 ring-red-200";
+
+  if (status === "REJECTED" || status === "CANCELLED") return { cls: RED, Icon: XCircle };
+  if (status !== "PV_RAISED") {
+    return status === "GM_APPROVED"
+      ? { cls: SKY, Icon: FileText }
+      : { cls: AMBER, Icon: Hourglass };
+  }
+  switch (pv) {
+    case "PAID":              return { cls: GREEN, Icon: CheckCircle2 };
+    case "APPROVED":          return { cls: EMERALD, Icon: Wallet };
+    case "PENDING_SIGNATORY": return { cls: INDIGO, Icon: ShieldCheck };
+    case "REJECTED":
+    case "CANCELLED":         return { cls: RED, Icon: XCircle };
+    default:                  return { cls: SKY, Icon: FileText };
   }
 }
 
-/**
- * The shelf a request sits on, for the filter tabs.
- *
- * Rejected and cancelled share one, and it is only offered when something is
- * actually on it: a claim that was turned down has to stay findable, and a tab
- * that is empty for almost everybody is clutter for almost everybody.
- */
-type Bucket = "progress" | "approved" | "done" | "closed";
-const BUCKET_OF: Record<PRStatus, Bucket> = {
-  SUBMITTED: "progress", EXCO_VERIFIED: "progress",
-  GM_APPROVED: "approved", PV_RAISED: "done",
-  REJECTED: "closed", CANCELLED: "closed",
-};
 const BUCKET_LABELS: { key: Bucket; label: string }[] = [
   { key: "progress", label: "In Progress" },
   { key: "approved", label: "Approved" },
@@ -140,6 +110,15 @@ export default function PaymentRequestsPage() {
   const oversees = SEES_EVERY_REQUEST.includes(role);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<Bucket | "all">("all");
+  /**
+   * The voucher each raised request became, by id.
+   *
+   * The chain used to stop where this page's own table stops, which is the
+   * moment Finance raises the voucher — so somebody whose money had not
+   * moved saw the same thing as somebody already paid. The rest of the
+   * journey is on the voucher, so the voucher is fetched.
+   */
+  const [vouchers, setVouchers] = useState<Record<string, { status: PVStatus; pv_no: string; paid_at: string | null }>>({});
   const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
@@ -158,8 +137,18 @@ export default function PaymentRequestsPage() {
         .order("submitted_at", { ascending: false });
       if (!everyone) q = q.eq("submitted_by_email", user.email);
       const { data } = await q;
-      setPrs((data ?? []) as PurchaseRequest[]);
+      const rows = (data ?? []) as PurchaseRequest[];
+      setPrs(rows);
       setMyEmail(user.email ?? "");
+
+      const pvIds = [...new Set(rows.map(r => r.pv_id).filter(Boolean))] as string[];
+      if (pvIds.length > 0) {
+        const { data: pvs } = await supabase.from("pvs")
+          .select("id, status, pv_no, paid_at").in("id", pvIds);
+        setVouchers(Object.fromEntries((pvs ?? []).map(
+          (v: { id: string; status: PVStatus; pv_no: string; paid_at: string | null }) =>
+            [v.id, { status: v.status, pv_no: v.pv_no, paid_at: v.paid_at }])));
+      }
     } finally {
       setLoading(false);
     }
@@ -167,13 +156,18 @@ export default function PaymentRequestsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  /** The voucher behind a request, where it has one and we have it. */
+  const pvOf = (pr: PurchaseRequest) => (pr.pv_id ? vouchers[pr.pv_id] ?? null : null);
+  const pvStatusOf = (pr: PurchaseRequest) => pvOf(pr)?.status ?? null;
+
   // Scope first, because the tab counts have to count what is on screen.
   const inScope = scope === "all"
     ? prs
     : prs.filter(pr => (pr.submitted_by_email ?? "").toLowerCase() === myEmail.toLowerCase());
 
   const counts = inScope.reduce((acc, pr) => {
-    acc[BUCKET_OF[pr.status]] = (acc[BUCKET_OF[pr.status]] ?? 0) + 1;
+    const b = bucketOf(pr.status, pvStatusOf(pr));
+    acc[b] = (acc[b] ?? 0) + 1;
     return acc;
   }, {} as Record<Bucket, number>);
 
@@ -182,7 +176,7 @@ export default function PaymentRequestsPage() {
   // comes out of, and — where the page shows everybody's — who raised it.
   const needle = query.trim().toLowerCase();
   const shown = inScope.filter(pr => {
-    if (tab !== "all" && BUCKET_OF[pr.status] !== tab) return false;
+    if (tab !== "all" && bucketOf(pr.status, pvStatusOf(pr)) !== tab) return false;
     if (!needle) return true;
     return [pr.request_no, pr.title, pr.vendor_name, pr.project, pr.ministry,
             pr.submitted_by_name, pr.submitted_by_email]
@@ -266,8 +260,10 @@ export default function PaymentRequestsPage() {
         <div className="space-y-3">
           {shown.map(pr => {
             const isOpen = expanded.has(pr.id);
-            const cur = currentStage(pr.status);
-            const StatusIcon = STATUS_ICONS[pr.status];
+            const pv = pvStatusOf(pr);
+            const cur = currentStage(pr.status, pv);
+            const chip = chipStyle(pr.status, pv);
+            const StatusIcon = chip.Icon;
             const rejection = [...(pr.approvals ?? [])].reverse().find(a => a.action === "REJECTED");
             return (
               <div key={pr.id} className="cloudlight-card overflow-hidden rounded-2xl">
@@ -276,8 +272,8 @@ export default function PaymentRequestsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1.5">
                         <span className="rounded-md bg-stone-100 px-1.5 py-0.5 text-[11px] font-semibold text-stone-500">{pr.request_no}</span>
-                        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_COLORS[pr.status]}`}>
-                          <StatusIcon size={11} /> {STATUS_LABELS[pr.status]}
+                        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${chip.cls}`}>
+                          <StatusIcon size={11} /> {statusLabel(pr.status, pv)}
                         </span>
                         <span className="text-[11px] bg-[#4a6da7]/10 text-[#4a6da7] px-2 py-0.5 rounded-full font-medium">{pr.ministry}</span>
                         {pr.is_recurring && (
@@ -380,8 +376,19 @@ export default function PaymentRequestsPage() {
                     </div>
                   )}
                   {pr.status === "PV_RAISED" && pr.pv_id && (
-                    <div className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-600">
-                      PV raised — <Link href={`/my-pvs/${pr.pv_id}`} className="font-medium underline">View PV →</Link>
+                    <div className={`mt-2 rounded-lg px-3 py-2 text-xs ${
+                      pv === "PAID" ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-600"}`}>
+                      {pv === "PAID"
+                        ? <>&#10003; Paid{pvOf(pr)?.paid_at ? ` on ${formatDate(pvOf(pr)!.paid_at!)}` : ""}</>
+                        : pv === "APPROVED"
+                        ? <>Signed by all signatories &mdash; waiting on payment</>
+                        : pv === "PENDING_SIGNATORY"
+                        ? <>Voucher raised and with the signatories for signature</>
+                        : <>Finance has raised the payment voucher</>}
+                      {" "}
+                      <Link href={`/my-pvs/${pr.pv_id}`} className="font-medium underline">
+                        {pvOf(pr)?.pv_no ?? "View PV"} &rarr;
+                      </Link>
                     </div>
                   )}
 
