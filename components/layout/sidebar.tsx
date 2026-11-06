@@ -157,7 +157,12 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
         <div className="mt-3 space-y-1">
           {groups.map(g => {
             const isActiveGroup = activeGroup === g.id;
-            const open = isActiveGroup || openGroups.has(g.id);
+            // Collapsed until somebody opens it, including the group holding
+            // the page you are on. Auto-opening that one also meant it could
+            // not be shut: the toggle set state that `isActiveGroup ||` then
+            // overrode, so the click did nothing. Where you are is still said,
+            // by the header rather than by the group standing open.
+            const open = openGroups.has(g.id);
             const badge = groupBadge(g.id);
             return (
               <div key={g.id}>
@@ -167,10 +172,12 @@ export function Sidebar({ user, ministryList }: { user: UserProfile; ministryLis
                   aria-expanded={open}
                   className={cn(
                     "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[14px] transition-colors",
-                    open ? "font-bold text-stone-900" : "font-semibold text-stone-700 hover:bg-stone-50",
+                    open || isActiveGroup
+                      ? "font-bold text-stone-900"
+                      : "font-semibold text-stone-700 hover:bg-stone-50",
                   )}>
                   <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors"
-                    style={open
+                    style={open || isActiveGroup
                       ? { background: g.accent, color: "#fff" }
                       : { background: `${g.accent}16`, color: g.accent }}>
                     {g.icon}
