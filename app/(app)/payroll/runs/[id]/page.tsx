@@ -9,6 +9,7 @@ import { PayslipPDF } from "@/components/payroll/payslip-pdf";
 import { BankExportModal, buildBankRows, generateWorkbook } from "@/components/payroll/bank-export-modal";
 import { generateStatutorySummary } from "@/components/payroll/statutory-summary";
 import { calcLine, ageAt, grossForMonth, monthDays, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
 import { ptptnDue, type PtptnDirection, type PtptnDeduction } from "@/lib/payroll/ptptn";
@@ -33,6 +34,7 @@ import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, Payroll
 
 const MONTH_LABELS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "13th Month"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
 interface ComputedRow { emp: PayrollEmployee; line: CalcLine; }
 
@@ -228,14 +230,24 @@ export default function PayrollRunDetailPage() {
   // Live computation for DRAFT runs.
   const computed: ComputedRow[] = isDraft ? employees
     .filter(e => e.status === "ACTIVE")
-    .filter(e => !(is13th && e.is_orang_asli))
+    // Who is owed a 13th month at all. Orang Asli are not in the scheme, a
+    // pastor needs twelve months of service, and everyone else needs six
+    // before it is pro-rated — see lib/payroll/thirteenth-month.ts, which the
+    // yearly sheet reads too so the two cannot disagree about the same bonus.
+    .filter(e => !is13th || thirteenthMonthFor(e, run.year).entitled)
     .map(e => {
       const sal = salByEmp[e.id];
       if (!sal) return null;
       // Joined or left part-way through: paid for the days employed, on the
       // Employment Act's calendar-day basis.
       const days = is13th ? null : monthDays(e.date_commenced, e.resigned_date, run.year, run.month);
-      const gross = grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override, days);
+      // A part-year joiner's 13th month is a fraction of a month's salary. The
+      // fraction is whole months on the payroll over twelve, not days: the
+      // bonus is counted in months and the rest of this page is not.
+      const thirteenth = is13th ? thirteenthMonthFor(e, run.year).fraction : 1;
+      const gross = round2(
+        grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override, days)
+        * thirteenth);
       const epl = is13th ? 0 : (loansByEmp[e.id] ?? []).reduce((s, ln) =>
         s + dueFromBalance(ln, repayments, run.year, run.month, run.id).amount, 0);
       // This run's own rows are excluded so recalculating a draft does not
@@ -330,6 +342,27 @@ export default function PayrollRunDetailPage() {
    * the same value. Forgetting it overstates net pay and under-remits to LHDN,
    * and the first anyone hears of it is the return.
    */
+  /**
+   * Who a 13th-month run does not pay, and why.
+   *
+   * The run filters them out before it computes anything, so without this they
+   * would simply not appear — and a bonus run that quietly omits nine people is
+   * indistinguishable from one that paid everybody. Stated here instead, with
+   * the rule that excluded each of them.
+   */
+  const notPaid13th = is13th
+    ? employees
+        .filter(e => e.status === "ACTIVE")
+        .map(e => ({ emp: e, due: thirteenthMonthFor(e, run.year) }))
+        .filter(({ due }) => !due.entitled)
+    : [];
+  /** Those paid part of one — worth seeing before the run is finalized. */
+  const partial13th = is13th
+    ? computed
+        .map(({ emp }) => ({ emp, due: thirteenthMonthFor(emp, run.year) }))
+        .filter(({ due }) => due.fraction > 0 && due.fraction < 1)
+    : [];
+
   const missingDob = computed.filter(({ emp }) => !emp.dob).map(({ emp }) => emp.full_name);
   const missingPcb = is13th
     ? []
@@ -908,6 +941,40 @@ export default function PayrollRunDetailPage() {
                 <dt className="text-stone-500">Total LCM cost</dt>
                 <dd className="text-right font-mono text-stone-800">{formatCurrency(sumDraft(l => l.totalLcmPayment))}</dd>
               </dl>
+              {(notPaid13th.length > 0 || partial13th.length > 0) && (
+                <div className="space-y-2 rounded-2xl border border-[#bcd3f0] bg-[#eef5ff] px-4 py-3">
+                  {partial13th.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-[#173a72]">
+                        Pro-rated — part of a month&apos;s salary
+                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {partial13th.map(({ emp: e, due }) => (
+                          <li key={e.id} className="text-xs leading-relaxed text-[#173a72]">
+                            <span className="font-semibold">{e.full_name}</span>
+                            {" — "}{due.monthsInYear}/12 of a month
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {notPaid13th.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-[#173a72]">
+                        Not paid a 13th month ({notPaid13th.length})
+                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {notPaid13th.map(({ emp: e, due }) => (
+                          <li key={e.id} className="text-xs leading-relaxed text-[#173a72]">
+                            <span className="font-semibold">{e.full_name}</span>
+                            {" — "}{due.reason.replace(/^No 13th month — /, "")}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
               {(missingDob.length > 0 || missingPcb.length > 0) && (
                 <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
                   {missingDob.length > 0 && (

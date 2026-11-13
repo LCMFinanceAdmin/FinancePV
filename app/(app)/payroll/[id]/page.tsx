@@ -5,10 +5,13 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, figureOf, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, figureOf, fullGross, type CalcLine, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
+import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
+import { useToast, Toast } from "@/components/ui/toast";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
 import { FigureCell } from "@/components/payroll/figure-cell";
 import { logPayrollAudit } from "@/lib/payroll/audit";
@@ -46,6 +49,7 @@ function itemAppliesToMonth(item: { year: number; month: number; is_recurring: b
     (item.recur_until_year === targetYear && (item.recur_until_month ?? 13) >= targetMonth);
 }
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
 function fmtDate(s: string | null): string {
   if (!s) return "—";
@@ -178,8 +182,22 @@ export default function PayrollEmployeePage() {
   const [adjustments, setAdjustments] = useState<PayrollAdjustment[]>([]);
   const [adjModal, setAdjModal] = useState<{ month: number; editing: PayrollAdjustment | null } | null>(null);
   // Which gathered run has been opened to its individual months.
-  const [openAdjGroup, setOpenAdjGroup] = useState<string | null>(null);
   const [figureError, setFigureError] = useState("");
+  // Said rather than alerted. See components/ui/toast.tsx for why the
+  // browser's own dialogs were no longer good enough for figures like these.
+  const notify = useToast();
+  /**
+   * The question currently being asked before something is removed.
+   *
+   * One piece of state for all of them: only one can be open, and holding the
+   * action alongside its wording keeps the two from drifting apart — a dialog
+   * that describes one deletion and performs another is the failure this
+   * shape rules out.
+   */
+  const [confirmAsk, setConfirmAsk] = useState<{
+    title: string; body: React.ReactNode; label: string; run: () => Promise<void>;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [auditLog, setAuditLog] = useState<
     { id: string; action: string; detail: string | null; actor: string | null; created_at: string }[]
@@ -285,8 +303,8 @@ export default function PayrollEmployeePage() {
     if (!emp) return;
     const name = newAllowance.name.trim();
     const amount = parseFloat(newAllowance.amount);
-    if (!name) { alert("Give the allowance a name."); return; }
-    if (!Number.isFinite(amount) || amount <= 0) { alert("Enter an amount."); return; }
+    if (!name) { notify.fail("Give the allowance a name."); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { notify.fail("Enter an amount."); return; }
 
     const t = allowanceTemplate ?? {};
     const row: Record<string, unknown> = {
@@ -307,10 +325,10 @@ export default function PayrollEmployeePage() {
     setAddingAllowance(true);
     const { data, error } = await supabase.from("recurring_pvs").insert(row).select("id");
     setAddingAllowance(false);
-    if (error) { alert(error.message); return; }
-    if (!data?.length) { alert("Not added — your role cannot create recurring payments."); return; }
+    if (error) { notify.fail("Could not add the allowance", error.message); return; }
+    if (!data?.length) { notify.fail("Not added", "Your role cannot create recurring payments."); return; }
     setNewAllowance({ name: "", amount: "" });
-    alert("Allowance added. It will appear on the next recurring PV.");
+    notify.ok(`${name} added`, `${formatCurrency(amount)} — it will appear on the next recurring PV.`);
     load();
   }
 
@@ -322,22 +340,35 @@ export default function PayrollEmployeePage() {
    * instead: its history belongs to vouchers that were raised and possibly
    * paid, and deleting the row would leave those pointing at nothing.
    */
-  async function removeAllowance(a: AllowancePv) {
+  function removeAllowance(a: AllowancePv) {
     const everRun = !!a.current_pv_no;
-    const what = everRun
-      ? `Stop "${a.name}"? It has already been on ${a.current_pv_no}, so the record is kept and no further payment is made.`
-      : `Delete "${a.name}"? It has never been paid, so nothing is kept.`;
-    if (!confirm(what)) return;
-    setSavingAllowance(a.id);
-    const q = everRun
-      ? supabase.from("recurring_pvs").update({ active: false, updated_at: new Date().toISOString() }).eq("id", a.id)
-      : supabase.from("recurring_pvs").delete().eq("id", a.id);
-    const { data, error } = await q.select("id");
-    setSavingAllowance(null);
-    if (error) { alert(error.message); return; }
-    if (!data?.length) { alert("Not changed — your role cannot edit recurring payments."); return; }
-    alert(everRun ? "Allowance stopped." : "Allowance deleted.");
-    load();
+    setConfirmAsk({
+      title: everRun ? `Stop "${a.name}"?` : `Delete "${a.name}"?`,
+      label: everRun ? "Stop it" : "Delete it",
+      body: (
+        <>
+          <p className="font-medium text-stone-700">{formatCurrency(Number(a.amount))} a month</p>
+          <p>
+            {everRun
+              ? `It has already been on ${a.current_pv_no}, so the record is kept and no further payment is made.`
+              : "It has never been paid, so nothing is kept."}
+          </p>
+        </>
+      ),
+      run: async () => {
+        setSavingAllowance(a.id);
+        const q = everRun
+          ? supabase.from("recurring_pvs").update({ active: false, updated_at: new Date().toISOString() }).eq("id", a.id)
+          : supabase.from("recurring_pvs").delete().eq("id", a.id);
+        const { data, error } = await q.select("id");
+        setSavingAllowance(null);
+        if (error) { notify.fail("Could not change the allowance", error.message); return; }
+        if (!data?.length) { notify.fail("Not changed", "Your role cannot edit recurring payments."); return; }
+        notify.ok(everRun ? `${a.name} stopped` : `${a.name} deleted`,
+          everRun ? "No further payment will be made." : "It had never been paid, so nothing was kept.");
+        load();
+      },
+    });
   }
 
   /**
@@ -348,7 +379,7 @@ export default function PayrollEmployeePage() {
   async function saveAllowance(a: AllowancePv) {
     const raw = allowanceEdit[a.id] ?? String(a.amount ?? "");
     const amount = parseFloat(raw);
-    if (!Number.isFinite(amount) || amount < 0) { alert("Enter an amount."); return; }
+    if (!Number.isFinite(amount) || amount < 0) { notify.fail("Enter an amount."); return; }
     setSavingAllowance(a.id);
     const renamed = (nameEdit[a.id] ?? "").trim();
     const patch: Record<string, unknown> = { amount, updated_at: new Date().toISOString() };
@@ -356,13 +387,13 @@ export default function PayrollEmployeePage() {
     const { data, error } = await supabase.from("recurring_pvs")
       .update(patch).eq("id", a.id).select("id");
     setSavingAllowance(null);
-    if (error) { alert(error.message); return; }
+    if (error) { notify.fail("Could not save the allowance", error.message); return; }
     // A policy that refuses filters rows rather than raising — saying "saved"
     // when nothing was written is how the ROS numbers were lost.
-    if (!data?.length) { alert("Not saved — your role cannot edit recurring payments."); return; }
+    if (!data?.length) { notify.fail("Not saved", "Your role cannot edit recurring payments."); return; }
     setAllowanceEdit(e => { const n = { ...e }; delete n[a.id]; return n; });
     setNameEdit(e => { const n = { ...e }; delete n[a.id]; return n; });
-    alert("Allowance updated. It will show on the next recurring PV.");
+    notify.ok(`${renamed || a.name} updated`, `${formatCurrency(amount)} — it will show on the next recurring PV.`);
     load();
   }
 
@@ -427,42 +458,64 @@ export default function PayrollEmployeePage() {
     adjustmentsFor(m).filter(a => a.category === c)
       .map(a => `${Number(a.amount) > 0 ? "+" : "−"}${num(Math.abs(Number(a.amount)))} — ${a.reason}`)
       .join("\n");
-  async function deletePayItem(it: PayrollEmployeeCustomItem) {
+  function deletePayItem(it: PayrollEmployeeCustomItem) {
     const span = it.is_recurring
       ? (it.recur_until_year
           ? `${monthShort(it.month)} ${it.year} to ${monthShort(it.recur_until_month ?? 13)} ${it.recur_until_year}`
           : `${monthShort(it.month)} ${it.year} onwards`)
       : `${monthShort(it.month)} ${it.year}`;
-    const ok = confirm([
-      `Remove "${it.label}"?`,
-      `${it.type === "allowance" ? "Allowance" : "Deduction"} of ${num(Number(it.amount))} · ${span}`,
-      "Months already paid are not changed — a finalised run keeps the figures it was finalised with.",
-    ].join("\n"));
-    if (!ok) return;
-    const { error } = await supabase.from("payroll_employee_custom_items").delete().eq("id", it.id);
-    if (error) { alert(error.message); return; }
-    await logPayrollAudit(supabase, {
-      action: "PAY_ITEM_DELETED", employeeId: id, entity: emp?.full_name ?? "",
-      detail: `${it.type} "${it.label}" ${num(Number(it.amount))} (${span}) removed`,
+    setConfirmAsk({
+      title: `Remove "${it.label}"?`,
+      label: "Remove it",
+      body: (
+        <>
+          <p className="font-medium text-stone-700">
+            {it.type === "allowance" ? "Allowance" : "Deduction"} of {num(Number(it.amount))} · {span}
+          </p>
+          <p>Months already paid are not changed — a finalised run keeps the figures it was finalised with.</p>
+        </>
+      ),
+      run: async () => {
+        const { error } = await supabase.from("payroll_employee_custom_items").delete().eq("id", it.id);
+        if (error) { notify.fail("Could not remove it", error.message); return; }
+        await logPayrollAudit(supabase, {
+          action: "PAY_ITEM_DELETED", employeeId: id, entity: emp?.full_name ?? "",
+          detail: `${it.type} "${it.label}" ${num(Number(it.amount))} (${span}) removed`,
+        });
+        await refreshCustomItems();
+        notify.ok(`${it.label} removed`, `${it.type === "allowance" ? "Allowance" : "Deduction"} · ${span}`);
+      },
     });
-    await refreshCustomItems();
   }
 
-  async function deleteAdjustment(a: PayrollAdjustment) {
-    const ok = confirm([
-      "Remove this adjustment?",
-      `${monthShort(a.month)} · ${adjustmentLabel(a.category)} ${Number(a.amount) > 0 ? "+" : "−"}${num(Math.abs(Number(a.amount)))}`
-        + `\n${a.reason}`,
-      "The month goes back to what the rate table produces.",
-    ].join("\n\n"));
-    if (!ok) return;
-    const { error } = await supabase.from("payroll_adjustments").delete().eq("id", a.id);
-    if (error) { alert(error.message); return; }
-    await logPayrollAudit(supabase, {
-      action: "ADJUSTMENT_DELETED", employeeId: id, entity: emp?.full_name ?? "",
-      detail: `${monthShort(a.month)} ${a.year} · ${adjustmentLabel(a.category)} ${num(Number(a.amount))} removed (was: ${a.reason})`,
+  function deleteAdjustment(a: PayrollAdjustment) {
+    const signed = `${Number(a.amount) > 0 ? "+" : "−"}${num(Math.abs(Number(a.amount)))}`;
+    setConfirmAsk({
+      title: "Remove this adjustment?",
+      label: "Remove it",
+      body: (
+        <>
+          <p className="font-medium text-stone-700">
+            {monthShort(a.month)} {a.year} · {adjustmentLabel(a.category)}{" "}
+            <span className={`font-mono font-bold ${Number(a.amount) > 0 ? "text-red-600" : "text-green-700"}`}>
+              {signed}
+            </span>
+          </p>
+          {a.reason && <p className="italic text-stone-500">&ldquo;{a.reason}&rdquo;</p>}
+          <p>The month goes back to what the rate table produces.</p>
+        </>
+      ),
+      run: async () => {
+        const { error } = await supabase.from("payroll_adjustments").delete().eq("id", a.id);
+        if (error) { notify.fail("Could not remove the adjustment", error.message); return; }
+        await logPayrollAudit(supabase, {
+          action: "ADJUSTMENT_DELETED", employeeId: id, entity: emp?.full_name ?? "",
+          detail: `${monthShort(a.month)} ${a.year} · ${adjustmentLabel(a.category)} ${num(Number(a.amount))} removed (was: ${a.reason})`,
+        });
+        await refreshAdjustments();
+        notify.ok("Adjustment removed", `${monthShort(a.month)} ${a.year} · ${adjustmentLabel(a.category)} ${signed}`);
+      },
     });
-    await refreshAdjustments();
   }
 
   /** Tint and tooltip for a cell the corrections have moved. */
@@ -470,6 +523,15 @@ export default function PayrollEmployeePage() {
     adjAmt(m, c) !== 0
       ? { className: " bg-amber-100/70 font-semibold text-amber-900", title: adjWhy(m, c) }
       : { className: "", title: undefined as string | undefined };
+  /**
+   * Whether this person is owed a 13th month for the year, and how much of one.
+   *
+   * Worked out once rather than per month: it depends on the year and the
+   * employee, not on which month is being drawn, and the sheet shows the reason
+   * beside the row whether or not anything is paid.
+   */
+  const thirteenthDue = thirteenthMonthFor(emp, year);
+
   /**
    * One month's arithmetic. Taken out of the sheet so it can be asked a second
    * question — what would this figure be without the adjustment being written —
@@ -479,14 +541,18 @@ export default function PayrollEmployeePage() {
   const lineForMonth = (m: number, adj: ReturnType<typeof adjInput>): CalcLine | null => {
     const sal = salaryForMonth(m);
     if (!sal) return null;
-    // The 13th month is a payment of its own: a full gross, no pro-rating, no
-    // loan instalment, and Orang Asli are excluded from it altogether.
+    // The 13th month is a payment of its own: no loan instalment, and paid
+    // only to those entitled to it. Who that is, and how much of a month they
+    // get, is `lib/payroll/thirteenth-month.ts` — Orang Asli none, pastors all
+    // or nothing on twelve months of service, everyone else pro-rated with six
+    // months the floor. Nothing entitled is an empty row, not a zero one.
     if (m === 13) {
-      if (emp.is_orang_asli) return null;
+      if (!thirteenthDue.entitled) return null;
       return calcLine({
         // The 13th month is paid on December's salary, being a payment for the
-        // year rather than a fourteenth month of it.
-        gross: grossOf(salaryForMonth(12) ?? sal),
+        // year rather than a fourteenth month of it — times the fraction of it
+        // earned, which is 1 for everybody who was here the whole year.
+        gross: round2(grossOf(salaryForMonth(12) ?? sal) * thirteenthDue.fraction),
         age: ageAt(emp.dob, year, 12),
         employmentType: emp.employment_type,
         isOrangAsli: emp.is_orang_asli,
@@ -542,9 +608,9 @@ export default function PayrollEmployeePage() {
     return line ? figureOf(line, c) : null;
   };
 
-  // Orang Asli are excluded from the 13th month.
-  // The same function as every other month, so the sheet and the form can
-  // never disagree about what the 13th month comes to.
+  // Null where no 13th month is due — Orang Asli, a pastor short of twelve
+  // months, anyone short of six. The same function as every other month, so
+  // the sheet and the form can never disagree about what the bonus comes to.
   const thirteenth: CalcLine | null = lineForMonth(13, adjInput(13));
   const allLines = thirteenth ? [...monthLines, thirteenth] : monthLines;
   const sum = (pick: (l: CalcLine) => number) => allLines.reduce((s, l) => s + pick(l), 0);
@@ -924,7 +990,17 @@ export default function PayrollEmployeePage() {
                   {/* 13th month */}
                   {thirteenth ? (
                     <tr className="bg-blue-50/40">
-                      <td className="border border-stone-200 px-1 py-0.5 font-semibold text-stone-600">13th MTH</td>
+                      <td className="border border-stone-200 px-1 py-0.5 font-semibold text-stone-600">
+                        13th MTH
+                        {/* A part-year joiner's bonus is a fraction of a month,
+                            and the gross beside it is the only other clue. */}
+                        {thirteenthDue.fraction < 1 && (
+                          <span className="ml-1 font-normal text-[9px] text-stone-400"
+                            title={thirteenthDue.reason}>
+                            {thirteenthDue.monthsInYear}/12
+                          </span>
+                        )}
+                      </td>
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(thirteenth.gross)}</td>
                       <td className="border border-stone-200 px-0.5 py-0.5 text-right">
                         <input type="number" value={pcb[12] || ""} onChange={e => setPcb(p => { const n = [...p]; n[12] = parseFloat(e.target.value) || 0; return n; })}
@@ -963,7 +1039,15 @@ export default function PayrollEmployeePage() {
                       </td>
                     </tr>
                   ) : (
-                    <tr><td colSpan={13 + customCols.length} className="border border-stone-200 px-1 py-0.5 text-stone-400 italic">13th month — excluded (Orang Asli)</td></tr>
+                    <tr>
+                      <td colSpan={13 + customCols.length}
+                        className="border border-stone-200 px-1 py-0.5 italic text-stone-400">
+                        {/* The rule that withheld it, not just the fact. Whoever
+                            pulls this sheet in a year's time is owed the reason
+                            on the same line as the gap. */}
+                        13th MTH — {thirteenthDue.reason.replace(/^No 13th month — /, "")}
+                      </td>
+                    </tr>
                   )}
                   {/* Annual total */}
                   <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7] [&>td]:border-t-2 [&>td]:border-t-[#4a6da7]/40">
@@ -1128,7 +1212,6 @@ export default function PayrollEmployeePage() {
                         ? `${num(Math.abs(amt))} more in hand`
                         : `${num(Math.abs(amt))} less in hand`;
                     const spread = g.months.length > 1;
-                    const open = openAdjGroup === g.key;
                     return (
                       <li key={g.key} className="rounded-lg border border-amber-200 bg-white px-2.5 py-2">
                         <div className="flex flex-wrap items-start gap-x-2 gap-y-0.5">
@@ -1166,20 +1249,17 @@ export default function PayrollEmployeePage() {
                               </button>
                             </span>
                           )}
-                          {spread && (
-                            <button type="button" onClick={() => setOpenAdjGroup(open ? null : g.key)}
-                              aria-expanded={open}
-                              className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-stone-500 hover:bg-stone-100 hover:text-stone-700">
-                              {open ? "Hide the months" : "Each month"}
-                              <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-                            </button>
-                          )}
+
                         </div>
 
                         {/* Each month is still its own adjustment and can be put
                             right or dropped on its own: the run is how they are
-                            read, not how they are stored. */}
-                        {spread && open && (
+                            read, not how they are stored. They are all shown —
+                            a correction spread over several months is exactly
+                            when somebody needs to see each one, and a fold-away
+                            made the per-month edit and delete buttons findable
+                            only by whoever already knew they were there. */}
+                        {spread && (
                           <ul className="mt-1.5 space-y-0.5 border-t border-amber-100 pt-1.5">
                             {g.items.map(a => (
                               <li key={a.id} className="flex items-center gap-2 text-[12px]">
@@ -1571,7 +1651,37 @@ export default function PayrollEmployeePage() {
       {tab === "documents" && <EmployeeDocuments employeeId={emp.id} canEdit={canEdit} />}
 
       {showRevision && current && (
-        <RevisionModal employeeId={emp.id} latest={current} onClose={() => setShowRevision(false)} onSaved={() => { setShowRevision(false); load(); }} />
+        <RevisionModal employeeId={emp.id} latest={current}
+          emp={emp} rates={rates} bands={bands} year={year}
+          onClose={() => setShowRevision(false)}
+          onSaved={(summary) => {
+            setShowRevision(false);
+            load();
+            // The revision is the moment somebody wants confirming: they have
+            // just changed what a person is paid, and the sheet behind the
+            // modal redraws without otherwise saying that anything happened.
+            notify.ok("Salary revision saved", summary);
+          }} />
+      )}
+
+      <Toast handle={notify} />
+
+      {confirmAsk && (
+        <ConfirmDialog
+          title={confirmAsk.title}
+          message={confirmAsk.body}
+          confirmLabel={confirmAsk.label}
+          danger
+          loading={confirmBusy}
+          onCancel={() => setConfirmAsk(null)}
+          onConfirm={async () => {
+            setConfirmBusy(true);
+            try { await confirmAsk.run(); } finally {
+              setConfirmBusy(false);
+              setConfirmAsk(null);
+            }
+          }}
+        />
       )}
 
       {slipMonth !== null && monthLines[slipMonth] && (
@@ -2695,8 +2805,13 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
 
 // ─── Revision Modal ───────────────────────────────────────────────────────────
 
-function RevisionModal({ employeeId, latest, onClose, onSaved }: {
-  employeeId: string; latest: PayrollSalary; onClose: () => void; onSaved: () => void;
+function RevisionModal({ employeeId, latest, emp, rates, bands, year, onClose, onSaved }: {
+  employeeId: string; latest: PayrollSalary;
+  /** Needed to price the revision: age, scheme membership and the rate table. */
+  emp: PayrollEmployee; rates: RateConfig | undefined; bands: ContributionBand[]; year: number;
+  onClose: () => void;
+  /** The summary is what the toast says afterwards. */
+  onSaved: (summary: string) => void;
 }) {
   const supabase = createClient();
   const [saving, setSaving] = useState(false);
@@ -2756,6 +2871,64 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
   const matchesScale = scaleFigure !== null
     && Math.abs((parseFloat(vals.base_salary) || 0) - scaleFigure) < 0.005;
 
+  /**
+   * What the revision does to the statutory figures.
+   *
+   * EPF, SOCSO and EIS all follow the gross, so changing a base salary changes
+   * every one of them — and until this panel existed, the only way to find out
+   * by how much was to save the revision and read the sheet afterwards, or to
+   * work it out by hand and key four corrections. Both happened.
+   *
+   * Computed through calcLine, the same function the sheet and the run use, on
+   * the month the revision takes effect. Nothing here is saved: it is the
+   * consequence of the figures in the form, shown while they can still be
+   * changed.
+   *
+   * PCB is the exception and is called out rather than computed. This payroll
+   * has no LHDN schedule — PCB is keyed by hand against the tables — so a
+   * figure here would be invented, and an invented tax deduction is worse than
+   * an absent one.
+   */
+  const statutoryEffect = (() => {
+    const effMonth = Number(effectiveFrom.slice(5, 7)) || 12;
+    const effYear = Number(effectiveFrom.slice(0, 4)) || year;
+    const components = (v: typeof vals): SalaryComponents => ({
+      base_salary: parseFloat(v.base_salary) || 0,
+      increment_carried: parseFloat(v.increment_carried) || 0,
+      increment_current: parseFloat(v.increment_current) || 0,
+      experience_bonus: parseFloat(v.experience_bonus) || 0,
+      family_allowance: parseFloat(v.family_allowance) || 0,
+      stm_allowance: parseFloat(v.stm_allowance) || 0,
+    });
+    const before = fullGross({
+      base_salary: Number(latest.base_salary), increment_carried: Number(latest.increment_carried),
+      increment_current: Number(latest.increment_current), experience_bonus: Number(latest.experience_bonus),
+      family_allowance: Number(latest.family_allowance), stm_allowance: Number(latest.stm_allowance),
+    });
+    const after = fullGross(components(vals));
+    const priced = (gross: number) => calcLine({
+      gross, age: ageAt(emp.dob, effYear, effMonth), month: effMonth,
+      employmentType: emp.employment_type, isOrangAsli: emp.is_orang_asli,
+      voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
+      skbbkOptedOut: emp.skbbk_opted_out, epfOver60Contributing: emp.epf_over60_contributing,
+      manualPcb: 0, eplDeduction: 0, is13thMonth: false, rates, bands,
+    });
+    return { before, after, from: priced(before), to: priced(after), effMonth, effYear };
+  })();
+
+  const grossChanged = Math.abs(statutoryEffect.after - statutoryEffect.before) >= 0.005;
+
+  /** The lines the panel prints, and the only place their order is decided. */
+  const statutoryRows: { label: string; from: number; to: number; note?: string }[] = [
+    { label: "EPF — employee", from: statutoryEffect.from.epf.ee, to: statutoryEffect.to.epf.ee },
+    { label: "EPF — employer", from: statutoryEffect.from.epf.er, to: statutoryEffect.to.epf.er },
+    { label: "SOCSO — employee", from: statutoryEffect.from.socso.ee, to: statutoryEffect.to.socso.ee },
+    { label: "SOCSO — employer", from: statutoryEffect.from.socso.er, to: statutoryEffect.to.socso.er },
+    { label: "EIS — employee", from: statutoryEffect.from.eis.ee, to: statutoryEffect.to.eis.ee },
+    { label: "EIS — employer", from: statutoryEffect.from.eis.er, to: statutoryEffect.to.eis.er },
+    { label: "SKBBK (Lindung 24)", from: statutoryEffect.from.skbbk, to: statutoryEffect.to.skbbk },
+  ];
+
   async function save() {
     setError(""); setSaving(true);
     try {
@@ -2797,7 +2970,10 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
                   : "")
               + ` (${reason.trim() || "Salary revision"})`,
       });
-      onSaved();
+      onSaved(
+        `${formatCurrency(statutoryEffect.before)} → ${formatCurrency(newGross)} from `
+        + `${MONTH_SHORT[statutoryEffect.effMonth - 1]} ${statutoryEffect.effYear}`
+        + (grossChanged ? " · EPF, SOCSO and EIS follow; PCB needs keying." : ""));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally { setSaving(false); }
@@ -2908,6 +3084,78 @@ function RevisionModal({ employeeId, latest, onClose, onSaved }: {
               )}
             </div>
           )}
+
+          {/* What it costs, in the columns it moves. See statutoryEffect. */}
+          <div className="rounded-xl border border-stone-200 bg-stone-50/70 px-3 py-2.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <p className="text-[12px] font-bold text-stone-700">What this does to the statutory figures</p>
+              <p className="text-[11px] text-stone-500">
+                from {MONTH_SHORT[statutoryEffect.effMonth - 1]} {statutoryEffect.effYear}
+              </p>
+            </div>
+            <p className="mt-0.5 text-[11.5px] text-stone-500">
+              Gross <span className="font-mono tabular-nums">{num(statutoryEffect.before)}</span>
+              {" → "}
+              <span className="font-mono font-semibold tabular-nums text-stone-700">{num(statutoryEffect.after)}</span>
+              {grossChanged && (
+                <span className={`ml-1 font-mono font-semibold tabular-nums ${
+                  statutoryEffect.after > statutoryEffect.before ? "text-green-700" : "text-red-600"}`}>
+                  ({statutoryEffect.after > statutoryEffect.before ? "+" : "−"}
+                  {num(Math.abs(statutoryEffect.after - statutoryEffect.before))})
+                </span>
+              )}
+            </p>
+
+            {!grossChanged ? (
+              <p className="mt-1.5 text-[11.5px] text-stone-500">
+                The gross is unchanged, so EPF, SOCSO and EIS stay where they are.
+              </p>
+            ) : (
+              <table className="mt-1.5 w-full text-[11.5px] tabular-nums">
+                <thead>
+                  <tr className="text-stone-400">
+                    <th className="pb-0.5 text-left font-medium">&nbsp;</th>
+                    <th className="pb-0.5 text-right font-medium">now</th>
+                    <th className="pb-0.5 text-right font-medium">after</th>
+                    <th className="pb-0.5 text-right font-medium">change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statutoryRows.map(r => {
+                    const d = round2(r.to - r.from);
+                    return (
+                      <tr key={r.label} className={d !== 0 ? "font-semibold text-stone-800" : "text-stone-400"}>
+                        <td className="py-px pr-2">{r.label}</td>
+                        <td className="py-px text-right font-mono">{num(r.from)}</td>
+                        <td className="py-px text-right font-mono">{num(r.to)}</td>
+                        <td className={`py-px text-right font-mono ${
+                          d > 0 ? "text-red-600" : d < 0 ? "text-green-700" : ""}`}>
+                          {d === 0 ? "—" : `${d > 0 ? "+" : "−"}${num(Math.abs(d))}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {/* PCB is keyed, not derived. Saying so is the whole point: a
+                revision that moved three figures and left the fourth is how
+                somebody under-remits to LHDN without ever seeing a mistake. */}
+            <p className="mt-2 border-t border-stone-200 pt-1.5 text-[11.5px] leading-snug text-amber-800">
+              <span className="font-bold">PCB is keyed by hand</span> — this payroll holds no LHDN
+              schedule, so nothing here recalculates it.{" "}
+              {grossChanged
+                ? "A gross this size has moved, so check the monthly tax deduction against LHDN and key the new figure on the yearly sheet."
+                : "The gross has not moved, so it is unlikely to need changing."}
+            </p>
+            {grossChanged && (
+              <p className="mt-1 text-[11.5px] leading-snug text-stone-500">
+                Months already paid keep the figures they were paid with. To put a past month right,
+                use <span className="font-semibold">Add an adjustment</span> on the sheet.
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex gap-2 px-5 py-4 border-t border-stone-200">
           <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50">{saving ? "Saving…" : "Save Revision"}</button>

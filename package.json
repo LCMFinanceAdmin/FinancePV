@@ -10,7 +10,8 @@
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/helpers/register.mjs --test \"tests/**/*.test.ts\"",
     "verify:access": "npx --yes supabase db query --linked -f scripts/verify-access.sql",
     "verify:budget": "npx --yes supabase db query --linked -f scripts/verify-budget.sql",
-    "verify:flow": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/verify-flow.ts"
+    "verify:flow": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/verify-flow.ts",
+    "audit:over60": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/audit-over60.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
