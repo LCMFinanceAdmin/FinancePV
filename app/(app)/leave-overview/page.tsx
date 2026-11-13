@@ -16,6 +16,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
+import { remainingApprovers, slotsOf, type RequiredApprover, type ApprovalEntry } from "@/lib/leave-decision";
+import { describeSlots } from "@/lib/approver-label";
 import {
   CalendarCheck, Search, AlertCircle, AlertTriangle, Clock, ChevronRight, Users,
 } from "lucide-react";
@@ -114,6 +116,12 @@ export default function LeaveOverviewPage() {
     return p?.full_name || email;
   }, [people]);
 
+  // email → role, so a slot still names the post on applications made before
+  // positions were snapshotted onto them.
+  const roleByEmail = useMemo(
+    () => Object.fromEntries(people.map(p => [norm(p.email), p.role])),
+    [people]);
+
   /**
    * The same rule /my-leaves shows each person about themselves: days approved
    * this year against the entitlement, and for replacement leave the days
@@ -158,10 +166,19 @@ export default function LeaveOverviewPage() {
       .sort((a, b) => a.applied_at.localeCompare(b.applied_at)),
     [apps]);
 
-  /** Who has not signed yet — the answer to "what is this waiting on". */
+  /**
+   * What this is waiting on — as slots, not names.
+   *
+   * A pastor's chain holds the Bishop, the district Dean and the Pastor in
+   * Charge in one slot that any of them settles, so three names listed flat
+   * read as three missing signatures when there is one, and an application
+   * about to be granted looks like one that has stalled. Whoever is chasing
+   * these is the person who most needs to tell those apart.
+   */
   const stillToSign = useCallback((l: LeaveApp) =>
-    (l.required_approvers ?? []).filter(r => !(l.approvals ?? []).some(
-      a => a.action === "APPROVED" && (norm(a.email) === norm(r.email) || norm(a.for_email) === norm(r.email)),
+    slotsOf(remainingApprovers(
+      (l.required_approvers ?? []).map(r => ({ ...r, name: r.name ?? "" })) as RequiredApprover[],
+      (l.approvals ?? []).map(a => ({ ...a, name: "", timestamp: "" })) as ApprovalEntry[],
     )), []);
 
   const daysWaiting = (l: LeaveApp) =>
@@ -264,7 +281,11 @@ export default function LeaveOverviewPage() {
                     {waiting.length === 0
                       ? "All signatures in — waiting to be finalised."
                       : <>Still to sign: <span className="font-medium text-stone-700">
-                          {waiting.map(w => w.name || nameOf(w.email)).join(", ")}
+                          {describeSlots(
+                            // Names from the directory where the snapshot has
+                            // none, so an older application still reads.
+                            waiting.map(slot => slot.map(w => ({ ...w, name: w.name || nameOf(w.email) }))),
+                            roleByEmail)}
                         </span></>}
                   </p>
                 </div>

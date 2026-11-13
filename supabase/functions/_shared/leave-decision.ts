@@ -153,6 +153,31 @@ export function waitingOnBefore(
   return open.filter(r => stepOf(r) < stepOf(mine));
 }
 
+/**
+ * Gather a flat list of approvers back into the slots the chain actually has.
+ *
+ * `outstandingApprovers` and `remainingApprovers` both return every member of
+ * an unsettled group, because the application really is waiting on any of
+ * them. That is the right list and the wrong shape for saying so: counted or
+ * named one by one, a pastor's Bishop / Dean / Pastor in Charge reads as three
+ * signatures when the rule is that any one of the three settles it.
+ *
+ * Order is preserved, and a group takes the position of its first member.
+ */
+export function slotsOf(approvers: RequiredApprover[]): RequiredApprover[][] {
+  const slots: RequiredApprover[][] = [];
+  const byGroup = new Map<string, RequiredApprover[]>();
+  for (const r of approvers) {
+    if (!r.group) { slots.push([r]); continue; }
+    const existing = byGroup.get(r.group);
+    if (existing) { existing.push(r); continue; }
+    const slot = [r];
+    byGroup.set(r.group, slot);
+    slots.push(slot);
+  }
+  return slots;
+}
+
 /** The slots a chain has, counting a group as one. */
 export function slotCount(required: RequiredApprover[]): number {
   const groups = new Set(required.filter(r => r.group).map(r => r.group));

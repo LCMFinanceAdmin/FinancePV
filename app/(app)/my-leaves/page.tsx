@@ -6,6 +6,8 @@ import { ApprovalChain } from "@/components/leave/approval-chain";
 import { roleLabel } from "@/lib/utils";
 import { loadRoles } from "@/lib/roles";
 import { leaveRouting } from "@/lib/leave-approvers";
+import { slotsOf, type RequiredApprover } from "@/lib/leave-decision";
+import { describeSlots } from "@/lib/approver-label";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { openLeaveForm } from "@/components/leave/leave-form-html";
@@ -522,7 +524,11 @@ function MyLeavesInner() {
         r.notifyOnly
           ? "No approval needed — the church will be notified that you are away."
           : r.approvers.length
-            ? r.approvers.map(a => a.position ? `${a.name} (${a.position})` : a.name).join(" and ")
+            // Slots, so the alternatives read as a choice before it is sent.
+            // A pastor shown "the Bishop and the Dean and the Pastor in
+            // Charge" is being told their leave needs three signatures, and
+            // the rule is that any one of them settles it.
+            ? describeSlots(slotsOf(r.approvers as RequiredApprover[]))
             : "No approver could be worked out — ask Finance to check your record.");
     }).catch(() => {});
     return () => { cancelled = true; };

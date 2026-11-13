@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { applyLeaveDecision, outstandingApprovers, canActNow, waitingOnBefore } from "@/lib/leave-decision";
+import { applyLeaveDecision, outstandingApprovers, canActNow, waitingOnBefore, slotsOf } from "@/lib/leave-decision";
+import { describeSlots } from "@/lib/approver-label";
 import type { RequiredApprover, ApprovalEntry } from "@/lib/leave-decision";
 import { notifyPeople } from "@/lib/notify";
 
@@ -205,7 +206,10 @@ export async function POST(req: NextRequest) {
         subject: `${who} approved your leave — ${leave.leave_no}`,
         lines: [
           `${who} has approved your leave application ${leave.leave_no}.`,
-          `It still needs ${stillWaiting.map(a => a.name).join(" and ")} before it is granted.`,
+          // Slots, not names: where the chain offers alternatives the
+          // applicant should read "or", not a list of people they believe are
+          // all still to sign.
+          `It still needs ${describeSlots(slotsOf(stillWaiting))} before it is granted.`,
         ],
         path: "/my-leaves",
       });

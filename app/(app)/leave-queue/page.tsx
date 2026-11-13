@@ -3,9 +3,9 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
-import { describeApprover as describe, type LabelledApprover } from "@/lib/approver-label";
+import { describeSlots } from "@/lib/approver-label";
 import { partitionQueue, slotIsMine } from "@/lib/leave-queue";
-import { outstandingApprovers, type RequiredApprover } from "@/lib/leave-decision";
+import { outstandingApprovers, slotsOf, type RequiredApprover } from "@/lib/leave-decision";
 import { CheckCircle2, XCircle, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -158,31 +158,18 @@ function LeaveQueueInner() {
   // be gathered back together before they can be counted or named. Counting
   // them individually is what made a pastor's leave look like three signatures
   // when the rule is that any one of the three settles it.
-  const outstandingSlots = (l: LeaveApp): RequiredApprover[][] => {
-    const out = outstandingApprovers(
+  const outstandingSlots = (l: LeaveApp): RequiredApprover[][] =>
+    slotsOf(outstandingApprovers(
       (l.required_approvers ?? []) as RequiredApprover[],
       (l.approvals ?? []) as Parameters<typeof outstandingApprovers>[1],
-    );
-    const slots: RequiredApprover[][] = [];
-    const byGroup = new Map<string, RequiredApprover[]>();
-    for (const r of out) {
-      if (!r.group) { slots.push([r]); continue; }
-      const existing = byGroup.get(r.group);
-      if (existing) { existing.push(r); continue; }
-      const slot = [r];
-      byGroup.set(r.group, slot);
-      slots.push(slot);
-    }
-    return slots;
-  };
+    ));
 
   // "the Bishop or the Dean or the Pastor in Charge" for a slot any one of them
-  // settles; a plain name for a slot held by one person.
-  const nameSlot = (slot: RequiredApprover[]) =>
-    slot.map(r => describeApprover(r)).join(" or ");
-
-  const nameSlots = (slots: RequiredApprover[][]) =>
-    slots.map(nameSlot).join(" and ");
+  // settles; a plain name for a slot held by one person. The wording lives in
+  // lib/approver-label now, because the applicant's own page, the overview and
+  // the progress email all have to say this the same way — and for a while
+  // only this page did.
+  const nameSlots = (slots: RequiredApprover[][]) => describeSlots(slots, roleByEmail);
 
   async function act(
     leaveId: string,
@@ -209,7 +196,6 @@ function LeaveQueueInner() {
 
   const typeName = (code: string) => leaveTypes.find(t => t.code === code)?.name ?? code;
 
-  const describeApprover = (a: LabelledApprover) => describe(a, roleByEmail);
 
   // The application, as the signed document HR files.
   const viewForm = (l: LeaveApp) => openLeaveForm({
