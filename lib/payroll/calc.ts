@@ -486,20 +486,46 @@ export function calcLine(input: CalcInput): CalcLine {
   const ptptn = Number(input.ptptnDeduction) || 0;
   const rates = input.rates ?? DEFAULT_RATES;
 
+  // ── Unpaid days, counted before anything is worked out on them ────────
+  // The count has to come first because of the whole-month case below. The
+  // amount cannot: a day is priced off the corrected gross, which is not
+  // known until the corrections are applied further down.
+  const unpaidDaysInMonth = Number(input.unpaidLeave?.daysInMonth) || 0;
+  const unpaidDays = is13thMonth || unpaidDaysInMonth <= 0
+    ? 0
+    : Math.min(Math.max(Number(input.unpaidLeave?.days) || 0, 0), unpaidDaysInMonth);
+
+  /**
+   * A whole month unpaid: no wages, and so no contributions on them.
+   *
+   * Part of a month is different and deliberately so — there the schemes are
+   * worked out on the full agreed wage and only take-home falls, which is the
+   * General Manager's instruction. But a month with no wages at all has
+   * nothing for a percentage to apply to, and carrying the contributions
+   * anyway produced a NEGATIVE net: the employee owing the church their own
+   * SKBBK out of a salary they did not receive.
+   *
+   * EPF, SOCSO, EIS and SKBBK all stop together. PCB does not: it is keyed by
+   * hand, so a figure sitting on a month like this is Finance's to clear, and
+   * zeroing what somebody typed would be the system overruling them.
+   */
+  const wholeMonthUnpaid = unpaidDays > 0 && unpaidDays >= unpaidDaysInMonth;
+
   // EPF — applies to both normal and 13th-month
   const epfRates = resolveEpfRates(input, rates);
   // A voluntary sum is still a contribution, so it stops where they all do.
   const epfClosed = input.age >= (rates.epf_ceases_age ?? 75);
   const epfThreshold = rates.epf_wage_threshold ?? 5000;
-  const epfEe = epfContribution(gross, epfRates.ee, epfThreshold) + (epfClosed ? 0 : voluntaryEpf || 0);
-  const epfEr = epfContribution(gross, epfRates.er, epfThreshold);
+  const epfEe = wholeMonthUnpaid ? 0
+    : epfContribution(gross, epfRates.ee, epfThreshold) + (epfClosed ? 0 : voluntaryEpf || 0);
+  const epfEr = wholeMonthUnpaid ? 0 : epfContribution(gross, epfRates.er, epfThreshold);
   const epf: StatPortion = { ee: round2(epfEe), er: round2(epfEr), total: round2(epfEe + epfEr) };
 
   // SOCSO + EIS + SKBBK — skipped entirely for the 13th month
   let socso: StatPortion = { ee: 0, er: 0, total: 0 };
   let eis: StatPortion = { ee: 0, er: 0, total: 0 };
   let skbbk = 0;
-  if (!is13thMonth) {
+  if (!is13thMonth && !wholeMonthUnpaid) {
     const over60 = input.age >= 60;
     // PERKESO's schedule where it covers this wage; the percentage otherwise.
     // The band's figures already account for the midpoint and the schedule's
@@ -586,17 +612,14 @@ export function calcLine(input: CalcInput): CalcLine {
 
   // ── Unpaid leave ──────────────────────────────────────────────────────
   // Taken off here, after the contributions rather than before them, so the
-  // statutory columns go on reading the full wage. A bonus is not a month
-  // worked, so no day of it can be unpaid.
+  // statutory columns go on reading the full wage — except where the whole
+  // month is unpaid, which has no wage for them to read and is handled at the
+  // top. A bonus is not a month worked, so no day of it can be unpaid.
   //
   // The day is priced off the corrected gross: where a correction has moved
   // what this month pays, a day of it is worth more or less accordingly.
   // Clamped at the month's length — somebody absent for all of it is owed
   // nothing, not less than nothing.
-  const unpaidDaysInMonth = Number(input.unpaidLeave?.daysInMonth) || 0;
-  const unpaidDays = is13thMonth || unpaidDaysInMonth <= 0
-    ? 0
-    : Math.min(Math.max(Number(input.unpaidLeave?.days) || 0, 0), unpaidDaysInMonth);
   const unpaidDayRate = unpaidDaysInMonth > 0 ? round2(grossAdj / unpaidDaysInMonth) : 0;
   const unpaidAmount = unpaidDays > 0 ? round2(grossAdj / unpaidDaysInMonth * unpaidDays) : 0;
 

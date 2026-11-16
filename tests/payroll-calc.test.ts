@@ -270,3 +270,54 @@ test("a day is priced off the corrected gross, not the computed one", () => {
     adjustments: [{ category: "GROSS", amount: 310, reason: "back pay" }] });
   assert.equal(l.unpaidLeave.amount, 110);
 });
+
+test("a whole month unpaid carries no contributions at all", () => {
+  // Part of a month leaves the schemes on the full wage; all of it has no wage
+  // for them to sit on, and charging them anyway made net go negative.
+  const all = line({ gross: 3100, unpaidLeave: { days: 31, daysInMonth: 31 } });
+  assert.equal(all.epf.ee, 0);
+  assert.equal(all.epf.er, 0);
+  assert.equal(all.socso.ee, 0);
+  assert.equal(all.socso.er, 0);
+  assert.equal(all.eis.ee, 0);
+  assert.equal(all.eis.er, 0);
+  assert.equal(all.skbbk, 0);
+  assert.equal(all.totalContrib.ee, 0);
+  assert.equal(all.totalContrib.er, 0);
+});
+
+test("a whole month unpaid nets to nothing, not to less than nothing", () => {
+  const all = line({ gross: 3100, unpaidLeave: { days: 31, daysInMonth: 31 } });
+  assert.equal(all.unpaidLeave.amount, 3100);
+  assert.equal(all.net, 0);
+  assert.equal(all.totalLcmPayment, 0, "the church pays out nothing either");
+});
+
+test("asking for more days than the month has is still a whole month", () => {
+  const over = line({ gross: 3100, unpaidLeave: { days: 45, daysInMonth: 31 } });
+  assert.equal(over.epf.ee, 0);
+  assert.equal(over.net, 0);
+});
+
+test("one day short of the month keeps the contributions on the full wage", () => {
+  // The line is drawn at the whole month, so 30 of 31 days is unchanged.
+  const nearly = line({ gross: 3100, unpaidLeave: { days: 30, daysInMonth: 31 } });
+  const full = line({ gross: 3100 });
+  assert.equal(nearly.epf.ee, full.epf.ee);
+  assert.equal(nearly.socso.er, full.socso.er);
+  assert.equal(nearly.skbbk, full.skbbk);
+});
+
+test("PCB keyed on a wholly unpaid month is left alone, and shows", () => {
+  // It is typed by hand, so clearing it belongs to whoever typed it. The net
+  // goes negative by exactly that figure rather than quietly swallowing it.
+  const all = line({ gross: 3100, manualPcb: 120, unpaidLeave: { days: 31, daysInMonth: 31 } });
+  assert.equal(all.pcb, 120);
+  assert.equal(all.net, -120);
+});
+
+test("a wholly unpaid month does not disturb the 13th", () => {
+  const bonus = line({ gross: 3100, is13thMonth: true, unpaidLeave: { days: 31, daysInMonth: 31 } });
+  assert.equal(bonus.epf.ee > 0, true, "EPF still applies to a bonus");
+  assert.equal(bonus.unpaidLeave.amount, 0);
+});

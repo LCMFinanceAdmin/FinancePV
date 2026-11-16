@@ -43,6 +43,9 @@ export function UnpaidDaysCell({
   const [saving, setSaving] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const days = Number(existing?.days) || 0;
+  // A whole month has no wage for the schemes to sit on, so they stop with it
+  // — see `wholeMonthUnpaid` in calc.ts. Part of a month does not.
+  const wholeMonth = days > 0 && days >= daysInMonth;
 
   useEffect(() => { if (editing) input.current?.select(); }, [editing]);
 
@@ -107,7 +110,11 @@ export function UnpaidDaysCell({
         canEdit ? " cursor-text hover:bg-blue-50 hover:ring-1 hover:ring-inset hover:ring-[#2f5b9c]/40" : ""}`}
       title={days > 0
         ? `${days} day${days === 1 ? "" : "s"} unpaid · ${num(dayRate)} a day (gross ÷ ${daysInMonth} days)`
-          + `\n− ${num(amount)} from take-home. EPF, SOCSO and EIS stay on the full wage.`
+          + `\n− ${num(amount)} from take-home.`
+          + (wholeMonth
+              ? `\nThe whole month is unpaid, so EPF, SOCSO, EIS and SKBBK stop with it.`
+                + `\nPCB is keyed by hand — clear it yourself if one is set.`
+              : `\nEPF, SOCSO and EIS stay on the full wage.`)
         : canEdit ? "Click to key days of unpaid leave" : undefined}
       onClick={() => { if (!canEdit) return; setDraft(String(days)); setEditing(true); }}
     >
@@ -115,6 +122,13 @@ export function UnpaidDaysCell({
         <>
           {days}
           <span className="block text-[8px] font-normal leading-tight">−{num(amount)}</span>
+          {/* Said on the row, because every statutory cell beside it reading
+              0.00 otherwise looks like a fault rather than a consequence. */}
+          {wholeMonth && (
+            <span className="block text-[7.5px] font-semibold uppercase leading-tight tracking-wide">
+              whole month
+            </span>
+          )}
         </>
       ) : "—"}
     </td>
