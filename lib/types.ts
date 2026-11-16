@@ -811,6 +811,14 @@ export interface LoanRepayment {
   month: number;
   amount: number;
   balance_after: number;
+  /**
+   * The one brought-forward row standing for everything repaid before this
+   * system tracked the loan — see migration 260. At most one per loan, and
+   * never produced by a payroll run.
+   */
+  is_opening?: boolean;
+  /** Why this repayment exists, where no run made it. */
+  note?: string | null;
   created_at: string;
 }
 

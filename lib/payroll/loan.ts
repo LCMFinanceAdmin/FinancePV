@@ -114,3 +114,27 @@ export function totalRepayable(loan: Pick<EmployeeLoan, "principal" | "monthly_i
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
+
+/**
+ * What the schedule says should have been repaid by the end of a given month.
+ *
+ * Offered as the opening figure when a loan agreed on paper is keyed in: the
+ * instalments it has already run through, added up. It is a suggestion and not
+ * an answer — a month missed, a month paid twice, or a lump sum settled off
+ * the books all make the real figure differ, and the person keying it has the
+ * paper record in front of them and this does not.
+ *
+ * Nought before the loan starts, and never more than the loan.
+ */
+export function repaidBySchedule(
+  loan: Pick<EmployeeLoan, "principal" | "monthly_installment" | "term_months" | "final_installment" | "start_month">,
+  year: number,
+  month: number,
+): number {
+  const due = buildSchedule(loan).filter(r =>
+    r.year < year || (r.year === year && r.month <= month));
+  return round2(Math.min(
+    due.reduce((s, r) => s + r.amount, 0),
+    Number(loan.principal),
+  ));
+}

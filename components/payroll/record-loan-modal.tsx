@@ -19,7 +19,7 @@ import { X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
-import { buildSchedule, totalRepayable } from "@/lib/payroll/loan";
+import { buildSchedule, totalRepayable, repaidBySchedule } from "@/lib/payroll/loan";
 import type { UserProfile, PayrollEmployee } from "@/lib/types";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -44,6 +44,12 @@ export function RecordLoanModal({ user, employees, onClose, onSaved }: {
   const [approvedOn, setApprovedOn] = useState("");
   const [approvedBy, setApprovedBy] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
+  // What has already come off, before this system tracked it. Blank means
+  // "none" — a loan starting next month has nothing brought forward.
+  const [repaidUpTo, setRepaidUpTo] = useState("");
+  const [repaidAlready, setRepaidAlready] = useState("");
+  /** Set once from the schedule, then left alone so typing is not overwritten. */
+  const [repaidTouched, setRepaidTouched] = useState(false);
 
   const p = parseFloat(principal) || 0;
   const m = parseFloat(monthly) || 0;
@@ -66,6 +72,34 @@ export function RecordLoanModal({ user, employees, onClose, onSaved }: {
   const stillToRun = schedule.length - alreadyDue.length;
   const last = schedule[schedule.length - 1];
 
+  // What the schedule says has been repaid by the cut-off month. A suggestion
+  // only: a month missed, or a lump settled off the books, moves the real
+  // figure, and whoever is keying this has the paper record and we do not.
+  const cutYear = repaidUpTo ? Number(repaidUpTo.slice(0, 4)) : 0;
+  const cutMonth = repaidUpTo ? Number(repaidUpTo.slice(5, 7)) : 0;
+  const suggestedRepaid = schedule.length > 0 && repaidUpTo
+    ? repaidBySchedule({
+        principal: p, monthly_installment: m, term_months: t,
+        final_installment: parseFloat(finalInst) || suggestedFinal, start_month: startMonth,
+      }, cutYear, cutMonth)
+    : 0;
+  const openingAmount = Math.max(0, Math.min(parseFloat(repaidAlready) || 0, p));
+  const balanceAfterOpening = Math.round((p - openingAmount) * 100) / 100;
+
+  /** Offer the computed figure the first time a cut-off month is chosen. */
+  function chooseCutOff(value: string) {
+    setRepaidUpTo(value);
+    if (!value) { setRepaidAlready(""); setRepaidTouched(false); return; }
+    if (repaidTouched) return;
+    const y = Number(value.slice(0, 4)), mo = Number(value.slice(5, 7));
+    if (schedule.length > 0) {
+      setRepaidAlready(String(repaidBySchedule({
+        principal: p, monthly_installment: m, term_months: t,
+        final_installment: parseFloat(finalInst) || suggestedFinal, start_month: startMonth,
+      }, y, mo)));
+    }
+  }
+
   async function save() {
     if (!employeeId) { setError("Select an employee."); return; }
     if (p <= 0 || m <= 0 || t <= 0) { setError("Enter the loan amount, the monthly repayment and the term."); return; }
@@ -85,7 +119,7 @@ export function RecordLoanModal({ user, employees, onClose, onSaved }: {
         if (upErr) throw new Error(`Attachment upload failed: ${upErr.message}`);
       }
       const { data: loanNo } = await supabase.rpc("next_loan_no");
-      const { error: e } = await supabase.from("employee_loans").insert({
+      const { data: inserted, error: e } = await supabase.from("employee_loans").insert({
         loan_no: loanNo ?? `EPL-${Date.now()}`,
         employee_id: employeeId,
         principal: p,
@@ -106,8 +140,32 @@ export function RecordLoanModal({ user, employees, onClose, onSaved }: {
         attachment_path: attachmentPath,
         attachment_name: attachment?.name ?? "",
         created_by: user.email,
-      });
+      }).select("id").single();
       if (e) throw new Error(e.message);
+
+      // One brought-forward row for everything repaid before the system — see
+      // migration 260. Without it the balance reads as the full loan, and a
+      // figure quoted from it overstates what somebody still owes.
+      if (inserted?.id && openingAmount > 0 && repaidUpTo) {
+        const { error: repErr } = await supabase.from("loan_repayments").insert({
+          loan_id: inserted.id,
+          payroll_run_id: null,
+          year: cutYear,
+          month: cutMonth,
+          amount: openingAmount,
+          balance_after: balanceAfterOpening,
+          is_opening: true,
+          note: `Repaid before this system — brought forward to ${monthLabel(cutYear, cutMonth)}`,
+        });
+        // The loan is recorded either way; only the opening figure failed, and
+        // saying so is better than rolling back a loan that is otherwise right.
+        if (repErr) {
+          setError(`Loan recorded, but the opening balance could not be saved: ${repErr.message}`
+            + " — add it from the loan once this is sorted.");
+          setSaving(false);
+          return;
+        }
+      }
 
       await logPayrollAudit(supabase, {
         action: "LOAN_APPROVED_LEGACY",
@@ -115,9 +173,14 @@ export function RecordLoanModal({ user, employees, onClose, onSaved }: {
         entity: selectedEmp?.full_name ?? "",
         detail: `Existing loan recorded for tracking — ${formatCurrency(p)} over ${t} months at `
               + `${formatCurrency(m)} a month, first repayment ${monthLabel(Number(startMonth.slice(0, 4)), Number(startMonth.slice(5, 7)))}. `
-              + `Approved on paper ${approvedOn} by ${approvedBy.trim()}; no in-app signatures.`,
+              + `Approved on paper ${approvedOn} by ${approvedBy.trim()}; no in-app signatures.`
+              + (openingAmount > 0
+                  ? ` Opening balance: ${formatCurrency(openingAmount)} already repaid to `
+                    + `${monthLabel(cutYear, cutMonth)}, leaving ${formatCurrency(balanceAfterOpening)}.`
+                  : " No opening balance — nothing repaid before this."),
       });
-      onSaved(`${selectedEmp?.full_name ?? "Loan"} — ${formatCurrency(p)} over ${t} months recorded`);
+      onSaved(`${selectedEmp?.full_name ?? "Loan"} — ${formatCurrency(p)} over ${t} months recorded`
+        + (openingAmount > 0 ? `, ${formatCurrency(balanceAfterOpening)} outstanding` : ""));
     } catch (err: unknown) {
       if (attachmentPath) await supabase.storage.from("employee-docs").remove([attachmentPath]);
       setError(err instanceof Error ? err.message : "Could not record the loan");
@@ -194,6 +257,57 @@ export function RecordLoanModal({ user, employees, onClose, onSaved }: {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* What has already come off. The sheets show the instalments from
+              the schedule either way; this is what stops the OUTSTANDING
+              figure reading as though nothing had ever been repaid. */}
+          <div className="rounded-xl border border-stone-200 bg-stone-50/70 px-3 py-2.5">
+            <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-stone-600">
+              Already repaid, before this system
+            </p>
+            <p className="mb-2 text-[11px] leading-snug text-stone-500">
+              Leave blank for a loan that has not started repaying. Otherwise the balance will
+              read as the full loan, and quoting it would overstate what is still owed.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Repaid up to and including</label>
+                <input type="month" className={inputCls} value={repaidUpTo}
+                  onChange={e => chooseCutOff(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelCls}>Amount repaid (RM)</label>
+                <input type="number" className={inputCls} value={repaidAlready}
+                  onChange={e => { setRepaidTouched(true); setRepaidAlready(e.target.value); }}
+                  placeholder="0.00" disabled={!repaidUpTo} />
+                {repaidUpTo && suggestedRepaid > 0
+                  && Math.abs(openingAmount - suggestedRepaid) > 0.005 && (
+                  <button type="button" onClick={() => { setRepaidTouched(true); setRepaidAlready(String(suggestedRepaid)); }}
+                    className="mt-1 text-[10px] text-[#4a6da7] hover:underline">
+                    Schedule says {formatCurrency(suggestedRepaid)} — use it
+                  </button>
+                )}
+              </div>
+            </div>
+            {repaidUpTo && openingAmount > 0 && (
+              <p className="mt-2 text-[11.5px] text-stone-600">
+                Outstanding after this:{" "}
+                <span className="font-mono font-bold text-stone-800">{formatCurrency(balanceAfterOpening)}</span>
+                {balanceAfterOpening > 0 && m > 0 && (
+                  <> — about {Math.ceil(balanceAfterOpening / m)} more instalment
+                    {Math.ceil(balanceAfterOpening / m) === 1 ? "" : "s"}.</>
+                )}
+                {balanceAfterOpening === 0 && <> — the loan is fully repaid.</>}
+              </p>
+            )}
+            {repaidUpTo && suggestedRepaid > 0 && Math.abs(openingAmount - suggestedRepaid) > 0.005 && openingAmount > 0 && (
+              <p className="mt-1 text-[11px] text-amber-800">
+                That differs from the schedule by{" "}
+                {formatCurrency(Math.abs(openingAmount - suggestedRepaid))} — fine if a month was
+                missed or a lump was settled, worth a second look otherwise.
+              </p>
+            )}
           </div>
 
           <div>

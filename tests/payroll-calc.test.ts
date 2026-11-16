@@ -10,6 +10,7 @@ import { figureOf,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
+import { repaidBySchedule, outstandingBalance } from "@/lib/payroll/loan";
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -320,4 +321,43 @@ test("a wholly unpaid month does not disturb the 13th", () => {
   const bonus = line({ gross: 3100, is13thMonth: true, unpaidLeave: { days: 31, daysInMonth: 31 } });
   assert.equal(bonus.epf.ee > 0, true, "EPF still applies to a bonus");
   assert.equal(bonus.unpaidLeave.amount, 0);
+});
+
+// ── What a paper loan has already been repaid ────────────────────────────
+//
+// A loan agreed before the system is keyed with its original amount so the
+// yearly sheets fill in. The balance then needs an opening figure, or it reads
+// as though nothing had ever been paid.
+
+test("the schedule says what should have been repaid by a given month", () => {
+  // 10,000 over 36 months at 280, first repayment March 2025.
+  const loan = { principal: 10000, monthly_installment: 280, term_months: 36,
+    final_installment: 0, start_month: "2025-03-01" };
+  assert.equal(repaidBySchedule(loan, 2025, 2), 0, "nothing before it starts");
+  assert.equal(repaidBySchedule(loan, 2025, 3), 280, "the first instalment");
+  assert.equal(repaidBySchedule(loan, 2025, 12), 280 * 10, "ten months of 2025");
+  assert.equal(repaidBySchedule(loan, 2026, 12), 280 * 22, "and all of 2026");
+});
+
+test("it never exceeds the loan, however far past the term you ask", () => {
+  const loan = { principal: 10000, monthly_installment: 280, term_months: 36,
+    final_installment: 0, start_month: "2025-03-01" };
+  assert.equal(repaidBySchedule(loan, 2030, 12), 10000);
+  assert.equal(repaidBySchedule(loan, 2028, 2), 10000, "the final instalment clears it");
+});
+
+test("an unstarted loan has repaid nothing", () => {
+  assert.equal(repaidBySchedule(
+    { principal: 5000, monthly_installment: 200, term_months: 25,
+      final_installment: 0, start_month: null }, 2026, 11), 0);
+});
+
+test("the opening figure leaves the right balance outstanding", () => {
+  const loan = { id: "L1", principal: 10000, monthly_installment: 280, term_months: 36,
+    final_installment: 0, start_month: "2025-03-01" };
+  const opening = repaidBySchedule(loan, 2026, 11);        // Mar 2025 → Nov 2026
+  assert.equal(opening, 280 * 21);
+  assert.equal(
+    outstandingBalance(loan, [{ loan_id: "L1", amount: opening, payroll_run_id: null }]),
+    round2(10000 - 280 * 21));
 });
