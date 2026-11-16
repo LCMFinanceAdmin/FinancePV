@@ -260,7 +260,8 @@ export default function PayrollRunDetailPage() {
       // bonus is counted in months and the rest of this page is not.
       const thirteenth = is13th ? thirteenthMonthFor(e, run.year).fraction : 1;
       const gross = round2(
-        grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override, days)
+        grossForMonth(sal, e.date_commenced, ageMonth, is13th, e.increment_month_override, days,
+          { year: run.year, effectiveFrom: sal.effective_from })
         * thirteenth);
       const epl = is13th ? 0 : (loansByEmp[e.id] ?? []).reduce((s, ln) =>
         s + dueFromBalance(ln, repayments, run.year, run.month, run.id).amount, 0);

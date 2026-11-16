@@ -7,6 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { figureOf,
   calcLine, monthDays, monthFraction, grossForMonth, grossComponentsForMonth, incrementEffectiveMonth,
+  incrementPaidFrom,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
@@ -439,4 +440,76 @@ test("the 13th month is always on the full gross, whichever cycle", () => {
   const s: SalaryComponents = { base_salary: 3000, increment_carried: 200, increment_current: 100,
     experience_bonus: 0, family_allowance: 0, stm_allowance: 0 };
   assert.equal(grossForMonth(s, "2019-08-15", 13, true), 3300);
+});
+
+// ── An increment belongs to a period, not to a calendar year ─────────────
+//
+// Somebody taken on between July and December has increment periods running
+// July to June. The increment granted for July 2026 to June 2027 is payable in
+// all twelve of those months — the January to June at the far end included.
+//
+// Asking only "is this month before July" was right inside the year an
+// increment was granted and wrong afterwards: come January the same increment
+// was withheld a second time, every year, for ever.
+
+const JULY_JOINER = "2018-07-01";
+const s100: SalaryComponents = { base_salary: 1950, increment_carried: 630, increment_current: 100,
+  experience_bonus: 270, family_allowance: 300, stm_allowance: 0 };   // full gross 3,250
+
+test("the increment is paid to the end of its period, not the end of the year", () => {
+  // Granted for Jul 2026 – Jun 2027, on a row effective in November 2026.
+  const row = { effectiveFrom: "2026-11-16" };
+  for (const m of [11, 12]) {
+    assert.equal(grossForMonth(s100, JULY_JOINER, m, false, null, null, { year: 2026, ...row }), 3250,
+      `Nov–Dec 2026, month ${m}`);
+  }
+  for (const m of [1, 2, 3, 4, 5, 6]) {
+    assert.equal(grossForMonth(s100, JULY_JOINER, m, false, null, null, { year: 2027, ...row }), 3250,
+      `Jan–Jun 2027 is still inside the period, month ${m}`);
+  }
+});
+
+test("it is still withheld before its period begins", () => {
+  // The same row: the period started in July 2026, so the first half of 2026
+  // is before the increment existed.
+  const row = { effectiveFrom: "2026-11-16" };
+  for (const m of [1, 6]) {
+    assert.equal(grossForMonth(s100, JULY_JOINER, m, false, null, null, { year: 2026, ...row }), 3150,
+      `month ${m} of 2026 precedes the period`);
+  }
+});
+
+test("a January-cycle person is unaffected by any of this", () => {
+  const jan = "2015-03-01";
+  const row = { effectiveFrom: "2026-05-01" };
+  for (const [y, m] of [[2026, 1], [2026, 12], [2027, 1], [2027, 6]] as const) {
+    assert.equal(grossForMonth(s100, jan, m, false, null, null, { year: y, effectiveFrom: row.effectiveFrom }), 3250,
+      `${y}-${m}`);
+  }
+});
+
+test("the period is found from the row that carries the increment", () => {
+  // A row effective in March 2027 belongs to the Jul 2026 – Jun 2027 period.
+  assert.deepEqual(incrementPaidFrom("2027-03-01", JULY_JOINER), { year: 2026, month: 7 });
+  // One effective in September 2027 belongs to the next period.
+  assert.deepEqual(incrementPaidFrom("2027-09-01", JULY_JOINER), { year: 2027, month: 7 });
+  // On a January cycle the period is simply the calendar year.
+  assert.deepEqual(incrementPaidFrom("2027-03-01", "2015-03-01"), { year: 2027, month: 1 });
+});
+
+test("with no effective date the older reading still applies", () => {
+  assert.equal(incrementPaidFrom(null, JULY_JOINER), null);
+  // And grossForMonth falls back to it rather than guessing a period.
+  assert.equal(grossForMonth(s100, JULY_JOINER, 1, false, null, null, null), 3150);
+  assert.equal(grossForMonth(s100, JULY_JOINER, 7, false, null, null, null), 3250);
+});
+
+test("the payslip's earnings list follows the same period", () => {
+  const row = { effectiveFrom: "2026-11-16" };
+  const has = (year: number, month: number) =>
+    grossComponentsForMonth(s100, JULY_JOINER, month, false, null, null, { year, ...row })
+      .some(c => c.label === "Current year increment");
+  assert.equal(has(2026, 6), false, "before the period");
+  assert.equal(has(2026, 11), true);
+  assert.equal(has(2027, 6), true, "the far end of the period");
 });

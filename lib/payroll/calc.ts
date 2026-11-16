@@ -306,6 +306,49 @@ export function incrementEffectiveMonth(dateCommenced: string | null, override?:
   return joinMonth < 7 ? 1 : 7;
 }
 
+/**
+ * When the current increment starts being paid, as an absolute month.
+ *
+ * An increment belongs to a twelve-month period, and the period is the thing
+ * that decides when it is paid. Somebody taken on between July and December
+ * has periods running July to June, so the increment granted for July 2026 to
+ * June 2027 is payable in every one of those twelve months — including the
+ * January to June at the far end of it.
+ *
+ * That is what the first version of this got wrong. It asked only "is this
+ * month before the cycle month", which is the right question inside the year
+ * an increment was granted and the wrong one afterwards: come January the same
+ * increment was withheld a second time, and a pastor who had been paid it
+ * since July lost RM100 a month for six months, every year, forever.
+ *
+ * So the period is found from the salary row's own effective date — the row
+ * carrying the increment names the period it belongs to — and the increment is
+ * paid from the start of that period onwards.
+ *
+ * Returns null where the row has no effective date, and the caller then falls
+ * back to the older reading rather than guessing a period.
+ */
+export function incrementPaidFrom(
+  effectiveFrom: string | null | undefined,
+  dateCommenced: string | null,
+  incrementMonthOverride?: number | null,
+): { year: number; month: number } | null {
+  if (!effectiveFrom) return null;
+  const d = new Date(effectiveFrom);
+  if (Number.isNaN(d.getTime())) return null;
+  const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1;
+  // The period containing the effective date. On a January cycle that is the
+  // calendar year; on a July cycle it began in July of this year or last.
+  return { year: month >= eff ? year : year - 1, month: eff };
+}
+
+/** Is `(year, month)` at or after the month an increment starts being paid? */
+function atOrAfter(year: number, month: number, from: { year: number; month: number }): boolean {
+  return year > from.year || (year === from.year && month >= from.month);
+}
+
 // Agreed salary components that build up the gross.
 export interface SalaryComponents {
   base_salary: number;
@@ -332,12 +375,27 @@ export function grossForMonth(
   incrementMonthOverride?: number | null,
   /** Optional. Absent means a whole month, which is what it was before this. */
   days?: MonthDays | null,
+  /**
+   * The year being computed, and the salary row's effective date.
+   *
+   * Together they say which increment period this month falls in. Absent, the
+   * older reading applies — the increment is withheld before the cycle month
+   * of every year — which is right within the year an increment was granted
+   * and wrong after it. Every caller inside the app passes them.
+   */
+  period?: { year: number; effectiveFrom: string | null } | null,
 ): number {
   const full = fullGross(s);
   // A 13th month is a payment, not a month worked, so it is never pro-rated.
   if (is13th) return full;
   const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
-  const earned = month >= eff ? full : full - Number(s.increment_current);
+  const paidFrom = period
+    ? incrementPaidFrom(period.effectiveFrom, dateCommenced, incrementMonthOverride)
+    : null;
+  const hasIncrement = paidFrom
+    ? atOrAfter(period!.year, month, paidFrom)
+    : month >= eff;
+  const earned = hasIncrement ? full : full - Number(s.increment_current);
   return round2(earned * monthFraction(days));
 }
 
@@ -431,10 +489,19 @@ export function grossComponentsForMonth(
   is13th: boolean,
   incrementMonthOverride?: number | null,
   days?: MonthDays | null,
+  /** As grossForMonth: which increment period this month falls in. */
+  period?: { year: number; effectiveFrom: string | null } | null,
 ): EarningComponent[] {
   const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
+  const paidFrom = period
+    ? incrementPaidFrom(period.effectiveFrom, dateCommenced, incrementMonthOverride)
+    : null;
   // The 13th month is paid on the full gross, so the increment always counts.
-  const incrementApplies = is13th || month >= eff;
+  const incrementApplies = is13th
+    || (paidFrom
+      ? (period!.year > paidFrom.year
+          || (period!.year === paidFrom.year && month >= paidFrom.month))
+      : month >= eff);
 
   const out: EarningComponent[] = [
     // Always listed, even at zero: a payslip with no basic salary line reads as

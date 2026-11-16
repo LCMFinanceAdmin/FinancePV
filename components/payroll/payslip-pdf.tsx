@@ -173,7 +173,8 @@ export function PayslipPDF({
     // From calc.ts, so the items listed are exactly the ones inside the gross
     // printed below them — including whether this month's gross carries the
     // current year's increment yet.
-    earns.push(...grossComponentsForMonth(salary, emp.date_commenced, month, is13thMonth, emp.increment_month_override));
+    earns.push(...grossComponentsForMonth(salary, emp.date_commenced, month, is13thMonth,
+      emp.increment_month_override, null, { year, effectiveFrom: salary.effective_from }));
     // Gross corrections belong on the earnings side, or the items listed there
     // stop adding up to the GROSS PAY figure printed below them.
     for (const a of adjustments.filter(a => a.category === "GROSS")) {

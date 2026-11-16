@@ -640,7 +640,12 @@ export default function PayrollEmployeePage() {
       // or left part-way through is pro-rated here too. Without this the
       // sheet and the run disagree about the same month, and the sheet is
       // what people check the run against.
-      gross: grossForMonth(sal, emp.date_commenced, m, false, emp.increment_month_override, days),
+      // The salary row's own effective date says which increment period this
+      // month belongs to, so an increment granted for July 2026 to June 2027
+      // goes on being paid through that June rather than being withheld again
+      // every January.
+      gross: grossForMonth(sal, emp.date_commenced, m, false, emp.increment_month_override, days,
+        { year, effectiveFrom: sal.effective_from }),
       // Unpaid days come off after the statutory figures, so they are passed
       // rather than folded into the gross above. See calc.ts.
       unpaidLeave: { days: Number(unpaidByMonth[m]?.days) || 0, daysInMonth: days.daysInMonth },
@@ -2894,7 +2899,8 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
     // shown below them — including whether this month's gross carries the
     // current year's increment yet.
     components.push(...grossComponentsForMonth(
-      salary, emp.date_commenced, monthNum, false, emp.increment_month_override));
+      salary, emp.date_commenced, monthNum, false, emp.increment_month_override, null,
+      { year, effectiveFrom: salary.effective_from }));
     // A gross correction, so the earnings listed still add up to GROSS PAY.
     for (const a of line.adjustments.filter(a => a.category === "GROSS")) {
       components.push({ label: a.reason || "Adjustment", amount: Number(a.amount) });
