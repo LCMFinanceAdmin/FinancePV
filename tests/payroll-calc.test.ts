@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { figureOf,
-  calcLine, monthDays, monthFraction, grossForMonth, grossComponentsForMonth,
+  calcLine, monthDays, monthFraction, grossForMonth, grossComponentsForMonth, incrementEffectiveMonth,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
@@ -390,4 +390,53 @@ test("each loan's balance is its own", () => {
   const reps = [{ loan_id: "A", amount: 9800, payroll_run_id: null }];
   assert.equal(dueFromBalance(a, reps, 2026, 12).amount, 200, "only 200 of A is left");
   assert.equal(dueFromBalance(b, reps, 2026, 12).amount, 250, "B is untouched by it");
+});
+
+// ── Which half-year an increment runs on ─────────────────────────────────
+//
+// LCM's rule: taken on January to June, the increment is paid from January
+// and the increment year is the calendar year. Taken on July to December, it
+// is paid from July, so the year runs July to June.
+
+test("joining in the first half puts the increment on the calendar year", () => {
+  for (const m of [1, 2, 3, 4, 5, 6]) {
+    const iso = `2019-${String(m).padStart(2, "0")}-15`;
+    assert.equal(incrementEffectiveMonth(iso), 1, `joined month ${m}`);
+  }
+});
+
+test("joining in the second half runs it July to June", () => {
+  for (const m of [7, 8, 9, 10, 11, 12]) {
+    const iso = `2019-${String(m).padStart(2, "0")}-15`;
+    assert.equal(incrementEffectiveMonth(iso), 7, `joined month ${m}`);
+  }
+});
+
+test("the boundary is the turn of July, not the middle of the year", () => {
+  assert.equal(incrementEffectiveMonth("2019-06-30"), 1, "the last day of June is still January");
+  assert.equal(incrementEffectiveMonth("2019-07-01"), 7, "the first of July is July");
+});
+
+test("an override beats the join date, and nothing else does", () => {
+  assert.equal(incrementEffectiveMonth("2019-08-15", 1), 1, "July joiner moved to January");
+  assert.equal(incrementEffectiveMonth("2019-02-15", 7), 7, "January joiner moved to July");
+  assert.equal(incrementEffectiveMonth("2019-08-15", null), 7, "no override, the rule stands");
+  // Anything that is not one of the two months is not an override.
+  assert.equal(incrementEffectiveMonth("2019-08-15", 4), 7);
+});
+
+test("a July joiner is paid without the increment until July", () => {
+  const s: SalaryComponents = { base_salary: 3000, increment_carried: 200, increment_current: 100,
+    experience_bonus: 0, family_allowance: 0, stm_allowance: 0 };
+  // Full gross is 3,300; before July it is 3,200.
+  assert.equal(grossForMonth(s, "2019-08-15", 6, false), 3200, "June, without this year's increment");
+  assert.equal(grossForMonth(s, "2019-08-15", 7, false), 3300, "July, with it");
+  // And a January joiner has it from the first month.
+  assert.equal(grossForMonth(s, "2019-02-15", 1, false), 3300);
+});
+
+test("the 13th month is always on the full gross, whichever cycle", () => {
+  const s: SalaryComponents = { base_salary: 3000, increment_carried: 200, increment_current: 100,
+    experience_bonus: 0, family_allowance: 0, stm_allowance: 0 };
+  assert.equal(grossForMonth(s, "2019-08-15", 13, true), 3300);
 });

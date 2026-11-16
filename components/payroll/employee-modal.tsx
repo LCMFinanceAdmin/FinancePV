@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ladder, type QualificationRung } from "@/lib/payroll/qualification-scale";
 import { SALARY_BANK_NAMES } from "@/lib/banks";
 import { logPayrollAudit } from "@/lib/payroll/audit";
+import { incrementEffectiveMonth } from "@/lib/payroll/calc";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
 
 // LCM and the Trustees of the Lutheran Church in Malaysia Registered (194).
@@ -507,6 +508,40 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
     }
   }
 
+  /**
+   * Which half-year this person's increment runs on.
+   *
+   * LCM's rule: somebody taken on between January and June takes their yearly
+   * increment from January, and their increment year is the calendar year.
+   * Somebody taken on between July and December takes it from July, so their
+   * year runs July to June. The arithmetic has always done this —
+   * `incrementEffectiveMonth` in lib/payroll/calc.ts, read by the yearly
+   * sheet, the run and the payslip — but it was derived from a date kept in
+   * another section of this form, so the person typing the figure could not
+   * see which of the two they were typing into.
+   *
+   * A missing commencement date falls back to January, which is a guess
+   * rather than an answer, and it says so.
+   */
+  const incrementCycle = (() => {
+    const override = incrementOverride ? parseInt(incrementOverride) : null;
+    const eff = incrementEffectiveMonth(dateCommenced || null, override);
+    const monthName = eff === 1 ? "January" : "July";
+    const cycle = eff === 1 ? "January to December" : "July to June";
+    if (override === 1 || override === 7) {
+      return { known: true, monthName, cycle,
+        why: "Set by hand on this record, not taken from the commencement date." };
+    }
+    if (!dateCommenced) {
+      return { known: false, monthName, cycle,
+        why: "No commencement date on record, so January is assumed — set the date above, or choose the month by hand." };
+    }
+    const joined = new Date(dateCommenced);
+    const joinedName = joined.toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" });
+    return { known: true, monthName, cycle,
+      why: `Commenced ${joinedName}, in the ${eff === 1 ? "first" : "second"} half of the year.` };
+  })();
+
   const inputCls = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const labelCls = "block text-xs font-semibold text-stone-600 mb-1";
 
@@ -580,10 +615,21 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
             <div>
               <label className={labelCls}>Increment Month</label>
               <select className={inputCls} value={incrementOverride} onChange={e => setIncrementOverride(e.target.value)}>
-                <option value="">Automatic ({dateCommenced && new Date(dateCommenced).getMonth() + 1 < 7 ? "January" : "July"} — based on join date)</option>
+                {/* The automatic option names the month the join date gives,
+                    so choosing an override is a visible departure from the
+                    rule rather than a blind pick between two months. */}
+                <option value="">
+                  Automatic — {dateCommenced
+                    ? `${new Date(dateCommenced).getMonth() + 1 < 7 ? "January" : "July"}, from the commencement date`
+                    : "January, no commencement date on record"}
+                </option>
                 <option value="1">January (override)</option>
                 <option value="7">July (override)</option>
               </select>
+              <p className="mt-1 text-[10.5px] leading-snug text-stone-400">
+                Taken on January to June: increment from January. July to December: from July,
+                so the increment year runs July to June. Override only where the terms say so.
+              </p>
             </div>
             {formEmployers.length > 1 && (
               <div>
@@ -720,7 +766,36 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div><label className={labelCls}>Base Salary <span className="font-normal text-stone-400">(at commencement)</span></label><input type="number" className={inputCls} value={baseSalary} onChange={e => setBaseSalary(e.target.value)} /></div>
               <div><label className={labelCls}>Increment (carried, since commencement)</label><input type="number" className={inputCls} value={incrementCarried} onChange={e => setIncrementCarried(e.target.value)} /></div>
-              <div><label className={labelCls}>Increment (current year)</label><input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} /></div>
+              <div>
+                <label className={labelCls}>
+                  Increment (current year)
+                  {incrementCycle && (
+                    <span className={`ml-1 font-normal ${incrementCycle.known ? "text-stone-400" : "text-amber-600"}`}>
+                      — from {incrementCycle.monthName}
+                    </span>
+                  )}
+                </label>
+                <input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} />
+              </div>
+              <div className="sm:col-span-3 -mt-0.5">
+                {/* Which half-year this person's increment runs on. LCM pays
+                    it from January to anybody taken on in the first half of a
+                    year and from July to anybody taken on in the second, so
+                    the commencement date decides it — and that date is in
+                    another section of this form, which is why it is repeated
+                    here beside the figure it governs. */}
+                {incrementCycle ? (
+                  <p className={`rounded-lg px-2.5 py-1.5 text-[11.5px] leading-snug ${
+                    incrementCycle.known
+                      ? "bg-white/70 text-stone-600"
+                      : "bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200"}`}>
+                    <span className="font-semibold">Increment cycle: {incrementCycle.cycle}.</span>{" "}
+                    {incrementCycle.why} The current-year increment is paid from{" "}
+                    <span className="font-semibold">{incrementCycle.monthName}</span> onwards; the
+                    months before it are paid without it.
+                  </p>
+                ) : null}
+              </div>
               <div><label className={labelCls}>Experience Bonus <span className="font-normal text-stone-400">(pastor 5-yr)</span></label><input type="number" className={inputCls} value={experienceBonus} onChange={e => setExperienceBonus(e.target.value)} /></div>
               <div>
                 <label className={labelCls}>Family Allowance</label>
