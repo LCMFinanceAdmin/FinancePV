@@ -4,11 +4,12 @@ import Link from "next/link";
 import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, FilePlus2, HandCoins, Lock, Paperclip, PenLine, Plus, X, XCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { RecordLoanModal } from "@/components/payroll/record-loan-modal";
+import { OpeningBalanceEditor } from "@/components/payroll/opening-balance-editor";
 import { formatCurrency } from "@/lib/utils";
 import { buildSchedule, totalRepayable, outstandingAfter } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { SignaturePad } from "@/components/ui/signature-pad";
-import type { UserProfile, PayrollEmployee, EmployeeLoan, PVApproval, LoanStatus, LoanSignature, LoanSignatures } from "@/lib/types";
+import type { UserProfile, PayrollEmployee, EmployeeLoan, PVApproval, LoanStatus, LoanSignature, LoanSignatures, LoanRepayment } from "@/lib/types";
 
 const STATUS_STYLE: Record<LoanStatus, string> = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -316,6 +317,7 @@ export default function PayrollLoansPage() {
   const [showModal, setShowModal] = useState(false);
   // A loan agreed on paper, keyed for tracking rather than applied for.
   const [showRecord, setShowRecord] = useState(false);
+  const [repayments, setRepayments] = useState<LoanRepayment[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [signing, setSigning] = useState<{ loan: EmployeeLoan; blockKey: "bishop" | "treasurer" } | null>(null);
   const [toast, setToast] = useState("");
@@ -340,11 +342,15 @@ export default function PayrollLoansPage() {
 
   const loadLoans = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: emps }] = await Promise.all([
+    const [{ data: ln }, { data: emps }, { data: reps }] = await Promise.all([
       supabase.from("employee_loans").select("*").order("created_at", { ascending: false }),
       supabase.from("payroll_employees").select("*").order("full_name"),
+      // Needed for the brought-forward figure and what the runs have taken
+      // since — the two together are the outstanding balance.
+      supabase.from("loan_repayments").select("*").order("year").order("month"),
     ]);
     setLoans((ln as EmployeeLoan[]) ?? []);
+    setRepayments((reps as LoanRepayment[]) ?? []);
     const list = (emps as PayrollEmployee[]) ?? [];
     setEmployees(list.filter(e => e.status === "ACTIVE"));
     setEmpById(Object.fromEntries(list.map(e => [e.id, e])));
@@ -536,6 +542,24 @@ export default function PayrollLoansPage() {
                         className="flex items-center gap-1.5 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5c8f] transition-colors">
                         <Paperclip size={12} /> {loan.attachment_name || "View attachment"}
                       </button>
+                    )}
+
+                    {/* What was repaid before the system, and so what is
+                        actually still owed. Editable here and not only when
+                        the loan is first keyed: the figure comes off a paper
+                        record, and those get read wrong. */}
+                    {["ACTIVE", "SETTLED"].includes(loan.status) && (
+                      <OpeningBalanceEditor
+                        loan={loan}
+                        employeeName={emp?.full_name ?? ""}
+                        opening={repayments.find(r => r.loan_id === loan.id && r.is_opening) ?? null}
+                        repaidByRuns={repayments
+                          .filter(r => r.loan_id === loan.id && !r.is_opening)
+                          .reduce((x, r) => x + Number(r.amount), 0)}
+                        canEdit={!!canApply}
+                        onSaved={() => { loadLoans(); setToast("Opening balance saved"); setTimeout(() => setToast(""), 3000); }}
+                        onError={(msg) => { setToast(msg); setTimeout(() => setToast(""), 5000); }}
+                      />
                     )}
 
                     {/* E-signature blocks */}
