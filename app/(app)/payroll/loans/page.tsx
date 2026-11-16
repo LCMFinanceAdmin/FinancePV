@@ -5,11 +5,15 @@ import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, FilePlus2, HandCoins
 import { createClient } from "@/lib/supabase/client";
 import { RecordLoanModal } from "@/components/payroll/record-loan-modal";
 import { OpeningBalanceEditor } from "@/components/payroll/opening-balance-editor";
+import { LoanAffordability } from "@/components/payroll/loan-affordability";
+import { affordabilityOf } from "@/lib/payroll/loan-affordability";
+import { inForceByPerson } from "@/lib/payroll/salary-in-force";
+import type { RateConfig, ContributionBand } from "@/lib/payroll/calc";
 import { formatCurrency } from "@/lib/utils";
 import { buildSchedule, totalRepayable, outstandingAfter } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { SignaturePad } from "@/components/ui/signature-pad";
-import type { UserProfile, PayrollEmployee, EmployeeLoan, PVApproval, LoanStatus, LoanSignature, LoanSignatures, LoanRepayment } from "@/lib/types";
+import type { UserProfile, PayrollEmployee, EmployeeLoan, PVApproval, LoanStatus, LoanSignature, LoanSignatures, LoanRepayment, PayrollSalary } from "@/lib/types";
 
 const STATUS_STYLE: Record<LoanStatus, string> = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -318,6 +322,11 @@ export default function PayrollLoansPage() {
   // A loan agreed on paper, keyed for tracking rather than applied for.
   const [showRecord, setShowRecord] = useState(false);
   const [repayments, setRepayments] = useState<LoanRepayment[]>([]);
+  // The salary a loan is set against, and the rate tables it is worked out
+  // with. Needed to answer what an instalment actually leaves somebody.
+  const [salByEmp, setSalByEmp] = useState<Record<string, PayrollSalary>>({});
+  const [rates, setRates] = useState<RateConfig | undefined>(undefined);
+  const [bands, setBands] = useState<ContributionBand[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [signing, setSigning] = useState<{ loan: EmployeeLoan; blockKey: "bishop" | "treasurer" } | null>(null);
   const [toast, setToast] = useState("");
@@ -342,13 +351,22 @@ export default function PayrollLoansPage() {
 
   const loadLoans = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: emps }, { data: reps }] = await Promise.all([
-      supabase.from("employee_loans").select("*").order("created_at", { ascending: false }),
-      supabase.from("payroll_employees").select("*").order("full_name"),
-      // Needed for the brought-forward figure and what the runs have taken
-      // since — the two together are the outstanding balance.
-      supabase.from("loan_repayments").select("*").order("year").order("month"),
-    ]);
+    const year = new Date().getFullYear();
+    const month = new Date().getMonth() + 1;
+    const [{ data: ln }, { data: emps }, { data: reps }, { data: sals }, { data: rateRow }, { data: bandRows }] =
+      await Promise.all([
+        supabase.from("employee_loans").select("*").order("created_at", { ascending: false }),
+        supabase.from("payroll_employees").select("*").order("full_name"),
+        // Needed for the brought-forward figure and what the runs have taken
+        // since — the two together are the outstanding balance.
+        supabase.from("loan_repayments").select("*").order("year").order("month"),
+        supabase.from("payroll_salary").select("*"),
+        supabase.from("payroll_statutory_rates").select("*").eq("year", year).maybeSingle(),
+        supabase.from("payroll_contribution_bands").select("*").eq("year", year).order("wage_from"),
+      ]);
+    setSalByEmp(inForceByPerson((sals as PayrollSalary[]) ?? [], r => r.employee_id, year, month));
+    setRates((rateRow as RateConfig) ?? undefined);
+    setBands((bandRows as ContributionBand[]) ?? []);
     setLoans((ln as EmployeeLoan[]) ?? []);
     setRepayments((reps as LoanRepayment[]) ?? []);
     const list = (emps as PayrollEmployee[]) ?? [];
@@ -551,32 +569,19 @@ export default function PayrollLoansPage() {
                         that decision turns on, and with one loan at a time it
                         never had to be stated. */}
                     {(() => {
+                      // What this instalment, and any already running, leave
+                      // of the salary. Shown every time rather than only when
+                      // it is alarming: a figure that appears only in trouble
+                      // is one nobody has learned to read.
                       const others = loans.filter(o =>
                         o.id !== loan.id && o.employee_id === loan.employee_id && o.status === "ACTIVE");
-                      if (others.length === 0) return null;
-                      const monthly = others.reduce((x, o) => x + Number(o.monthly_installment), 0);
-                      const owed = others.reduce((x, o) => {
-                        const paid = repayments.filter(r => r.loan_id === o.id)
-                          .reduce((y, r) => y + Number(r.amount), 0);
-                        return x + Math.max(0, Number(o.principal) - paid);
-                      }, 0);
-                      const withThis = monthly + Number(loan.monthly_installment);
-                      return (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
-                          <p className="font-semibold">
-                            {others.length} other loan{others.length === 1 ? "" : "s"} running for this person
-                          </p>
-                          <p className="mt-0.5">
-                            {formatCurrency(monthly)} a month already, {formatCurrency(owed)} still owed on
-                            {others.length === 1 ? " it" : " them"} — with this one,{" "}
-                            <span className="font-mono font-bold">{formatCurrency(withThis)}</span> comes off
-                            each month.
-                          </p>
-                          <p className="mt-0.5 text-amber-800">
-                            {others.map(o => `${o.loan_no} ${formatCurrency(Number(o.monthly_installment))}/mo`).join(" · ")}
-                          </p>
-                        </div>
-                      );
+                      const employee = empById[loan.employee_id];
+                      if (!employee) return null;
+                      const a = affordabilityOf(
+                        loan, employee, salByEmp[loan.employee_id] ?? null, others,
+                        rates, bands, new Date().getFullYear(), new Date().getMonth() + 1);
+                      if (!a) return null;
+                      return <LoanAffordability a={a} others={others} />;
                     })()}
 
                     {/* What was repaid before the system, and so what is
