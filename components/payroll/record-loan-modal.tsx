@@ -133,7 +133,13 @@ export function RecordLoanModal({ user, employees, onClose, onSaved }: {
         status: "ACTIVE",
         // No in-app signatures, and none pretended. The paper trail lives in
         // the three columns migration 259 added.
-        signatures: null,
+        //
+        // An empty object rather than null: the column is NOT NULL with a
+        // default of '{}', and passing null overrides the default rather than
+        // falling back to it. Everything downstream already reads this as
+        // "nobody has signed" — loanStage does `signatures ?? {}` and the
+        // e-signature blocks key off an applicant signature that is absent.
+        signatures: {},
         approved_outside: true,
         approved_outside_on: approvedOn,
         approved_outside_by: approvedBy.trim(),
