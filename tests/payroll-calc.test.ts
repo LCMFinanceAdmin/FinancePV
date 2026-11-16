@@ -10,7 +10,7 @@ import { figureOf,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
-import { repaidBySchedule, outstandingBalance } from "@/lib/payroll/loan";
+import { repaidBySchedule, outstandingBalance, installmentForMonth, dueFromBalance } from "@/lib/payroll/loan";
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -360,4 +360,34 @@ test("the opening figure leaves the right balance outstanding", () => {
   assert.equal(
     outstandingBalance(loan, [{ loan_id: "L1", amount: opening, payroll_run_id: null }]),
     round2(10000 - 280 * 21));
+});
+
+// ── More than one loan at once ───────────────────────────────────────────
+//
+// Allowed from November 2026, on the Bishop and the Treasurer's decision. The
+// deduction was always a sum over whatever loans a person had, so this fixes
+// the behaviour in place rather than describing something new.
+
+test("concurrent loans stack, and each ends on its own term", () => {
+  const a = { principal: 10000, monthly_installment: 280, term_months: 36,
+    final_installment: 200, start_month: "2024-06-01", status: "ACTIVE" as const };
+  const b = { principal: 6000, monthly_installment: 250, term_months: 24,
+    final_installment: 250, start_month: "2026-03-01", status: "ACTIVE" as const };
+  const epl = (y: number, m: number) =>
+    round2(installmentForMonth(a, y, m) + installmentForMonth(b, y, m));
+
+  assert.equal(epl(2026, 2), 280, "only the first has started");
+  assert.equal(epl(2026, 3), 530, "both running");
+  assert.equal(epl(2027, 5), 450, "the first is on its final instalment");
+  assert.equal(epl(2027, 6), 250, "the first has finished, the second has not");
+  assert.equal(epl(2028, 3), 0, "both done");
+});
+
+test("each loan's balance is its own", () => {
+  const a = { id: "A", principal: 10000, monthly_installment: 280, start_month: "2024-06-01", status: "ACTIVE" as const };
+  const b = { id: "B", principal: 6000, monthly_installment: 250, start_month: "2026-03-01", status: "ACTIVE" as const };
+  // A repayment against one must not reduce what is owed on the other.
+  const reps = [{ loan_id: "A", amount: 9800, payroll_run_id: null }];
+  assert.equal(dueFromBalance(a, reps, 2026, 12).amount, 200, "only 200 of A is left");
+  assert.equal(dueFromBalance(b, reps, 2026, 12).amount, 250, "B is untouched by it");
 });

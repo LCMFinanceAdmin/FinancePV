@@ -544,6 +544,41 @@ export default function PayrollLoansPage() {
                       </button>
                     )}
 
+                    {/* What else this person is already repaying.
+                        More than one loan may run at once — the Bishop and the
+                        Treasurer's decision of November 2026 — and they are
+                        still the two who approve each one. This is the figure
+                        that decision turns on, and with one loan at a time it
+                        never had to be stated. */}
+                    {(() => {
+                      const others = loans.filter(o =>
+                        o.id !== loan.id && o.employee_id === loan.employee_id && o.status === "ACTIVE");
+                      if (others.length === 0) return null;
+                      const monthly = others.reduce((x, o) => x + Number(o.monthly_installment), 0);
+                      const owed = others.reduce((x, o) => {
+                        const paid = repayments.filter(r => r.loan_id === o.id)
+                          .reduce((y, r) => y + Number(r.amount), 0);
+                        return x + Math.max(0, Number(o.principal) - paid);
+                      }, 0);
+                      const withThis = monthly + Number(loan.monthly_installment);
+                      return (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+                          <p className="font-semibold">
+                            {others.length} other loan{others.length === 1 ? "" : "s"} running for this person
+                          </p>
+                          <p className="mt-0.5">
+                            {formatCurrency(monthly)} a month already, {formatCurrency(owed)} still owed on
+                            {others.length === 1 ? " it" : " them"} — with this one,{" "}
+                            <span className="font-mono font-bold">{formatCurrency(withThis)}</span> comes off
+                            each month.
+                          </p>
+                          <p className="mt-0.5 text-amber-800">
+                            {others.map(o => `${o.loan_no} ${formatCurrency(Number(o.monthly_installment))}/mo`).join(" · ")}
+                          </p>
+                        </div>
+                      );
+                    })()}
+
                     {/* What was repaid before the system, and so what is
                         actually still owed. Editable here and not only when
                         the loan is first keyed: the figure comes off a paper

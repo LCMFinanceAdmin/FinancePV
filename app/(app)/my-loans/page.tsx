@@ -113,8 +113,30 @@ function MyLoansInner() {
   useEffect(() => { load(); }, []);
 
   const hasPendingApp  = loanApps.some(a => ["PENDING","UNDER_REVIEW"].includes(a.status));
-  const hasActiveLoan  = activeLoans.some(l => l.status === "ACTIVE");
-  const canApply       = !hasPendingApp && !hasActiveLoan;
+
+  /**
+   * More than one loan can run at once — the Bishop and the Treasurer's
+   * decision of November 2026. It used to be one at a time, refused here.
+   *
+   * What is NOT relaxed is the approval: a second loan goes to the Bishop and
+   * the Treasurer exactly as the first did, and they are the ones who decide
+   * whether somebody should carry two. What this screen owes them, and the
+   * applicant, is the figure that decision turns on — what is already coming
+   * off the salary each month, which is shown below before anybody applies.
+   *
+   * One application at a time still, so a form submitted twice does not become
+   * two loans. Once it is decided, another can be made.
+   */
+  const running = activeLoans.filter(l => l.status === "ACTIVE");
+  const canApply = !hasPendingApp;
+
+  /** What the loans already running take from each month's salary. */
+  const committedMonthly = running.reduce((s, l) => s + Number(l.monthly_installment), 0);
+  const committedOutstanding = running.reduce((s, l) => {
+    const reps = repayments.filter(r => r.loan_id === l.id);
+    const paid = reps.reduce((x, r) => x + Number(r.amount), 0);
+    return s + Math.max(0, Number(l.principal) - paid);
+  }, 0);
 
   async function submitApplication() {
     if (!form.amount || !form.purpose.trim()) {
@@ -177,6 +199,24 @@ function MyLoansInner() {
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white flex items-center gap-2 ${toast.ok ? "bg-green-600" : "bg-red-500"}`}>
           {toast.ok ? <CheckCircle2 size={15} /> : <XCircle size={15} />} {toast.msg}
+        </div>
+      )}
+
+      {/* What is already committed, where more than one loan is running.
+          A second loan is the Bishop's and the Treasurer's to approve, and
+          this is the figure that decision turns on — one loan at a time made
+          it obvious, several do not. */}
+      {running.length > 1 && (
+        <div className="rounded-2xl border-2 border-[#bcd3f0] bg-[#eef5ff] px-4 py-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-[#2f5b9c]">
+            {running.length} loans running
+          </p>
+          <p className="mt-0.5 text-sm text-[#173a72]">
+            <span className="font-mono text-lg font-bold">{formatCurrency(committedMonthly)}</span>
+            {" "}comes off your salary each month, with{" "}
+            <span className="font-mono font-bold">{formatCurrency(committedOutstanding)}</span>{" "}
+            still to repay in all.
+          </p>
         </div>
       )}
 
