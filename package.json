@@ -11,7 +11,8 @@
     "verify:access": "npx --yes supabase db query --linked -f scripts/verify-access.sql",
     "verify:budget": "npx --yes supabase db query --linked -f scripts/verify-budget.sql",
     "verify:flow": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/verify-flow.ts",
-    "audit:over60": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/audit-over60.ts"
+    "audit:over60": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/audit-over60.ts",
+    "worksheet:increments": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/increment-worksheet.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
