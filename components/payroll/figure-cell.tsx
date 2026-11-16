@@ -34,7 +34,7 @@ const monthShort = (m: number) =>
 
 export function FigureCell({
   employeeId, employeeName, year, month, category, shown, before, existing,
-  canEdit, className = "", title, onSaved, onError,
+  canEdit, className = "", title, onSaved, onError, onFollow,
 }: {
   employeeId: string;
   employeeName: string;
@@ -52,6 +52,15 @@ export function FigureCell({
   title?: string;
   onSaved: () => void;
   onError: (message: string) => void;
+  /**
+   * Called with the figure just keyed, for a column other figures hang off.
+   *
+   * Only the gross has one. Setting it moves what EPF, SOCSO, EIS and SKBBK
+   * should be, and leaving those on the old wage is how a month ends up with
+   * contributions nobody is paying — so the page is given the chance to bring
+   * them along. It runs after the gross is saved, never instead of it.
+   */
+  onFollow?: (keyed: number) => Promise<void>;
 }) {
   const supabase = createClient();
   const [editing, setEditing] = useState(false);
@@ -85,6 +94,8 @@ export function FigureCell({
           detail: `${monthShort(month)} ${year} · ${adjustmentLabel(category)} back to ${num(wanted)} `
                 + `— correction of ${Number(existing.amount) > 0 ? "+" : "−"}${num(Math.abs(Number(existing.amount)))} removed`,
         });
+        // Back to the computed wage, so whatever hangs off it goes back too.
+        if (onFollow) await onFollow(wanted);
         onSaved();
       }
       setEditing(false);
@@ -125,6 +136,7 @@ export function FigureCell({
             + `${num(shown)} → ${num(wanted)} (${delta > 0 ? "+" : "−"}${num(Math.abs(delta))})`,
     });
     setEditing(false);
+    if (onFollow) await onFollow(wanted);
     onSaved();
   }
 

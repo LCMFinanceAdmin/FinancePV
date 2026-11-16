@@ -67,6 +67,10 @@ export default function PayrollRunDetailPage() {
   const [empCustomItems, setEmpCustomItems] = useState<Record<string, CustomPayrollItem[]>>({});
   // Corrections landing in this run's month, per employee.
   const [empAdjustments, setEmpAdjustments] = useState<Record<string, PayrollAdjustmentSnapshot[]>>({});
+  // Days of unpaid leave for this run's month — see migration 258. Read as
+  // days so the amount follows the salary in force, exactly as the yearly
+  // sheet does; the two must not disagree about the same month.
+  const [unpaidDaysByEmp, setUnpaidDaysByEmp] = useState<Record<string, number>>({});
   const [bands, setBands] = useState<ContributionBand[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -182,6 +186,16 @@ export default function PayrollRunDetailPage() {
     }
     setEmpAdjustments(adjByEmp);
 
+    const { data: unpaidRows } = await supabase
+      .from("payroll_unpaid_leave")
+      .select("employee_id, days")
+      .eq("year", runRow.year).eq("month", runRow.month);
+    const unpaidByEmp: Record<string, number> = {};
+    for (const u of (unpaidRows as { employee_id: string; days: number }[]) ?? []) {
+      unpaidByEmp[u.employee_id] = Number(u.days) || 0;
+    }
+    setUnpaidDaysByEmp(unpaidByEmp);
+
     // Stored bank exports for this run (private bucket, listed by prefix)
     const { data: exports } = await supabase.storage.from("employee-docs").list(`bank-exports/${id}`);
     setStoredExports((exports ?? [])
@@ -260,6 +274,12 @@ export default function PayrollRunDetailPage() {
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
         skbbkOptedOut: e.skbbk_opted_out, epfOver60Contributing: e.epf_over60_contributing,
         manualPcb: pcb[e.id] || 0, eplDeduction: epl, ptptnDeduction: ptptn,
+        // Unpaid days come off after the statutory figures, so they are passed
+        // rather than folded into the gross. A bonus has none.
+        unpaidLeave: {
+          days: is13th ? 0 : (unpaidDaysByEmp[e.id] ?? 0),
+          daysInMonth: new Date(run.year, run.month, 0).getDate(),
+        },
         is13thMonth: is13th, rates,
         customItems: empCustomItems[e.id] ?? [],
         adjustments: empAdjustments[e.id] ?? [],
@@ -304,7 +324,8 @@ export default function PayrollRunDetailPage() {
         epfEe: line.epf.ee, epfEr: line.epf.er,
         socsoEe: line.socso.ee, socsoEr: line.socso.er,
         eisEe: line.eis.ee, eisEr: line.eis.er, skbbk: line.skbbk,
-        eplDeduction: line.eplDeduction, ptptnDeduction: line.ptptnDeduction, net: line.net,
+        eplDeduction: line.eplDeduction, ptptnDeduction: line.ptptnDeduction,
+        unpaidLeave: line.unpaidLeave, net: line.net,
         customItems: (line.customItems as CustomPayrollItem[]),
         adjustments: line.adjustments,
       }))
@@ -317,7 +338,11 @@ export default function PayrollRunDetailPage() {
           epfEe: Number(l.epf_ee), epfEr: Number(l.epf_er),
           socsoEe: Number(l.socso_ee), socsoEr: Number(l.socso_er),
           eisEe: Number(l.eis_ee), eisEr: Number(l.eis_er), skbbk: Number(l.skbbk ?? 0),
-          eplDeduction: Number(l.epl), ptptnDeduction: Number(l.ptptn ?? 0), net: Number(l.net),
+          eplDeduction: Number(l.epl), ptptnDeduction: Number(l.ptptn ?? 0),
+          // From the line, not from today's unpaid-leave rows: an issued
+          // payslip keeps saying what it said when it was issued.
+          unpaidLeave: { days: Number(l.unpaid_days ?? 0), amount: Number(l.unpaid_amount ?? 0) },
+          net: Number(l.net),
           customItems: (l.custom_items as CustomPayrollItem[]) ?? [],
           // The snapshot, not today's adjustment rows: an issued payslip must
           // keep saying what it said when it was issued.
@@ -393,6 +418,7 @@ export default function PayrollRunDetailPage() {
         skbbk: line.skbbk,
         eis_ee: line.eis.ee, eis_er: line.eis.er,
         epl: line.eplDeduction, ptptn: line.ptptnDeduction,
+        unpaid_days: line.unpaidLeave.days, unpaid_amount: line.unpaidLeave.amount,
         net: line.net, total_lcm: line.totalLcmPayment,
         custom_items: line.customItems,
         // Snapshotted with the rest. The figures above are already corrected;
@@ -528,7 +554,8 @@ export default function PayrollRunDetailPage() {
             socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
             month={run.month} is13thMonth={run.month === 13}
             eisEe={row.eisEe} eisEr={row.eisEr}
-            eplDeduction={row.eplDeduction} ptptnDeduction={row.ptptnDeduction} net={row.net}
+            eplDeduction={row.eplDeduction} ptptnDeduction={row.ptptnDeduction}
+            unpaidLeave={row.unpaidLeave} net={row.net}
             customItems={row.customItems}
           />
         ).toBlob();
@@ -1197,7 +1224,9 @@ interface PayslipRow {
   socsoEe: number; socsoEr: number;
   skbbk?: number;
   eisEe: number; eisEr: number;
-  eplDeduction: number; ptptnDeduction: number; net: number;
+  eplDeduction: number; ptptnDeduction: number;
+  unpaidLeave: { days: number; amount: number };
+  net: number;
   customItems: CustomPayrollItem[];
   adjustments?: PayrollAdjustmentSnapshot[];
 }
@@ -1254,7 +1283,8 @@ function SendPayslipModal({ run, rows, onClose }: {
           socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
             month={run.month} is13thMonth={run.month === 13}
           eisEe={row.eisEe} eisEr={row.eisEr}
-          eplDeduction={row.eplDeduction} ptptnDeduction={row.ptptnDeduction} net={row.net}
+          eplDeduction={row.eplDeduction} ptptnDeduction={row.ptptnDeduction}
+            unpaidLeave={row.unpaidLeave} net={row.net}
           customItems={row.customItems}
         />
       ).toBlob();

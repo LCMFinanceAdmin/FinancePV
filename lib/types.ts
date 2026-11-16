@@ -472,6 +472,24 @@ export type EmploymentType = "PERMANENT" | "CONTRACT";
 export type PostingType = "CHURCH" | "OFFICE" | "OTHER";
 export type PayrollEmployeeStatus = "ACTIVE" | "RESIGNED";
 
+/**
+ * Days of unpaid leave in one month — see migration 258.
+ *
+ * Days, not an amount: the amount is derived from the salary in force when the
+ * sheet is drawn, so a later revision cannot leave it stale.
+ */
+export interface PayrollUnpaidLeave {
+  id: string;
+  employee_id: string;
+  year: number;
+  month: number;
+  days: number;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
 export interface PayrollEmployee {
   // The body that employs them (194). Defaults to LCM.
   employer_id: string;
@@ -648,6 +666,10 @@ export interface PayrollLine {
   /** Corrections as they stood when the run was finalized — see migration 131. */
   adjustments: PayrollAdjustmentSnapshot[];
   created_at: string;
+  /** Days of unpaid leave this payslip was finalised with — migration 258. */
+  unpaid_days?: number;
+  /** What those days came to, deducted after the statutory figures. */
+  unpaid_amount?: number;
 }
 
 /**

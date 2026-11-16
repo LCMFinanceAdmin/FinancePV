@@ -16,6 +16,10 @@ export type PayrollAuditAction =
   // an account of later — and the adjustment row itself is editable, so it
   // cannot be its own history.
   | "ADJUSTMENT_ADDED" | "ADJUSTMENT_UPDATED" | "ADJUSTMENT_DELETED"
+  // Unpaid leave, keyed as days. It reduces somebody's pay without any rate
+  // table saying so, which makes who keyed it and when the whole of its
+  // justification — see migration 258.
+  | "UNPAID_LEAVE_SET" | "UNPAID_LEAVE_UPDATED" | "UNPAID_LEAVE_CLEARED"
   // A finalised run's stored figures edited outside the app. Rare, and the
   // reason never survives in the row itself — see migration 134, where August
   // 2026 was finalised before the SKBBK rate existed.

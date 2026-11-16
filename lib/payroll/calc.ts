@@ -171,6 +171,23 @@ export interface CalcInput {
    */
   epfOver60Contributing?: boolean;
   /**
+   * Unpaid leave taken in this month.
+   *
+   * Deducted AFTER the statutory figures, not before — EPF, SOCSO and EIS are
+   * worked out on the full agreed wage and the unpaid days come off take-home
+   * alone. That is the General Manager's instruction of November 2026, and it
+   * is a choice rather than an oversight: the other reading, where the wage
+   * actually payable carries the contributions, is the one this file uses for
+   * somebody who joins mid-month (see `monthFraction`). The two now differ on
+   * purpose, so a payslip showing full EPF against a short wage is right.
+   *
+   * A day is worth the month's pay divided by the month's calendar days — the
+   * Employment Act's basis for an incomplete month, and the same divisor
+   * `monthDays` uses, so February is over 28 and nobody is deducted a 30th of
+   * their salary for a day they were not there.
+   */
+  unpaidLeave?: { days: number; daysInMonth: number };
+  /**
    * The month being computed, 1-13. Only SKBBK reads it, to honour a scheme
    * that starts part-way through the year. Optional: a caller that does not
    * pass it gets the rate applied to every month, which is the right answer
@@ -219,7 +236,10 @@ export interface CalcLine {
   totalContrib: StatPortion;   // EPF + EIS + SOCSO, per side
   eplDeduction: number;
   ptptnDeduction: number;
-  net: number;                 // gross − pcb − employee contributions − SKBBK − EPL − PTPTN ± custom items
+  /** Unpaid leave: the days taken, and what they come to. Both, so a payslip
+      can show the working rather than an unexplained deduction. */
+  unpaidLeave: { days: number; amount: number; dayRate: number };
+  net: number;                 // gross − pcb − employee contributions − SKBBK − EPL − PTPTN − unpaid leave ± custom items
   totalLcmPayment: number;     // gross + employer contributions + custom allowances
   customAllowances: number;
   customDeductions: number;
@@ -564,12 +584,29 @@ export function calcLine(input: CalcInput): CalcLine {
   const customAllowances = round2(customRaw.filter(i => i.type === "allowance").reduce((s, i) => s + i.amount, 0));
   const customDeductions = round2(customRaw.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0));
 
+  // ── Unpaid leave ──────────────────────────────────────────────────────
+  // Taken off here, after the contributions rather than before them, so the
+  // statutory columns go on reading the full wage. A bonus is not a month
+  // worked, so no day of it can be unpaid.
+  //
+  // The day is priced off the corrected gross: where a correction has moved
+  // what this month pays, a day of it is worth more or less accordingly.
+  // Clamped at the month's length — somebody absent for all of it is owed
+  // nothing, not less than nothing.
+  const unpaidDaysInMonth = Number(input.unpaidLeave?.daysInMonth) || 0;
+  const unpaidDays = is13thMonth || unpaidDaysInMonth <= 0
+    ? 0
+    : Math.min(Math.max(Number(input.unpaidLeave?.days) || 0, 0), unpaidDaysInMonth);
+  const unpaidDayRate = unpaidDaysInMonth > 0 ? round2(grossAdj / unpaidDaysInMonth) : 0;
+  const unpaidAmount = unpaidDays > 0 ? round2(grossAdj / unpaidDaysInMonth * unpaidDays) : 0;
+
   // adj.NET is money that belongs to no scheme, so it lands straight on take-home
   // and on what the church pays out. Every other category has already moved net
   // by moving the figure it names.
   const net = round2(grossAdj - pcbAdj - totalContrib.ee - skbbkAdj - (eplDeduction || 0)
-    - ptptn - customDeductions + customAllowances + adj.NET);
-  const totalLcmPayment = round2(grossAdj + totalContrib.er + customAllowances + adj.NET);
+    - ptptn - customDeductions + customAllowances + adj.NET - unpaidAmount);
+  // The church keeps the unpaid days too; its cost falls by the same amount.
+  const totalLcmPayment = round2(grossAdj + totalContrib.er + customAllowances + adj.NET - unpaidAmount);
 
   return {
     gross: grossAdj,
@@ -577,6 +614,7 @@ export function calcLine(input: CalcInput): CalcLine {
     epf: epfAdj, eis: eisAdj, socso: socsoAdj, skbbk: skbbkAdj, totalContrib,
     eplDeduction: round2(eplDeduction || 0),
     ptptnDeduction: round2(ptptn),
+    unpaidLeave: { days: unpaidDays, amount: unpaidAmount, dayRate: unpaidDayRate },
     net,
     totalLcmPayment,
     customAllowances,

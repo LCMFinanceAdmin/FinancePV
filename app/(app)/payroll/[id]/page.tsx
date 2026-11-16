@@ -14,12 +14,13 @@ import { useToast, Toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
 import { FigureCell } from "@/components/payroll/figure-cell";
+import { UnpaidDaysCell } from "@/components/payroll/unpaid-days-cell";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import {
   ladder, labelOf, scaleMove, monthAfter,
   type QualificationRung, type SalaryPoint,
 } from "@/lib/payroll/qualification-scale";
-import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem,
+import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem, PayrollUnpaidLeave,
   PayrollAdjustment, AdjustmentCategory } from "@/lib/types";
 import { ADJUSTMENT_CATEGORIES, adjustmentLabel } from "@/lib/types";
 import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
@@ -50,6 +51,26 @@ function itemAppliesToMonth(item: { year: number; month: number; is_recurring: b
 }
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
+/**
+ * When a correction was keyed, and by whom.
+ *
+ * Shown on every row rather than kept in the change log, because a figure that
+ * overrides the rate table is only as good as the account of who put it there
+ * — and the log is behind a fold that nobody opens. An edited row says when it
+ * was last touched, not when it was first written: the later date is the one
+ * that explains the figure now on screen.
+ */
+function stampOf(a: { created_at?: string | null; updated_at?: string | null; created_by?: string | null }): string {
+  const when = a.updated_at || a.created_at;
+  if (!when) return "";
+  const d = new Date(when);
+  if (Number.isNaN(d.getTime())) return "";
+  const said = d.toLocaleString("en-MY", {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+  const who = (a.created_by ?? "").split("@")[0];
+  return `${a.updated_at && a.updated_at !== a.created_at ? "edited" : "keyed"} ${said}${who ? ` by ${who}` : ""}`;
+}
 
 function fmtDate(s: string | null): string {
   if (!s) return "—";
@@ -182,6 +203,11 @@ export default function PayrollEmployeePage() {
   const [adjustments, setAdjustments] = useState<PayrollAdjustment[]>([]);
   const [adjModal, setAdjModal] = useState<{ month: number; editing: PayrollAdjustment | null } | null>(null);
   // Which gathered run has been opened to its individual months.
+  const [unpaidByMonth, setUnpaidByMonth] = useState<Record<number, PayrollUnpaidLeave>>({});
+  // Both panels fold. They sit under a sheet that is already long, and most
+  // visits are to read the sheet rather than the corrections beneath it.
+  const [showPayItems, setShowPayItems] = useState(true);
+  const [showAdjustments, setShowAdjustments] = useState(true);
   const [figureError, setFigureError] = useState("");
   // Said rather than alerted. See components/ui/toast.tsx for why the
   // browser's own dialogs were no longer good enough for figures like these.
@@ -222,6 +248,21 @@ export default function PayrollEmployeePage() {
     setCustomItemsByMonth(byMonth);
     setCustomItems(allItems);
   }, [supabase, id, year]);
+
+  /**
+   * Days of unpaid leave, by month. Days rather than amounts, so the deduction
+   * follows the salary in force rather than a figure keyed against an older
+   * one — see migration 258.
+   */
+  const refreshUnpaid = useCallback(async () => {
+    const { data } = await supabase.from("payroll_unpaid_leave")
+      .select("*").eq("employee_id", id).eq("year", year).order("month");
+    const byMonth: Record<number, PayrollUnpaidLeave> = {};
+    for (const row of (data as PayrollUnpaidLeave[]) ?? []) byMonth[row.month] = row;
+    setUnpaidByMonth(byMonth);
+  }, [supabase, id, year]);
+
+  useEffect(() => { refreshUnpaid(); }, [refreshUnpaid]);
 
   const refreshAdjustments = useCallback(async () => {
     const { data } = await supabase.from("payroll_adjustments")
@@ -567,13 +608,16 @@ export default function PayrollEmployeePage() {
         adjustments: adj,
       });
     }
+    const days = monthDays(emp.date_commenced, emp.resigned_date, year, m);
     return calcLine({
       // The sheet is the same arithmetic as a run, so a month somebody joined
       // or left part-way through is pro-rated here too. Without this the
       // sheet and the run disagree about the same month, and the sheet is
       // what people check the run against.
-      gross: grossForMonth(sal, emp.date_commenced, m, false, emp.increment_month_override,
-        monthDays(emp.date_commenced, emp.resigned_date, year, m)),
+      gross: grossForMonth(sal, emp.date_commenced, m, false, emp.increment_month_override, days),
+      // Unpaid days come off after the statutory figures, so they are passed
+      // rather than folded into the gross above. See calc.ts.
+      unpaidLeave: { days: Number(unpaidByMonth[m]?.days) || 0, daysInMonth: days.daysInMonth },
       age: ageAt(emp.dob, year, m),
       month: m,
       bands,
@@ -603,6 +647,95 @@ export default function PayrollEmployeePage() {
    * for the difference instead of the figure, there being nothing to subtract
    * a target from.
    */
+  /**
+   * The statutory figures a given gross would produce for a month.
+   *
+   * Computed rather than adjusted: an adjustment lands after the formulas and
+   * never feeds back into them, so keying a new gross does not of itself move
+   * EPF or SOCSO. That is the right default — a correction to one figure
+   * should not quietly become four — but it is the wrong default when the
+   * gross itself was what changed, because then every statutory figure on the
+   * month is derived from a wage nobody is being paid.
+   *
+   * So this asks the arithmetic what the month WOULD come to at that wage, and
+   * `followGross` writes the difference as ordinary corrections. They are
+   * ordinary on purpose: each is named, each shows in the list below the
+   * sheet, and each can be typed over afterwards.
+   */
+  const statutoryAtGross = (m: number, gross: number): CalcLine | null => {
+    const sal = salaryForMonth(m);
+    if (!sal) return null;
+    const is13 = m === 13;
+    const days = monthDays(emp.date_commenced, emp.resigned_date, year, is13 ? 12 : m);
+    return calcLine({
+      gross,
+      age: ageAt(emp.dob, year, is13 ? 12 : m),
+      month: is13 ? undefined : m,
+      employmentType: emp.employment_type,
+      isOrangAsli: emp.is_orang_asli,
+      voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
+      skbbkOptedOut: emp.skbbk_opted_out,
+      epfOver60Contributing: emp.epf_over60_contributing,
+      manualPcb: 0, eplDeduction: 0, is13thMonth: is13,
+      unpaidLeave: { days: 0, daysInMonth: days.daysInMonth },
+      rates, bands,
+    });
+  };
+
+  /** The statutory columns that follow the wage. PCB does not — it is keyed. */
+  const FOLLOWS_GROSS: AdjustmentCategory[] =
+    ["EPF_EE", "EPF_ER", "SOCSO_EE", "SOCSO_ER", "SKBBK", "EIS_EE", "EIS_ER"];
+
+  /**
+   * Bring the statutory figures with a gross that has just been keyed.
+   *
+   * Each becomes its own named correction, so the sheet goes on showing the
+   * computed figure, the correction and the result separately — and so any of
+   * them can be typed over afterwards if the church's position differs.
+   *
+   * PCB is deliberately untouched. There is no LHDN schedule here; it is keyed
+   * by hand, and a figure invented for it would be a tax deduction nobody
+   * chose. The caller says so on screen instead.
+   */
+  async function followGross(m: number, newGross: number) {
+    const target = emp ? statutoryAtGross(m, newGross) : null;
+    if (!emp || !target) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const by = session?.user?.email ?? "";
+    const wanted: [AdjustmentCategory, number][] = FOLLOWS_GROSS.map(c => [c, figureOf(target, c)]);
+
+    for (const [category, want] of wanted) {
+      const before = figureBefore(m, category);
+      if (before === null) continue;
+      const delta = round2(want - before);
+      const existing = adjFor(m, category);
+      if (Math.abs(delta) < 0.005) {
+        // Already where it should be: drop any correction that was holding it
+        // somewhere else, rather than leaving a stale one behind.
+        if (existing) await supabase.from("payroll_adjustments").delete().eq("id", existing.id);
+        continue;
+      }
+      const row = {
+        employee_id: emp.id, year, month: m, category, amount: delta,
+        reason: `Followed the gross set to ${num(newGross)}`,
+      };
+      if (existing) {
+        await supabase.from("payroll_adjustments")
+          .update({ ...row, updated_at: new Date().toISOString() }).eq("id", existing.id);
+      } else {
+        await supabase.from("payroll_adjustments").insert({ ...row, created_by: by });
+      }
+    }
+    await logPayrollAudit(supabase, {
+      action: "ADJUSTMENT_ADDED", employeeId: emp.id, entity: emp.full_name,
+      detail: `${monthShort(m)} ${year} · gross set to ${num(newGross)} — EPF, SOCSO, EIS and SKBBK `
+            + `followed it. PCB is keyed by hand and was not changed.`,
+    });
+    await refreshAdjustments();
+    notify.info("Statutory figures followed the gross",
+      "EPF, SOCSO, EIS and SKBBK were recalculated. PCB is keyed by hand — check it against LHDN.");
+  }
+
   const figureBefore = (m: number, c: AdjustmentCategory): number | null => {
     const line = lineForMonth(m, adjInput(m).filter(a => a.category !== c));
     return line ? figureOf(line, c) : null;
@@ -852,6 +985,15 @@ export default function PayrollEmployeePage() {
                     <th colSpan={3} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4a6da7]">SOCSO</th>
                     <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4a6da7]">EIS</th>
                     <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">EPL</th>
+                    {/* Days, with what they come to underneath. Deducted after
+                        the statutory columns, which is why it sits here with
+                        the other deductions rather than beside Gross. */}
+                    <th rowSpan={2}
+                      title="Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS."
+                      className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">
+                      Unpaid
+                      <span className="block text-[8px] font-normal text-stone-400">days</span>
+                    </th>
                     {customCols.map(col => (
                       <th key={col.label} rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom max-w-[90px]">
                         <div className="truncate text-[9px]">{col.label}</div>
@@ -885,6 +1027,7 @@ export default function PayrollEmployeePage() {
                         year={year} month={monthNum} category="GROSS"
                         shown={l.gross} before={figureBefore(monthNum, "GROSS")}
                         existing={adjFor(monthNum, "GROSS")}
+                        onFollow={g => followGross(monthNum, g)}
                         canEdit={canEditFigures}
                         className={adjCell(monthNum, "GROSS").className}
                         title={adjCell(monthNum, "GROSS").title}
@@ -927,6 +1070,16 @@ export default function PayrollEmployeePage() {
                         />
                       ))}
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
+                      <UnpaidDaysCell
+                        employeeId={emp.id} employeeName={emp.full_name}
+                        year={year} month={monthNum}
+                        existing={unpaidByMonth[monthNum] ?? null}
+                        amount={l.unpaidLeave.amount} dayRate={l.unpaidLeave.dayRate}
+                        daysInMonth={monthDays(emp.date_commenced, emp.resigned_date, year, monthNum).daysInMonth}
+                        canEdit={canEditFigures}
+                        onSaved={() => { setFigureError(""); refreshUnpaid(); if (showLog) loadLog(); }}
+                        onError={setFigureError}
+                      />
                       {customCols.map(col => {
                         const amt = customAmt(monthNum, col);
                         return (
@@ -979,6 +1132,14 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-red-700">
+                      {monthLines.some(l => l.unpaidLeave.days > 0)
+                        ? <>{monthLines.reduce((s, l) => s + l.unpaidLeave.days, 0)}
+                            <span className="block text-[8px] font-normal leading-tight">
+                              −{num(monthLines.reduce((s, l) => s + l.unpaidLeave.amount, 0))}
+                            </span></>
+                        : <span className="text-stone-300">—</span>}
+                    </td>
                     {customCols.map(col => {
                       const t = customColSubTotal(col);
                       return <td key={col.label} className="border border-stone-200 px-1 py-0.5 text-right font-mono"><span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</span></td>;
@@ -1001,19 +1162,63 @@ export default function PayrollEmployeePage() {
                           </span>
                         )}
                       </td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(thirteenth.gross)}</td>
-                      <td className="border border-stone-200 px-0.5 py-0.5 text-right">
+                      {/* The bonus is correctable like any other month. It was
+                          read-only, which meant a 13th month that needed
+                          putting right could only be fixed by changing
+                          December's salary — and that moved December too. */}
+                      <FigureCell
+                        employeeId={emp.id} employeeName={emp.full_name}
+                        year={year} month={13} category="GROSS"
+                        shown={thirteenth.gross} before={figureBefore(13, "GROSS")}
+                        existing={adjFor(13, "GROSS")}
+                        onFollow={g => followGross(13, g)}
+                        canEdit={canEditFigures}
+                        className={adjCell(13, "GROSS").className}
+                        title={adjCell(13, "GROSS").title}
+                        onSaved={() => { setFigureError(""); refreshAdjustments(); if (showLog) loadLog(); }}
+                        onError={setFigureError}
+                      />
+                      <td className={`border border-stone-200 px-0.5 py-0.5 text-right${adjCell(13, "PCB").className}`}
+                          title={adjCell(13, "PCB").title}>
                         <input type="number" value={pcb[12] || ""} onChange={e => setPcb(p => { const n = [...p]; n[12] = parseFloat(e.target.value) || 0; return n; })}
                           className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
+                        {adjAmt(13, "PCB") !== 0 && (
+                          <div className="pr-1 text-[8px] font-semibold text-amber-800">
+                            {adjAmt(13, "PCB") > 0 ? "+" : "−"}{num(Math.abs(adjAmt(13, "PCB")))} → {num(thirteenth.pcb)}
+                          </div>
+                        )}
                       </td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(thirteenth.epf.ee)}</td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(thirteenth.epf.er)}</td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.socso.ee)}</td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.skbbk)}</td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.socso.er)}</td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.eis.ee)}</td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-300">{num(thirteenth.eis.er)}</td>
+                      {/* SOCSO, SKBBK and EIS are nil on a bonus by rule, not by
+                          accident — they are greyed rather than hidden, and they
+                          stay correctable for the month somebody has to file
+                          differently. */}
+                      {([
+                        ["EPF_EE",   thirteenth.epf.ee,   ""],
+                        ["EPF_ER",   thirteenth.epf.er,   ""],
+                        ["SOCSO_EE", thirteenth.socso.ee, "text-stone-300"],
+                        ["SKBBK",    thirteenth.skbbk,    "text-stone-300"],
+                        ["SOCSO_ER", thirteenth.socso.er, "text-stone-300"],
+                        ["EIS_EE",   thirteenth.eis.ee,   "text-stone-300"],
+                        ["EIS_ER",   thirteenth.eis.er,   "text-stone-300"],
+                      ] as [AdjustmentCategory, number, string][]).map(([cat, value, extra]) => (
+                        <FigureCell
+                          key={cat}
+                          employeeId={emp.id} employeeName={emp.full_name}
+                          year={year} month={13} category={cat}
+                          shown={value} before={figureBefore(13, cat)}
+                          existing={adjFor(13, cat)}
+                          canEdit={canEditFigures}
+                          className={`${extra}${adjCell(13, cat).className}`}
+                          title={adjCell(13, cat).title}
+                          onSaved={() => { setFigureError(""); refreshAdjustments(); if (showLog) loadLog(); }}
+                          onError={setFigureError}
+                        />
+                      ))}
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
+                      {/* No day of a bonus can be unpaid — it is a payment for
+                          the year, not a month worked. */}
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-200"
+                        title="A 13th month is a payment for the year, not a month worked, so no day of it is unpaid.">—</td>
                       {customCols.map(col => {
                         const amt = customAmt(13, col);
                         return (
@@ -1024,7 +1229,17 @@ export default function PayrollEmployeePage() {
                           </td>
                         );
                       })}
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono font-semibold">{num(thirteenth.net)}</td>
+                      <FigureCell
+                        employeeId={emp.id} employeeName={emp.full_name}
+                        year={year} month={13} category="NET"
+                        shown={thirteenth.net} before={figureBefore(13, "NET")}
+                        existing={adjFor(13, "NET")}
+                        canEdit={canEditFigures}
+                        className={`font-semibold${adjCell(13, "NET").className}`}
+                        title={adjCell(13, "NET").title}
+                        onSaved={() => { setFigureError(""); refreshAdjustments(); if (showLog) loadLog(); }}
+                        onError={setFigureError}
+                      />
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono font-semibold text-[#4a6da7]">{num(thirteenth.totalLcmPayment)}</td>
                       <td className="border border-stone-200 px-1 py-0.5 text-center print:hidden">
                         <div className="flex items-center justify-center gap-0.5">
@@ -1040,7 +1255,7 @@ export default function PayrollEmployeePage() {
                     </tr>
                   ) : (
                     <tr>
-                      <td colSpan={13 + customCols.length}
+                      <td colSpan={14 + customCols.length}
                         className="border border-stone-200 px-1 py-0.5 italic text-stone-400">
                         {/* The rule that withheld it, not just the fact. Whoever
                             pulls this sheet in a year's time is owed the reason
@@ -1062,6 +1277,14 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">
+                      {sum(l => l.unpaidLeave.days) > 0
+                        ? <>{sum(l => l.unpaidLeave.days)}
+                            <span className="block text-[8px] font-normal leading-tight">
+                              −{num(sum(l => l.unpaidLeave.amount))}
+                            </span></>
+                        : <span className="text-stone-300">—</span>}
+                    </td>
                     {customCols.map(col => {
                       const t = customColTotal(col);
                       return <td key={col.label} className="border border-stone-200 px-1 py-0.5 text-right font-mono"><span className={col.type === "allowance" ? "text-green-600" : "text-red-500"}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</span></td>;
@@ -1081,7 +1304,12 @@ export default function PayrollEmployeePage() {
             <div className="mt-4 rounded-xl border-2 border-[#2f5b9c] bg-[#f4f7fb] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="flex items-center gap-1.5 text-[15px] font-bold text-[#1e3f75]">
-                  <ListPlus size={18} /> Allowances &amp; deductions — {year}
+                  <button type="button" onClick={() => setShowPayItems(o => !o)}
+                    aria-expanded={showPayItems}
+                    className="flex items-center gap-1.5 rounded hover:text-[#2f5b9c]">
+                    <ChevronDown size={16} className={`transition-transform ${showPayItems ? "" : "-rotate-90"}`} />
+                    <ListPlus size={18} /> Allowances &amp; deductions — {year}
+                  </button>
                   {yearPayItems.length > 0 && (
                     <span className="rounded-full bg-[#2f5b9c] px-2 py-0.5 text-[11px] font-bold text-white">
                       {yearPayItems.length}
@@ -1096,6 +1324,7 @@ export default function PayrollEmployeePage() {
                 )}
               </div>
 
+              {showPayItems && <>
               {/* Three sentences: what it is, where it shows, and when to use
                   the other panel instead. Each used to describe itself without
                   reference to the other, which is what made them hard to tell
@@ -1151,6 +1380,7 @@ export default function PayrollEmployeePage() {
                   })}
                 </ul>
               )}
+              </>}
             </div>
 
             {/* Corrections.
@@ -1162,7 +1392,12 @@ export default function PayrollEmployeePage() {
             <div className="mt-4 rounded-xl border-2 border-amber-300 bg-amber-50/40 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="flex items-center gap-1.5 text-[15px] font-bold text-amber-900">
-                  <Scale size={18} /> Adjustments — {year}
+                  <button type="button" onClick={() => setShowAdjustments(o => !o)}
+                    aria-expanded={showAdjustments}
+                    className="flex items-center gap-1.5 rounded hover:text-amber-700">
+                    <ChevronDown size={16} className={`transition-transform ${showAdjustments ? "" : "-rotate-90"}`} />
+                    <Scale size={18} /> Adjustments — {year}
+                  </button>
                   {adjustments.length > 0 && (
                     <>
                       {/* The badge counts decisions. Sixteen above two lines
@@ -1186,6 +1421,7 @@ export default function PayrollEmployeePage() {
                 )}
               </div>
 
+              {showAdjustments && <>
               <p className="mt-1.5 text-[13px] text-amber-900">
                 For salaries already paid that need putting right — where too much was deducted,
                 or more was paid than agreed. It settles what is owed to or by the employee, landing
@@ -1237,6 +1473,15 @@ export default function PayrollEmployeePage() {
                               <span className="text-stone-400"> · corrects {monthShort(g.origin_month)} {g.origin_year ?? year}</span>
                             )}
                           </span>
+                          {/* Who put this figure here, and when. */}
+                          {stampOf(g.items[0]) && (
+                            <span className="w-full text-[11px] text-stone-400">
+                              {stampOf(g.items[0])}
+                              {g.items.length > 1 && g.items.some(a => stampOf(a) !== stampOf(g.items[0])) && (
+                                <span className="italic"> · the months below differ</span>
+                              )}
+                            </span>
+                          )}
                           {canEdit && !spread && (
                             <span className="ml-auto flex items-center gap-1">
                               <button onClick={() => setAdjModal({ month: g.items[0].month, editing: g.items[0] })}
@@ -1267,6 +1512,7 @@ export default function PayrollEmployeePage() {
                                 <span className="font-mono text-stone-700">
                                   {Number(a.amount) > 0 ? "+" : "−"}{num(Math.abs(Number(a.amount)))}
                                 </span>
+                                <span className="truncate text-[10.5px] text-stone-400">{stampOf(a)}</span>
                                 {canEdit && (
                                   <span className="ml-auto flex items-center gap-1">
                                     <button onClick={() => setAdjModal({ month: a.month, editing: a })}
@@ -1288,6 +1534,7 @@ export default function PayrollEmployeePage() {
                   })}
                 </ul>
               )}
+              </>}
             </div>
 
             {figureError && (

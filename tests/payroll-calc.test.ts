@@ -11,6 +11,8 @@ import { figureOf,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
 
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
 const line = (o: Partial<CalcInput>) => calcLine({
   gross: 3000, age: 40, employmentType: "PERMANENT", isOrangAsli: false,
   voluntaryEpf: 0, manualPcb: 0, eplDeduction: 0, is13thMonth: false, month: 10,
@@ -193,4 +195,78 @@ test("the employee and employer sides of one scheme are different figures", () =
   const l = line({ gross: 6000 });
   assert.notEqual(figureOf(l, "EPF_EE"), figureOf(l, "EPF_ER"));
   assert.notEqual(figureOf(l, "SOCSO_EE"), figureOf(l, "SOCSO_ER"));
+});
+
+// ── Unpaid leave ─────────────────────────────────────────────────────────
+//
+// Deducted after the statutory figures, not before: EPF, SOCSO and EIS go on
+// reading the full agreed wage, and only take-home falls. That is the opposite
+// of how an incomplete month is treated, and deliberately so — see the note on
+// `unpaidLeave` in calc.ts.
+
+test("a day of unpaid leave is the month's pay over the month's calendar days", () => {
+  // 3,100 over 31 days is 100 a day; two days is 200.
+  const l = line({ gross: 3100, unpaidLeave: { days: 2, daysInMonth: 31 } });
+  assert.equal(l.unpaidLeave.dayRate, 100);
+  assert.equal(l.unpaidLeave.amount, 200);
+  assert.equal(l.unpaidLeave.days, 2);
+});
+
+test("February is divided by 28, not by 30", () => {
+  const feb = line({ gross: 2800, unpaidLeave: { days: 1, daysInMonth: 28 } });
+  assert.equal(feb.unpaidLeave.amount, 100);
+});
+
+test("the statutory figures do not move with unpaid leave", () => {
+  const full = line({ gross: 3100 });
+  const short = line({ gross: 3100, unpaidLeave: { days: 5, daysInMonth: 31 } });
+  assert.equal(short.gross, full.gross, "the gross on the sheet is still the agreed wage");
+  assert.equal(short.epf.ee, full.epf.ee);
+  assert.equal(short.epf.er, full.epf.er);
+  assert.equal(short.socso.ee, full.socso.ee);
+  assert.equal(short.socso.er, full.socso.er);
+  assert.equal(short.eis.ee, full.eis.ee);
+  assert.equal(short.skbbk, full.skbbk);
+});
+
+test("it comes off take-home, and off what the church pays out", () => {
+  const full = line({ gross: 3100 });
+  const short = line({ gross: 3100, unpaidLeave: { days: 3, daysInMonth: 31 } });
+  assert.equal(round2(full.net - short.net), 300);
+  assert.equal(round2(full.totalLcmPayment - short.totalLcmPayment), 300);
+});
+
+test("no unpaid leave is no deduction and no arithmetic", () => {
+  const none = line({ gross: 3100 });
+  assert.equal(none.unpaidLeave.amount, 0);
+  assert.equal(none.unpaidLeave.days, 0);
+  assert.equal(none.net, line({ gross: 3100, unpaidLeave: { days: 0, daysInMonth: 31 } }).net);
+});
+
+test("absence for the whole month leaves nothing to deduct beyond the month", () => {
+  // Asking for 40 days of a 31-day month cannot take more than the month pays.
+  const all = line({ gross: 3100, unpaidLeave: { days: 40, daysInMonth: 31 } });
+  assert.equal(all.unpaidLeave.days, 31);
+  assert.equal(all.unpaidLeave.amount, 3100);
+});
+
+test("a negative day count is not a bonus", () => {
+  assert.equal(line({ gross: 3100, unpaidLeave: { days: -4, daysInMonth: 31 } }).unpaidLeave.amount, 0);
+});
+
+test("half a day is half a day's pay", () => {
+  assert.equal(line({ gross: 3100, unpaidLeave: { days: 0.5, daysInMonth: 31 } }).unpaidLeave.amount, 50);
+});
+
+test("the 13th month has no unpaid days — a bonus is not a month worked", () => {
+  const bonus = line({ gross: 3100, is13thMonth: true, unpaidLeave: { days: 5, daysInMonth: 31 } });
+  assert.equal(bonus.unpaidLeave.amount, 0);
+  assert.equal(bonus.unpaidLeave.days, 0);
+});
+
+test("a day is priced off the corrected gross, not the computed one", () => {
+  // A correction that adds 310 to a 3,100 month makes a day worth 110, not 100.
+  const l = line({ gross: 3100, unpaidLeave: { days: 1, daysInMonth: 31 },
+    adjustments: [{ category: "GROSS", amount: 310, reason: "back pay" }] });
+  assert.equal(l.unpaidLeave.amount, 110);
 });
