@@ -44,6 +44,8 @@ interface Line {
   gross: number; pcb: number; epf_ee: number; epf_er: number;
   socso_ee: number; socso_er: number; eis_ee: number; eis_er: number;
   epl: number; ptptn?: number; net: number; skbbk: number;
+  /** Unpaid leave as the run finalised it — migration 258. */
+  unpaid_days?: number; unpaid_amount?: number;
   custom_items: unknown; adjustments: unknown;
 }
 
@@ -150,6 +152,9 @@ function MySalaryInner() {
           skbbk={Number(line.skbbk) || 0}
           eplDeduction={Number(line.epl)}
           ptptnDeduction={Number(line.ptptn ?? 0)}
+          // From the finalised line, so somebody's own payslip says what it
+          // said when it was issued — see migration 258.
+          unpaidLeave={{ days: Number(line.unpaid_days ?? 0), amount: Number(line.unpaid_amount ?? 0) }}
           net={Number(line.net)}
           month={run.month}
           is13thMonth={run.month === 13}

@@ -1357,7 +1357,7 @@ function SendPayslipModal({ run, rows, onClose }: {
             epfEe={row.epfEe} epfEr={row.epfEr} socsoEe={row.socsoEe} socsoEr={row.socsoEr} skbbk={row.skbbk} adjustments={row.adjustments}
             month={run.month} is13thMonth={run.month === 13}
             eisEe={row.eisEe} eisEr={row.eisEr} eplDeduction={row.eplDeduction}
-            ptptnDeduction={row.ptptnDeduction} net={row.net}
+            ptptnDeduction={row.ptptnDeduction} unpaidLeave={row.unpaidLeave} net={row.net}
             customItems={row.customItems} />
         ).toBlob();
         const fileName = `Payslip_${row.emp.full_name.replace(/\s+/g, "_")}_${monthLabel}_${run.year}.pdf`;

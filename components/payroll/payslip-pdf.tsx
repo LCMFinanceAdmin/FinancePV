@@ -200,6 +200,7 @@ export function PayslipPDF({
   const statAdjustments = adjustments.filter(a => a.category !== "NET" && a.category !== "GROSS");
 
   // Deduction items
+  const unpaidDays = unpaidLeave?.days ?? 0;
   const deds: { label: string; amount: number }[] = [
     { label: "Employee EPF", amount: epfEe },
     { label: "Employee SOCSO", amount: socsoEe },
@@ -420,7 +421,7 @@ export function PayslipPDF({
           <View style={s.p2}>
             <Text style={s.p2Title}>—DEDUCTION—</Text>
             <Text style={s.p2Sub}>-Amt-</Text>
-            {eplDeduction > 0 || ptptnDeduction > 0 ? (
+            {eplDeduction > 0 || ptptnDeduction > 0 || unpaidDays > 0 ? (
               <>
                 {eplDeduction > 0 && (<>
                   <Text style={s.p2Item}>EPL</Text>
@@ -429,6 +430,14 @@ export function PayslipPDF({
                 {ptptnDeduction > 0 && (<>
                   <Text style={s.p2Item}>PTPTN</Text>
                   <Text style={s.p2Amt}>{n(ptptnDeduction)}</Text>
+                </>)}
+                {/* Named with its days. An unexplained deduction is the line
+                    somebody queries, and the days are the whole explanation. */}
+                {unpaidDays > 0 && (<>
+                  <Text style={s.p2Item}>
+                    UNPAID LEAVE ({unpaidDays} {unpaidDays === 1 ? "day" : "days"})
+                  </Text>
+                  <Text style={s.p2Amt}>{n(unpaidLeave?.amount ?? 0)}</Text>
                 </>)}
               </>
             ) : (

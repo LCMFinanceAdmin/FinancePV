@@ -106,7 +106,7 @@ const s = StyleSheet.create({
 // it belongs to.
 const catL = { borderLeft: "1.5 solid #a8a29e" };
 
-const C = { mo:44, gr:54, pcb:42, ee:46, er:46, se:38, sr:38, sk:36, ie:34, ir:34, epl:42, ptptn:46, net:58, lcm:58, cu:46 };
+const C = { mo:44, gr:54, pcb:42, ee:46, er:46, se:38, sr:38, sk:36, ie:34, ir:34, epl:42, ptptn:46, unp:44, net:58, lcm:58, cu:46 };
 
 export interface YearlySheetPDFProps {
   emp: PayrollEmployee;
@@ -142,7 +142,14 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
   const hasE = Number(salary.experience_bonus)>0;
   const eplAnn = sum(l=>l.eplDeduction); const hasEpl = eplAnn>0;
   const ptptnAnn = sum(l=>Number(l.ptptnDeduction ?? 0)); const hasPtptn = ptptnAnn>0;
-  const hasAny = hasF||hasS||hasE||hasEpl||customCols.length>0;
+  // Unpaid leave, where any was taken. A column kept off a sheet that has none
+  // the way EPL and PTPTN are — but present where it is, because a net that
+  // falls with nothing on the page to account for it is the one figure
+  // somebody will query and nobody will be able to answer.
+  const unpaidAnn = sum(l=>Number(l.unpaidLeave?.amount ?? 0));
+  const unpaidDaysAnn = sum(l=>Number(l.unpaidLeave?.days ?? 0));
+  const hasUnpaid = unpaidAnn>0;
+  const hasAny = hasF||hasS||hasE||hasEpl||hasUnpaid||customCols.length>0;
   const posting = emp.posting_type==="CHURCH"?emp.church_name:emp.posting_type==="OFFICE"?"Head Office":emp.department||"—";
 
   const noRight = { borderRight: 0 } as const;
@@ -189,6 +196,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
               {hasE && <View style={s.spItem}><Text style={s.spLbl}>Experience Bonus</Text><Text style={s.spAmt}>RM {n(Number(salary.experience_bonus))} /month</Text><Text style={s.spSub}>Annual: RM {n(Number(salary.experience_bonus)*12)}</Text></View>}
               {hasEpl && <View style={[s.spItem, s.spItemR]}><Text style={[s.spLbl, s.spLblR]}>EPL Deduction</Text><Text style={[s.spAmt, s.spAmtR]}>RM {n(eplAnn)} annual</Text><Text style={s.spSub}>Loan repayment</Text></View>}
               {hasPtptn && <View style={[s.spItem, s.spItemR]}><Text style={[s.spLbl, s.spLblR]}>PTPTN</Text><Text style={[s.spAmt, s.spAmtR]}>RM {n(ptptnAnn)} annual</Text><Text style={s.spSub}>Withheld and remitted to PTPTN</Text></View>}
+              {hasUnpaid && <View style={[s.spItem, s.spItemR]}><Text style={[s.spLbl, s.spLblR]}>Unpaid leave</Text><Text style={[s.spAmt, s.spAmtR]}>RM {n(unpaidAnn)} annual</Text><Text style={s.spSub}>{unpaidDaysAnn} {unpaidDaysAnn===1?"day":"days"} — statutory on the full wage</Text></View>}
               {customCols.map(col => { const t=cTotal(col); if(!t) return null; const a=col.type==="allowance";
                 return <View key={col.label} style={[s.spItem, a?s.spItemG:s.spItemR]}><Text style={[s.spLbl, a?s.spLblG:s.spLblR]}>{col.label.toUpperCase()} ({a?"allowance":"deduction"})</Text><Text style={[s.spAmt, a?s.spAmtG:s.spAmtR]}>{a?"+":"−"}RM {n(t)} annual</Text></View>;
               })}
@@ -207,7 +215,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             <Text style={[s.thGrp,{width:C.ee+C.er}]}>EPF</Text>
             <Text style={[s.thGrp,{width:C.se+C.sk+C.sr}]}>SOCSO</Text>
             <Text style={[s.thGrp,{width:C.ie+C.ir}]}>EIS</Text>
-            <Text style={[s.thGrpBlank,{width:(hasEpl?C.epl:0)+(hasPtptn?C.ptptn:0)+customCols.length*C.cu+C.net+C.lcm,...noRight}]}> </Text>
+            <Text style={[s.thGrpBlank,{width:(hasEpl?C.epl:0)+(hasPtptn?C.ptptn:0)+(hasUnpaid?C.unp:0)+customCols.length*C.cu+C.net+C.lcm,...noRight}]}> </Text>
           </View>
 
           {/* Header */}
@@ -224,6 +232,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             <Text style={[s.th,{width:C.ir}]}>EIS ER</Text>
             {hasEpl && <Text style={[s.thR,{width:C.epl,...catL}]}>EPL</Text>}
             {hasPtptn && <Text style={[s.thR,{width:C.ptptn,...catL}]}>PTPTN</Text>}
+            {hasUnpaid && <Text style={[s.thR,{width:C.unp,...catL}]}>UNPAID</Text>}
             {customCols.map(col=><Text key={col.label} style={[col.type==="allowance"?s.thG:s.thR,{width:C.cu,...(col===customCols[0]?catL:{})}]}>{col.label}</Text>)}
             <Text style={[s.th,{width:C.net,...catL}]}>Net</Text>
             <Text style={[s.th,{width:C.lcm,...catL,...noRight}]}>Total LCM</Text>
@@ -246,6 +255,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
                 <Text style={[s.td,{width:C.ir}]}>{n(l.eis.er)}</Text>
                 {hasEpl && <Text style={[s.tdEpl,{width:C.epl,...catL}]}>{l.eplDeduction>0?n(l.eplDeduction):"—"}</Text>}
                 {hasPtptn && <Text style={[s.tdEpl,{width:C.ptptn,...catL}]}>{Number(l.ptptnDeduction ?? 0)>0?n(Number(l.ptptnDeduction)):"—"}</Text>}
+                {hasUnpaid && <Text style={[s.tdEpl,{width:C.unp,...catL}]}>{Number(l.unpaidLeave?.amount ?? 0)>0?n(Number(l.unpaidLeave?.amount)):"—"}</Text>}
                 {customCols.map(col=>{ const a=cAmt(mo,col); return <Text key={col.label} style={[col.type==="allowance"?s.tdG:s.tdRed,{width:C.cu,...(col===customCols[0]?catL:{})}]}>{a!==0?(col.type==="allowance"?"+":"−")+n(a):"—"}</Text>; })}
                 <Text style={[s.tdB,{width:C.net,...catL}]}>{n(l.net)}</Text>
                 <Text style={[s.tdBl,{width:C.lcm,...catL,...noRight}]}>{n(l.totalLcmPayment)}</Text>
@@ -267,6 +277,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             <Text style={[s.tdSub,{width:C.ir}]}>{n(monthLines.reduce((s,l)=>s+l.eis.er,0))}</Text>
             {hasEpl && <Text style={[s.tdSubEpl,{width:C.epl,...catL}]}>{n(monthLines.reduce((s,l)=>s+l.eplDeduction,0))}</Text>}
             {hasPtptn && <Text style={[s.tdSubEpl,{width:C.ptptn,...catL}]}>{n(monthLines.reduce((s,l)=>s+Number(l.ptptnDeduction ?? 0),0))}</Text>}
+            {hasUnpaid && <Text style={[s.tdSubEpl,{width:C.unp,...catL}]}>{n(monthLines.reduce((s,l)=>s+Number(l.unpaidLeave?.amount ?? 0),0))}</Text>}
             {customCols.map(col=>{ const t=cSub(col); return <Text key={col.label} style={[col.type==="allowance"?s.tdSubG:s.tdSubR,{width:C.cu,...(col===customCols[0]?catL:{})}]}>{t!==0?(col.type==="allowance"?"+":"−")+n(t):"—"}</Text>; })}
             <Text style={[s.tdSub,{width:C.net,...catL}]}>{n(monthLines.reduce((s,l)=>s+l.net,0))}</Text>
             <Text style={[s.tdSub,{width:C.lcm,...catL,...noRight}]}>{n(monthLines.reduce((s,l)=>s+l.totalLcmPayment,0))}</Text>
@@ -289,6 +300,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
               {/* Always a dash: a monthly direction is a direction for the
                   months, so the 13th month is not deducted. */}
               {hasPtptn && <Text style={[s.tdEpl,{width:C.ptptn,...catL}]}>—</Text>}
+              {hasUnpaid && <Text style={[s.tdEpl,{width:C.unp,...catL}]}>—</Text>}
               {customCols.map(col=>{ const a=cAmt(13,col); return <Text key={col.label} style={[col.type==="allowance"?s.tdG:s.tdRed,{width:C.cu,...(col===customCols[0]?catL:{})}]}>{a!==0?(col.type==="allowance"?"+":"−")+n(a):"—"}</Text>; })}
               <Text style={[s.tdB,{width:C.net,...catL}]}>{n(thirteenth.net)}</Text>
               <Text style={[s.tdBl,{width:C.lcm,...catL,...noRight}]}>{n(thirteenth.totalLcmPayment)}</Text>
@@ -311,6 +323,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             <Text style={[s.tdAnn,{width:C.ir}]}>{n(sum(l=>l.eis.er))}</Text>
             {hasEpl && <Text style={[s.tdAnnEpl,{width:C.epl,...catL}]}>{n(sum(l=>l.eplDeduction))}</Text>}
             {hasPtptn && <Text style={[s.tdAnnEpl,{width:C.ptptn,...catL}]}>{n(ptptnAnn)}</Text>}
+            {hasUnpaid && <Text style={[s.tdAnnEpl,{width:C.unp,...catL}]}>{n(unpaidAnn)}</Text>}
             {customCols.map(col=>{ const t=cTotal(col); return <Text key={col.label} style={[col.type==="allowance"?s.tdAnnG:s.tdAnnRed,{width:C.cu,...(col===customCols[0]?catL:{})}]}>{t!==0?(col.type==="allowance"?"+":"−")+n(t):"—"}</Text>; })}
             <Text style={[s.tdAnn,{width:C.net,...catL}]}>{n(sum(l=>l.net))}</Text>
             <Text style={[s.tdAnn,{width:C.lcm,...catL,...noRight}]}>{n(sum(l=>l.totalLcmPayment))}</Text>
@@ -321,6 +334,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
         <View style={s.notes}>
           <Text style={s.nl}>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Increment effective from {["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][effMonth-1]}.</Text>
           {hasEpl && <Text style={[s.nl,{color:R700}]}>EPL (red): loan repayment deducted from net salary.</Text>}
+          {hasUnpaid && <Text style={[s.nl,{color:R700}]}>UNPAID: days taken without pay, at the month&rsquo;s gross over its calendar days. Taken off take-home after EPF, SOCSO and EIS, which stay on the full wage.</Text>}
           {customCols.filter(c=>c.type==="allowance").length>0 && <Text style={[s.nl,{color:G700}]}>Green columns: special allowances.</Text>}
           {customCols.filter(c=>c.type==="deduction").length>0 && <Text style={[s.nl,{color:R700}]}>Red columns: additional deductions.</Text>}
         </View>
