@@ -1,8 +1,9 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, HandCoins, Plus, X, ChevronDown, ChevronRight, CheckCircle, XCircle, Lock, Paperclip, PenLine } from "lucide-react";
+import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, FilePlus2, HandCoins, Lock, Paperclip, PenLine, Plus, X, XCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { RecordLoanModal } from "@/components/payroll/record-loan-modal";
 import { formatCurrency } from "@/lib/utils";
 import { buildSchedule, totalRepayable, outstandingAfter } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
@@ -19,6 +20,12 @@ const STATUS_STYLE: Record<LoanStatus, string> = {
 
 // Display stage derived from status + the three-party signature flow.
 function loanStage(loan: EmployeeLoan): { label: string; cls: string } {
+  // Said before anything else. An active loan with no signatures is otherwise
+  // indistinguishable from one the Bishop and Treasurer signed, and the
+  // difference is the whole of what this badge is for.
+  if (loan.approved_outside) {
+    return { label: "On paper", cls: "bg-[#eef5ff] text-[#2f5b9c] ring-1 ring-inset ring-[#bcd3f0]" };
+  }
   if (loan.status === "ACTIVE") return { label: "Active", cls: "bg-green-100 text-green-700" };
   if (loan.status === "SETTLED") return { label: "Settled", cls: "bg-stone-100 text-stone-500" };
   if (loan.status === "REJECTED") return { label: "Rejected", cls: "bg-red-100 text-red-600" };
@@ -28,6 +35,14 @@ function loanStage(loan: EmployeeLoan): { label: string; cls: string } {
   if (!s.bishop) return { label: "Awaiting Bishop", cls: "bg-amber-100 text-amber-700" };
   if (!s.treasurer) return { label: "Awaiting Treasurer", cls: "bg-amber-100 text-amber-700" };
   return { label: "Approved", cls: "bg-green-100 text-green-700" };
+}
+
+/** A full date, for a paper approval that happened on a particular day. */
+function fmtMonthDay(s: string | null): string {
+  if (!s) return "—";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? "—"
+    : d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function fmtMonth(s: string | null): string {
@@ -299,6 +314,8 @@ export default function PayrollLoansPage() {
   const [employees, setEmployees] = useState<PayrollEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  // A loan agreed on paper, keyed for tracking rather than applied for.
+  const [showRecord, setShowRecord] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [signing, setSigning] = useState<{ loan: EmployeeLoan; blockKey: "bishop" | "treasurer" } | null>(null);
   const [toast, setToast] = useState("");
@@ -403,9 +420,18 @@ export default function PayrollLoansPage() {
           <p className="text-sm text-stone-500 mt-0.5">Applications, e-signatures & repayment tracking</p>
         </div>
         {canApply && (
-          <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f]">
-            <Plus size={16} /> New Application
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* The quieter of the two: a record of something already decided,
+                not a request for a decision. */}
+            <button onClick={() => setShowRecord(true)}
+              title="A loan approved on paper, keyed so the payroll can track it"
+              className="flex items-center gap-1.5 rounded-xl border border-[#bcd3f0] bg-[#eef5ff] px-3.5 py-2 text-sm font-semibold text-[#2f5b9c] hover:bg-[#dcebff]">
+              <FilePlus2 size={16} /> Record existing loan
+            </button>
+            <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 bg-[#4a6da7] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#3d5c8f]">
+              <Plus size={16} /> New Application
+            </button>
+          </div>
         )}
       </div>
 
@@ -475,6 +501,26 @@ export default function PayrollLoansPage() {
                 {/* Detail */}
                 {isOpen && (
                   <div className="border-t border-stone-100 bg-stone-50/50 px-4 py-3 space-y-3">
+                    {/* Approved on paper. Stated first and plainly, so nobody
+                        reads the absent signature blocks below as missing
+                        rather than as never having existed. */}
+                    {loan.approved_outside && (
+                      <div className="rounded-lg border border-[#bcd3f0] bg-[#eef5ff] px-3 py-2 text-xs text-[#173a72]">
+                        <p className="font-semibold">Approved outside this system</p>
+                        <p className="mt-0.5">
+                          On paper{loan.approved_outside_on ? ` on ${fmtMonthDay(loan.approved_outside_on)}` : ""}
+                          {loan.approved_outside_by ? `, by ${loan.approved_outside_by}` : ""}.
+                          {" "}Recorded here so the payroll tracks the deduction — there are no
+                          e-signatures on this loan and none are expected.
+                        </p>
+                        {!loan.attachment_path && (
+                          <p className="mt-1 font-medium text-amber-800">
+                            No signed agreement attached. It is the only evidence this loan has.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Approved & locked banner */}
                     {allSigned && ["ACTIVE", "SETTLED"].includes(loan.status) && (
                       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-green-800 text-xs font-semibold">
@@ -549,6 +595,17 @@ export default function PayrollLoansPage() {
             );
           })}
         </div>
+      )}
+
+      {showRecord && user && (
+        <RecordLoanModal user={user} employees={employees}
+          onClose={() => setShowRecord(false)}
+          onSaved={(msg) => {
+            setShowRecord(false);
+            loadLoans();
+            setToast(msg);
+            setTimeout(() => setToast(""), 4000);
+          }} />
       )}
 
       {showModal && user && (

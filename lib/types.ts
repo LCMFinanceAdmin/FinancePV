@@ -787,6 +787,15 @@ export interface EmployeeLoan {
   status: LoanStatus;
   approvals: PVApproval[];
   signatures: LoanSignatures | null;
+  /**
+   * Approved on paper, before this system — see migration 259.
+   *
+   * Such a loan has NO in-app signatures and must never be shown as though it
+   * had. The two fields below carry the only trail it has.
+   */
+  approved_outside?: boolean;
+  approved_outside_on?: string | null;
+  approved_outside_by?: string | null;
   attachment_path: string;
   attachment_name: string;
   created_by: string;
