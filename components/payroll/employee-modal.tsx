@@ -13,6 +13,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { ladder, type QualificationRung } from "@/lib/payroll/qualification-scale";
 import { SALARY_BANK_NAMES } from "@/lib/banks";
+import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { incrementEffectiveMonth } from "@/lib/payroll/calc";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
@@ -523,6 +524,31 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
    * A missing commencement date falls back to January, which is a guess
    * rather than an answer, and it says so.
    */
+  /**
+   * What this edit does to the monthly gross.
+   *
+   * Saving writes a new salary revision whenever any component differs, and
+   * it did so silently — the form said a revision would be written and never
+   * what it would say. An imported record keeps the whole wage in
+   * base_salary; somebody splitting it into base, increments and allowances
+   * is retyping six figures that have to add back to the same total, and if
+   * they do not the person is quietly paid less from that month.
+   *
+   * That happened. A record imported at 3,250 was split into components
+   * coming to 2,985, and the first anyone saw of the 265 was the yearly
+   * sheet.
+   */
+  const salaryDelta = (() => {
+    if (!isEdit || !latestSalarySnapshot) return null;
+    const keys = ["base_salary", "increment_carried", "increment_current",
+      "experience_bonus", "family_allowance", "stm_allowance"] as const;
+    const now = [baseSalary, incrementCarried, incrementCurrent, experienceBonus, familyAllowance, stm]
+      .reduce((t, v) => t + (parseFloat(v) || 0), 0);
+    const was = keys.reduce((t, k) => t + Number(latestSalarySnapshot[k] ?? 0), 0);
+    const change = Math.round((now - was) * 100) / 100;
+    return { was, now, change, changed: Math.abs(change) > 0.005 };
+  })();
+
   const incrementCycle = (() => {
     const override = incrementOverride ? parseInt(incrementOverride) : null;
     const eff = incrementEffectiveMonth(dateCommenced || null, override);
@@ -777,6 +803,43 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                 </label>
                 <input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} />
               </div>
+              {/* What the retyped components come to against what is on
+                  record. Shown before saving, because afterwards it is a
+                  revision and somebody's pay. */}
+              {salaryDelta && (
+                <div className="sm:col-span-3 -mb-1">
+                  <p className={`rounded-lg px-2.5 py-2 text-[12px] leading-snug ${
+                    !salaryDelta.changed
+                      ? "bg-white/70 text-stone-500"
+                      : salaryDelta.change < 0
+                        ? "bg-red-50 text-red-900 ring-1 ring-inset ring-red-200"
+                        : "bg-green-50 text-green-900 ring-1 ring-inset ring-green-200"}`}>
+                    {!salaryDelta.changed ? (
+                      <>Gross <span className="font-mono font-semibold">{formatCurrency(salaryDelta.now)}</span>{" "}
+                        a month — unchanged, so no revision is written.</>
+                    ) : (
+                      <>
+                        <span className="font-semibold">
+                          Gross {formatCurrency(salaryDelta.was)} → {formatCurrency(salaryDelta.now)}
+                          {" "}({salaryDelta.change > 0 ? "+" : "−"}{formatCurrency(Math.abs(salaryDelta.change))} a month)
+                        </span>
+                        {salaryDelta.change < 0 && (
+                          <>
+                            {" "}This is a reduction. If you are splitting an imported wage into its
+                            parts, they have to add back to {formatCurrency(salaryDelta.was)} — check
+                            the components above before saving.
+                          </>
+                        )}
+                        <span className="mt-0.5 block font-normal">
+                          Saving writes a salary revision effective today, and every month from this
+                          one onwards is paid at the new figure.
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+
               <div className="sm:col-span-3 -mt-0.5">
                 {/* Which half-year this person's increment runs on. LCM pays
                     it from January to anybody taken on in the first half of a
