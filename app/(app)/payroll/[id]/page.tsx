@@ -484,6 +484,27 @@ export default function PayrollEmployeePage() {
   // Persistence with runs arrives in Phase 5.
   const fullGrossVal = current ? grossOf(current) : 0;
   const effMonth = incrementEffectiveMonth(emp.date_commenced, emp.increment_month_override);
+
+  /**
+   * Which half-year this person's increment runs on, in words.
+   *
+   * LCM pays the yearly increment from January to anybody taken on in the
+   * first half of a year, and from July to anybody taken on in the second —
+   * so the second group's increment year runs July to June. The arithmetic
+   * has always done this; saying it is newer, and it is said wherever the
+   * increment figure is read rather than only where it is typed.
+   */
+  const incrementCycle = {
+    month: MONTHS[effMonth - 1],
+    label: effMonth === 1 ? "Jan–Dec" : "Jul–Jun",
+    why: emp.increment_month_override != null
+      ? "Set by hand on this record."
+      : emp.date_commenced
+        ? `Commenced ${fmtDate(emp.date_commenced)}, in the ${effMonth === 1 ? "first" : "second"} half of the year.`
+        : "No commencement date on record, so January is assumed.",
+    assumed: emp.increment_month_override == null && !emp.date_commenced,
+    overridden: emp.increment_month_override != null,
+  };
   const eplForMonth = (m: number) => loans.reduce((s, ln) => s + installmentForMonth(ln, year, m), 0);
 
   // Corrections landing in a given month, in the shape calcLine wants. Passing
@@ -999,6 +1020,12 @@ export default function PayrollEmployeePage() {
               <Field label="I/C No" value={emp.ic_no || "—"} />
               <Field label="Date of Birth // Age" value={`${fmtDate(emp.dob)} // ${ageFrom(emp.dob)}`} />
               <Field label="Commenced // Service" value={`${fmtDate(emp.date_commenced)} // ${yearsOfService(emp.date_commenced)}`} />
+              {/* Beside the date that decides it, because that is the
+                  question somebody is answering when they look here. */}
+              <Field label="Increment cycle"
+                value={`${incrementCycle.label} — from ${incrementCycle.month}`
+                  + (incrementCycle.overridden ? " (set by hand)" : "")
+                  + (incrementCycle.assumed ? " (assumed — no commencement date)" : "")} />
               <Field label="Original base (commencement)" value={emp.commencement_base ? formatCurrency(emp.commencement_base) : "—"} />
               <Field label="Posting" value={`${emp.posting_type === "CHURCH" ? "Church" : emp.posting_type === "OFFICE" ? "Office" : "Other"} — ${posting || "—"}`} />
               <Field label="Marital Status" value={`${emp.marital_status || "—"}${emp.marital_status ? (emp.spouse_working ? " · spouse working" : " · spouse not working") : ""}`} />
@@ -1034,6 +1061,28 @@ export default function PayrollEmployeePage() {
               <div className="text-base font-bold text-[#4a6da7] font-mono">{formatCurrency(grossOf(current))}</div>
             </div>
           </div>
+        )}
+        {/* Which half-year the current increment belongs to. Without it the
+            figure above reads as money paid every month, and for anybody
+            taken on after June it is not. */}
+        {current && (
+          <p className={`mt-3 rounded-lg px-3 py-2 text-[11.5px] leading-snug ${
+            incrementCycle.assumed
+              ? "bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200"
+              : "bg-stone-50 text-stone-600"}`}>
+            <span className="font-semibold">
+              Increment cycle: {incrementCycle.label}
+              {incrementCycle.overridden && <span className="text-amber-700"> (set by hand)</span>}.
+            </span>{" "}
+            {incrementCycle.why}{" "}
+            {Number(current.increment_current) > 0
+              ? <>The current increment of{" "}
+                  <span className="font-mono font-semibold">{formatCurrency(Number(current.increment_current))}</span>{" "}
+                  is paid from <span className="font-semibold">{incrementCycle.month}</span>; months
+                  before it are paid without it.</>
+              : <>A current-year increment would be paid from{" "}
+                  <span className="font-semibold">{incrementCycle.month}</span>.</>}
+          </p>
         )}
       </div>
       )}
