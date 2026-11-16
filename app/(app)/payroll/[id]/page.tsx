@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
 import { FigureCell } from "@/components/payroll/figure-cell";
 import { UnpaidDaysCell } from "@/components/payroll/unpaid-days-cell";
+import { EmployeeModal } from "@/components/payroll/employee-modal";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import {
   ladder, labelOf, scaleMove, monthAfter,
@@ -188,6 +189,9 @@ export default function PayrollEmployeePage() {
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [bands, setBands] = useState<ContributionBand[]>([]);
   const [canEdit, setCanEdit] = useState(false);
+  // The signed-in person, for the employee form — it stamps who changed what.
+  const [me, setMe] = useState<UserProfile | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState(false);
   // The six who may change a payroll figure, per can_edit_payroll_figures()
   // in migration 256. The database enforces it; this decides whether to
   // offer the box, and a hidden box was never the control.
@@ -290,8 +294,9 @@ export default function PayrollEmployeePage() {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
-      const { data } = await supabase.from("user_roles").select("role").eq("email", session.user.email).single();
+      const { data } = await supabase.from("user_roles").select("*").eq("email", session.user.email).single();
       const role = data?.role ?? "";
+      setMe((data as UserProfile) ?? null);
       setCanEdit(["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"].includes(role));
       setCanEditFigures([
         "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
@@ -638,6 +643,36 @@ export default function PayrollEmployeePage() {
   const monthLines: CalcLine[] = current
     ? MONTHS.map((_, i) => lineForMonth(i + 1, adjInput(i + 1))!).filter(Boolean)
     : [];
+
+
+  /**
+   * The month being paid now, and the one after it.
+   *
+   * LCM pays on the 2nd of the month for that same month, so on any day in
+   * November the November salary has already gone out and December's is the
+   * next one to prepare. Both are shown because the question Finance actually
+   * asks is "what did this person get, and what are they about to get" — and
+   * answering it meant opening the yearly sheet and counting rows.
+   *
+   * Only within the year on screen. A sheet open on 2025 is being read as
+   * history, and showing it "this month" would be answering about a year
+   * nobody asked about.
+   */
+  const today = new Date();
+  const payRun = (() => {
+    if (today.getFullYear() !== year) return null;
+    const m = today.getMonth() + 1;
+    const payDate = (mm: number, yy: number) =>
+      new Date(yy, mm - 1, 2).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
+    return {
+      now: { month: m, label: MONTHS[m - 1], line: monthLines[m - 1] ?? null, paid: payDate(m, year) },
+      next: m < 12
+        ? { month: m + 1, label: MONTHS[m], line: monthLines[m] ?? null, paid: payDate(m + 1, year) }
+        // January is next year's sheet, next year's rates and possibly next
+        // year's salary. Saying so beats guessing it from this year's.
+        : null,
+    };
+  })();
   /**
    * What a figure stands at for a month, leaving out the adjustments of that
    * category. Only that category is set aside: a correction to EPF must not
@@ -853,6 +888,16 @@ export default function PayrollEmployeePage() {
             {emp.is_orang_asli && <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">Orang Asli</span>}
             {emp.skbbk_opted_out && <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-200 text-stone-600 font-medium">SKBBK opted out</span>}
             {emp.status === "RESIGNED" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Resigned {fmtDate(emp.resigned_date)}</span>}
+            {/* The same form the payroll list opens. Reaching it used to mean
+                going back to the list and finding the person again, which is
+                why their details were corrected on the list and their salary
+                here, as though they were two records. */}
+            {canEdit && me && (
+              <button onClick={() => setEditingEmployee(true)}
+                className="flex items-center gap-1 rounded-lg border border-[#bcd3f0] bg-[#eef5ff] px-2.5 py-1.5 text-[12px] font-semibold text-[#2f5b9c] hover:bg-[#dcebff] print:hidden">
+                <Pencil size={12} /> Edit details
+              </button>
+            )}
           </div>
         </div>
 
@@ -881,6 +926,55 @@ export default function PayrollEmployeePage() {
       {/* ── Overview tab ── */}
       {tab === "overview" && (
         <>
+          {/* Paid on the 2nd, for that month — so these two are "what has just
+              gone out" and "what is next". */}
+          {payRun && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border-2 border-[#bcd3f0] bg-[#eef5ff] px-4 py-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#2f5b9c]">
+                    This month · {payRun.now.label} {year}
+                  </span>
+                  <span className="text-[10.5px] text-[#4a6da7]">paid {payRun.now.paid}</span>
+                </div>
+                <div className="mt-0.5 font-mono text-2xl font-bold text-[#173a72]">
+                  {payRun.now.line ? formatCurrency(payRun.now.line.net) : "—"}
+                </div>
+                <div className="text-[11px] text-stone-500">
+                  net{payRun.now.line ? ` · gross ${formatCurrency(payRun.now.line.gross)}` : " — no salary on record for this month"}
+                  {payRun.now.line && payRun.now.line.unpaidLeave.days > 0 && (
+                    <span className="font-semibold text-red-600">
+                      {" "}· {payRun.now.line.unpaidLeave.days} day{payRun.now.line.unpaidLeave.days === 1 ? "" : "s"} unpaid
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                    {payRun.next ? `Next · ${payRun.next.label} ${year}` : `Next · Jan ${year + 1}`}
+                  </span>
+                  {payRun.next && <span className="text-[10.5px] text-stone-400">pays {payRun.next.paid}</span>}
+                </div>
+                <div className="mt-0.5 font-mono text-2xl font-bold text-stone-700">
+                  {payRun.next?.line ? formatCurrency(payRun.next.line.net) : "—"}
+                </div>
+                <div className="text-[11px] text-stone-500">
+                  {payRun.next
+                    ? (payRun.next.line
+                        ? `net · gross ${formatCurrency(payRun.next.line.gross)}`
+                        : "no salary on record for that month yet")
+                    : `on next year's sheet — open ${year + 1} to see it`}
+                  {payRun.next?.line && payRun.next.line.unpaidLeave.days > 0 && (
+                    <span className="font-semibold text-red-600">
+                      {" "}· {payRun.next.line.unpaidLeave.days} day{payRun.next.line.unpaidLeave.days === 1 ? "" : "s"} unpaid
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
               <div className="text-[11px] font-semibold text-stone-400">Gross / month</div>
@@ -1909,6 +2003,14 @@ export default function PayrollEmployeePage() {
             // modal redraws without otherwise saying that anything happened.
             notify.ok("Salary revision saved", summary);
           }} />
+      )}
+
+      {editingEmployee && me && emp && (
+        <EmployeeModal
+          user={me} existing={emp} departments={[]}
+          onClose={() => setEditingEmployee(false)}
+          onSaved={() => { setEditingEmployee(false); load(); notify.ok("Employee updated"); }}
+        />
       )}
 
       <Toast handle={notify} />

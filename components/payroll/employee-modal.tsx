@@ -1,0 +1,894 @@
+"use client";
+// Adding and editing an employee.
+//
+// Lifted out of the payroll list so the employee's own page can open the same
+// form. Two forms over one record is how a field comes to mean one thing in
+// one place and another thing elsewhere, which is the failure this avoids —
+// and it gives the sections below a single home.
+
+import { useState, useEffect, useCallback } from "react";
+import {
+  AlertTriangle, CalendarClock, Church, HandCoins, Percent, Plus, Trash2, UserX, Wallet, X,
+} from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { ladder, type QualificationRung } from "@/lib/payroll/qualification-scale";
+import { SALARY_BANK_NAMES } from "@/lib/banks";
+import { logPayrollAudit } from "@/lib/payroll/audit";
+import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
+
+// LCM and the Trustees of the Lutheran Church in Malaysia Registered (194).
+// Separate employers, separate EPF/SOCSO/LHDN registrations, separate runs.
+interface Employer {
+  id: string; code: string; name: string; short_name: string | null;
+  emp_no_prefix: string; active: boolean;
+}
+
+const MONTH_SHORT_DIR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
+function monthShortDir(m: number): string { return MONTH_SHORT_DIR[m - 1] ?? String(m); }
+
+function itemAppliesToMonth(item: { year: number; month: number; is_recurring: boolean; recur_until_year: number | null; recur_until_month: number | null }, targetYear: number, targetMonth: number): boolean {
+  if (!item.is_recurring) return item.year === targetYear && item.month === targetMonth;
+  const started = item.year < targetYear || (item.year === targetYear && item.month <= targetMonth);
+  if (!started) return false;
+  if (item.recur_until_year === null || item.recur_until_year === undefined) return true;
+  return item.recur_until_year > targetYear ||
+    (item.recur_until_year === targetYear && (item.recur_until_month ?? 13) >= targetMonth);
+}
+
+// Marital-status options encode spouse-working for the Married variants.
+const MARITAL_OPTIONS: { value: string; marital: string; spouseWorking: boolean }[] = [
+  { value: "Single", marital: "Single", spouseWorking: false },
+  { value: "Married (spouse working)", marital: "Married", spouseWorking: true },
+  { value: "Married (spouse not working)", marital: "Married", spouseWorking: false },
+  { value: "Divorced", marital: "Divorced", spouseWorking: false },
+  { value: "Widow / Widower", marital: "Widow / Widower", spouseWorking: false },
+];
+function maritalValueOf(marital: string, spouseWorking: boolean): string {
+  if (marital === "Married") return spouseWorking ? "Married (spouse working)" : "Married (spouse not working)";
+  const found = MARITAL_OPTIONS.find(o => o.marital === marital);
+  return found?.value ?? "";
+}
+
+// ─── Add / Edit employee modal ──────────────────────────────────────────────
+
+interface EmpModalProps {
+  user: UserProfile;
+  existing: PayrollEmployee | null;
+  departments: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+/** What the payroll form needs to know about a directory record. */
+interface DirectoryPerson {
+  id: string; full_name: string; category: string; status: string;
+  ic_no: string | null; dob: string | null;
+  email: string | null; phone: string | null; hq_department: string | null;
+  payroll_employee_id: string | null;
+}
+
+/**
+ * One part of the form, told apart from the next by colour.
+ *
+ * Every section used to be a thin grey rule under a grey label, which made a
+ * long form read as one undifferentiated field list — somebody looking for
+ * where the salary goes had to read every heading to find it. A tint and an
+ * icon per section is the cheapest fix that survives being scrolled past.
+ *
+ * The hues carry meaning rather than decoration: blue for what the church
+ * pays, amber for what the government takes, green for where it is sent,
+ * violet for employment, red for the one that destroys a record.
+ */
+const SECTION_TONE = {
+  posting:  { ring: "border-indigo-200", bg: "bg-indigo-50/50",  dot: "bg-indigo-500",  text: "text-indigo-900" },
+  tax:      { ring: "border-amber-200",  bg: "bg-amber-50/60",   dot: "bg-amber-500",   text: "text-amber-900" },
+  payout:   { ring: "border-emerald-200", bg: "bg-emerald-50/50", dot: "bg-emerald-500", text: "text-emerald-900" },
+  status:   { ring: "border-violet-200", bg: "bg-violet-50/50",  dot: "bg-violet-500",  text: "text-violet-900" },
+  salary:   { ring: "border-[#bcd3f0]",  bg: "bg-[#eef5ff]",     dot: "bg-[#2f5b9c]",   text: "text-[#173a72]" },
+  extras:   { ring: "border-teal-200",   bg: "bg-teal-50/50",    dot: "bg-teal-500",    text: "text-teal-900" },
+  danger:   { ring: "border-red-200",    bg: "bg-red-50/60",     dot: "bg-red-500",     text: "text-red-800" },
+} as const;
+
+function Section({ tone, title, hint, icon, children }: {
+  tone: keyof typeof SECTION_TONE;
+  title: string;
+  /** One line on what belongs here, where the heading alone is ambiguous. */
+  hint?: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const t = SECTION_TONE[tone];
+  return (
+    <section className={`rounded-xl border ${t.ring} ${t.bg} px-3 py-2.5`}>
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${t.dot}`} aria-hidden />
+        <div className="min-w-0">
+          <p className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${t.text}`}>
+            {icon}{title}
+          </p>
+          {hint && <p className="mt-0.5 text-[11px] font-normal text-stone-500">{hint}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function EmployeeModal({ user, existing, departments, onClose, onSaved }: EmpModalProps) {
+  const supabase = createClient();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // master fields
+  const [fullName, setFullName] = useState(existing?.full_name ?? "");
+  /**
+   * The People Directory record this employee is.
+   *
+   * Every payroll employee is somebody the directory either already knows or is
+   * about to. Both columns for the link existed and neither was ever written,
+   * so payroll carried a second, unconnected copy of the same person — the
+   * directory said "Jermaine Aaron", payroll said "Jermaine Aaron Jayaraj", and
+   * nothing joined them.
+   *
+   * Set by picking a name off the list, and only by that. Typing on after
+   * picking leaves the link alone, because the payroll name and the directory
+   * name are allowed to differ — one is what the bank account says.
+   */
+  const [personId, setPersonId] = useState<string | null>(existing?.person_id ?? null);
+  const [directory, setDirectory] = useState<DirectoryPerson[]>([]);
+
+  const [icNo, setIcNo] = useState(existing?.ic_no ?? "");
+  const [dob, setDob] = useState(existing?.dob ?? "");
+  const [designation, setDesignation] = useState(existing?.designation ?? "");
+  // What they hold now. Base salary follows it, so it has to be settable
+  // here: recording an existing qualification through a salary revision
+  // would mean inventing a pay change that never happened.
+  const [qualificationCode, setQualificationCode] = useState(existing?.qualification_code ?? "");
+  // When they got it. The rise runs from the month after, so the date the
+  // certificate is dated matters more than the day it reaches the office.
+  const [qualificationOn, setQualificationOn] = useState(existing?.qualification_on ?? "");
+  const [rungs, setRungs] = useState<QualificationRung[]>([]);
+  const [employmentType, setEmploymentType] = useState<EmploymentType>(existing?.employment_type ?? "PERMANENT");
+  // Who employs them. Immovable once set: changing it mid-life would detach the
+  // person from the runs that have already paid them, so a move between
+  // employers is a leaver and a joiner, as it is in real life.
+  const [formEmployers, setFormEmployers] = useState<Employer[]>([]);
+  const [employerId, setEmployerId] = useState<string>(existing?.employer_id ?? "");
+  const [isPastor, setIsPastor] = useState(existing?.is_pastor ?? false);
+  const [isStaff, setIsStaff] = useState(existing?.is_staff ?? false);
+  const [priorExp, setPriorExp] = useState(String(existing?.prior_experience_years ?? 0));
+  const [isOrangAsli, setIsOrangAsli] = useState(existing?.is_orang_asli ?? false);
+  // Everyone is in SKBBK unless they have left it, so a new employee starts
+  // enrolled. Phrased as opting out in the data and as "in the scheme" on the
+  // form, because that is the question Finance is actually answering.
+  const [inSkbbk, setInSkbbk] = useState(!(existing?.skbbk_opted_out ?? false));
+  // Below 60 this is not a choice, so the box only appears once it is one.
+  const [epfOver60, setEpfOver60] = useState(existing?.epf_over60_contributing ?? false);
+  const [dateCommenced, setDateCommenced] = useState(existing?.date_commenced ?? "");
+  const [incrementOverride, setIncrementOverride] = useState(existing?.increment_month_override != null ? String(existing.increment_month_override) : "");
+  const [postingType, setPostingType] = useState<PostingType>(existing?.posting_type ?? "OFFICE");
+  const [churchName, setChurchName] = useState(existing?.church_name ?? "");
+  const [department, setDepartment] = useState(existing?.department ?? "");
+  const [maritalValue, setMaritalValue] = useState(maritalValueOf(existing?.marital_status ?? "", existing?.spouse_working ?? false));
+  const [childrenUnder18, setChildrenUnder18] = useState(String(existing?.children_under_18 ?? 0));
+  const [childrenCollege, setChildrenCollege] = useState(String(existing?.children_in_college ?? 0));
+  const [voluntaryEpf, setVoluntaryEpf] = useState(String(existing?.epf_voluntary_ee_amount ?? 0));
+  const [fixedPcb, setFixedPcb] = useState(existing?.fixed_pcb != null ? String(existing.fixed_pcb) : "");
+  const [epfNo, setEpfNo] = useState(existing?.epf_no ?? "");
+  const [tin, setTin] = useState(existing?.tin ?? "");
+  const [taxRef, setTaxRef] = useState(existing?.employer_tax_ref ?? "");
+  const [bankName, setBankName] = useState(existing?.bank_name ?? "");
+  const [bankAcct, setBankAcct] = useState(existing?.bank_acct ?? "");
+  const [phoneNo, setPhoneNo] = useState(existing?.phone_no ?? "");
+  const [empEmail, setEmpEmail] = useState(existing?.email ?? "");
+  const [status, setStatus] = useState(existing?.status ?? "ACTIVE");
+  const [resignedDate, setResignedDate] = useState(existing?.resigned_date ?? "");
+
+  // salary fields (used in both add and edit modes)
+  const [baseSalary, setBaseSalary] = useState("");
+  const [stm, setStm] = useState("");
+  const [experienceBonus, setExperienceBonus] = useState("");
+  const [familyAllowance, setFamilyAllowance] = useState("");
+  const [incrementCarried, setIncrementCarried] = useState("");
+  const [incrementCurrent, setIncrementCurrent] = useState("");
+
+  // snapshot of the loaded salary row (edit mode) — used to detect changes
+  const [latestSalarySnapshot, setLatestSalarySnapshot] = useState<Record<string, number> | null>(null);
+
+  // delete confirm state inside the modal
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // custom items state (edit mode only)
+  const now = new Date();
+  const [itemYear, setItemYear] = useState(now.getFullYear());
+  const [itemMonth, setItemMonth] = useState(now.getMonth() + 1);
+  const [empCustomItems, setEmpCustomItems] = useState<PayrollEmployeeCustomItem[]>([]);
+  const [newItemLabel, setNewItemLabel] = useState("");
+  const [newItemType, setNewItemType] = useState<"allowance" | "deduction">("allowance");
+  const [newItemAmount, setNewItemAmount] = useState("");
+  const [newItemRecurring, setNewItemRecurring] = useState(false);
+  const [newItemNoEnd, setNewItemNoEnd] = useState(false);
+  const [newItemUntilMonth, setNewItemUntilMonth] = useState(12);
+  const [newItemUntilYear, setNewItemUntilYear] = useState<number | "">(now.getFullYear());
+  const [addingItem, setAddingItem] = useState(false);
+  const [itemError, setItemError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const [{ data }, { data: q }] = await Promise.all([
+        supabase.from("payroll_employers")
+          .select("*").eq("active", true).order("sort_order"),
+        supabase.from("qualifications").select("code, label, rank").order("rank"),
+      ]);
+      const list = (data as Employer[]) ?? [];
+      setFormEmployers(list);
+      setEmployerId(cur => cur || list[0]?.id || "");
+      setRungs((q as QualificationRung[]) ?? []);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isEdit = !!existing;
+
+  const loadCustomItems = useCallback(async () => {
+    if (!existing?.id) return;
+    const { data } = await supabase.from("payroll_employee_custom_items")
+      .select("*").eq("employee_id", existing.id).order("created_at");
+    const all = (data as PayrollEmployeeCustomItem[]) ?? [];
+    setEmpCustomItems(all.filter(item => itemAppliesToMonth(item, itemYear, itemMonth)));
+  }, [supabase, existing?.id, itemYear, itemMonth]);
+
+  useEffect(() => { if (isEdit) loadCustomItems(); }, [isEdit, loadCustomItems]);
+
+  async function addCustomItem() {
+    if (!newItemLabel.trim() || !newItemAmount) return;
+    const amount = parseFloat(newItemAmount);
+    if (isNaN(amount) || amount <= 0) { setItemError("Enter a valid positive amount."); return; }
+    setItemError("");
+    const { data: { session } } = await supabase.auth.getSession();
+    const hasEnd = newItemRecurring && !newItemNoEnd && newItemUntilYear !== "";
+    const { error: e } = await supabase.from("payroll_employee_custom_items").insert({
+      employee_id: existing!.id, year: itemYear, month: itemMonth,
+      label: newItemLabel.trim(), type: newItemType, amount,
+      is_recurring: newItemRecurring,
+      recur_until_year: hasEnd ? Number(newItemUntilYear) : null,
+      recur_until_month: hasEnd ? newItemUntilMonth : null,
+      created_by: session?.user?.email ?? "",
+    });
+    if (e) { setItemError(e.message); return; }
+    setNewItemLabel(""); setNewItemAmount(""); setNewItemRecurring(false); setNewItemNoEnd(false); setAddingItem(false);
+    loadCustomItems();
+  }
+
+  async function deleteCustomItem(itemId: string) {
+    await supabase.from("payroll_employee_custom_items").delete().eq("id", itemId);
+    loadCustomItems();
+  }
+
+  // Everyone the directory knows, so this employee can be joined to one of
+  // them. Anybody already on payroll is left out — one person, one payroll
+  // record — except whoever this record is already linked to.
+  useEffect(() => {
+    supabase.from("people")
+      .select("id,full_name,category,ic_no,dob,email,phone,hq_department,payroll_employee_id,status")
+      .order("full_name")
+      .then(({ data }) => setDirectory((data ?? []) as DirectoryPerson[]));
+  }, [supabase]);
+
+  const linkedPerson = directory.find(d => d.id === personId) ?? null;
+  const offerable = directory.filter(
+    d => (!d.payroll_employee_id || d.id === personId) && d.status === "ACTIVE",
+  );
+
+  /** Picking a name off the list fills in what the directory already knows. */
+  function pickPerson(name: string) {
+    setFullName(name);
+    if (personId) return;              // already joined; typing on is just the payroll name
+    const hit = offerable.find(d => d.full_name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (!hit) return;
+    setPersonId(hit.id);
+    // Only into empty fields. Somebody who has typed a value here meant it.
+    if (!icNo.trim() && hit.ic_no) setIcNo(hit.ic_no);
+    if (!dob && hit.dob) setDob(hit.dob);
+    if (!empEmail.trim() && hit.email) setEmpEmail(hit.email);
+    if (!phoneNo.trim() && hit.phone) setPhoneNo(hit.phone);
+    if (!department.trim() && hit.hq_department) setDepartment(hit.hq_department);
+  }
+
+  /**
+   * Create the directory record for somebody payroll knows and the directory
+   * does not, and return its id.
+   *
+   * Deliberately not fatal. A payroll record that saved without its directory
+   * record is a link to add later; a payroll record that refused to save
+   * because of one is a wage nobody can pay.
+   */
+  async function createDirectoryPerson(): Promise<{ id: string | null; warn: string | null }> {
+    const { data, error } = await supabase.from("people").insert({
+      full_name: fullName.trim(),
+      category: isPastor ? "PASTOR" : "HQ_STAFF",
+      status: "ACTIVE",
+      ic_no: icNo.trim() || null,
+      dob: dob || null,
+      email: empEmail.trim().toLowerCase() || null,
+      phone: phoneNo.trim() || null,
+      hq_department: postingType === "OFFICE" ? (department.trim() || null) : null,
+      date_joined: dateCommenced || null,
+      // A pastor on payroll is serving. Ordination is left unrecorded rather
+      // than guessed — the payroll form has never asked, and office_eligibility
+      // reports it as missing rather than treating them as unordained.
+      ministry_status: isPastor ? "ACTIVE" : null,
+      posting: isPastor ? (postingType === "CHURCH" ? "CONGREGATION" : "HQ") : null,
+      created_by: user.email,
+    }).select("id").single();
+    if (error) return { id: null, warn: error.message };
+    return { id: data.id as string, warn: null };
+  }
+
+  // Load latest salary when editing
+  useEffect(() => {
+    if (!isEdit) return;
+    supabase.from("payroll_salary")
+      .select("*").eq("employee_id", existing!.id)
+      .order("effective_from", { ascending: false }).limit(1)
+      .then(({ data }) => {
+        if (data?.[0]) {
+          const s = data[0];
+          setBaseSalary(String(s.base_salary));
+          setIncrementCarried(String(s.increment_carried));
+          setIncrementCurrent(String(s.increment_current));
+          setExperienceBonus(String(s.experience_bonus));
+          setFamilyAllowance(String(s.family_allowance));
+          setStm(String(s.stm_allowance));
+          setLatestSalarySnapshot({ ...s });
+        }
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit]);
+
+  // Family allowance: pastors with children & non-working spouse — RM300, or RM1000 for Bishop.
+  const hasChildren = (parseInt(childrenUnder18) || 0) + (parseInt(childrenCollege) || 0) > 0;
+  const spouseNotWorking = !!maritalValue && !MARITAL_OPTIONS.find(o => o.value === maritalValue)?.spouseWorking;
+  const suggestedFamily = (isPastor && hasChildren && spouseNotWorking)
+    ? (/bishop/i.test(designation) ? 1000 : 300) : 0;
+
+  async function handleDelete() {
+    if (!existing) return;
+    setDeleting(true);
+    try {
+      await supabase.from("payroll_salary").delete().eq("employee_id", existing.id);
+      await supabase.from("employee_loans").delete().eq("employee_id", existing.id);
+      const { error: e } = await supabase.from("payroll_employees").delete().eq("id", existing.id);
+      if (e) throw new Error(e.message);
+      await logPayrollAudit(supabase, {
+        action: "EMPLOYEE_DELETED", entity: existing.full_name,
+        detail: `Employee ${existing.emp_no} and all salary & loan records deleted`,
+      });
+      onSaved();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+      setDeleting(false);
+      setDeleteConfirm(false);
+    }
+  }
+
+  async function save() {
+    if (!fullName.trim()) { setError("Employee name is required."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      // Every payroll employee belongs to a person. If the directory has never
+      // heard of them, it hears about them now — which is the other half of
+      // setting somebody up from their profile.
+      let linkTo = personId;
+      let linkWarning: string | null = null;
+      if (!linkTo) {
+        const made = await createDirectoryPerson();
+        linkTo = made.id;
+        linkWarning = made.warn;
+      }
+
+      const maritalOpt = MARITAL_OPTIONS.find(o => o.value === maritalValue);
+      const payload = {
+        person_id: linkTo,
+        full_name: fullName.trim(),
+        ic_no: icNo.trim(),
+        dob: dob || null,
+        designation: designation.trim(),
+        qualification_code: qualificationCode || null,
+        qualification_on: qualificationCode ? (qualificationOn || null) : null,
+        employment_type: employmentType,
+        employer_id: employerId,
+        is_pastor: isPastor,
+        is_staff: isStaff,
+        prior_experience_years: parseInt(priorExp) || 0,
+        is_orang_asli: isOrangAsli,
+        skbbk_opted_out: !inSkbbk,
+        epf_over60_contributing: epfOver60,
+        date_commenced: dateCommenced || null,
+        increment_month_override: incrementOverride ? parseInt(incrementOverride) : null,
+        posting_type: postingType,
+        church_name: postingType === "CHURCH" ? churchName.trim() : "",
+        department: postingType === "OFFICE" ? department.trim() : "",
+        marital_status: maritalOpt?.marital ?? "",
+        spouse_working: maritalOpt?.spouseWorking ?? false,
+        children_under_18: parseInt(childrenUnder18) || 0,
+        children_in_college: parseInt(childrenCollege) || 0,
+        epf_voluntary_ee_amount: parseFloat(voluntaryEpf) || 0,
+        fixed_pcb: fixedPcb.trim() === "" ? null : parseFloat(fixedPcb),
+        epf_no: epfNo.trim(),
+        tin: tin.trim(),
+        employer_tax_ref: taxRef.trim(),
+        bank_name: bankName.trim(),
+        bank_acct: bankAcct.trim(),
+        phone_no: phoneNo.trim(),
+        email: empEmail.trim(),
+        status,
+        resigned_date: status === "RESIGNED" ? (resignedDate || null) : null,
+      };
+
+      const baseAmt = parseFloat(baseSalary) || 0;
+      if (linkWarning) {
+        // Saved, but say plainly that the directory half did not happen.
+        setError(`Saved on payroll, but no People Directory record was created — ${linkWarning}`);
+      }
+      if (isEdit) {
+        const { error: e } = await supabase.from("payroll_employees")
+          .update({ ...payload, updated_at: new Date().toISOString() }).eq("id", existing!.id);
+        if (e) throw new Error(e.message);
+
+        // Check if any salary value changed vs snapshot — if so, insert a new revision
+        const snap = latestSalarySnapshot;
+        if (snap) {
+          const newVals = {
+            base_salary: parseFloat(baseSalary) || 0,
+            increment_carried: parseFloat(incrementCarried) || 0,
+            increment_current: parseFloat(incrementCurrent) || 0,
+            experience_bonus: parseFloat(experienceBonus) || 0,
+            family_allowance: parseFloat(familyAllowance) || 0,
+            stm_allowance: parseFloat(stm) || 0,
+          };
+          const changed = Object.keys(newVals).some(
+            k => Math.abs(newVals[k as keyof typeof newVals] - Number(snap[k])) > 0.001
+          );
+          if (changed) {
+            await supabase.from("payroll_salary").insert({
+              employee_id: existing!.id,
+              effective_from: new Date().toISOString().slice(0, 10),
+              ...newVals,
+              reason: "Updated via employee edit",
+              created_by: user.email,
+            });
+            await logPayrollAudit(supabase, {
+              action: "SALARY_CHANGE", entity: fullName.trim(), employeeId: existing!.id,
+              detail: `Components changed via employee edit — gross RM ${Object.values(newVals).reduce((s, v) => s + v, 0).toFixed(2)}`,
+            });
+          }
+        }
+        await logPayrollAudit(supabase, {
+          action: "EMPLOYEE_UPDATED", entity: fullName.trim(), employeeId: existing!.id,
+          detail: status === "RESIGNED" ? `Record updated — status RESIGNED (${resignedDate || "no date"})` : "Record updated",
+        });
+      } else {
+        // Per employer: LCM numbers run EMP-001, the Trustees TRU-001, and the
+        // emp_no column is unique across both.
+        const { data: empNoRow } = await supabase.rpc("next_emp_no", { p_employer: employerId });
+        const { data: created, error: e } = await supabase.from("payroll_employees")
+          .insert({ ...payload, commencement_base: baseAmt, emp_no: empNoRow ?? `EMP-${Date.now()}`, created_by: user.email })
+          .select("id").single();
+        if (e) throw new Error(e.message);
+        // seed the initial salary version
+        await supabase.from("payroll_salary").insert({
+          employee_id: created!.id,
+          effective_from: dateCommenced || new Date().toISOString().slice(0, 10),
+          base_salary: baseAmt,
+          stm_allowance: parseFloat(stm) || 0,
+          experience_bonus: parseFloat(experienceBonus) || 0,
+          family_allowance: parseFloat(familyAllowance) || suggestedFamily,
+          increment_carried: parseFloat(incrementCarried) || 0,
+          increment_current: parseFloat(incrementCurrent) || 0,
+          reason: "Initial salary",
+          created_by: user.email,
+        });
+        await logPayrollAudit(supabase, {
+          action: "EMPLOYEE_CREATED", entity: fullName.trim(), employeeId: created!.id,
+          detail: `New employee — base salary RM ${baseAmt.toFixed(2)}`,
+        });
+      }
+      // A warning is not a failure — the record saved. Leave it on screen
+      // rather than closing over the top of it.
+      if (!linkWarning) onSaved();
+      else await new Promise(r => setTimeout(r, 0));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputCls = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
+  const labelCls = "block text-xs font-semibold text-stone-600 mb-1";
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200 sticky top-0 bg-white rounded-t-2xl">
+          <h2 className="text-base font-bold text-stone-800">{isEdit ? "Edit Employee" : "Add Employee"}</h2>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Type a new name, or pick somebody the directory already has —
+                the two screens are meant to hold one record of a person, not
+                two that drift. */}
+            <div className="col-span-2">
+              <label className={labelCls}>Full Name *</label>
+              <input className={inputCls} list="directory-people" value={fullName}
+                onChange={e => pickPerson(e.target.value)}
+                placeholder="Start typing — existing people are offered" />
+              <datalist id="directory-people">
+                {offerable.map(d => <option key={d.id} value={d.full_name} />)}
+              </datalist>
+              {linkedPerson ? (
+                <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
+                  <span className="rounded-full bg-[#eef4fd] px-2 py-0.5 font-semibold text-[#2f5b9c]">
+                    Linked to {linkedPerson.full_name}
+                  </span>
+                  <span>in the People Directory — their profile and this record stay in step.</span>
+                  <button type="button" onClick={() => setPersonId(null)}
+                    className="font-semibold text-stone-500 underline underline-offset-2 hover:text-[#2f5b9c]">
+                    Not this person
+                  </button>
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-amber-700">
+                  {fullName.trim()
+                    ? `No directory record yet — one will be created for ${fullName.trim()} when you save.`
+                    : "Pick somebody the directory knows, or type a new name and a record is created for them."}
+                </p>
+              )}
+            </div>
+            <div><label className={labelCls}>I/C No</label><input className={inputCls} value={icNo} onChange={e => setIcNo(e.target.value)} /></div>
+            <div><label className={labelCls}>Date of Birth</label><input type="date" className={inputCls} value={dob ?? ""} onChange={e => setDob(e.target.value)} /></div>
+            <div><label className={labelCls}>Designation</label><input className={inputCls} value={designation} onChange={e => setDesignation(e.target.value)} /></div>
+            {rungs.length > 0 && (
+              <div>
+                <label className={labelCls}>Qualification</label>
+                <select className={inputCls} value={qualificationCode}
+                  onChange={e => setQualificationCode(e.target.value)}>
+                  <option value="">— none recorded —</option>
+                  {ladder(rungs).map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+                </select>
+              </div>
+            )}
+            {rungs.length > 0 && qualificationCode && (
+              <div>
+                <label className={labelCls}>Attained on</label>
+                <input type="date" className={inputCls} value={qualificationOn ?? ""}
+                  onChange={e => setQualificationOn(e.target.value)} />
+                <p className="mt-1 text-[11px] text-stone-400">
+                  The date on the award, not the day it reached the office. The rise runs from
+                  the month after it.
+                </p>
+              </div>
+            )}
+            <div><label className={labelCls}>Date Commenced</label><input type="date" className={inputCls} value={dateCommenced ?? ""} onChange={e => setDateCommenced(e.target.value)} /></div>
+            <div>
+              <label className={labelCls}>Increment Month</label>
+              <select className={inputCls} value={incrementOverride} onChange={e => setIncrementOverride(e.target.value)}>
+                <option value="">Automatic ({dateCommenced && new Date(dateCommenced).getMonth() + 1 < 7 ? "January" : "July"} — based on join date)</option>
+                <option value="1">January (override)</option>
+                <option value="7">July (override)</option>
+              </select>
+            </div>
+            {formEmployers.length > 1 && (
+              <div>
+                <label className={labelCls}>Employer</label>
+                <select className={inputCls} value={employerId} disabled={!!existing}
+                  onChange={e => setEmployerId(e.target.value)}>
+                  {formEmployers.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.short_name || emp.name}</option>
+                  ))}
+                </select>
+                {existing && (
+                  <p className="mt-1 text-[11px] text-stone-400">
+                    Set when the record was created. A move between employers is a leaver and a
+                    joiner &mdash; the runs that have already paid them belong to the old one.
+                  </p>
+                )}
+              </div>
+            )}
+            <div>
+              <label className={labelCls}>Employment Type</label>
+              <select className={inputCls} value={employmentType} onChange={e => setEmploymentType(e.target.value as EmploymentType)}>
+                <option value="PERMANENT">Permanent</option>
+                <option value="CONTRACT">Contract</option>
+              </select>
+            </div>
+            <div className="flex items-end gap-4 pb-1 flex-wrap">
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isPastor} onChange={e => setIsPastor(e.target.checked)} /> Pastor</label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isStaff} onChange={e => setIsStaff(e.target.checked)} /> Staff</label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isOrangAsli} onChange={e => setIsOrangAsli(e.target.checked)} /> Orang Asli</label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                title="SKBBK (Lindung 24) tops up the employee's SOCSO contribution. Untick only for someone who has opted out of the scheme.">
+                <input type="checkbox" checked={inSkbbk} onChange={e => setInSkbbk(e.target.checked)} /> In SKBBK (Lindung 24)
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                title="At 60 the employee's own EPF contribution becomes optional. Ticked, both sides carry on at the ordinary rate; unticked, only the employer pays. EPF closes to both sides at 75.">
+                <input type="checkbox" checked={epfOver60} onChange={e => setEpfOver60(e.target.checked)} /> Still contributing to EPF at 60+
+              </label>
+            </div>
+            {isPastor && (
+              <div><label className={labelCls}>Prior Experience (years)</label><input type="number" className={inputCls} value={priorExp} onChange={e => setPriorExp(e.target.value)} /></div>
+            )}
+          </div>
+
+          {/* Posting */}
+          <Section tone="posting" title="Posting" icon={<Church size={12} />}
+            hint="Where they serve, and which body employs them.">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Posting Type</label>
+                <select className={inputCls} value={postingType} onChange={e => setPostingType(e.target.value as PostingType)}>
+                  <option value="OFFICE">Office</option>
+                  <option value="CHURCH">Church</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+              {postingType === "CHURCH" && <div><label className={labelCls}>Church</label><input className={inputCls} value={churchName} onChange={e => setChurchName(e.target.value)} /></div>}
+              {postingType === "OFFICE" && (
+                <div>
+                  <label className={labelCls}>Department</label>
+                  <input className={inputCls} list="dept-options" value={department} onChange={e => setDepartment(e.target.value)} placeholder="Select or type…" />
+                  <datalist id="dept-options">{departments.map(d => <option key={d} value={d} />)}</datalist>
+                </div>
+              )}
+            </div>
+          </Section>
+
+          {/* LHDN */}
+          <Section tone="tax" title="Tax / LHDN" icon={<Percent size={12} />}
+            hint="What LHDN needs: the tax file and the reliefs claimed against it.">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Marital Status</label>
+                <select className={inputCls} value={maritalValue} onChange={e => setMaritalValue(e.target.value)}>
+                  <option value="">—</option>
+                  {MARITAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.value}</option>)}
+                </select>
+              </div>
+              <div /> {/* spacer */}
+              <div><label className={labelCls}>Children under 18</label><input type="number" className={inputCls} value={childrenUnder18} onChange={e => setChildrenUnder18(e.target.value)} /></div>
+              <div><label className={labelCls}>Children in college</label><input type="number" className={inputCls} value={childrenCollege} onChange={e => setChildrenCollege(e.target.value)} /></div>
+            </div>
+          </Section>
+
+          {/* EPF / bank */}
+          <Section tone="payout" title="EPF, Tax &amp; Payout" icon={<Wallet size={12} />}
+            hint="Scheme numbers and the bank account the salary is paid into.">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><label className={labelCls}>EPF No.</label><input className={inputCls} value={epfNo} onChange={e => setEpfNo(e.target.value)} /></div>
+              <div><label className={labelCls}>Voluntary EPF (RM, fixed)</label><input type="number" className={inputCls} value={voluntaryEpf} onChange={e => setVoluntaryEpf(e.target.value)} /></div>
+              {/* Pre-fills the run rather than deciding it — the run box stays
+                  editable, so a month that differs is typed over the top. */}
+              <div><label className={labelCls}>Fixed PCB (RM / month)</label><input type="number" step="0.01" min="0" className={inputCls} value={fixedPcb} onChange={e => setFixedPcb(e.target.value)} placeholder="blank = key it each month" /></div>
+              <div><label className={labelCls}>TIN (Tax)</label><input className={inputCls} value={tin} onChange={e => setTin(e.target.value)} placeholder="Tax identification no." /></div>
+              <div><label className={labelCls}>Employer Tax Ref</label><input className={inputCls} value={taxRef} onChange={e => setTaxRef(e.target.value)} /></div>
+              <div>
+                <label className={labelCls}>Bank Name</label>
+                <input className={inputCls} list="bank-options" value={bankName} onChange={e => setBankName(e.target.value)} placeholder="Select or type…" />
+                <datalist id="bank-options">{SALARY_BANK_NAMES.map(b => <option key={b} value={b} />)}</datalist>
+              </div>
+              <div><label className={labelCls}>Bank Account</label><input className={inputCls} value={bankAcct} onChange={e => setBankAcct(e.target.value)} /></div>
+              <div><label className={labelCls}>WhatsApp / Phone No.</label><input className={inputCls} value={phoneNo} onChange={e => setPhoneNo(e.target.value)} placeholder="0123456789" /></div>
+              <div><label className={labelCls}>Email Address</label><input className={inputCls} type="email" value={empEmail} onChange={e => setEmpEmail(e.target.value)} placeholder="name@email.com" /></div>
+            </div>
+          </Section>
+
+          {/* Lifecycle (edit only) */}
+          {isEdit && (
+            <Section tone="status" title="Employment Status" icon={<UserX size={12} />}
+              hint="Resigned employees are left out of new payroll runs.">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Status</label>
+                  <select className={inputCls} value={status} onChange={e => setStatus(e.target.value as "ACTIVE" | "RESIGNED")}>
+                    <option value="ACTIVE">Active</option>
+                    <option value="RESIGNED">Resigned</option>
+                  </select>
+                </div>
+                {status === "RESIGNED" && (
+                  <div><label className={labelCls}>Resignation Date</label><input type="date" className={inputCls} value={resignedDate ?? ""} onChange={e => setResignedDate(e.target.value)} /></div>
+                )}
+              </div>
+              <p className="text-[11px] text-stone-400 mt-1">Resigned employees are excluded from new payroll runs.</p>
+            </Section>
+          )}
+
+          {/* Salary Components (both add and edit modes) */}
+          <Section tone="salary" title="Salary Components" icon={<HandCoins size={12} />}
+            hint="What makes up the monthly gross. Changing any of these writes a new salary revision.">
+            <p className="text-[11px] text-stone-400 mb-2">
+              {isEdit
+                ? "Changes to salary will create a new revision effective today."
+                : "Base = original salary at commencement. Increments accumulate on top; gross = base + increments + experience + family + STM."}
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div><label className={labelCls}>Base Salary <span className="font-normal text-stone-400">(at commencement)</span></label><input type="number" className={inputCls} value={baseSalary} onChange={e => setBaseSalary(e.target.value)} /></div>
+              <div><label className={labelCls}>Increment (carried, since commencement)</label><input type="number" className={inputCls} value={incrementCarried} onChange={e => setIncrementCarried(e.target.value)} /></div>
+              <div><label className={labelCls}>Increment (current year)</label><input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} /></div>
+              <div><label className={labelCls}>Experience Bonus <span className="font-normal text-stone-400">(pastor 5-yr)</span></label><input type="number" className={inputCls} value={experienceBonus} onChange={e => setExperienceBonus(e.target.value)} /></div>
+              <div>
+                <label className={labelCls}>Family Allowance</label>
+                <input type="number" className={inputCls} value={familyAllowance} onChange={e => setFamilyAllowance(e.target.value)} placeholder={suggestedFamily ? String(suggestedFamily) : "0"} />
+                {suggestedFamily > 0 && (!familyAllowance || parseFloat(familyAllowance) !== suggestedFamily) && (
+                  <button type="button" onClick={() => setFamilyAllowance(String(suggestedFamily))}
+                    className="mt-1 text-[10px] text-[#4a6da7] hover:underline">Apply suggested RM{suggestedFamily}</button>
+                )}
+              </div>
+              <div><label className={labelCls}>STM / Allowance <span className="font-normal text-stone-400">(if applicable)</span></label><input type="number" className={inputCls} value={stm} onChange={e => setStm(e.target.value)} /></div>
+            </div>
+          </Section>
+
+          {/* Custom Allowances / Deductions (edit only) */}
+          {isEdit && existing && (
+            <Section tone="extras" title="Custom Allowances / Deductions" icon={<CalendarClock size={12} />}
+              hint="One-off or recurring money on top of the salary above. Each becomes its own column.">
+              <div className="flex gap-2 items-end mb-3 flex-wrap">
+                <div>
+                  <label className={labelCls}>Month</label>
+                  <select value={itemMonth} onChange={e => setItemMonth(Number(e.target.value))}
+                    className="border-2 border-stone-800 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#2f5b9c]">
+                    {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                      <option key={i + 1} value={i + 1}>{m}</option>
+                    ))}
+                    <option value={13}>13th Month</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Year</label>
+                  <input type="number" value={itemYear} onChange={e => setItemYear(Number(e.target.value))}
+                    className="border-2 border-stone-800 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#2f5b9c] w-24" />
+                </div>
+              </div>
+
+              {empCustomItems.length === 0 ? (
+                <p className="text-[11px] text-stone-400 mb-2">No custom items for this period.</p>
+              ) : (
+                <div className="space-y-1.5 mb-3">
+                  {empCustomItems.map(item => (
+                    <div key={item.id} className="flex items-start gap-2 px-3 py-1.5 rounded-lg border border-stone-100 bg-stone-50">
+                      <span className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                        {item.type === "allowance" ? "+" : "−"}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-stone-700">{item.label}</span>
+                        {item.is_recurring && (
+                          <div className="text-[10px] text-sky-600 mt-0.5">
+                            {item.recur_until_year
+                              ? `↻ ${monthShortDir(item.month)} ${item.year} – ${monthShortDir(item.recur_until_month ?? 13)} ${item.recur_until_year}`
+                              : `↻ from ${monthShortDir(item.month)} ${item.year} · ongoing`}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-sm font-mono font-semibold text-stone-700 shrink-0">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
+                      <button type="button" onClick={() => deleteCustomItem(item.id)}
+                        className="text-stone-300 hover:text-red-400 transition-colors mt-0.5 shrink-0"><Trash2 size={13} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!addingItem ? (
+                <button type="button" onClick={() => setAddingItem(true)}
+                  className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-500 hover:border-[#4a6da7] hover:text-[#4a6da7] transition-colors">
+                  <Plus size={11} /> Add Item
+                </button>
+              ) : (
+                <div className="space-y-2 p-3 bg-stone-50 rounded-xl border border-stone-100">
+                  {itemError && <p className="text-[11px] text-red-600">{itemError}</p>}
+                  <div className="flex gap-2 flex-wrap">
+                    <input value={newItemLabel} onChange={e => setNewItemLabel(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addCustomItem()}
+                      placeholder="Label (e.g. Housing Allowance)"
+                      className="border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c] flex-1 min-w-[160px]" />
+                    <select value={newItemType} onChange={e => setNewItemType(e.target.value as "allowance" | "deduction")}
+                      className="border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c]">
+                      <option value="allowance">Allowance +</option>
+                      <option value="deduction">Deduction −</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input type="number" value={newItemAmount} onChange={e => setNewItemAmount(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addCustomItem()}
+                      placeholder="Amount (RM)"
+                      className="border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c] w-36" />
+                  </div>
+                  {/* Recurring toggle */}
+                  <label className="flex items-center gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
+                    <input type="checkbox" checked={newItemRecurring} onChange={e => setNewItemRecurring(e.target.checked)} className="rounded" />
+                    Recurring (repeats every month)
+                  </label>
+                  {newItemRecurring && (
+                    <div className="pl-4 space-y-1.5">
+                      <p className="text-[11px] text-stone-400">Starts from <span className="font-semibold">{["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"][itemMonth-1]} {itemYear}</span>.</p>
+                      <label className="flex items-center gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
+                        <input type="checkbox" checked={newItemNoEnd} onChange={e => setNewItemNoEnd(e.target.checked)} className="rounded" />
+                        No end date (ongoing)
+                      </label>
+                      {!newItemNoEnd && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] text-stone-500">Until:</span>
+                          <select value={newItemUntilMonth} onChange={e => setNewItemUntilMonth(Number(e.target.value))}
+                            className="border-2 border-stone-800 rounded-lg px-2 py-1 text-[12px] outline-none focus:border-[#2f5b9c]">
+                            {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                              <option key={i + 1} value={i + 1}>{m}</option>
+                            ))}
+                            <option value={13}>13th Month</option>
+                          </select>
+                          <input type="number" value={newItemUntilYear} onChange={e => setNewItemUntilYear(e.target.value === "" ? "" : Number(e.target.value))}
+                            placeholder="Year"
+                            className="border-2 border-stone-800 rounded-lg px-2 py-1 text-[12px] outline-none focus:border-[#2f5b9c] w-20" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex gap-2 items-center pt-1">
+                    <button type="button" onClick={addCustomItem}
+                      disabled={!newItemLabel.trim() || !newItemAmount}
+                      className="px-3 py-1.5 bg-[#4a6da7] text-white rounded-lg text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-40">
+                      Add
+                    </button>
+                    <button type="button" onClick={() => { setAddingItem(false); setNewItemLabel(""); setNewItemAmount(""); setNewItemRecurring(false); setNewItemNoEnd(false); setItemError(""); }}
+                      className="px-3 py-1.5 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </Section>
+          )}
+
+          {/* Delete employee section (edit only) */}
+          {isEdit && (
+            <div className="border-t border-red-100 pt-3">
+              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-red-700">
+                <AlertTriangle size={12} /> Danger Zone
+              </p>
+              {!deleteConfirm ? (
+                <button type="button" onClick={() => setDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 transition-colors">
+                  <Trash2 size={14} /> Delete Employee
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <span className="text-sm text-red-700 font-medium">Delete this employee and all their salary &amp; loan records? This cannot be undone.</span>
+                  <button type="button" onClick={handleDelete} disabled={deleting}
+                    className="ml-auto px-3 py-1 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
+                    {deleting ? "Deleting…" : "Yes, Delete"}
+                  </button>
+                  <button type="button" onClick={() => setDeleteConfirm(false)}
+                    className="px-3 py-1 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50">
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 px-5 py-4 border-t border-stone-200 sticky bottom-0 bg-white rounded-b-2xl">
+          <button onClick={save} disabled={saving}
+            className="flex-1 py-2.5 bg-[#4a6da7] text-white rounded-xl text-sm font-semibold hover:bg-[#3d5c8f] disabled:opacity-50 transition-colors">
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Add Employee"}
+          </button>
+          <button onClick={onClose} className="px-5 py-2.5 border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
