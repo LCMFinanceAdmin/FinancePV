@@ -242,6 +242,10 @@ function MembershipModal({ personId, congregations, existing, editing, onClose, 
   const supabase = createClient();
   const [congregationId, setCongregationId] = useState(editing?.congregation_id ?? "");
   const [role, setRole] = useState(editing?.role ?? "");
+  // The older free-text column (099), kept because the row still prints it
+  // after the dates. Until now no form wrote it, so a note that arrived with
+  // an import was on the page and beyond reach of the people who keep it.
+  const [roleNote, setRoleNote] = useState(editing?.role_note ?? "");
   const [start, setStart] = useState(editing?.start_date ?? "");
   const [end, setEnd] = useState(editing?.end_date ?? "");
   const [isPrimary, setIsPrimary] = useState(
@@ -263,6 +267,7 @@ function MembershipModal({ personId, congregations, existing, editing, onClose, 
     const fields = {
       congregation_id: congregationId,
       role: role.trim() || null,
+      role_note: roleNote.trim() || null,
       start_date: start || null,
       end_date: end || null,
       is_primary: isPrimary && !end,
@@ -324,6 +329,15 @@ function MembershipModal({ personId, congregations, existing, editing, onClose, 
           <label className={labelClass}>Role there</label>
           <input className={fieldClass} value={role} onChange={e => setRole(e.target.value)}
             placeholder="Member, Elder, Sunday School Teacher…" />
+        </div>
+
+        <div>
+          <label className={labelClass}>Note</label>
+          <input className={fieldClass} value={roleNote} onChange={e => setRoleNote(e.target.value)}
+            placeholder="Transferred from Ipoh, attends the Mandarin service…" />
+          <p className="mt-0.5 text-[11px] text-stone-400">
+            Anything worth saying about this membership. Shown on the record after the dates.
+          </p>
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2">
