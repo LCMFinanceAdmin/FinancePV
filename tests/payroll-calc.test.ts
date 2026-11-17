@@ -11,7 +11,8 @@ import { figureOf,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
-import { repaidBySchedule, outstandingBalance, installmentForMonth, dueFromBalance } from "@/lib/payroll/loan";
+import { repaidBySchedule, outstandingBalance, installmentForMonth, dueFromBalance,
+  scheduleToSettlement, settlementMonth } from "@/lib/payroll/loan";
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -397,6 +398,75 @@ test("the opening figure leaves the right balance outstanding", () => {
     outstandingBalance(loan, [{ loan_id: "L1", amount: opening, payroll_run_id: null }]),
     round2(10000 - 280 * 21));
 });
+
+// ── Settling a loan before its term ──────────────────────────────────────
+//
+// A loan that runs its course is closed by the run that takes the last
+// ringgit. This is every other ending: a lump sum, a bonus, or a loan
+// recorded late and brought forward as already repaid — which touches no run
+// at all, so nothing was ever going to close it.
+
+// Andrew's: 10,000 over 36 months at 280 with a final 200, from April 2023.
+const ANDREW = { principal: 10000, monthly_installment: 280, term_months: 36,
+  final_installment: 200, start_month: "2023-04-01" };
+
+test("an unsettled loan keeps its whole schedule", () => {
+  const { rows, cancelled, cancelledValue } = scheduleToSettlement({ ...ANDREW, settled_on: null });
+  assert.equal(rows.length, 36);
+  assert.equal(cancelled, 0);
+  assert.equal(cancelledValue, 0);
+});
+
+test("settling ends the instalments from that month on", () => {
+  // Settled end of January 2025. April 2023 to December 2024 is 21 months.
+  const { rows, cancelled, cancelledValue } =
+    scheduleToSettlement({ ...ANDREW, settled_on: "2025-01-31" });
+  assert.equal(rows.length, 21, "the instalments that ran");
+  assert.equal(rows[rows.length - 1].year, 2024);
+  assert.equal(rows[rows.length - 1].month, 12);
+  assert.equal(cancelled, 15, "and the fifteen that did not");
+  // Fourteen ordinary instalments and the final 200.
+  assert.equal(cancelledValue, round2(280 * 14 + 200));
+});
+
+test("the settlement month itself is not an instalment", () => {
+  // It is the closing line, not a payment that was due — so the month it
+  // falls in is the first one cancelled, never the last one kept.
+  const { rows } = scheduleToSettlement({ ...ANDREW, settled_on: "2025-01-01" });
+  assert.equal(rows.length, 21);
+  assert.ok(!rows.some(r => r.year === 2025 && r.month === 1));
+});
+
+test("settling after the term ends nothing", () => {
+  const { rows, cancelled } = scheduleToSettlement({ ...ANDREW, settled_on: "2027-06-01" });
+  assert.equal(rows.length, 36);
+  assert.equal(cancelled, 0);
+});
+
+test("settling before it ever started cancels the lot", () => {
+  const { rows, cancelled, cancelledValue } =
+    scheduleToSettlement({ ...ANDREW, settled_on: "2023-01-01" });
+  assert.equal(rows.length, 0);
+  assert.equal(cancelled, 36);
+  assert.equal(cancelledValue, round2(280 * 35 + 200));
+});
+
+test("a settled loan deducts nothing, whatever the balance says", () => {
+  // The status is the gate, so a loan closed with money still showing — a
+  // write-off — stops collecting too.
+  const loan = { ...ANDREW, id: "L1", status: "SETTLED" as const };
+  assert.equal(dueFromBalance(loan, [], 2025, 6).amount, 0);
+  assert.equal(installmentForMonth(loan, 2025, 6), 0);
+});
+
+test("a malformed settlement date is treated as none rather than guessed at", () => {
+  assert.equal(settlementMonth(null), null);
+  assert.equal(settlementMonth(""), null);
+  assert.equal(settlementMonth("2025-00-01"), null);
+  assert.deepEqual(settlementMonth("2025-01-31"), { year: 2025, month: 1 });
+  assert.equal(scheduleToSettlement({ ...ANDREW, settled_on: "" }).cancelled, 0);
+});
+
 
 // ── More than one loan at once ───────────────────────────────────────────
 //

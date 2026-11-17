@@ -815,6 +815,21 @@ export interface EmployeeLoan {
   approved_outside?: boolean;
   approved_outside_on?: string | null;
   approved_outside_by?: string | null;
+  /**
+   * When the loan was settled ahead of its term — see migration 262.
+   *
+   * A loan that runs its course is closed by the run that takes the last
+   * ringgit. This is every other ending: a lump sum, a balance cleared from a
+   * bonus, or a loan recorded late and brought forward as already repaid. That
+   * last one touches no payroll run at all, so nothing was ever going to close
+   * it on its own.
+   *
+   * Instalments from this month on were never taken, and the schedule stops
+   * here. Null while the loan is still running.
+   */
+  settled_on?: string | null;
+  /** How it was settled. The only account of it there will be. */
+  settled_note?: string | null;
   attachment_path: string;
   attachment_name: string;
   created_by: string;
@@ -836,6 +851,14 @@ export interface LoanRepayment {
    * never produced by a payroll run.
    */
   is_opening?: boolean;
+  /**
+   * The one payment that closed the loan ahead of its term — migration 262.
+   *
+   * Counts towards the balance exactly like any other repayment. The flag is
+   * so the schedule can draw it as the closing line rather than as an
+   * instalment that was never due.
+   */
+  is_settlement?: boolean;
   /** Why this repayment exists, where no run made it. */
   note?: string | null;
   created_at: string;

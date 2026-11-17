@@ -105,6 +105,49 @@ export function outstandingAfter(loan: Pick<EmployeeLoan, "term_months" | "start
   return Math.max(0, loan.term_months - Math.max(0, elapsed));
 }
 
+/**
+ * The schedule as the loan actually ran, where it was settled before its term.
+ *
+ * A settlement does not rewrite the instalments already taken — those happened
+ * and the money moved. It ends the ones that had not. Printing the full term
+ * afterwards says the opposite: Andrew's 2023 loan was cleared in January 2025
+ * and the page went on listing instalments through March 2026, which is a
+ * schedule for a debt that does not exist.
+ *
+ * The settlement month is the closing line rather than an instalment, and the
+ * months after it are cancelled. Instalments before it stand: whether each was
+ * actually taken is a question for the repayment records, not the schedule.
+ *
+ * `cancelled` counts what the settlement ended, and `cancelledValue` is what
+ * those instalments would have come to — the two figures that say what
+ * settling early actually did.
+ */
+export function scheduleToSettlement(
+  loan: Pick<EmployeeLoan, "principal" | "monthly_installment" | "term_months"
+    | "final_installment" | "start_month" | "settled_on">,
+): { rows: ScheduleRow[]; cancelled: number; cancelledValue: number } {
+  const rows = buildSchedule(loan);
+  const at = settlementMonth(loan.settled_on);
+  if (!at) return { rows, cancelled: 0, cancelledValue: 0 };
+  const kept = rows.filter(r =>
+    r.year < at.year || (r.year === at.year && r.month < at.month));
+  const dropped = rows.slice(kept.length);
+  return {
+    rows: kept,
+    cancelled: dropped.length,
+    cancelledValue: round2(dropped.reduce((sum, r) => sum + r.amount, 0)),
+  };
+}
+
+/** The year and month of a settlement date, or null where there is no usable one. */
+export function settlementMonth(iso: string | null | undefined): { year: number; month: number } | null {
+  if (!iso || iso.length < 7) return null;
+  const year = Number(iso.slice(0, 4));
+  const month = Number(iso.slice(5, 7));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+  return { year, month };
+}
+
 export function totalRepayable(loan: Pick<EmployeeLoan, "principal" | "monthly_installment" | "term_months" | "final_installment">): number {
   const term = loan.term_months;
   if (term < 1) return 0;

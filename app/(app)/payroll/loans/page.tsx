@@ -5,13 +5,14 @@ import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, FilePlus2, HandCoins
 import { createClient } from "@/lib/supabase/client";
 import { RecordLoanModal } from "@/components/payroll/record-loan-modal";
 import { OpeningBalanceEditor } from "@/components/payroll/opening-balance-editor";
+import { SettleLoan } from "@/components/payroll/settle-loan";
 import { LoanFacts } from "@/components/payroll/loan-facts";
 import { LoanAffordability } from "@/components/payroll/loan-affordability";
 import { affordabilityOf } from "@/lib/payroll/loan-affordability";
 import { inForceByPerson } from "@/lib/payroll/salary-in-force";
 import type { RateConfig, ContributionBand } from "@/lib/payroll/calc";
 import { formatCurrency } from "@/lib/utils";
-import { buildSchedule, totalRepayable, outstandingAfter } from "@/lib/payroll/loan";
+import { scheduleToSettlement, totalRepayable, outstandingAfter } from "@/lib/payroll/loan";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import type { UserProfile, PayrollEmployee, EmployeeLoan, PVApproval, LoanStatus, LoanSignature, LoanSignatures, LoanRepayment, PayrollSalary } from "@/lib/types";
@@ -463,8 +464,19 @@ export default function PayrollLoansPage() {
           {loans.map(loan => {
             const emp = empById[loan.employee_id];
             const isOpen = expanded.has(loan.id);
-            const schedule = buildSchedule(loan);
+            // The schedule stops where the loan was settled: instalments
+            // after that date were never taken, and printing them is a
+            // schedule for a debt that does not exist.
+            const { rows: schedule, cancelled, cancelledValue } = scheduleToSettlement(loan);
             const outstanding = outstandingAfter(loan, curY, curM);
+            // What is actually still owed, from the repayments recorded —
+            // the opening balance brought forward, the runs, and any
+            // settlement. Distinct from `outstanding`, which counts
+            // instalments off the calendar.
+            const loanReps = repayments.filter(r => r.loan_id === loan.id);
+            const owed = Math.max(0, Math.round((Number(loan.principal)
+              - loanReps.reduce((t, r) => t + Number(r.amount), 0)) * 100) / 100);
+            const settlementRow = loanReps.find(r => r.is_settlement) ?? null;
             const stage = loanStage(loan);
             const sigs = loan.signatures ?? {};
             const hasEsign = !!sigs.applicant;
@@ -496,7 +508,21 @@ export default function PayrollLoansPage() {
                     </button>
                     <div className="text-right">
                       <div className="text-xs text-stone-400">From {fmtMonth(loan.start_month)}</div>
-                      {loan.status === "ACTIVE" && <div className="text-xs font-semibold text-stone-600">{outstanding} month{outstanding !== 1 ? "s" : ""} outstanding</div>}
+                      {/* A month count is only meaningful while the loan is
+                          still collecting. Settled, it says when it ended;
+                          open with nothing owed, it says so, because that is
+                          the one that needs closing. */}
+                      {loan.status === "SETTLED" && (
+                        <div className="text-xs font-semibold text-stone-500">
+                          Settled{loan.settled_on ? ` ${fmtMonth(loan.settled_on ?? null)}` : ""}
+                        </div>
+                      )}
+                      {loan.status === "ACTIVE" && owed <= 0.005 && (
+                        <div className="text-xs font-semibold text-amber-700">Fully repaid &mdash; not closed</div>
+                      )}
+                      {loan.status === "ACTIVE" && owed > 0.005 && (
+                        <div className="text-xs font-semibold text-stone-600">{outstanding} month{outstanding !== 1 ? "s" : ""} outstanding</div>
+                      )}
                     </div>
                   </div>
 
@@ -546,7 +572,11 @@ export default function PayrollLoansPage() {
                         room: what this leaves of the salary, and what is
                         actually still owed on it. */}
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                      {(() => {
+                      {/* What the instalment leaves of the salary. Only worth
+                          asking while there are instalments left to take —
+                          on a settled loan it would answer about money that
+                          is no longer coming off. */}
+                      {loan.status === "ACTIVE" && (() => {
                         const others = loans.filter(o =>
                           o.id !== loan.id && o.employee_id === loan.employee_id && o.status === "ACTIVE");
                         const employee = empById[loan.employee_id];
@@ -558,18 +588,33 @@ export default function PayrollLoansPage() {
                         return <LoanAffordability a={a} others={others} />;
                       })()}
 
+                      {/* Where the balance stands, and how the loan ends.
+                          Stacked, because they are one question read in two
+                          parts: what is left, and whether anything will
+                          collect it. */}
                       {["ACTIVE", "SETTLED"].includes(loan.status) && (
-                        <OpeningBalanceEditor
-                          loan={loan}
-                          employeeName={emp?.full_name ?? ""}
-                          opening={repayments.find(r => r.loan_id === loan.id && r.is_opening) ?? null}
-                          repaidByRuns={repayments
-                            .filter(r => r.loan_id === loan.id && !r.is_opening)
-                            .reduce((x, r) => x + Number(r.amount), 0)}
-                          canEdit={!!canApply}
-                          onSaved={() => { loadLoans(); setToast("Opening balance saved"); setTimeout(() => setToast(""), 3000); }}
-                          onError={(msg) => { setToast(msg); setTimeout(() => setToast(""), 5000); }}
-                        />
+                        <div className="space-y-3">
+                          <OpeningBalanceEditor
+                            loan={loan}
+                            employeeName={emp?.full_name ?? ""}
+                            opening={repayments.find(r => r.loan_id === loan.id && r.is_opening) ?? null}
+                            repaidByRuns={repayments
+                              .filter(r => r.loan_id === loan.id && !r.is_opening)
+                              .reduce((x, r) => x + Number(r.amount), 0)}
+                            canEdit={!!canApply}
+                            onSaved={() => { loadLoans(); setToast("Opening balance saved"); setTimeout(() => setToast(""), 3000); }}
+                            onError={(msg) => { setToast(msg); setTimeout(() => setToast(""), 5000); }}
+                          />
+                          <SettleLoan
+                            loan={loan}
+                            employeeName={emp?.full_name ?? ""}
+                            outstanding={owed}
+                            settlement={settlementRow}
+                            canEdit={!!canApply}
+                            onSaved={(msg) => { loadLoans(); setToast(msg); setTimeout(() => setToast(""), 4000); }}
+                            onError={(msg) => { setToast(msg); setTimeout(() => setToast(""), 5000); }}
+                          />
+                        </div>
                       )}
                     </div>
 
@@ -599,7 +644,11 @@ export default function PayrollLoansPage() {
                     )}
 
                     {/* Schedule */}
-                    {schedule.length === 0 ? (
+                    {/* A loan settled before its first instalment has no rows
+                        left, but it still has a closing line — and telling
+                        somebody to set a repayment month for a loan that is
+                        already closed is an instruction to nowhere. */}
+                    {schedule.length === 0 && loan.status !== "SETTLED" ? (
                       <p className="text-xs text-stone-400">Set a first repayment month to see the schedule.</p>
                     ) : (
                       <div className="overflow-x-auto">
@@ -620,8 +669,31 @@ export default function PayrollLoansPage() {
                                 </tr>
                               );
                             })}
+                            {/* Where it stopped. A closing line rather than a
+                                footnote, because the eye reads down the
+                                balance column and wants to see it reach nil. */}
+                            {loan.status === "SETTLED" && (
+                              <tr className="font-semibold text-stone-700">
+                                <td className="px-2 py-1"></td>
+                                <td className="px-2 py-1 border-t border-stone-300">
+                                  {fmtMonth(loan.settled_on ?? null)}
+                                </td>
+                                <td className="px-2 py-1 text-right font-mono border-t border-stone-300">
+                                  {settlementRow ? formatCurrency(Number(settlementRow.amount)) : "settled"}
+                                </td>
+                                <td className="px-2 py-1 text-right font-mono border-t border-stone-300">
+                                  {formatCurrency(owed)}
+                                </td>
+                              </tr>
+                            )}
                           </tbody>
                         </table>
+                        {cancelled > 0 && (
+                          <p className="mt-1.5 text-[11px] text-stone-500">
+                            Settled early &mdash; the remaining {cancelled} instalment{cancelled === 1 ? "" : "s"}{" "}
+                            of {formatCurrency(cancelledValue)} {cancelled === 1 ? "was" : "were"} never taken.
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

@@ -2093,7 +2093,14 @@ export default function PayrollEmployeePage() {
                         <span className="text-sm font-bold text-stone-700 font-mono">{ln.loan_no}</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${statusStyle[ln.status] ?? "bg-stone-100 text-stone-500"}`}>{ln.status}</span>
                       </div>
-                      <span className="text-xs text-stone-400">Started {fmtDate(ln.start_month)}</span>
+                      <span className="text-xs text-stone-400">
+                        Started {fmtDate(ln.start_month)}
+                        {/* When it ended, where it ended early. Without it a
+                            settled loan and one that ran its term read the
+                            same, and only one of them has instalments that
+                            were never taken. */}
+                        {ln.status === "SETTLED" && ln.settled_on && <> · settled {fmtDate(ln.settled_on)}</>}
+                      </span>
                     </div>
                     {ln.purpose && <p className="text-xs text-stone-500 mt-1">{ln.purpose}</p>}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 mt-3 text-sm">
