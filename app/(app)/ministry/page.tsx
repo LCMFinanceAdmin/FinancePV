@@ -270,10 +270,6 @@ export default function ExcoPage() {
 
       <ApprovalPath currentIndex={1} />
 
-      <VerifierPanel ministries={manageableMinistries} myEmail={myEmail} />
-
-      <CheckerPanel ministries={manageableMinistries} />
-
       {toast.msg && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm shadow-lg text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.msg}
@@ -563,6 +559,15 @@ export default function ExcoPage() {
           })}
         </div>
       ))}
+
+      {/* ── Standing delegations ─────────────────────────────────────────
+          Below the queue, not above it. Both are set once and left alone for
+          months, while the queue is why anybody opens this page; having them
+          lead meant scrolling past two settings panels to reach the work, and
+          an empty queue read as an empty page. */}
+      <VerifierPanel ministries={manageableMinistries} myEmail={myEmail} />
+
+      <CheckerPanel ministries={manageableMinistries} />
     </div>
   );
 }
