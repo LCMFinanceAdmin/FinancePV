@@ -10,6 +10,13 @@ export function formatCurrency(amount: number): string {
   return `RM ${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }
 
+// Leave days. numeric(4,1) comes back from Postgres as "14.0", and a half day
+// is real (annual leave prorates to the nearest half in a joining year), so the
+// decimal is kept when it means something and dropped when it does not.
+export function formatDays(n: number): string {
+  return (Math.round(n * 10) / 10).toString().replace(/\.0$/, "");
+}
+
 export function formatDate(iso: string): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-MY", {
