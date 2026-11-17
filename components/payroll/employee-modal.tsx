@@ -38,6 +38,13 @@ function itemAppliesToMonth(item: { year: number; month: number; is_recurring: b
 }
 
 // Marital-status options encode spouse-working for the Married variants.
+function fmtLongDate(iso: string): string {
+  if (!iso) return "today";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "today"
+    : d.toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" });
+}
+
 const MARITAL_OPTIONS: { value: string; marital: string; spouseWorking: boolean }[] = [
   { value: "Single", marital: "Single", spouseWorking: false },
   { value: "Married (spouse working)", marital: "Married", spouseWorking: true },
@@ -197,6 +204,19 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   const [familyAllowance, setFamilyAllowance] = useState("");
   const [incrementCarried, setIncrementCarried] = useState("");
   const [incrementCurrent, setIncrementCurrent] = useState("");
+
+  /**
+   * The date a salary change here takes effect.
+   *
+   * It used to be today, always and silently. That is right for a rise agreed
+   * this week and wrong for everything else — and the sheet reads these dates
+   * month by month, so a 2026 salary keyed in November leaves January to
+   * October reading whatever came before it. EMP-001 ended up with three
+   * different grosses across one year that way, none of them a real change of
+   * pay. Today is still the default, because it is usually right; it is a box
+   * now because it is not always.
+   */
+  const [revisionFrom, setRevisionFrom] = useState(new Date().toISOString().slice(0, 10));
 
   // snapshot of the loaded salary row (edit mode) — used to detect changes
   const [latestSalarySnapshot, setLatestSalarySnapshot] = useState<Record<string, number> | null>(null);
@@ -462,14 +482,15 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
           if (changed) {
             await supabase.from("payroll_salary").insert({
               employee_id: existing!.id,
-              effective_from: new Date().toISOString().slice(0, 10),
+              effective_from: revisionFrom || new Date().toISOString().slice(0, 10),
               ...newVals,
               reason: "Updated via employee edit",
               created_by: user.email,
             });
             await logPayrollAudit(supabase, {
               action: "SALARY_CHANGE", entity: fullName.trim(), employeeId: existing!.id,
-              detail: `Components changed via employee edit — gross RM ${Object.values(newVals).reduce((s, v) => s + v, 0).toFixed(2)}`,
+              detail: `Components changed via employee edit — gross RM ${Object.values(newVals).reduce((s, v) => s + v, 0).toFixed(2)}`
+                    + ` effective ${revisionFrom || "today"}`,
             });
           }
         }
@@ -597,6 +618,8 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
         ? `On probation until ${shown}. ${monthName} is the first confirmed month — add the confirmed salary as a revision dated from it.`
         : `Confirmed ${shown}. Months before ${monthName} are shown as probation; ${monthName} onwards reads the salary in force from that date.` };
   })();
+
+  const revisionBackdated = !!revisionFrom && revisionFrom < new Date().toISOString().slice(0, 10);
 
   const inputCls = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const labelCls = "block text-xs font-semibold text-stone-600 mb-1";
@@ -850,7 +873,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
             hint="What makes up the monthly gross. Changing any of these writes a new salary revision.">
             <p className="text-[11px] text-stone-400 mb-2">
               {isEdit
-                ? "Changes to salary will create a new revision effective today."
+                ? "Changing any of these writes a salary revision, dated below."
                 : "Base = original salary at commencement. Increments accumulate on top; gross = base + increments + experience + family + STM."}
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -867,6 +890,26 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                 </label>
                 <input type="number" className={inputCls} value={incrementCurrent} onChange={e => setIncrementCurrent(e.target.value)} />
               </div>
+              {/* When the change took effect, not when it was keyed. The sheet
+                  reads these dates a month at a time, so a figure dated today
+                  leaves the rest of the year on whatever came before it. */}
+              {isEdit && (
+                <div className="sm:col-span-3">
+                  <label className={labelCls}>
+                    Effective from
+                    {revisionBackdated && (
+                      <span className="ml-1 font-normal text-[#2f5b9c]">— backdated</span>
+                    )}
+                  </label>
+                  <input type="date" className={`${inputCls} sm:max-w-[16rem]`} value={revisionFrom}
+                    onChange={e => setRevisionFrom(e.target.value)} />
+                  <p className="mt-1 text-[10.5px] leading-snug text-stone-400">
+                    The month the pay actually changed. A salary that has been in force since
+                    January belongs to January, however late it is keyed &mdash; dated today, the
+                    yearly sheet reads the old figure for every month before this one.
+                  </p>
+                </div>
+              )}
               {/* What the retyped components come to against what is on
                   record. Shown before saving, because afterwards it is a
                   revision and somebody's pay. */}
@@ -895,8 +938,12 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                           </>
                         )}
                         <span className="mt-0.5 block font-normal">
-                          Saving writes a salary revision effective today, and every month from this
-                          one onwards is paid at the new figure.
+                          Saving writes a salary revision effective{" "}
+                          <span className="font-semibold">{fmtLongDate(revisionFrom)}</span>. The
+                          months before it keep whatever salary was in force then
+                          {revisionBackdated
+                            ? " — which is the point of backdating it."
+                            : ", so date this when the pay actually changed, not when you are keying it."}
                         </span>
                       </>
                     )}
