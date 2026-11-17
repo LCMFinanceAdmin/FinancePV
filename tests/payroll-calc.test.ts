@@ -137,17 +137,15 @@ test("a foreign national is outside EIS, both sides", () => {
   assert.equal(out.eis.total, 0);
 });
 
-test("and SOCSO and EPF are untouched by it", () => {
-  // Foreign workers have been covered by SOCSO since 2019, and EPF is an
-  // election they may make. Neither follows from nationality, so neither
-  // moves here — the difference is Finance's to take up with PERKESO.
+test("but SKBBK is untouched by it", () => {
+  // SOCSO and EPF do follow nationality, each in its own way — see the tests
+  // further down. SKBBK does not: the scheme asks who is enrolled, not who
+  // is a citizen, and the only thing that takes somebody out of it is
+  // leaving it.
   const here = line({ gross: 3000, age: 40, bands: BANDS });
   const away = line({ gross: 3000, age: 40, isForeigner: true, bands: BANDS });
-  assert.equal(away.socso.ee, here.socso.ee);
-  assert.equal(away.socso.er, here.socso.er);
-  assert.equal(away.epf.ee, here.epf.ee);
-  assert.equal(away.epf.er, here.epf.er);
-  assert.equal(away.skbbk, here.skbbk, "and SKBBK with them");
+  assert.equal(away.skbbk, here.skbbk);
+  assert.ok(here.skbbk > 0, "and there was something there to be left alone");
 });
 
 test("the rate fallback excludes them too, not only the schedule", () => {
@@ -163,6 +161,74 @@ test("being 60 and a foreigner is not two reasons for one exclusion", () => {
   const out = line({ gross: 3000, age: 65, isForeigner: true, bands: BANDS });
   assert.equal(out.eis.ee, 0);
   assert.equal(out.socso.er, 36.9, "still the employer's injury rate");
+});
+
+// ── SOCSO and EPF for a foreign worker ───────────────────────────────────
+
+test("a foreign worker is SOCSO Category 2 — the employer pays, they do not", () => {
+  // Covered since January 2019, employment injury only. The same column of
+  // PERKESO's schedule an employee of 60 reaches, for a different reason.
+  const out = line({ gross: 3000, age: 40, isForeigner: true, bands: BANDS });
+  assert.equal(out.socso.ee, 0);
+  assert.equal(out.socso.er, 36.9, "the injury-only employer figure, not 51.65");
+});
+
+test("and off the percentages too, where no band covers the wage", () => {
+  const out = line({ gross: 3000, age: 40, isForeigner: true });
+  assert.equal(out.socso.ee, 0);
+  assert.equal(out.socso.er, round2(3000 * DEFAULT_RATES.socso_er_over60));
+});
+
+test("a foreign national who has not elected is not an EPF member at all", () => {
+  const out = line({ gross: 3000, age: 40, isForeigner: true, bands: BANDS });
+  assert.equal(out.epf.ee, 0);
+  assert.equal(out.epf.er, 0, "no flat sum either — there is nothing to pay it against");
+});
+
+test("electing in pays the employee rate and a flat employer sum", () => {
+  const out = line({ gross: 3000, age: 40, isForeigner: true, epfForeignerElected: true, bands: BANDS });
+  assert.equal(out.epf.ee, Math.ceil(3000 * 0.11), "banded and rounded like any other");
+  assert.equal(out.epf.er, 5, "ringgit a month, and the wage does not enter into it");
+});
+
+test("the flat sum does not move with the wage", () => {
+  for (const gross of [800, 3000, 9000]) {
+    assert.equal(line({ gross, age: 40, isForeigner: true, epfForeignerElected: true, bands: BANDS }).epf.er, 5);
+  }
+});
+
+test("at 60 the election still governs the employee half, as it does for a citizen", () => {
+  const steppedOut = line({ gross: 3000, age: 65, isForeigner: true, epfForeignerElected: true, bands: BANDS });
+  assert.equal(steppedOut.epf.ee, 0, "stepped out at 60");
+  assert.equal(steppedOut.epf.er, 5, "the employer's flat sum stands either way");
+
+  const staying = line({ gross: 3000, age: 65, isForeigner: true, epfForeignerElected: true,
+    epfOver60Contributing: true, bands: BANDS });
+  assert.equal(staying.epf.ee, Math.ceil(3000 * 0.055), "the 60+ foreign rate");
+});
+
+test("past the ceasing age nothing reopens it, election or not", () => {
+  const out = line({ gross: 3000, age: 76, isForeigner: true, epfForeignerElected: true,
+    epfOver60Contributing: true, bands: BANDS });
+  assert.equal(out.epf.ee, 0);
+  assert.equal(out.epf.er, 0);
+});
+
+test("a whole month unpaid clears the flat sum too", () => {
+  // There is no wage for either side to contribute against, and a flat sum is
+  // not an exception to that.
+  const out = line({ gross: 3000, age: 40, isForeigner: true, epfForeignerElected: true, bands: BANDS,
+    unpaidLeave: { days: 30, daysInMonth: 30 } });
+  assert.equal(out.epf.er, 0);
+  assert.equal(out.epf.ee, 0);
+});
+
+test("none of this reaches a citizen", () => {
+  const here = line({ gross: 3000, age: 40, bands: BANDS });
+  assert.equal(here.socso.ee, 14.75);
+  assert.equal(here.socso.er, 51.65);
+  assert.equal(here.epf.er, Math.ceil(3000 * 0.16));
+  assert.ok(here.eis.ee > 0);
 });
 
 test("SKBBK is kept out of the contributions total", () => {

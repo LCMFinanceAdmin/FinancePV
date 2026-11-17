@@ -557,6 +557,14 @@ export interface PayrollEmployee {
    * since 2019, and EPF is an election, so neither follows from this.
    */
   is_foreigner?: boolean;
+  /**
+   * A foreign national who has elected to contribute to EPF — migration 264.
+   *
+   * Read only alongside `is_foreigner`. A foreign employee is not an EPF
+   * member by default, so without this neither side contributes; with it the
+   * employee pays a rate and the employer a flat monthly sum in ringgit.
+   */
+  epf_foreigner_elected?: boolean;
   /** Aged 60+ and still making their own EPF contribution. Ignored below 60 and from 75. */
   epf_over60_contributing: boolean;
   epf_no: string;
@@ -595,6 +603,14 @@ export interface PayrollStatutoryRates {
    * honoured all year. See migration 261.
    */
   skbbk_mandatory_to_month: number | null;
+  /**
+   * EPF for a contributing foreign national — migration 264. The employee
+   * pays a rate; the employer pays the flat sum, in ringgit, not a
+   * percentage. Null until Finance confirms them against KWSP's schedule.
+   */
+  epf_ee_foreigner: number | null;
+  epf_ee_foreigner_over60: number | null;
+  epf_er_foreigner_flat: number | null;
   updated_by: string;
   updated_at: string;
 }

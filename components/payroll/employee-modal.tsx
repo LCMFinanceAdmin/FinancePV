@@ -171,6 +171,9 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   // only thing that keeps a foreign employee out of a scheme that will never
   // pay out to them — it used to be two corrections a month, keyed by hand.
   const [isForeigner, setIsForeigner] = useState(existing?.is_foreigner ?? false);
+  // EPF is an election for a foreign national, not a status: without it
+  // neither side contributes, because they are not a member at all.
+  const [epfElected, setEpfElected] = useState(existing?.epf_foreigner_elected ?? false);
   // Everyone is in SKBBK unless they have left it, so a new employee starts
   // enrolled. Phrased as opting out in the data and as "in the scheme" on the
   // form, because that is the question Finance is actually answering.
@@ -435,6 +438,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
         prior_experience_years: parseInt(priorExp) || 0,
         is_orang_asli: isOrangAsli,
         is_foreigner: isForeigner,
+        epf_foreigner_elected: isForeigner && epfElected,
         skbbk_opted_out: !inSkbbk,
         epf_over60_contributing: epfOver60,
         date_commenced: dateCommenced || null,
@@ -778,11 +782,23 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                   It no longer does, and saying so here stops the box being
                   mistrusted for the months it does govern. */}
               {isForeigner && (
+                <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                  title="A foreign employee is not an EPF member by default. Elected, they pay the employee rate and LCM the flat monthly sum — set both on the Statutory Rates page.">
+                  <input type="checkbox" checked={epfElected} onChange={e => setEpfElected(e.target.checked)} /> Elected to contribute to EPF
+                </label>
+              )}
+              {isForeigner && (
                 <p className="basis-full text-[10.5px] leading-snug text-stone-500">
-                  No EIS, either side &mdash; the scheme covers citizens and permanent residents
-                  only. SOCSO and EPF are unchanged by this: foreign workers have been covered by
-                  SOCSO since 2019, and EPF is an election. Tick this only for somebody who is
-                  neither a citizen nor a PR.
+                  <span className="font-semibold">No EIS</span>, either side &mdash; the scheme
+                  covers citizens and permanent residents only.{" "}
+                  <span className="font-semibold">SOCSO is Category 2</span>, employment injury
+                  only: the employer contributes and the employee does not.{" "}
+                  <span className="font-semibold">EPF is an election</span> &mdash; unticked,
+                  neither side contributes; ticked, the employee pays the rate and LCM a flat sum
+                  a month rather than a percentage. All three figures are on the{" "}
+                  <span className="font-semibold">Statutory Rates</span> page. Tick{" "}
+                  <em>Foreign national</em> only for somebody who is neither a citizen nor a PR
+                  &mdash; a PR is inside every one of these schemes.
                 </p>
               )}
               {!inSkbbk && (

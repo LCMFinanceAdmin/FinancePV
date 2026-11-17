@@ -637,7 +637,7 @@ export default function PayrollEmployeePage() {
         employmentType: emp.employment_type,
         isOrangAsli: emp.is_orang_asli,
         voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
-        skbbkOptedOut: emp.skbbk_opted_out, isForeigner: emp.is_foreigner,
+        skbbkOptedOut: emp.skbbk_opted_out, isForeigner: emp.is_foreigner, epfForeignerElected: emp.epf_foreigner_elected,
         epfOver60Contributing: emp.epf_over60_contributing,
         manualPcb: pcb[12] || 0,
         eplDeduction: 0,
@@ -668,7 +668,7 @@ export default function PayrollEmployeePage() {
       employmentType: emp.employment_type,
       isOrangAsli: emp.is_orang_asli,
       voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
-      skbbkOptedOut: emp.skbbk_opted_out, isForeigner: emp.is_foreigner,
+      skbbkOptedOut: emp.skbbk_opted_out, isForeigner: emp.is_foreigner, epfForeignerElected: emp.epf_foreigner_elected,
       epfOver60Contributing: emp.epf_over60_contributing,
       manualPcb: pcb[m - 1] || 0,
       eplDeduction: eplForMonth(m),
@@ -748,7 +748,7 @@ export default function PayrollEmployeePage() {
       employmentType: emp.employment_type,
       isOrangAsli: emp.is_orang_asli,
       voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
-      skbbkOptedOut: emp.skbbk_opted_out, isForeigner: emp.is_foreigner,
+      skbbkOptedOut: emp.skbbk_opted_out, isForeigner: emp.is_foreigner, epfForeignerElected: emp.epf_foreigner_elected,
       epfOver60Contributing: emp.epf_over60_contributing,
       manualPcb: 0, eplDeduction: 0, is13thMonth: is13,
       unpaidLeave: { days: 0, daysInMonth: days.daysInMonth },
@@ -1070,7 +1070,9 @@ export default function PayrollEmployeePage() {
               {/* Only where it is true: a row reading "Malaysian" against
                   eighty records is eighty lines saying nothing. */}
               {emp.is_foreigner && (
-                <Field label="Nationality" value="Foreign national — no EIS, either side" />
+                <Field label="Nationality"
+                  value={"Foreign national — no EIS; SOCSO is Category 2 (injury only); EPF "
+                    + (emp.epf_foreigner_elected ? "elected, employer pays the flat sum" : "not elected, so neither side contributes")} />
               )}
               <Field label="TIN (Tax)" value={emp.tin || "—"} />
               <Field label="Employer Tax Ref" value={emp.employer_tax_ref || "—"} />
@@ -3403,7 +3405,7 @@ function RevisionModal({ employeeId, latest, emp, rates, bands, year, onClose, o
       employmentType: emp.employment_type, isOrangAsli: emp.is_orang_asli,
       voluntaryEpf: Number(emp.epf_voluntary_ee_amount) || 0,
       skbbkOptedOut: emp.skbbk_opted_out, epfOver60Contributing: emp.epf_over60_contributing,
-      isForeigner: emp.is_foreigner,
+      isForeigner: emp.is_foreigner, epfForeignerElected: emp.epf_foreigner_elected,
       manualPcb: 0, eplDeduction: 0, is13thMonth: false, rates, bands,
     });
     return { before, after, from: priced(before), to: priced(after), effMonth, effYear };

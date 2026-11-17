@@ -63,6 +63,7 @@ export function affordabilityOf(
     voluntaryEpf: Number(employee.epf_voluntary_ee_amount) || 0,
     skbbkOptedOut: employee.skbbk_opted_out,
     isForeigner: employee.is_foreigner,
+    epfForeignerElected: employee.epf_foreigner_elected,
     epfOver60Contributing: employee.epf_over60_contributing,
     manualPcb: Number(employee.fixed_pcb) || 0,
     // Nought, deliberately: this asks what is there BEFORE the loans, so the

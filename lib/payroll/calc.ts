@@ -52,6 +52,19 @@ export interface RateConfig {
    */
   skbbk_mandatory_to_month?: number;
   /**
+   * EPF for a foreign national who has elected to contribute.
+   *
+   * The employee pays a rate like anybody else; the employer pays a FLAT SUM
+   * IN RINGGIT per month, which is the only employer contribution in this
+   * payroll that is not a percentage of the wage. Without the election
+   * neither side pays at all — a foreign employee is not a member by default.
+   *
+   * Set from the rate table and editable there. Nothing derives them.
+   */
+  epf_ee_foreigner?: number;
+  epf_ee_foreigner_over60?: number;
+  epf_er_foreigner_flat?: number;
+  /**
    * The age at which EPF stops accepting contributions altogether.
    *
    * Distinct from 60. At 60 an employee may keep contributing or step out,
@@ -94,6 +107,7 @@ export const DEFAULT_RATES: RateConfig = {
   // is visibly unset; a guessed rate would quietly take the wrong amount from
   // every salary, which is the worse failure by far.
   skbbk_ee: 0, skbbk_ceiling: 6000, skbbk_from_month: 1,
+  epf_ee_foreigner: 0.11, epf_ee_foreigner_over60: 0.055, epf_er_foreigner_flat: 5,
   epf_ceases_age: 75,
   epf_wage_threshold: 5000,
   epf_er_under60_over_threshold: 0.15,
@@ -181,6 +195,14 @@ export interface CalcInput {
    * consequences of nationality — so neither is touched by this.
    */
   isForeigner?: boolean;
+  /**
+   * A foreign national who has elected to contribute to EPF.
+   *
+   * Read only alongside `isForeigner`. A foreign employee is not an EPF
+   * member by default, so without this neither side contributes; with it the
+   * employee pays a rate and the employer a flat monthly sum.
+   */
+  epfForeignerElected?: boolean;
   /**
    * An employee aged 60 or over who has chosen to keep contributing to EPF.
    *
@@ -287,10 +309,26 @@ function portion(ee: number, er: number): StatPortion {
 }
 
 // EPF rate tiers (employee %, employer %), from the editable rate config.
+export interface EpfRates {
+  ee: number;
+  er: number;
+  /**
+   * A flat monthly sum in ringgit in place of the employer rate.
+   *
+   * Only a contributing foreign national has one. Present, it is the whole
+   * employer contribution and `er` is not consulted — the wage does not enter
+   * into it, which is the one case in this payroll where that is true.
+   */
+  erFlat?: number;
+}
+
 export function resolveEpfRates(
-  input: { gross: number; age: number; employmentType: EmploymentType; isOrangAsli: boolean; epfOver60Contributing?: boolean },
+  input: {
+    gross: number; age: number; employmentType: EmploymentType; isOrangAsli: boolean;
+    epfOver60Contributing?: boolean; isForeigner?: boolean; epfForeignerElected?: boolean;
+  },
   rates: RateConfig = DEFAULT_RATES,
-): { ee: number; er: number } {
+): EpfRates {
   // Past the ceasing age the scheme is closed to both sides, whatever else
   // is true of the person. Checked first for that reason: an Orang Asli rate
   // or a standing choice to contribute cannot reopen it.
@@ -299,6 +337,25 @@ export function resolveEpfRates(
   // "Exceeding", as the schedule words it — a wage of exactly the threshold
   // is still in the lower table.
   const aboveThreshold = input.gross > (rates.epf_wage_threshold ?? 5000);
+
+  // A foreign national is not an EPF member by default, so this is settled
+  // before any of the ordinary rates are reached — none of them apply to
+  // somebody the scheme does not cover.
+  if (input.isForeigner) {
+    if (!input.epfForeignerElected) return { ee: 0, er: 0, erFlat: 0 };
+    // Stepping out at 60 works the same way it does for a citizen: the
+    // employee stops and the employer does not, which is why the flat sum
+    // stands either way.
+    const contributing = input.age < 60 || input.epfOver60Contributing === true;
+    const eeRate = input.age >= 60
+      ? rates.epf_ee_foreigner_over60 ?? 0
+      : rates.epf_ee_foreigner ?? 0;
+    return {
+      ee: contributing ? eeRate : 0,
+      er: 0,
+      erFlat: rates.epf_er_foreigner_flat ?? 0,
+    };
+  }
 
   if (input.isOrangAsli) {
     return {
@@ -644,7 +701,12 @@ export function calcLine(input: CalcInput): CalcLine {
   const epfThreshold = rates.epf_wage_threshold ?? 5000;
   const epfEe = wholeMonthUnpaid ? 0
     : epfContribution(gross, epfRates.ee, epfThreshold) + (epfClosed ? 0 : voluntaryEpf || 0);
-  const epfEr = wholeMonthUnpaid ? 0 : epfContribution(gross, epfRates.er, epfThreshold);
+  // A flat sum is already the answer — it is not a rate, so it is neither
+  // banded nor rounded up to the next ringgit. A whole month unpaid still
+  // clears it: there is no wage for either side to contribute against.
+  const epfEr = wholeMonthUnpaid ? 0
+    : epfRates.erFlat != null ? round2(epfRates.erFlat)
+    : epfContribution(gross, epfRates.er, epfThreshold);
   const epf: StatPortion = { ee: round2(epfEe), er: round2(epfEr), total: round2(epfEe + epfEr) };
 
   // SOCSO + EIS + SKBBK — skipped entirely for the 13th month
@@ -664,15 +726,20 @@ export function calcLine(input: CalcInput): CalcLine {
     // untouched by it: foreign workers have been covered there since 2019.
     const inEis = !over60 && !input.isForeigner;
 
+    // Category 2 — employment injury only, and no employee share. Two groups
+    // reach it for unrelated reasons: anyone of 60, who is past the
+    // invalidity scheme, and foreign workers, covered on that basis since
+    // January 2019. PERKESO files both off the same column of the schedule,
+    // which is why `socso_er_over60` serves for both in spite of its name.
+    const injuryOnly = over60 || !!input.isForeigner;
+
     if (band) {
-      // 60+ is Category 2: employment injury only, and no employee share.
-      socso = portion(over60 ? 0 : band.socso_ee, over60 ? band.socso_er_over60 : band.socso_er);
+      socso = portion(injuryOnly ? 0 : band.socso_ee, injuryOnly ? band.socso_er_over60 : band.socso_er);
       if (inEis) eis = portion(band.eis, band.eis);
     } else {
       const socsoBase = Math.min(gross, rates.socso_ceiling);
-      // 60+: employment-injury only (no employee share); else standard rates
-      const socsoEe = over60 ? 0 : socsoBase * rates.socso_ee;
-      const socsoEr = over60 ? socsoBase * rates.socso_er_over60 : socsoBase * rates.socso_er;
+      const socsoEe = injuryOnly ? 0 : socsoBase * rates.socso_ee;
+      const socsoEr = injuryOnly ? socsoBase * rates.socso_er_over60 : socsoBase * rates.socso_er;
       socso = portion(socsoEe, socsoEr);
 
       if (inEis) {

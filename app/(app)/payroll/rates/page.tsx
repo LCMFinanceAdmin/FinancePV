@@ -17,9 +17,15 @@ const PCT_FIELDS: { key: keyof PayrollStatutoryRates; label: string; group: stri
   { key: "epf_ee_orang_asli", label: "EPF Employee — Orang Asli", group: "EPF" },
   { key: "epf_er_orang_asli", label: "EPF Employer — Orang Asli", group: "EPF" },
   { key: "epf_er_orang_asli_over_threshold", label: "EPF Employer — Orang Asli, above the threshold (12%)", group: "EPF" },
+  // A foreign national who has elected in. The employer's half is a flat sum
+  // and lives with the ceilings below, being ringgit rather than a rate.
+  { key: "epf_ee_foreigner", label: "EPF Employee — foreign national (elected)", group: "EPF" },
+  { key: "epf_ee_foreigner_over60", label: "EPF Employee — foreign national, 60+ (elected)", group: "EPF" },
   { key: "socso_ee", label: "SOCSO Employee", group: "SOCSO" },
   { key: "socso_er", label: "SOCSO Employer", group: "SOCSO" },
-  { key: "socso_er_over60", label: "SOCSO Employer — 60+ (injury only)", group: "SOCSO" },
+  // Category 2, which both the over-60s and foreign workers fall into — the
+  // same column of PERKESO's schedule, reached for unrelated reasons.
+  { key: "socso_er_over60", label: "SOCSO Employer — Category 2, injury only (60+ and foreign workers)", group: "SOCSO" },
   { key: "eis_rate", label: "EIS — each side", group: "EIS" },
   // Employee only: SKBBK tops up their SOCSO contribution and the employer
   // pays no part of it, so there is no second field to fill in here.
@@ -27,6 +33,9 @@ const PCT_FIELDS: { key: keyof PayrollStatutoryRates; label: string; group: stri
 ];
 const CEIL_FIELDS: { key: keyof PayrollStatutoryRates; label: string }[] = [
   { key: "epf_wage_threshold", label: "EPF wage threshold (RM) — above it the table steps in RM100" },
+  // Not a ceiling, but it belongs with the ringgit figures rather than the
+  // rates: it is the whole employer contribution, and the wage does not enter.
+  { key: "epf_er_foreigner_flat", label: "EPF Employer — foreign national (RM a month, flat, not a rate)" },
   { key: "socso_ceiling", label: "SOCSO wage ceiling (RM)" },
   { key: "eis_ceiling", label: "EIS wage ceiling (RM)" },
   { key: "skbbk_ceiling", label: "SKBBK wage ceiling (RM)" },
