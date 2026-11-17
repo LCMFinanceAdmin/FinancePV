@@ -8,7 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
 import { BankExportModal, buildBankRows, generateWorkbook } from "@/components/payroll/bank-export-modal";
 import { generateStatutorySummary } from "@/components/payroll/statutory-summary";
-import { calcLine, ageAt, grossForMonth, monthDays, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { calcLine, ageAt, grossForMonth, monthDays, owedForRunMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
@@ -34,6 +34,12 @@ import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, Payroll
 
 const MONTH_LABELS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "13th Month"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtDay(s: string | null): string {
+  if (!s) return "—";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? "—"
+    : d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
+}
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
 interface ComputedRow { emp: PayrollEmployee; line: CalcLine; }
@@ -243,7 +249,10 @@ export default function PayrollRunDetailPage() {
 
   // Live computation for DRAFT runs.
   const computed: ComputedRow[] = isDraft ? employees
-    .filter(e => e.status === "ACTIVE")
+    // The leaving date decides this, not the status. A leaver is owed the
+    // part of their last month they worked, and filtering on ACTIVE dropped
+    // them out of the run before anybody could notice the wage was missing.
+    .filter(e => owedForRunMonth(e, run.year, run.month))
     // Who is owed a 13th month at all. Orang Asli are not in the scheme, a
     // pastor needs twelve months of service, and everyone else needs six
     // before it is pro-rated — see lib/payroll/thirteenth-month.ts, which the
@@ -378,7 +387,7 @@ export default function PayrollRunDetailPage() {
    */
   const notPaid13th = is13th
     ? employees
-        .filter(e => e.status === "ACTIVE")
+        .filter(e => owedForRunMonth(e, run.year, run.month))
         .map(e => ({ emp: e, due: thirteenthMonthFor(e, run.year) }))
         .filter(({ due }) => !due.entitled)
     : [];
@@ -848,7 +857,26 @@ export default function PayrollRunDetailPage() {
           <tbody>
             {isDraft ? computed.map(({ emp, line }) => (
               <tr key={emp.id} className="hover:bg-stone-50">
-                <td className="border border-stone-200 px-1.5 py-1 font-medium text-stone-700">{emp.full_name}</td>
+                {/* A leaver is in this run for the days they worked, so the
+                    gross beside their name is short on purpose. Said here,
+                    because a figure that is lower than last month's and
+                    carries no reason is the one somebody queries. */}
+                <td className="border border-stone-200 px-1.5 py-1 font-medium text-stone-700">
+                  {emp.full_name}
+                  {emp.status === "RESIGNED" && (() => {
+                    const d = monthDays(emp.date_commenced, emp.resigned_date, run.year, is13th ? 12 : run.month);
+                    const partial = !is13th && d.daysPaid < d.daysInMonth;
+                    return (
+                      <span
+                        title={`Left ${fmtDay(emp.resigned_date)}`
+                          + (is13th ? " — the bonus is pro-rated to the months served"
+                                    : ` — paid ${d.daysPaid} of ${d.daysInMonth} days`)}
+                        className="ml-1 whitespace-nowrap rounded bg-amber-100 px-1 py-px text-[9px] font-bold uppercase tracking-wide text-amber-800">
+                        left{partial ? ` · ${d.daysPaid}/${d.daysInMonth} days` : ""}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="border border-stone-200 px-1.5 py-1 text-right font-mono">{num(line.gross)}</td>
                 <td className="border border-stone-200 px-0.5 py-0.5 text-right">
                   <input type="number" value={pcb[emp.id] || ""} onChange={e => setPcb(p => ({ ...p, [emp.id]: parseFloat(e.target.value) || 0 }))}

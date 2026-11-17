@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { figureOf,
   calcLine, monthDays, monthFraction, grossForMonth, grossComponentsForMonth, incrementEffectiveMonth,
-  incrementPaidFrom, DEFAULT_RATES,
+  incrementPaidFrom, DEFAULT_RATES, owedForRunMonth,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
@@ -466,6 +466,61 @@ test("a malformed settlement date is treated as none rather than guessed at", ()
   assert.deepEqual(settlementMonth("2025-01-31"), { year: 2025, month: 1 });
   assert.equal(scheduleToSettlement({ ...ANDREW, settled_on: "" }).cancelled, 0);
 });
+
+// ── Who is in a payroll run ──────────────────────────────────────────────
+//
+// The run used to ask only whether somebody was ACTIVE, which dropped a
+// leaver's final month entirely: they were owed part of it, and they were not
+// in the run to be paid it. A run that silently omits somebody looks exactly
+// like one that paid everybody.
+
+const LEAVER = { status: "RESIGNED", date_commenced: "2005-02-01", resigned_date: "2026-04-30" };
+
+test("a leaver is still in the run for the month they left", () => {
+  assert.equal(owedForRunMonth(LEAVER, 2026, 4), true, "April, their last month");
+  assert.equal(owedForRunMonth(LEAVER, 2026, 3), true, "and the ones before it");
+  assert.equal(owedForRunMonth(LEAVER, 2026, 1), true);
+});
+
+test("and out of it from the month after", () => {
+  assert.equal(owedForRunMonth(LEAVER, 2026, 5), false);
+  assert.equal(owedForRunMonth(LEAVER, 2026, 12), false);
+  assert.equal(owedForRunMonth(LEAVER, 2027, 1), false);
+});
+
+test("leaving mid-month still puts them in that month's run", () => {
+  // The days are monthDays' question; this one only asks whether there are any.
+  const mid = { ...LEAVER, resigned_date: "2026-04-15" };
+  assert.equal(owedForRunMonth(mid, 2026, 4), true);
+  assert.equal(monthDays(mid.date_commenced, mid.resigned_date, 2026, 4).daysPaid, 15);
+  assert.equal(owedForRunMonth(mid, 2026, 5), false);
+});
+
+test("resigned with no leaving date stays out", () => {
+  // Not a claim that they are still here — the absence of one. Paying a wage
+  // on a date nobody recorded is the worse of the two mistakes.
+  assert.equal(owedForRunMonth({ ...LEAVER, resigned_date: null }, 2026, 4), false);
+});
+
+test("the 13th month keeps a leaver in the population for their year", () => {
+  // The bonus belongs to the year, not to a month of it. How much of one they
+  // earn is thirteenthMonthFor's question; this only decides who is asked.
+  assert.equal(owedForRunMonth(LEAVER, 2026, 13), true, "left in April of this year");
+  assert.equal(owedForRunMonth(LEAVER, 2027, 13), false, "but not the year after");
+  assert.equal(owedForRunMonth(LEAVER, 2025, 13), true, "nor before they left");
+});
+
+test("somebody still employed is always in", () => {
+  const here = { status: "ACTIVE", date_commenced: "2005-02-01", resigned_date: null };
+  for (const m of [1, 6, 12, 13]) assert.equal(owedForRunMonth(here, 2026, m), true);
+});
+
+test("a leaver who had not started yet is not paid for it", () => {
+  const brief = { status: "RESIGNED", date_commenced: "2026-03-01", resigned_date: "2026-04-30" };
+  assert.equal(owedForRunMonth(brief, 2026, 2), false, "before they joined");
+  assert.equal(owedForRunMonth(brief, 2026, 3), true);
+});
+
 
 
 // ── More than one loan at once ───────────────────────────────────────────

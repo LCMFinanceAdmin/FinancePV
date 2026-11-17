@@ -472,6 +472,40 @@ export function monthDays(
   return { daysInMonth, daysPaid, reason };
 }
 
+/**
+ * Is this person owed pay for the month a run is paying?
+ *
+ * The run used to ask only whether they were ACTIVE, and that dropped a
+ * leaver's final month on the floor. Somebody who left on the 15th is owed
+ * half of it — `monthDays` above exists to work out exactly that, and takes a
+ * resignation date for no other reason — but the moment the record read
+ * RESIGNED they fell out of the run before the question was ever asked. The
+ * pay did not come out short; the person simply was not there, and a run that
+ * silently omits somebody looks identical to one that paid everybody.
+ *
+ * So the leaving date decides it rather than the status, with two exceptions.
+ *
+ * No leaving date is not a claim that they are still here. It is the absence
+ * of one, and paying a wage on the strength of a date nobody recorded is the
+ * worse mistake of the two — so that one stays out.
+ *
+ * And the 13th month belongs to the year rather than to a month of it, so
+ * somebody who left in April is still in its population. How much of a bonus
+ * that earns them is `thirteenthMonthFor`'s question, not this one.
+ */
+export function owedForRunMonth(
+  emp: { status: string; date_commenced: string | null; resigned_date: string | null },
+  year: number,
+  /** 1-12, or 13 for the bonus. */
+  month: number,
+): boolean {
+  if (emp.status === "ACTIVE") return true;
+  if (emp.status !== "RESIGNED") return false;
+  if (!emp.resigned_date) return false;
+  if (month === 13) return emp.resigned_date >= `${year}-01-01`;
+  return monthDays(emp.date_commenced, emp.resigned_date, year, month).daysPaid > 0;
+}
+
 /** The fraction to apply, 1 when the whole month is paid. */
 export function monthFraction(d?: MonthDays | null): number {
   if (!d || d.daysInMonth <= 0 || d.daysPaid >= d.daysInMonth) return 1;
