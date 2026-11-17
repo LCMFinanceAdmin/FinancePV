@@ -2,6 +2,7 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary, PayrollEmployeeCustomItem } from "@/lib/types";
 import type { CalcLine } from "@/lib/payroll/calc";
+import { isProbationMonth } from "@/lib/payroll/probation";
 
 const ML = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
@@ -243,7 +244,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             const mo=i+1; const row=i%2===0?s.tr:s.trAlt;
             return (
               <View key={i} style={row}>
-                <Text style={[s.tdL,{width:C.mo}]}>{ML[i]}</Text>
+                <Text style={[s.tdL,{width:C.mo}]}>{ML[i]}{isProbationMonth(emp, year, mo) ? " °" : ""}</Text>
                 <Text style={[s.td,{width:C.gr,...catL}]}>{n(l.gross)}</Text>
                 <Text style={[s.td,{width:C.pcb,...catL}]}>{n(pcbArr[i]||0)}</Text>
                 <Text style={[s.td,{width:C.ee,...catL}]}>{n(l.epf.ee)}</Text>
@@ -333,6 +334,12 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
         {/* Notes */}
         <View style={s.notes}>
           <Text style={s.nl}>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Increment effective from {["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][effMonth-1]}.</Text>
+          {emp.confirmed_on && monthLines.some((_,i)=>isProbationMonth(emp, year, i+1)) && (
+            <Text style={s.nl}>
+              ° On the probation salary. Confirmed {fmtDate(emp.confirmed_on)} — the step up from
+              that month is the confirmation, not a correction.
+            </Text>
+          )}
           {hasEpl && <Text style={[s.nl,{color:R700}]}>EPL (red): loan repayment deducted from net salary.</Text>}
           {hasUnpaid && <Text style={[s.nl,{color:R700}]}>UNPAID: days taken without pay, at the month&rsquo;s gross over its calendar days. Taken off take-home after EPF, SOCSO and EIS, which stay on the full wage.</Text>}
           {customCols.filter(c=>c.type==="allowance").length>0 && <Text style={[s.nl,{color:G700}]}>Green columns: special allowances.</Text>}

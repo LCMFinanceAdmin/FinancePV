@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { figureOf,
   calcLine, monthDays, monthFraction, grossForMonth, grossComponentsForMonth, incrementEffectiveMonth,
-  incrementPaidFrom,
+  incrementPaidFrom, DEFAULT_RATES,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
@@ -90,6 +90,41 @@ test("leaving SKBBK stops that deduction and nothing else", () => {
   const out = line({ gross: 3000, age: 40, skbbkOptedOut: true, bands: BANDS });
   assert.equal(out.skbbk, 0);
   assert.equal(out.socso.ee, 14.75, "SOCSO is untouched by it");
+});
+
+// SKBBK opened in June 2026 with everybody enrolled. Leaving it takes effect
+// from a later month — the opening ones were deducted, remitted and filed, and
+// an opt-out that reached back would leave the sheet disagreeing with the
+// PERKESO return it was built from.
+const SCHEME_2026 = { ...DEFAULT_RATES, skbbk_from_month: 6, skbbk_mandatory_to_month: 6 };
+
+test("an opt-out does not reach the months enrolment was compulsory", () => {
+  const optedOut = { gross: 3000, age: 40, skbbkOptedOut: true, bands: BANDS, rates: SCHEME_2026 };
+  assert.equal(line({ ...optedOut, month: 6 }).skbbk, 22.15, "June is compulsory for everyone");
+  assert.equal(line({ ...optedOut, month: 7 }).skbbk, 0, "and from July the opt-out holds");
+  assert.equal(line({ ...optedOut, month: 5 }).skbbk, 0, "nothing before the scheme opened");
+});
+
+test("compulsory enrolment cannot reach back before the scheme", () => {
+  // A mandatory month earlier than the start month is a contradiction, and the
+  // start wins: a scheme owes nothing for the months before it existed.
+  const rates = { ...DEFAULT_RATES, skbbk_from_month: 6, skbbk_mandatory_to_month: 3 };
+  const out = line({ gross: 3000, age: 40, skbbkOptedOut: true, bands: BANDS, rates, month: 3 });
+  assert.equal(out.skbbk, 0);
+});
+
+test("with no compulsory months an opt-out holds all year", () => {
+  const rates = { ...DEFAULT_RATES, skbbk_from_month: 1 };
+  for (const month of [1, 6, 12]) {
+    assert.equal(line({ gross: 3000, age: 40, skbbkOptedOut: true, bands: BANDS, rates, month }).skbbk, 0);
+  }
+});
+
+test("a compulsory month is still no wage in a month with no wage", () => {
+  // Nothing is owed on a salary nobody received, compulsory or not.
+  const out = line({ gross: 3000, age: 40, skbbkOptedOut: true, bands: BANDS,
+    rates: SCHEME_2026, month: 6, unpaidLeave: { days: 30, daysInMonth: 30 } });
+  assert.equal(out.skbbk, 0);
 });
 
 test("SKBBK is kept out of the contributions total", () => {

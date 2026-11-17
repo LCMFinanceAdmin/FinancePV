@@ -40,6 +40,18 @@ export interface RateConfig {
    */
   skbbk_from_month?: number;
   /**
+   * The last month of the year in which SKBBK is compulsory for everybody,
+   * opt-out or not. Undefined means an opt-out is honoured all year.
+   *
+   * The scheme opened in June 2026 with everyone enrolled, and leaving it
+   * takes effect from a later month rather than unwinding the ones already
+   * deducted, remitted and filed. Without this, ticking "opted out" emptied
+   * June as well and the sheet no longer matched the PERKESO return.
+   *
+   * Counts from the scheme's start, never before it: see `skbbk_from_month`.
+   */
+  skbbk_mandatory_to_month?: number;
+  /**
    * The age at which EPF stops accepting contributions altogether.
    *
    * Distinct from 60. At 60 an employee may keep contributing or step out,
@@ -640,8 +652,18 @@ export function calcLine(input: CalcInput): CalcLine {
     // adjustment is for — a debt to a past month, not this month's
     // contribution, and only the two kept apart reconcile against PERKESO's
     // own statement.
-    const startedByNow = (input.month ?? 13) >= (rates.skbbk_from_month ?? 1);
-    if (!input.skbbkOptedOut && startedByNow) {
+    //
+    // The opt-out is not absolute, and that is the third gate. A scheme that
+    // enrols everybody on day one is compulsory until the month it stops
+    // being, so leaving it bites from a later month rather than unwinding the
+    // ones already deducted, remitted and filed. Ticking the box used to empty
+    // June 2026 along with everything after it, and a sheet that no longer
+    // matches the PERKESO return is worse than one that is merely out of date.
+    const month = input.month ?? 13;
+    const startedByNow = month >= (rates.skbbk_from_month ?? 1);
+    const compulsoryNow = rates.skbbk_mandatory_to_month != null
+      && month <= rates.skbbk_mandatory_to_month;
+    if (startedByNow && (compulsoryNow || !input.skbbkOptedOut)) {
       // From the schedule where it reaches, since SKBBK is a column of the same
       // table and is filed off it. The rate is the fallback, not the source.
       skbbk = band ? band.skbbk : round2(Math.min(gross, rates.skbbk_ceiling) * rates.skbbk_ee);

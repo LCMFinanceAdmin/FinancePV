@@ -167,6 +167,10 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   // Below 60 this is not a choice, so the box only appears once it is one.
   const [epfOver60, setEpfOver60] = useState(existing?.epf_over60_contributing ?? false);
   const [dateCommenced, setDateCommenced] = useState(existing?.date_commenced ?? "");
+  // The date on the confirmation letter. Dated ahead is the point of it: a
+  // confirmation keyed the day it happens is one that was remembered, and the
+  // ones that matter are the ones that would not have been.
+  const [confirmedOn, setConfirmedOn] = useState(existing?.confirmed_on ?? "");
   const [incrementOverride, setIncrementOverride] = useState(existing?.increment_month_override != null ? String(existing.increment_month_override) : "");
   const [postingType, setPostingType] = useState<PostingType>(existing?.posting_type ?? "OFFICE");
   const [churchName, setChurchName] = useState(existing?.church_name ?? "");
@@ -409,6 +413,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
         skbbk_opted_out: !inSkbbk,
         epf_over60_contributing: epfOver60,
         date_commenced: dateCommenced || null,
+        confirmed_on: confirmedOn || null,
         increment_month_override: incrementOverride ? parseInt(incrementOverride) : null,
         posting_type: postingType,
         church_name: postingType === "CHURCH" ? churchName.trim() : "",
@@ -568,6 +573,31 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
       why: `Commenced ${joinedName}, in the ${eff === 1 ? "first" : "second"} half of the year.` };
   })();
 
+  /**
+   * What the confirmation date says, while it can still be corrected.
+   *
+   * The two amounts are not entered here and never will be — they are the
+   * salary rows either side of this date, and a second copy of a figure the
+   * sheet already holds would only drift from it. What the form owes is the
+   * consequence: which months this makes probation, and that the confirmed
+   * salary is a revision somebody still has to add.
+   */
+  const confirmation = (() => {
+    if (!confirmedOn) return null;
+    const on = new Date(confirmedOn);
+    const shown = on.toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" });
+    if (dateCommenced && confirmedOn <= dateCommenced) {
+      return { tone: "bad" as const,
+        text: `Dated on or before the commencement date, so no month would be probation. Confirmation comes after it.` };
+    }
+    const ahead = confirmedOn > new Date().toISOString().slice(0, 10);
+    const monthName = on.toLocaleDateString("en-MY", { month: "long", year: "numeric" });
+    return { tone: ahead ? "ahead" as const : "done" as const,
+      text: ahead
+        ? `On probation until ${shown}. ${monthName} is the first confirmed month — add the confirmed salary as a revision dated from it.`
+        : `Confirmed ${shown}. Months before ${monthName} are shown as probation; ${monthName} onwards reads the salary in force from that date.` };
+  })();
+
   const inputCls = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
   const labelCls = "block text-xs font-semibold text-stone-600 mb-1";
 
@@ -638,6 +668,28 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
               </div>
             )}
             <div><label className={labelCls}>Date Commenced</label><input type="date" className={inputCls} value={dateCommenced ?? ""} onChange={e => setDateCommenced(e.target.value)} /></div>
+            {/* The date on the letter, not the day it was keyed. Dating it
+                ahead is the whole use of it: the raise that gets forgotten is
+                the one nobody wrote down in advance. */}
+            <div>
+              <label className={labelCls}>Confirmed From</label>
+              <input type="date" className={inputCls} value={confirmedOn ?? ""}
+                onChange={e => setConfirmedOn(e.target.value)} />
+              {confirmation ? (
+                <p className={`mt-1 text-[10.5px] leading-snug ${
+                  confirmation.tone === "bad" ? "font-semibold text-red-600"
+                    : confirmation.tone === "ahead" ? "text-amber-700" : "text-stone-500"}`}>
+                  {confirmation.text}
+                </p>
+              ) : (
+                <p className="mt-1 text-[10.5px] leading-snug text-stone-400">
+                  Where staff serve a probation. The probation and confirmed amounts are the
+                  salary rows either side of this date &mdash; this only marks where the line
+                  falls, so a sheet that steps up mid-year reads as a confirmation and not a
+                  mistake. Leave blank where it does not apply.
+                </p>
+              )}
+            </div>
             <div>
               <label className={labelCls}>Increment Month</label>
               <select className={inputCls} value={incrementOverride} onChange={e => setIncrementOverride(e.target.value)}>
@@ -689,6 +741,18 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                 title="SKBBK (Lindung 24) tops up the employee's SOCSO contribution. Untick only for someone who has opted out of the scheme.">
                 <input type="checkbox" checked={inSkbbk} onChange={e => setInSkbbk(e.target.checked)} /> In SKBBK (Lindung 24)
               </label>
+              {/* Unticking it used to empty the opening month as well — a
+                  month that was deducted, remitted and filed for everybody.
+                  It no longer does, and saying so here stops the box being
+                  mistrusted for the months it does govern. */}
+              {!inSkbbk && (
+                <p className="basis-full text-[10.5px] leading-snug text-stone-500">
+                  Leaving the scheme takes effect from the month after it stopped being
+                  compulsory &mdash; the opening months stay deducted. Set where compulsory
+                  enrolment ends on the <span className="font-semibold">Statutory Rates</span>{" "}
+                  page, per year.
+                </p>
+              )}
               <label className="flex items-center gap-1.5 text-sm text-stone-700"
                 title="At 60 the employee's own EPF contribution becomes optional. Ticked, both sides carry on at the ordinary rate; unticked, only the employer pays. EPF closes to both sides at 75.">
                 <input type="checkbox" checked={epfOver60} onChange={e => setEpfOver60(e.target.checked)} /> Still contributing to EPF at 60+

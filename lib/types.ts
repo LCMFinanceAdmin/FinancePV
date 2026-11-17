@@ -515,6 +515,19 @@ export interface PayrollEmployee {
   prior_experience_years: number;
   is_orang_asli: boolean;
   date_commenced: string | null;
+  /**
+   * The date confirmation takes effect — migration 261.
+   *
+   * Salary rows effective before it are the probation salary; the row from it
+   * is the confirmed one. The amounts are not stored here, because the salary
+   * history already holds them and two records of the same figure drift. What
+   * was missing was the line between them: without it a sheet that steps up
+   * mid-year reads as a mistake.
+   *
+   * May be dated ahead — it is the date on the letter, not the day it was
+   * keyed. Null where confirmation does not apply or was never recorded.
+   */
+  confirmed_on?: string | null;
   increment_month_override: number | null; // NULL = automatic (join-date rule); else 1 or 7
   /**
    * Standing monthly PCB in RM, or null when there is none.
@@ -567,6 +580,12 @@ export interface PayrollStatutoryRates {
   skbbk_ee: number; skbbk_ceiling: number;
   /** First month SKBBK applies. 1 = all year; 2026 = 6. See migration 133. */
   skbbk_from_month: number;
+  /**
+   * Last month SKBBK is compulsory for everybody, opt-out or not. 2026 = 6 —
+   * the scheme opened in June with everyone enrolled. Null = an opt-out is
+   * honoured all year. See migration 261.
+   */
+  skbbk_mandatory_to_month: number | null;
   updated_by: string;
   updated_at: string;
 }

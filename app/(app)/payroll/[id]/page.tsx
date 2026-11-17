@@ -13,6 +13,7 @@ import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 import { useToast, Toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
+import { probationFacts, isProbationMonth } from "@/lib/payroll/probation";
 import { FigureCell } from "@/components/payroll/figure-cell";
 import { UnpaidDaysCell } from "@/components/payroll/unpaid-days-cell";
 import { EmployeeModal } from "@/components/payroll/employee-modal";
@@ -471,6 +472,18 @@ export default function PayrollEmployeePage() {
    */
   const salaryForMonth = (m: number): PayrollSalary | null =>
     inForceOrEarliest(salaries, year, m);
+
+  /**
+   * Probation, and where it ended.
+   *
+   * The two amounts are the salary rows either side of the confirmation date,
+   * so nothing here holds a figure. What it holds is the line: which months of
+   * the sheet are probation, and whether the confirmed salary was ever keyed.
+   * A sheet that steps up mid-year is a confirmation or a mistake, and until
+   * this there was no way to tell them apart.
+   */
+  const probation = probationFacts(emp, salaries);
+  const probationMonth = (m: number) => isProbationMonth(emp, year, m);
 
   /** Months of this year that sit before anything on record. */
   const inferredBefore: string | null =
@@ -1031,13 +1044,28 @@ export default function PayrollEmployeePage() {
                 value={`${incrementCycle.label} — from ${incrementCycle.month}`
                   + (incrementCycle.overridden ? " (set by hand)" : "")
                   + (incrementCycle.assumed ? " (assumed — no commencement date)" : "")} />
+              {/* Beside the commencement date, because probation is measured
+                  from it and the pair is one fact read in two halves. */}
+              <Field label="Confirmation"
+                value={probation.kind === "unrecorded" ? "Not recorded"
+                  : probation.kind === "on-probation"
+                    ? `On probation — confirmed ${fmtDate(probation.confirmedOn)}`
+                    : `Confirmed ${fmtDate(probation.confirmedOn)}`} />
               <Field label="Original base (commencement)" value={emp.commencement_base ? formatCurrency(emp.commencement_base) : "—"} />
               <Field label="Posting" value={`${emp.posting_type === "CHURCH" ? "Church" : emp.posting_type === "OFFICE" ? "Office" : "Other"} — ${posting || "—"}`} />
               <Field label="Marital Status" value={`${emp.marital_status || "—"}${emp.marital_status ? (emp.spouse_working ? " · spouse working" : " · spouse not working") : ""}`} />
               <Field label="Children (<18 / college)" value={`${emp.children_under_18} / ${emp.children_in_college}`} />
               <Field label="EPF No." value={emp.epf_no || "—"} />
               <Field label="Voluntary EPF" value={emp.epf_voluntary_ee_amount ? formatCurrency(emp.epf_voluntary_ee_amount) : "—"} />
-              <Field label="SKBBK (Lindung 24)" value={emp.skbbk_opted_out ? "Opted out" : "In the scheme"} />
+              {/* An opt-out does not reach the months enrolment was
+                  compulsory, and those months are already deducted, remitted
+                  and filed. Saying so here stops "Opted out" being read as
+                  "nothing was ever taken". */}
+              <Field label="SKBBK (Lindung 24)"
+                value={!emp.skbbk_opted_out ? "In the scheme"
+                  : rates?.skbbk_mandatory_to_month
+                    ? `Opted out — ${MONTH_SHORT[rates.skbbk_mandatory_to_month - 1]} ${year} and earlier still deducted`
+                    : "Opted out"} />
               <Field label="EPF at 60+" value={epfAgeNote(emp.dob, emp.epf_over60_contributing)} />
               <Field label="TIN (Tax)" value={emp.tin || "—"} />
               <Field label="Employer Tax Ref" value={emp.employer_tax_ref || "—"} />
@@ -1169,7 +1197,19 @@ export default function PayrollEmployeePage() {
                     const monthItems = customItemsByMonth[monthNum] ?? [];
                     return (
                     <tr key={i} className="odd:bg-stone-50/50 hover:bg-blue-50/40">
-                      <td className="border border-stone-200 px-1 py-0.5 font-semibold text-stone-600">{MONTHS[i]}</td>
+                      {/* A step up mid-year is a confirmation or a mistake,
+                          and the gross column alone cannot say which. The tag
+                          is on the month rather than the figure because it is
+                          the month that was probation — every column of it. */}
+                      <td className="border border-stone-200 px-1 py-0.5 font-semibold text-stone-600">
+                        {MONTHS[i]}
+                        {probationMonth(monthNum) && (
+                          <span title={`On probation — confirmed ${fmtDate(probation.confirmedOn)}`}
+                            className="ml-1 rounded px-1 text-[8px] font-bold uppercase tracking-wide bg-stone-200 text-stone-500 align-middle">
+                            prob
+                          </span>
+                        )}
+                      </td>
                       <FigureCell
                         employeeId={emp.id} employeeName={emp.full_name}
                         year={year} month={monthNum} category="GROSS"
@@ -1754,6 +1794,17 @@ export default function PayrollEmployeePage() {
               </p>
             )}
 
+            {/* Said once in words, because the tag on each month is small and
+                a tooltip is not an explanation anybody finds. */}
+            {probation.confirmedOn && monthLines.some((_, i) => probationMonth(i + 1)) && (
+              <p className="mt-3 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[11.5px] text-stone-600">
+                Confirmed {fmtDate(probation.confirmedOn)}. The months tagged{" "}
+                <span className="rounded bg-stone-200 px-1 text-[8px] font-bold uppercase tracking-wide text-stone-500">prob</span>{" "}
+                are on the probation salary, so the step up is the confirmation and not a
+                correction.
+              </p>
+            )}
+
             <p className="text-[9px] text-stone-400 mt-3">
               EPF / SOCSO / EIS auto-calculated from the {rates ? year : "default"} rate table (<Link href="/payroll/rates" className="text-[#4a6da7] hover:underline">edit rates</Link>);
               <span className="font-semibold"> PCB entered manually</span> per month (click a PCB cell).
@@ -1779,6 +1830,22 @@ export default function PayrollEmployeePage() {
             </button>
           )}
         </div>
+        {/* A confirmation with nothing dated from it. Not an error — plenty
+            of confirmations carry no raise — but it is the one that gets
+            forgotten, so it is said while it is still current and then stops.
+            See NUDGE_DAYS in lib/payroll/probation.ts. */}
+        {probation.needsAttention && (
+          <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-900">
+            <span className="font-semibold">
+              {probation.kind === "on-probation"
+                ? `On probation until ${fmtDate(probation.confirmedOn)}.`
+                : `Confirmed ${fmtDate(probation.confirmedOn)}.`}
+            </span>{" "}
+            Nothing on the salary history is dated from it, so the confirmed figure is still the
+            probation one. Add a revision effective {fmtDate(probation.confirmedOn)} if
+            confirmation moved the pay &mdash; ignore this if it did not.
+          </p>
+        )}
         {salaries.length === 0 ? (
           <p className="text-sm text-stone-400">No revisions yet.</p>
         ) : (
@@ -1794,6 +1861,15 @@ export default function PayrollEmployeePage() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-stone-700">Effective {fmtDate(s.effective_from)}</span>
                       {i === 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Current</span>}
+                      {/* Which side of confirmation this row sits on. The
+                          amounts were always here; what was missing was
+                          which of them was the probation one. */}
+                      {probation.confirmedOn && s.effective_from < probation.confirmedOn && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">Probation</span>
+                      )}
+                      {probation.confirmedOn && s.effective_from === probation.confirmedOn && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#eef5ff] text-[#2f5b9c] font-medium">On confirmation</span>
+                      )}
                       {s.reason && <span className="text-xs text-stone-400">· {s.reason}</span>}
                     </div>
                     <div className="flex items-center gap-2">

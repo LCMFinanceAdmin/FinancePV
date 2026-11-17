@@ -91,7 +91,9 @@ export default function PayrollRatesPage() {
 
   const canEdit = user?.isFinanceAdmin;
 
-  function setField(key: keyof PayrollStatutoryRates, value: number) {
+  // Null is a value here, not a missing one: "no compulsory months" is an
+  // answer, and coercing it to zero would be a different one.
+  function setField(key: keyof PayrollStatutoryRates, value: number | null) {
     setRow(r => r ? { ...r, [key]: value } : r);
   }
 
@@ -330,6 +332,31 @@ export default function PayrollRatesPage() {
                     <select disabled={!canEdit} className={inputCls}
                       value={Number(row.skbbk_from_month) || 1}
                       onChange={e => setField("skbbk_from_month", Number(e.target.value))}>
+                      {["January","February","March","April","May","June",
+                        "July","August","September","October","November","December"]
+                        .map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                    </select>
+                  </div>
+                )}
+                {/* A scheme that enrols everybody on day one is compulsory
+                    until the month it stops being. Without this, unticking
+                    somebody's SKBBK box emptied the opening months too — months
+                    that were deducted, remitted and filed, so the sheet stopped
+                    matching the PERKESO return it was built from. */}
+                {group === "SKBBK" && (
+                  <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-stone-50 px-3 py-2">
+                    <span className="text-sm text-stone-600">
+                      Compulsory for everyone until
+                      <span className="block text-[11px] text-stone-400">
+                        These months are deducted whether or not somebody has opted out. Leaving
+                        the scheme bites from the month after.
+                      </span>
+                    </span>
+                    <select disabled={!canEdit} className={inputCls}
+                      value={row.skbbk_mandatory_to_month == null ? "" : String(row.skbbk_mandatory_to_month)}
+                      onChange={e => setField("skbbk_mandatory_to_month",
+                        e.target.value === "" ? null : Number(e.target.value))}>
+                      <option value="">No compulsory months</option>
                       {["January","February","March","April","May","June",
                         "July","August","September","October","November","December"]
                         .map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
