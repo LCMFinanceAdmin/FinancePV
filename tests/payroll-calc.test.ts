@@ -128,6 +128,43 @@ test("a compulsory month is still no wage in a month with no wage", () => {
   assert.equal(out.skbbk, 0);
 });
 
+// ── EIS covers citizens and permanent residents ──────────────────────────
+
+test("a foreign national is outside EIS, both sides", () => {
+  const out = line({ gross: 3000, age: 40, isForeigner: true, bands: BANDS });
+  assert.equal(out.eis.ee, 0);
+  assert.equal(out.eis.er, 0);
+  assert.equal(out.eis.total, 0);
+});
+
+test("and SOCSO and EPF are untouched by it", () => {
+  // Foreign workers have been covered by SOCSO since 2019, and EPF is an
+  // election they may make. Neither follows from nationality, so neither
+  // moves here — the difference is Finance's to take up with PERKESO.
+  const here = line({ gross: 3000, age: 40, bands: BANDS });
+  const away = line({ gross: 3000, age: 40, isForeigner: true, bands: BANDS });
+  assert.equal(away.socso.ee, here.socso.ee);
+  assert.equal(away.socso.er, here.socso.er);
+  assert.equal(away.epf.ee, here.epf.ee);
+  assert.equal(away.epf.er, here.epf.er);
+  assert.equal(away.skbbk, here.skbbk, "and SKBBK with them");
+});
+
+test("the rate fallback excludes them too, not only the schedule", () => {
+  // A wage above every band falls through to the percentages, and the rule
+  // has to hold on both paths or it holds on neither.
+  const out = line({ gross: 3000, age: 40, isForeigner: true });
+  assert.equal(out.eis.ee, 0);
+  assert.equal(out.eis.er, 0);
+  assert.ok(line({ gross: 3000, age: 40 }).eis.ee > 0, "and a citizen on that path still pays");
+});
+
+test("being 60 and a foreigner is not two reasons for one exclusion", () => {
+  const out = line({ gross: 3000, age: 65, isForeigner: true, bands: BANDS });
+  assert.equal(out.eis.ee, 0);
+  assert.equal(out.socso.er, 36.9, "still the employer's injury rate");
+});
+
 test("SKBBK is kept out of the contributions total", () => {
   // That figure means EPF + EIS + SOCSO everywhere it is filed; folding a
   // fourth scheme in would overstate SOCSO in the year-end returns.

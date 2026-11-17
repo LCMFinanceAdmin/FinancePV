@@ -548,6 +548,15 @@ export interface PayrollEmployee {
   epf_voluntary_ee_amount: number;
   /** Opted out of SKBBK (Lindung 24). False — in the scheme — is the default. */
   skbbk_opted_out: boolean;
+  /**
+   * Neither a Malaysian citizen nor a permanent resident — migration 263.
+   *
+   * EIS (Act 800) covers citizens and PRs, so nothing is contributed either
+   * side for somebody flagged here. A permanent resident is NOT a foreigner
+   * for this purpose. Governs EIS alone: SOCSO has covered foreign workers
+   * since 2019, and EPF is an election, so neither follows from this.
+   */
+  is_foreigner?: boolean;
   /** Aged 60+ and still making their own EPF contribution. Ignored below 60 and from 75. */
   epf_over60_contributing: boolean;
   epf_no: string;

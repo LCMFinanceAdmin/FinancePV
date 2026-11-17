@@ -167,6 +167,10 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   const [isStaff, setIsStaff] = useState(existing?.is_staff ?? false);
   const [priorExp, setPriorExp] = useState(String(existing?.prior_experience_years ?? 0));
   const [isOrangAsli, setIsOrangAsli] = useState(existing?.is_orang_asli ?? false);
+  // Neither a citizen nor a PR. EIS covers citizens and PRs, so this is the
+  // only thing that keeps a foreign employee out of a scheme that will never
+  // pay out to them — it used to be two corrections a month, keyed by hand.
+  const [isForeigner, setIsForeigner] = useState(existing?.is_foreigner ?? false);
   // Everyone is in SKBBK unless they have left it, so a new employee starts
   // enrolled. Phrased as opting out in the data and as "in the scheme" on the
   // form, because that is the question Finance is actually answering.
@@ -430,6 +434,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
         is_staff: isStaff,
         prior_experience_years: parseInt(priorExp) || 0,
         is_orang_asli: isOrangAsli,
+        is_foreigner: isForeigner,
         skbbk_opted_out: !inSkbbk,
         epf_over60_contributing: epfOver60,
         date_commenced: dateCommenced || null,
@@ -761,6 +766,10 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
               <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isStaff} onChange={e => setIsStaff(e.target.checked)} /> Staff</label>
               <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isOrangAsli} onChange={e => setIsOrangAsli(e.target.checked)} /> Orang Asli</label>
               <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                title="Neither a Malaysian citizen nor a permanent resident. EIS covers citizens and PRs only, so nothing is contributed either side. A permanent resident is not a foreigner here.">
+                <input type="checkbox" checked={isForeigner} onChange={e => setIsForeigner(e.target.checked)} /> Foreign national
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"
                 title="SKBBK (Lindung 24) tops up the employee's SOCSO contribution. Untick only for someone who has opted out of the scheme.">
                 <input type="checkbox" checked={inSkbbk} onChange={e => setInSkbbk(e.target.checked)} /> In SKBBK (Lindung 24)
               </label>
@@ -768,6 +777,14 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                   month that was deducted, remitted and filed for everybody.
                   It no longer does, and saying so here stops the box being
                   mistrusted for the months it does govern. */}
+              {isForeigner && (
+                <p className="basis-full text-[10.5px] leading-snug text-stone-500">
+                  No EIS, either side &mdash; the scheme covers citizens and permanent residents
+                  only. SOCSO and EPF are unchanged by this: foreign workers have been covered by
+                  SOCSO since 2019, and EPF is an election. Tick this only for somebody who is
+                  neither a citizen nor a PR.
+                </p>
+              )}
               {!inSkbbk && (
                 <p className="basis-full text-[10.5px] leading-snug text-stone-500">
                   Leaving the scheme takes effect from the month after it stopped being

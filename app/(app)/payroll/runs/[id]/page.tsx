@@ -283,6 +283,7 @@ export default function PayrollRunDetailPage() {
         month: run.month, bands,
         isOrangAsli: e.is_orang_asli, voluntaryEpf: Number(e.epf_voluntary_ee_amount) || 0,
         skbbkOptedOut: e.skbbk_opted_out, epfOver60Contributing: e.epf_over60_contributing,
+        isForeigner: e.is_foreigner,
         manualPcb: pcb[e.id] || 0, eplDeduction: epl, ptptnDeduction: ptptn,
         // Unpaid days come off after the statutory figures, so they are passed
         // rather than folded into the gross. A bonus has none.

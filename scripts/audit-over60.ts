@@ -168,7 +168,7 @@ function audit(p: Payload): Finding[] {
       gross, age, month: is13th ? undefined : month, bands, rates,
       employmentType: emp.employment_type, isOrangAsli: emp.is_orang_asli,
       voluntaryEpf: n(emp.epf_voluntary_ee_amount),
-      skbbkOptedOut: emp.skbbk_opted_out,
+      skbbkOptedOut: emp.skbbk_opted_out, isForeigner: emp.is_foreigner,
       epfOver60Contributing: emp.epf_over60_contributing ?? false,
       manualPcb: 0, eplDeduction: 0, is13thMonth: is13th,
     };

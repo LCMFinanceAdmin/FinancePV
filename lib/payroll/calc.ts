@@ -169,6 +169,19 @@ export interface CalcInput {
   is13thMonth: boolean;        // 13th month: EPF + PCB only, no SOCSO/EIS
   skbbkOptedOut?: boolean;     // opted out of SKBBK (Lindung 24) — then nothing is deducted
   /**
+   * Neither a Malaysian citizen nor a permanent resident.
+   *
+   * EIS (Act 800) covers citizens and PRs, so a foreign national is outside
+   * the scheme and nothing is contributed either side. A permanent resident
+   * is not a foreigner here.
+   *
+   * Governs EIS alone. SOCSO has covered foreign workers since January 2019
+   * on an employment-injury basis, and EPF is an election they may make, but
+   * both of those are decisions LCM takes with PERKESO and KWSP rather than
+   * consequences of nationality — so neither is touched by this.
+   */
+  isForeigner?: boolean;
+  /**
    * An employee aged 60 or over who has chosen to keep contributing to EPF.
    *
    * Past 60 the employee's own contribution becomes a choice. Step out and
@@ -645,10 +658,16 @@ export function calcLine(input: CalcInput): CalcLine {
     // own rounding, so nothing here rounds them again.
     const band = findBand(input.bands, gross);
 
+    // EIS covers Malaysian citizens and permanent residents. A foreign
+    // national is outside the scheme, so neither side contributes — the same
+    // shape as the 60+ rule beside it, for a different reason. SOCSO is
+    // untouched by it: foreign workers have been covered there since 2019.
+    const inEis = !over60 && !input.isForeigner;
+
     if (band) {
       // 60+ is Category 2: employment injury only, and no employee share.
       socso = portion(over60 ? 0 : band.socso_ee, over60 ? band.socso_er_over60 : band.socso_er);
-      if (!over60) eis = portion(band.eis, band.eis);
+      if (inEis) eis = portion(band.eis, band.eis);
     } else {
       const socsoBase = Math.min(gross, rates.socso_ceiling);
       // 60+: employment-injury only (no employee share); else standard rates
@@ -656,7 +675,7 @@ export function calcLine(input: CalcInput): CalcLine {
       const socsoEr = over60 ? socsoBase * rates.socso_er_over60 : socsoBase * rates.socso_er;
       socso = portion(socsoEe, socsoEr);
 
-      if (!over60) {
+      if (inEis) {
         const eisBase = Math.min(gross, rates.eis_ceiling);
         const eisAmt = eisBase * rates.eis_rate;
         eis = portion(eisAmt, eisAmt);
