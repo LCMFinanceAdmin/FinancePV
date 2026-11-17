@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, FilePlus2, HandCoins
 import { createClient } from "@/lib/supabase/client";
 import { RecordLoanModal } from "@/components/payroll/record-loan-modal";
 import { OpeningBalanceEditor } from "@/components/payroll/opening-balance-editor";
+import { LoanFacts } from "@/components/payroll/loan-facts";
 import { LoanAffordability } from "@/components/payroll/loan-affordability";
 import { affordabilityOf } from "@/lib/payroll/loan-affordability";
 import { inForceByPerson } from "@/lib/payroll/salary-in-force";
@@ -40,14 +41,6 @@ function loanStage(loan: EmployeeLoan): { label: string; cls: string } {
   if (!s.bishop) return { label: "Awaiting Bishop", cls: "bg-amber-100 text-amber-700" };
   if (!s.treasurer) return { label: "Awaiting Treasurer", cls: "bg-amber-100 text-amber-700" };
   return { label: "Approved", cls: "bg-green-100 text-green-700" };
-}
-
-/** A full date, for a paper approval that happened on a particular day. */
-function fmtMonthDay(s: string | null): string {
-  if (!s) return "—";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? "—"
-    : d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function fmtMonth(s: string | null): string {
@@ -525,25 +518,20 @@ export default function PayrollLoansPage() {
                 {/* Detail */}
                 {isOpen && (
                   <div className="border-t border-stone-100 bg-stone-50/50 px-4 py-3 space-y-3">
-                    {/* Approved on paper. Stated first and plainly, so nobody
-                        reads the absent signature blocks below as missing
-                        rather than as never having existed. */}
-                    {loan.approved_outside && (
-                      <div className="rounded-lg border border-[#bcd3f0] bg-[#eef5ff] px-3 py-2 text-xs text-[#173a72]">
-                        <p className="font-semibold">Approved outside this system</p>
-                        <p className="mt-0.5">
-                          On paper{loan.approved_outside_on ? ` on ${fmtMonthDay(loan.approved_outside_on)}` : ""}
-                          {loan.approved_outside_by ? `, by ${loan.approved_outside_by}` : ""}.
-                          {" "}Recorded here so the payroll tracks the deduction — there are no
-                          e-signatures on this loan and none are expected.
-                        </p>
-                        {!loan.attachment_path && (
-                          <p className="mt-1 font-medium text-amber-800">
-                            No signed agreement attached. It is the only evidence this loan has.
-                          </p>
-                        )}
-                      </div>
-                    )}
+                    {/* What it was for, how it was approved, and what paper
+                        backs it — one strip read across, instead of a box, a
+                        loose line and a lone link each weighing as much as the
+                        money panels below. Purpose and agreement are editable:
+                        one is typed in a hurry, the other often arrives after
+                        the loan is keyed. */}
+                    <LoanFacts
+                      loan={loan}
+                      employeeName={emp?.full_name ?? ""}
+                      canEdit={!!canApply}
+                      onOpenAttachment={() => openAttachment(loan)}
+                      onSaved={(msg) => { loadLoans(); setToast(msg); setTimeout(() => setToast(""), 3000); }}
+                      onError={(msg) => { setToast(msg); setTimeout(() => setToast(""), 5000); }}
+                    />
 
                     {/* Approved & locked banner */}
                     {allSigned && ["ACTIVE", "SETTLED"].includes(loan.status) && (
@@ -554,53 +542,36 @@ export default function PayrollLoansPage() {
                       </div>
                     )}
 
-                    {loan.purpose && <p className="text-xs text-stone-500">Purpose: {loan.purpose}</p>}
-                    {loan.attachment_path && (
-                      <button onClick={() => openAttachment(loan)}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5c8f] transition-colors">
-                        <Paperclip size={12} /> {loan.attachment_name || "View attachment"}
-                      </button>
-                    )}
+                    {/* The two money questions, side by side where there is
+                        room: what this leaves of the salary, and what is
+                        actually still owed on it. */}
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      {(() => {
+                        const others = loans.filter(o =>
+                          o.id !== loan.id && o.employee_id === loan.employee_id && o.status === "ACTIVE");
+                        const employee = empById[loan.employee_id];
+                        if (!employee) return null;
+                        const a = affordabilityOf(
+                          loan, employee, salByEmp[loan.employee_id] ?? null, others,
+                          rates, bands, new Date().getFullYear(), new Date().getMonth() + 1);
+                        if (!a) return null;
+                        return <LoanAffordability a={a} others={others} />;
+                      })()}
 
-                    {/* What else this person is already repaying.
-                        More than one loan may run at once — the Bishop and the
-                        Treasurer's decision of November 2026 — and they are
-                        still the two who approve each one. This is the figure
-                        that decision turns on, and with one loan at a time it
-                        never had to be stated. */}
-                    {(() => {
-                      // What this instalment, and any already running, leave
-                      // of the salary. Shown every time rather than only when
-                      // it is alarming: a figure that appears only in trouble
-                      // is one nobody has learned to read.
-                      const others = loans.filter(o =>
-                        o.id !== loan.id && o.employee_id === loan.employee_id && o.status === "ACTIVE");
-                      const employee = empById[loan.employee_id];
-                      if (!employee) return null;
-                      const a = affordabilityOf(
-                        loan, employee, salByEmp[loan.employee_id] ?? null, others,
-                        rates, bands, new Date().getFullYear(), new Date().getMonth() + 1);
-                      if (!a) return null;
-                      return <LoanAffordability a={a} others={others} />;
-                    })()}
-
-                    {/* What was repaid before the system, and so what is
-                        actually still owed. Editable here and not only when
-                        the loan is first keyed: the figure comes off a paper
-                        record, and those get read wrong. */}
-                    {["ACTIVE", "SETTLED"].includes(loan.status) && (
-                      <OpeningBalanceEditor
-                        loan={loan}
-                        employeeName={emp?.full_name ?? ""}
-                        opening={repayments.find(r => r.loan_id === loan.id && r.is_opening) ?? null}
-                        repaidByRuns={repayments
-                          .filter(r => r.loan_id === loan.id && !r.is_opening)
-                          .reduce((x, r) => x + Number(r.amount), 0)}
-                        canEdit={!!canApply}
-                        onSaved={() => { loadLoans(); setToast("Opening balance saved"); setTimeout(() => setToast(""), 3000); }}
-                        onError={(msg) => { setToast(msg); setTimeout(() => setToast(""), 5000); }}
-                      />
-                    )}
+                      {["ACTIVE", "SETTLED"].includes(loan.status) && (
+                        <OpeningBalanceEditor
+                          loan={loan}
+                          employeeName={emp?.full_name ?? ""}
+                          opening={repayments.find(r => r.loan_id === loan.id && r.is_opening) ?? null}
+                          repaidByRuns={repayments
+                            .filter(r => r.loan_id === loan.id && !r.is_opening)
+                            .reduce((x, r) => x + Number(r.amount), 0)}
+                          canEdit={!!canApply}
+                          onSaved={() => { loadLoans(); setToast("Opening balance saved"); setTimeout(() => setToast(""), 3000); }}
+                          onError={(msg) => { setToast(msg); setTimeout(() => setToast(""), 5000); }}
+                        />
+                      )}
+                    </div>
 
                     {/* E-signature blocks */}
                     {hasEsign && (
