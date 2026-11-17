@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { ProfileSection, EmptyState, period } from "@/components/people/ui";
 import { Modal } from "@/components/ui/modal";
-import { Church, Plus, LogOut, Trash2, Star } from "lucide-react";
+import { Church, Plus, LogOut, Trash2, Star, Pencil } from "lucide-react";
 
 interface Membership {
   id: string;
@@ -40,6 +40,12 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
   const [rows, setRows] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  // Correcting a membership that was recorded wrongly. Ending and deleting
+  // were the only ways out of a bad row, and neither fits a typo: ending it
+  // says they left, deleting it says it never happened. A membership with no
+  // dates on it — the common case, added before anyone looked them up — could
+  // not be completed at all.
+  const [editing, setEditing] = useState<Membership | null>(null);
   const [ending, setEnding] = useState<Membership | null>(null);
 
   const load = useCallback(async () => {
@@ -155,6 +161,11 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
 
                   {canEdit && (
                     <div className="flex items-center gap-1">
+                      <button onClick={() => setEditing(m)} title="Correct these details"
+                        aria-label={`Edit the ${nameOf(m.congregation_id)} membership`}
+                        className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-[#eef4fd] hover:text-[#3a6db0]">
+                        <Pencil size={13} />
+                      </button>
                       {currentRow ? (
                         <>
                           {!m.is_primary && rows.filter(r => !r.end_date).length > 1 && (
@@ -195,12 +206,16 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
         </p>
       </ProfileSection>
 
-      {adding && (
-        <AddMembershipModal personId={personId} congregations={congregations}
-          existing={rows}
-          onClose={() => setAdding(false)}
-          onAdded={async () => { setAdding(false); await load(); onChanged(); say("Membership added"); }}
-          say={say} />
+      {(adding || editing) && (
+        <MembershipModal personId={personId} congregations={congregations}
+          existing={rows} editing={editing}
+          onClose={() => { setAdding(false); setEditing(null); }}
+          onSaved={async () => {
+            const wasEdit = !!editing;
+            setAdding(false); setEditing(null);
+            await load(); onChanged();
+            say(wasEdit ? "Membership updated" : "Membership added");
+          }} />
       )}
 
       {ending && (
@@ -213,35 +228,55 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
   );
 }
 
-// ── Add ───────────────────────────────────────────────────────────────────
-function AddMembershipModal({ personId, congregations, existing, onClose, onAdded, say }: {
+// ── Add and correct ───────────────────────────────────────────────────────
+// One form for both. They ask for exactly the same things, and a separate edit
+// form would be the place the two quietly drift apart — the add form learning a
+// field the edit form cannot reach, so a record could be created in a state
+// nobody could correct.
+function MembershipModal({ personId, congregations, existing, editing, onClose, onSaved }: {
   personId: string; congregations: Congregation[]; existing: Membership[];
-  onClose: () => void; onAdded: () => void; say: (m: string, ok?: boolean) => void;
+  /** The membership being corrected, or null when adding a new one. */
+  editing: Membership | null;
+  onClose: () => void; onSaved: () => void;
 }) {
   const supabase = createClient();
-  const [congregationId, setCongregationId] = useState("");
-  const [role, setRole] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [isPrimary, setIsPrimary] = useState(existing.filter(r => !r.end_date).length === 0);
+  const [congregationId, setCongregationId] = useState(editing?.congregation_id ?? "");
+  const [role, setRole] = useState(editing?.role ?? "");
+  // The older free-text column (099), kept because the row still prints it
+  // after the dates. Until now no form wrote it, so a note that arrived with
+  // an import was on the page and beyond reach of the people who keep it.
+  const [roleNote, setRoleNote] = useState(editing?.role_note ?? "");
+  const [start, setStart] = useState(editing?.start_date ?? "");
+  const [end, setEnd] = useState(editing?.end_date ?? "");
+  const [isPrimary, setIsPrimary] = useState(
+    editing ? editing.is_primary : existing.filter(r => !r.end_date).length === 0);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
-  // Adding a church they are already currently at is the one thing the index
-  // will refuse, so say it before they press the button rather than after.
-  const clash = !end && existing.some(r => !r.end_date && r.congregation_id === congregationId);
+  // Being currently at a church they are already currently at is the one thing
+  // the index will refuse, so say it before they press the button rather than
+  // after. The row being corrected is not a clash with itself.
+  const clash = !end && existing.some(r =>
+    !r.end_date && r.congregation_id === congregationId && r.id !== editing?.id);
+  // Left before they arrived. The database will take it; nobody means it.
+  const backwards = !!start && !!end && end < start;
 
   async function save() {
     if (!congregationId) { setErr("Choose a church"); return; }
     setErr(""); setSaving(true);
-    const { error } = await supabase.from("person_congregations").insert({
-      person_id: personId,
+    const fields = {
       congregation_id: congregationId,
       role: role.trim() || null,
+      role_note: roleNote.trim() || null,
       start_date: start || null,
       end_date: end || null,
       is_primary: isPrimary && !end,
-    });
+    };
+    const { data, error } = editing
+      ? await supabase.from("person_congregations")
+          .update(fields).eq("id", editing.id).select("id")
+      : await supabase.from("person_congregations")
+          .insert({ person_id: personId, ...fields }).select("id");
     setSaving(false);
     if (error) {
       setErr(error.code === "23505"
@@ -249,21 +284,30 @@ function AddMembershipModal({ personId, congregations, existing, onClose, onAdde
         : error.message);
       return;
     }
-    if (isPrimary && !end) {
-      // One main church at a time; the new one wins.
-      await supabase.from("person_congregations").update({ is_primary: false })
-        .eq("person_id", personId).neq("congregation_id", congregationId);
+    // A policy that refuses an UPDATE matches no rows and returns no error, so
+    // without counting them a save that never happened would report success.
+    if (!data?.length) {
+      setErr("Refused — you do not have permission to change this record.");
+      return;
     }
-    onAdded();
+    if (fields.is_primary) {
+      // One main church at a time; the one just saved wins. Keyed on the row
+      // rather than the church, so correcting a row does not clear itself.
+      await supabase.from("person_congregations").update({ is_primary: false })
+        .eq("person_id", personId).neq("id", data[0].id);
+    }
+    onSaved();
   }
 
   return (
-    <Modal title="Add church membership"
-      description="A past membership is worth adding too — it is how the history is built."
+    <Modal title={editing ? "Correct church membership" : "Add church membership"}
+      description={editing
+        ? "Fixing what was recorded. To record that they have left, use End membership instead — that keeps the years they were there."
+        : "A past membership is worth adding too — it is how the history is built."}
       onClose={onClose}
       footer={<>
-        <Button className="flex-1" loading={saving} onClick={save} disabled={clash}>
-          <Plus size={13} /> Add membership
+        <Button className="flex-1" loading={saving} onClick={save} disabled={clash || backwards}>
+          {editing ? <><Pencil size={13} /> Save changes</> : <><Plus size={13} /> Add membership</>}
         </Button>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
       </>}>
@@ -287,6 +331,15 @@ function AddMembershipModal({ personId, congregations, existing, onClose, onAdde
             placeholder="Member, Elder, Sunday School Teacher…" />
         </div>
 
+        <div>
+          <label className={labelClass}>Note</label>
+          <input className={fieldClass} value={roleNote} onChange={e => setRoleNote(e.target.value)}
+            placeholder="Transferred from Ipoh, attends the Mandarin service…" />
+          <p className="mt-0.5 text-[11px] text-stone-400">
+            Anything worth saying about this membership. Shown on the record after the dates.
+          </p>
+        </div>
+
         <div className="grid gap-2 sm:grid-cols-2">
           <div>
             <label className={labelClass}>From</label>
@@ -295,7 +348,13 @@ function AddMembershipModal({ personId, congregations, existing, onClose, onAdde
           <div>
             <label className={labelClass}>Until</label>
             <input className={fieldClass} type="date" value={end} onChange={e => setEnd(e.target.value)} />
-            <p className="mt-0.5 text-[11px] text-stone-400">Blank means they are still there.</p>
+            {backwards ? (
+              <p className="mt-0.5 text-[11px] font-medium text-amber-600">
+                That is before they arrived.
+              </p>
+            ) : (
+              <p className="mt-0.5 text-[11px] text-stone-400">Blank means they are still there.</p>
+            )}
           </div>
         </div>
 
