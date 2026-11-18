@@ -14,7 +14,7 @@ import type { UserProfile } from "@/lib/types";
 import { isStaffMember } from "@/lib/types";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, RefreshCw, Users, Building2,
-  Settings, Activity, ClipboardCheck, PiggyBank, FlaskConical, ShoppingCart,
+  Settings, Activity, ClipboardCheck, PiggyBank, FlaskConical, ShoppingCart, Gavel,
   ClipboardList, CreditCard, Hammer, CalendarDays, TrendingUp, Inbox, Landmark,
   Wallet, HandCoins, CalendarClock, Church, Briefcase, UserCircle, Handshake, Hash, CalendarCheck,
   FileSpreadsheet, ReceiptText,
@@ -305,6 +305,17 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: <PiggyBank size={size} />,
         // A delegate reads it too — verifying a budget line means checking what
         // is left of it.
+        show: (u) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory
+          || !!u.isMinistryVerifier || isAdmin(u),
+      },
+      {
+        href: "/church/resolutions", label: "EXCO Resolutions",
+        desc: "The minute book: every meeting, and what it resolved",
+        // Whoever can see a budget can see the authority cited on it. A
+        // citation nobody is able to look up is decoration, which is what it
+        // was while the field held typed text. The Secretary keeps the
+        // register and reaches it here too — they are a signatory.
+        icon: <Gavel size={size} />,
         show: (u) => u.isFinanceAdmin || u.isMinistryHead || u.isSignatory
           || !!u.isMinistryVerifier || isAdmin(u),
       },

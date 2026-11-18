@@ -12,6 +12,7 @@ import {
   type BudgetPeriod, type ReportLine,
 } from "@/components/budget/budget-report-html";
 import { sameBudgetLine, SPENT_STATUSES, IN_FLIGHT_STATUSES } from "@/lib/budget-line";
+import { ResolutionPicker } from "@/components/exco/resolution-picker";
 
 const MINISTRIES = [
   "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
@@ -248,11 +249,14 @@ function BudgetInner() {
   const [quickEdit, setQuickEdit] = useState<{ id: string; value: string } | null>(null);
   const [decisionModal, setDecisionModal] = useState<"APPROVE" | "REJECT" | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
-  // The EXCO meeting that approved the budget. The decision is the meeting's;
-  // these two say which one, so the figures and the minute book point at each
-  // other. Required by approve_budget_proposal (244), not only by this form.
-  const [resolutionRef, setResolutionRef] = useState("");
-  const [resolutionDate, setResolutionDate] = useState("");
+  // The EXCO resolution the decision was taken under. It was two typed boxes,
+  // so three spellings of one meeting were three meetings as far as the app was
+  // concerned and nothing stopped a reference to a sitting that never happened.
+  // It is now a pointer into the register (migration 265), and the decision
+  // functions refuse an id that is not in it. The citation is carried alongside
+  // only so a toast and a notification can say it out loud.
+  const [resolutionId, setResolutionId] = useState<string | null>(null);
+  const [resolutionCite, setResolutionCite] = useState("");
   // The allocation, while the budget is still being drafted. Held as text so a
   // half-typed figure doesn't keep re-rendering as a number.
   const [allocationInput, setAllocationInput] = useState("");
@@ -711,8 +715,8 @@ function BudgetInner() {
     setProposalBusy(true);
     try {
       if (decision === "APPROVE") {
-        if (!resolutionRef.trim() || !resolutionDate) {
-          showToast("Name the EXCO meeting resolution and its date", false);
+        if (!resolutionId) {
+          showToast("Cite the EXCO resolution that decided this", false);
           return;
         }
         // A DB function so the lines go live in the same transaction as the
@@ -722,23 +726,21 @@ function BudgetInner() {
         const { error } = await supabase.rpc("approve_budget_proposal", {
           proposal: proposal.id,
           decided_by_email: userEmail,
-          p_resolution_ref: resolutionRef.trim(),
-          p_resolution_date: resolutionDate,
+          p_resolution: resolutionId,
           note: decisionNote || null,
         });
         if (error) { showToast("Error: " + error.message, false); return; }
         showToast(`${selectedMinistry} ${selectedYear} budget approved — now live`);
       } else {
         if (!decisionNote.trim()) { showToast("Give a reason so the EXCO can revise it", false); return; }
-        if (!resolutionRef.trim() || !resolutionDate) {
-          showToast("Name the EXCO meeting resolution and its date", false);
+        if (!resolutionId) {
+          showToast("Cite the EXCO resolution that decided this", false);
           return;
         }
         const { error } = await supabase.rpc("reject_budget_proposal", {
           proposal: proposal.id,
           decided_by_email: userEmail,
-          p_resolution_ref: resolutionRef.trim(),
-          p_resolution_date: resolutionDate,
+          p_resolution: resolutionId,
           note: decisionNote.trim(),
         });
         if (error) { showToast("Error: " + error.message, false); return; }
@@ -924,18 +926,17 @@ function BudgetInner() {
   async function approveChangeRequest(req: ChangeRequest) {
     setSaving(true);
     try {
-      if (!resolutionRef.trim() || !resolutionDate) {
-        showToast("Name the EXCO meeting resolution and its date", false);
+      if (!resolutionId) {
+        showToast("Cite the EXCO resolution that decided this", false);
         return;
       }
       const { error } = await supabase.rpc("apply_budget_change_request", {
         request: req.id,
         p_year: selectedYear,
-        p_resolution_ref: resolutionRef.trim(),
-        p_resolution_date: resolutionDate,
+        p_resolution: resolutionId,
       });
       if (error) { showToast("Error applying: " + error.message, false); return; }
-      await notifyRequesterOfDecision(req, "approved", resolutionRef.trim());
+      await notifyRequesterOfDecision(req, "approved", resolutionCite);
       showToast("Approved and applied to budget");
       setReviewModal(null);
       await loadBudgetData(selectedMinistry);
@@ -945,15 +946,14 @@ function BudgetInner() {
   }
 
   async function rejectChangeRequest(req: ChangeRequest) {
-    if (!resolutionRef.trim() || !resolutionDate) {
-      showToast("Name the EXCO meeting resolution and its date", false);
+    if (!resolutionId) {
+      showToast("Cite the EXCO resolution that decided this", false);
       return;
     }
     const { error } = await supabase.rpc("decline_budget_change_request", {
       request: req.id,
       reason: rejectionReason,
-      p_resolution_ref: resolutionRef.trim(),
-      p_resolution_date: resolutionDate,
+      p_resolution: resolutionId,
     });
     if (error) { showToast("Error: " + error.message, false); return; }
     await notifyRequesterOfDecision(req, "declined", rejectionReason.trim());
@@ -1174,13 +1174,13 @@ function BudgetInner() {
               {proposal.status === "SUBMITTED" && canDecideProposal && (
                 <>
                   <button
-                    onClick={() => { setDecisionNote(""); setResolutionRef(""); setResolutionDate(""); setDecisionModal("APPROVE"); }}
+                    onClick={() => { setDecisionNote(""); setResolutionId(null); setResolutionCite(""); setDecisionModal("APPROVE"); }}
                     disabled={proposalBusy}
                     className="rounded-xl bg-green-600 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
                     ✓ Approve budget
                   </button>
                   <button
-                    onClick={() => { setDecisionNote(""); setResolutionRef(""); setResolutionDate(""); setDecisionModal("REJECT"); }}
+                    onClick={() => { setDecisionNote(""); setResolutionId(null); setResolutionCite(""); setDecisionModal("REJECT"); }}
                     disabled={proposalBusy}
                     className="rounded-xl border border-red-300 bg-white px-3.5 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50">
                     Send back
@@ -1233,7 +1233,7 @@ function BudgetInner() {
                       </div>
                     </div>
                     <button
-                      onClick={() => { setResolutionRef(""); setResolutionDate(""); setReviewModal(req); setRejectionReason(""); }}
+                      onClick={() => { setResolutionId(null); setResolutionCite(""); setReviewModal(req); setRejectionReason(""); }}
                       className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors"
                     >
                       Review
@@ -1570,34 +1570,15 @@ function BudgetInner() {
                 </div>
               )}
               {(
-                <div className="grid grid-cols-5 gap-3">
-                  <div className="col-span-3">
-                    <label className="mb-1 block text-xs font-semibold text-stone-600">
-                      EXCO resolution <span className="text-red-400">* required</span>
-                    </label>
-                    <input
-                      value={resolutionRef}
-                      onChange={e => setResolutionRef(e.target.value)}
-                      placeholder="e.g. EXCO/2026/11"
-                      className="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm focus:border-[#4a6da7] focus:outline-none" />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="mb-1 block text-xs font-semibold text-stone-600">
-                      Meeting date <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={resolutionDate}
-                      max={new Date().toISOString().slice(0, 10)}
-                      onChange={e => setResolutionDate(e.target.value)}
-                      className="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm focus:border-[#4a6da7] focus:outline-none" />
-                  </div>
-                  <p className="col-span-5 -mt-1 text-[11px] leading-snug text-stone-500">
-                    The EXCO decides the budget by vote at a meeting held for it, and sending one
-                    back is that meeting&rsquo;s decision too. This records which meeting, so the
-                    figures and the minute book agree.
-                  </p>
-                </div>
+                <ResolutionPicker
+                  value={resolutionId}
+                  onChange={(id, cite) => { setResolutionId(id); setResolutionCite(cite); }}
+                  role={userRole}
+                  suggestSubject={`${selectedYear} budget for ${selectedMinistry} ${decisionModal === "APPROVE" ? "approved" : "sent back for revision"}`}
+                  suggestMinistry={selectedMinistry}
+                  suggestAmount={proposal?.allocation ?? totalBudget}
+                  hint="The EXCO decides the budget by vote at a meeting held for it, and sending one back is that meeting's decision too. Citing the meeting is what lets the figures and the minute book be checked against each other."
+                />
               )}
               <div>
                 <label className="mb-1 block text-xs font-semibold text-stone-600">
@@ -2088,33 +2069,16 @@ function BudgetInner() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-5 gap-3">
-                <div className="col-span-3">
-                  <label className="mb-1 block text-xs font-bold text-stone-700">
-                    EXCO resolution <span className="text-red-400">* required</span>
-                  </label>
-                  <input
-                    value={resolutionRef}
-                    onChange={e => setResolutionRef(e.target.value)}
-                    placeholder="e.g. EXCO/2026/11"
-                    className="w-full rounded-lg border-2 border-stone-800 px-3 py-2 text-sm focus:border-[#2f5b9c] focus:outline-none" />
-                </div>
-                <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-bold text-stone-700">
-                    Meeting date <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={resolutionDate}
-                    max={new Date().toISOString().slice(0, 10)}
-                    onChange={e => setResolutionDate(e.target.value)}
-                    className="w-full rounded-lg border-2 border-stone-800 px-3 py-2 text-sm focus:border-[#2f5b9c] focus:outline-none" />
-                </div>
-                <p className="col-span-5 -mt-1 text-[11px] leading-snug text-stone-500">
-                  A change to an approved budget changes what the EXCO approved, so it carries the
-                  same authority. Required either way &mdash; approving or declining.
-                </p>
-              </div>
+              <ResolutionPicker
+                value={resolutionId}
+                onChange={(id, cite) => { setResolutionId(id); setResolutionCite(cite); }}
+                role={userRole}
+                suggestSubject={`${String(reviewModal.proposed_data?.project_name ?? "Budget change")} — ${reviewModal.ministry}`}
+                suggestMinistry={reviewModal.ministry}
+                suggestAmount={Number(reviewModal.proposed_data?.estimated_expenses ?? 0)
+                            || Number(reviewModal.proposed_data?.estimated_income ?? 0) || null}
+                hint="A change to an approved budget changes what the EXCO approved, so it carries the same authority. Required either way — approving or declining."
+              />
 
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-1">Reason <span className="text-stone-400 font-normal">(required if declining)</span></label>
