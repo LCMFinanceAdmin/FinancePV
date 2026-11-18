@@ -129,6 +129,36 @@ interface ChangeRequest {
   rejection_reason: string | null;
 }
 
+/** A line from a year already on record, as read back to be offered again. */
+interface EarlierLine {
+  year: number;
+  project_name: string;
+  project_type: "expense" | "income" | null;
+  description: string | null;
+  estimated_income: number | null;
+  estimated_expenses: number | null;
+  special_notes: string | null;
+}
+
+/**
+ * One suggested line, while it is still being decided on.
+ *
+ * Held as its own editable shape rather than as a budget_items row: the figure
+ * is text so a half-typed number does not keep re-rendering, and `include` is
+ * what makes this a suggestion rather than a copy.
+ */
+interface CarryRow {
+  key: string;
+  include: boolean;
+  project_name: string;
+  project_type: "expense" | "income";
+  amount: string;
+  description: string;
+  special_notes: string;
+  /** Already in the target year under this name — ticking it would make two. */
+  already: boolean;
+}
+
 const emptyForm = {
   project_name: "",
   project_type: "expense" as "expense" | "income",
@@ -173,6 +203,22 @@ function BudgetInner() {
   // proposal is drafted, and earlier years stay readable for comparison.
   const CURRENT_YEAR = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
+  /**
+   * Which years can be opened at all.
+   *
+   * Two ahead, because a budget is often sketched a year before it is tabled,
+   * and five back, because what a ministry was given in 2022 is the argument
+   * for what it is given in 2027 and there was nowhere to put it.
+   *
+   * Filling in a past year is safe: the spending gate reads the voucher's own
+   * year (migration 251), so keying in 2023 now cannot change what is
+   * approvable today.
+   */
+  const BUDGET_YEARS = [
+    CURRENT_YEAR + 2, CURRENT_YEAR + 1, CURRENT_YEAR,
+    CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3,
+    CURRENT_YEAR - 4, CURRENT_YEAR - 5,
+  ];
   const [reportPeriod, setReportPeriod] = useState<BudgetPeriod>("QUARTERLY");
   const [buildingReport, setBuildingReport] = useState(false);
 
@@ -190,6 +236,13 @@ function BudgetInner() {
   const [pendingProposals, setPendingProposals] = useState<BudgetProposal[]>([]);
   const [proposalBusy, setProposalBusy] = useState(false);
   const [copying, setCopying] = useState(false);
+  // Starting a year from one already on record. The pool is every earlier year
+  // at once so the source can be changed without another round trip.
+  const [carryOpen, setCarryOpen] = useState(false);
+  const [carrySource, setCarrySource] = useState(0);
+  const [carryYears, setCarryYears] = useState<number[]>([]);
+  const [carryPool, setCarryPool] = useState<EarlierLine[]>([]);
+  const [carryRows, setCarryRows] = useState<CarryRow[]>([]);
   // Adjusting one figure without opening the whole form — the common edit by
   // far when a budget is being worked through line by line.
   const [quickEdit, setQuickEdit] = useState<{ id: string; value: string } | null>(null);
@@ -209,6 +262,28 @@ function BudgetInner() {
   const isFinanceAdmin = FINANCE_ADMIN_ROLES.includes(userRole);
   const isSeniorRole = SENIOR_ROLES.includes(userRole);
   const canDirectEdit = isFinanceAdmin;
+  /**
+   * May this person write the lines, or must they ask?
+   *
+   * Finance writes anywhere. A ministry writes the lines of its own budget
+   * while that budget is still a draft — which is migration 248, and what the
+   * database has enforced since: "a ministry proposes its own budget and asks
+   * for its own changes; that is theirs". This page had not caught up, so an
+   * EXCO member drafting next year still had every line of their own proposal
+   * routed through a change request for Finance to apply, which is neither
+   * what the policy says nor a decision anybody made.
+   *
+   * It stops exactly where the policy stops. Once the EXCO has approved a
+   * budget the lines are live and changing one is a request somebody decides;
+   * a submitted proposal is frozen while the meeting considers it; and another
+   * ministry's budget is never yours.
+   */
+  const ownsSelectedMinistry = userMinistries.includes(selectedMinistry);
+  const draftingOwnBudget =
+    selectedYear > CURRENT_YEAR
+    && ownsSelectedMinistry
+    && (!proposal || proposal.status === "DRAFT" || proposal.status === "REJECTED");
+  const canWriteLines = canDirectEdit || draftingOwnBudget;
   const canApproveRequests = CAN_APPROVE_ROLES.includes(userRole);
   // The Administrator sees every ministry's budget and the papers filed with
   // it. She edits nothing — canDirectEdit and canApproveRequests both exclude
@@ -362,48 +437,113 @@ function BudgetInner() {
     }
   }
 
-  /**
-   * Bring last year's lines forward.
-   *
-   * Budgets are mostly the same shape year to year — the same projects with
-   * different numbers — and retyping a dozen lines is where mistakes and blank
-   * years come from. The amounts come across too, as a starting point to edit
-   * rather than a figure to accept: a copied budget nobody revised is at least
-   * visible, whereas a missing one silently reads as unbudgeted.
-   *
-   * Lines whose project name already exists are skipped, so this can be run
-   * twice without doubling the budget.
-   */
-  async function copyFromPreviousYear() {
-    const from = selectedYear - 1;
+  // ── Starting a year from one already on record ───────────────────────────
+  //
+  // A budget is mostly the previous budget with different numbers, and retyping
+  // a dozen lines is where blank years and typos come from. What stood here
+  // copied every line of last year straight in, which meant the first thing
+  // anybody did afterwards was hunt down and delete the half that had finished
+  // — and it could only see the year immediately before, so a ministry drafting
+  // 2028 with nothing yet in 2027 was told it had never had a budget.
+  //
+  // The earlier year now arrives as a proposal to the person reading: every
+  // line listed, ticked or not, its figure ready to be changed, and a row for
+  // what is new. Nothing is written until the list is accepted.
+
+  /** Turn one year's lines into suggestions, measured against what is already here. */
+  function rowsFromYear(year: number, pool: EarlierLine[]): CarryRow[] {
+    return pool
+      .filter(r => r.year === year)
+      .map((r, i) => {
+        // The same comparison the vouchers use, so "Vietnam  5" and "Vietnam 5"
+        // are not offered as two different lines.
+        const already = budgetItems.some(b => sameBudgetLine(b.project_name, r.project_name));
+        return {
+          key: `${year}-${i}`,
+          include: !already,
+          project_name: r.project_name ?? "",
+          project_type: (r.project_type === "income" ? "income" : "expense") as "income" | "expense",
+          amount: String((r.estimated_income || 0) + (r.estimated_expenses || 0)),
+          description: r.description ?? "",
+          special_notes: r.special_notes ?? "",
+          already,
+        };
+      });
+  }
+
+  async function openCarryForward() {
     setCopying(true);
     try {
-      const { data: source, error } = await supabase
+      // Every earlier year at once, so the source can be changed in the panel
+      // without going back to the database, and so a gap in last year does not
+      // read as "this ministry has never had a budget".
+      const { data, error } = await supabase
         .from("budget_items")
-        .select("project_name, project_type, description, estimated_income, estimated_expenses, special_notes")
-        .eq("ministry", selectedMinistry).eq("year", from).is("proposal_id", null);
-      if (error) { showToast("Couldn't read " + from + ": " + error.message, false); return; }
+        .select("year, project_name, project_type, description, estimated_income, estimated_expenses, special_notes")
+        .eq("ministry", selectedMinistry)
+        .lt("year", selectedYear)
+        .is("proposal_id", null)
+        .order("project_name");
+      if (error) { showToast("Couldn't read the earlier years: " + error.message, false); return; }
 
-      const existing = new Set(budgetItems.map(i => (i.project_name || "").trim().toLowerCase()));
-      const fresh = (source ?? []).filter(r =>
-        !existing.has((r.project_name || "").trim().toLowerCase()));
-      if (fresh.length === 0) {
-        showToast(source?.length
-          ? `Every ${from} line is already here`
-          : `${selectedMinistry} had no budget in ${from}`, false);
+      const pool = (data ?? []) as EarlierLine[];
+      const years = [...new Set(pool.map(r => r.year))].sort((a, b) => b - a);
+      if (years.length === 0) {
+        showToast(`${selectedMinistry} has no approved budget on record before ${selectedYear}`, false);
         return;
       }
+      setCarryPool(pool);
+      setCarryYears(years);
+      setCarrySource(years[0]);
+      setCarryRows(rowsFromYear(years[0], pool));
+      setCarryOpen(true);
+    } finally {
+      setCopying(false);
+    }
+  }
 
+  function patchCarryRow(key: string, patch: Partial<CarryRow>) {
+    setCarryRows(rows => rows.map(r => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  /** Room for what is new this year, so the whole budget can be settled in one pass. */
+  function addCarryRow() {
+    setCarryRows(rows => [...rows, {
+      key: `new-${Date.now()}-${rows.length}`,
+      include: true, project_name: "", project_type: "expense",
+      amount: "", description: "", special_notes: "", already: false,
+    }]);
+  }
+
+  async function commitCarryForward() {
+    const chosen = carryRows.filter(r => r.include && r.project_name.trim());
+    if (chosen.length === 0) { showToast("Nothing ticked to carry across", false); return; }
+    const bad = chosen.find(r => {
+      const v = Number(r.amount || 0);
+      return !Number.isFinite(v) || v < 0;
+    });
+    if (bad) { showToast(`"${bad.project_name}" has no usable amount`, false); return; }
+
+    setCopying(true);
+    try {
       const draftId = await ensureDraftProposal();
-      const { error: insErr } = await supabase.from("budget_items").insert(
-        fresh.map(r => ({
-          ...r, ministry: selectedMinistry, year: selectedYear,
+      const { error } = await supabase.from("budget_items").insert(chosen.map(r => {
+        const value = Number(r.amount || 0);
+        return {
+          ministry: selectedMinistry, year: selectedYear,
           proposal_id: draftId, created_by: userEmail,
-        })),
-      );
-      if (insErr) { showToast("Error: " + insErr.message, false); return; }
-      await loadBudgetData(selectedMinistry);
-      showToast(`${fresh.length} line${fresh.length === 1 ? "" : "s"} copied from ${from} — adjust the amounts`);
+          project_name: r.project_name.trim(),
+          project_type: r.project_type,
+          description: r.description,
+          estimated_income:   r.project_type === "income"  ? value : 0,
+          estimated_expenses: r.project_type === "expense" ? value : 0,
+          special_notes: r.special_notes,
+        };
+      }));
+      if (error) { showToast("Error: " + error.message, false); return; }
+      setCarryOpen(false);
+      await loadBudgetData(selectedMinistry, selectedYear);
+      showToast(`${chosen.length} line${chosen.length === 1 ? "" : "s"} added to ${selectedYear}`);
     } finally {
       setCopying(false);
     }
@@ -446,7 +586,7 @@ function BudgetInner() {
         updated_at: new Date().toISOString(),
       };
 
-      if (canDirectEdit) {
+      if (canWriteLines) {
         if (itemModal?.mode === "edit" && itemModal.item) {
           const { error } = await supabase.from("budget_items").update(payload).eq("id", itemModal.item.id);
           if (error) { showToast("Error: " + error.message, false); return; }
@@ -716,7 +856,7 @@ function BudgetInner() {
   async function confirmDeleteItem(item: BudgetItem) {
     setDeleting(true);
     try {
-      if (!canDirectEdit) {
+      if (!canWriteLines) {
         const { data: reqRow, error } = await supabase.from("budget_change_requests").insert({
           ministry: selectedMinistry,
           budget_item_id: item.id,
@@ -864,9 +1004,10 @@ function BudgetInner() {
             onChange={e => setSelectedYear(Number(e.target.value))}
             title="Budget year"
             className="rounded-xl border-2 border-stone-800 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-[#2f5b9c]">
-            {[CURRENT_YEAR + 1, CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2].map(y => (
+            {BUDGET_YEARS.map(y => (
               <option key={y} value={y}>
-                {y}{y === CURRENT_YEAR ? " (current)" : y === CURRENT_YEAR + 1 ? " (next)" : ""}
+                {y}{y === CURRENT_YEAR ? " (current)" : y === CURRENT_YEAR + 1 ? " (next)"
+                   : y > CURRENT_YEAR ? " (planning)" : ""}
               </option>
             ))}
           </select>
@@ -897,8 +1038,10 @@ function BudgetInner() {
             ? "border-violet-200 bg-violet-50 text-violet-800"
             : "border-stone-200 bg-stone-50 text-stone-600"}`}>
           {selectedYear > CURRENT_YEAR
-            ? <>You are viewing <strong>{selectedYear}</strong> — next year&apos;s budget. Lines added here form the proposal the Treasurer approves at the EXCO meeting.</>
-            : <>You are viewing <strong>{selectedYear}</strong>, a past year. These figures are for reference only.</>}
+            ? <>You are viewing <strong>{selectedYear}</strong>{selectedYear === CURRENT_YEAR + 1 ? " — next year\u2019s budget" : ""}. Lines added here form the proposal the Treasurer approves at the EXCO meeting.</>
+            : <>You are viewing <strong>{selectedYear}</strong>, a past year. Nothing here gates spending &mdash; the
+               gate reads each voucher&apos;s own year &mdash; so a budget keyed in now is the record of what was
+               approved then, and what the comparisons in the report are drawn against.</>}
         </div>
       )}
 
@@ -1102,19 +1245,19 @@ function BudgetInner() {
                 <p className="text-xs text-stone-400 mt-0.5">{budgetItems.length} project{budgetItems.length !== 1 ? "s" : ""}</p>
               </div>
               <div className="flex items-center gap-2">
-                {/* Most of a budget is last year's budget with different
-                    numbers, so starting from it beats retyping it. */}
-                {canDirectEdit && (
+                {/* Most of a budget is an earlier budget with different
+                    numbers, so starting from one beats retyping it. */}
+                {canWriteLines && (
                   <button
-                    onClick={copyFromPreviousYear}
+                    onClick={openCarryForward}
                     disabled={proposalLocked || copying}
                     title={proposalLocked
                       ? "Locked while the Treasurer reviews this budget"
-                      : `Bring ${selectedMinistry}'s ${selectedYear - 1} lines across to adjust`}
+                      : `List ${selectedMinistry}'s earlier lines as a starting point for ${selectedYear}`}
                     className="inline-flex items-center gap-1.5 rounded-lg border-2 border-stone-800 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-50 disabled:opacity-40"
                   >
                     <Copy size={13} />
-                    {copying ? "Copying…" : `Copy ${selectedYear - 1}`}
+                    {copying ? "Reading…" : "Start from an earlier year"}
                   </button>
                 )}
                 <button
@@ -1124,7 +1267,7 @@ function BudgetInner() {
                   className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3d5a8f] transition-colors disabled:opacity-40 disabled:hover:bg-[#4a6da7]"
                 >
                   <Plus size={14} />
-                  {canDirectEdit ? "Add Project" : "Request New Project"}
+                  {canWriteLines ? "Add Project" : "Request New Project"}
                 </button>
               </div>
             </div>
@@ -1133,8 +1276,8 @@ function BudgetInner() {
               <div className="space-y-2 py-14 text-center text-sm text-stone-400">
                 <p>
                   No budget for {selectedYear} yet.{" "}
-                  {canDirectEdit
-                    ? `Copy ${selectedYear - 1} and adjust it, or add projects one at a time.`
+                  {canWriteLines
+                    ? "Start from an earlier year and adjust it, or add projects one at a time."
                     : "Submit a request to add a new project."}
                 </p>
                 {/* Worth saying plainly: no budget is not a blocker. It is the
@@ -1249,11 +1392,11 @@ function BudgetInner() {
                                       }} />
                                   ) : (
                                     <button
-                                      disabled={!canDirectEdit}
+                                      disabled={!canWriteLines}
                                       onClick={() => setQuickEdit({ id: item.id, value: String(budget) })}
-                                      className={`rounded px-1 tabular-nums ${canDirectEdit
+                                      className={`rounded px-1 tabular-nums ${canWriteLines
                                         ? "hover:bg-[#eef4fd] hover:text-[#2f5b9c]" : "cursor-default"}`}
-                                      title={canDirectEdit ? "Click to adjust" : undefined}>
+                                      title={canWriteLines ? "Click to adjust" : undefined}>
                                       {fig(budget)}
                                     </button>
                                   )}
@@ -1279,14 +1422,14 @@ function BudgetInner() {
                                       onClick={() => openEditModal(item)}
                                       disabled={proposalLocked}
                                       className="rounded p-1 text-stone-300 transition-colors hover:bg-stone-100 hover:text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent"
-                                      title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canDirectEdit ? "Edit" : "Request edit"}>
+                                      title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canWriteLines ? "Edit" : "Request edit"}>
                                       <Pencil size={12} />
                                     </button>
                                     <button
                                       onClick={() => setDeleteTarget(item)}
                                       disabled={proposalLocked}
                                       className="rounded p-1 text-stone-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                                      title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canDirectEdit ? "Delete" : "Request deletion"}>
+                                      title={proposalLocked ? "Locked while the Treasurer reviews this budget" : canWriteLines ? "Delete" : "Request deletion"}>
                                       <Trash2 size={12} />
                                     </button>
                                   </div>
@@ -1479,10 +1622,10 @@ function BudgetInner() {
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-base font-bold text-stone-800">
-                    {canDirectEdit ? "Delete this budget line?" : "Request deletion?"}
+                    {canWriteLines ? "Delete this budget line?" : "Request deletion?"}
                   </h2>
                   <p className="mt-0.5 text-xs text-stone-500">
-                    {canDirectEdit
+                    {canWriteLines
                       ? "This removes the line permanently and cannot be undone."
                       : "A Finance Executive has to approve this before it is removed."}
                   </p>
@@ -1520,7 +1663,7 @@ function BudgetInner() {
                   onClick={() => confirmDeleteItem(deleteTarget)}
                   disabled={deleting}
                   className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50">
-                  {deleting ? "Working…" : canDirectEdit ? "Delete permanently" : "Submit request"}
+                  {deleting ? "Working…" : canWriteLines ? "Delete permanently" : "Submit request"}
                 </button>
                 <button
                   onClick={() => setDeleteTarget(null)}
@@ -1542,8 +1685,8 @@ function BudgetInner() {
               <div>
                 <h3 className="text-sm font-bold text-stone-800">
                   {itemModal.mode === "add"
-                    ? (canDirectEdit ? "Add budget line" : "Request a new budget line")
-                    : (canDirectEdit ? "Edit budget line" : "Request a change")}
+                    ? (canWriteLines ? "Add budget line" : "Request a new budget line")
+                    : (canWriteLines ? "Edit budget line" : "Request a change")}
                 </h3>
                 <p className="text-[11px] text-stone-400">{selectedMinistry} · {selectedYear}</p>
               </div>
@@ -1704,7 +1847,7 @@ function BudgetInner() {
                 </p>
               )}
 
-              {!canDirectEdit && (
+              {!canWriteLines && (
                 <p className="rounded-lg border border-[#dce9fb] bg-[#f5f9ff] px-3 py-2 text-[11px] leading-relaxed text-stone-600">
                   This is a <strong>request</strong>, not a change. The EXCO board is told it has been
                   made, and it takes a decision from the Treasurer, General Manager, Bishop,
@@ -1723,7 +1866,7 @@ function BudgetInner() {
                 className="flex-1 rounded-lg bg-[#4a6da7] py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3d5a8f] disabled:bg-stone-300">
                 {saving
                   ? "Saving…"
-                  : canDirectEdit
+                  : canWriteLines
                   ? (itemModal.mode === "add" ? "Add line" : "Save changes")
                   : "Submit request"}
               </button>
@@ -1732,6 +1875,133 @@ function BudgetInner() {
         </div>
       )}
 
+
+      {/* ── Start a year from one already on record ──────────────────────
+          Suggestions, not a copy: see openCarryForward. */}
+      {carryOpen && (() => {
+        const chosen = carryRows.filter(r => r.include && r.project_name.trim());
+        const total = chosen.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
+            onClick={() => !copying && setCarryOpen(false)}>
+            <div onClick={e => e.stopPropagation()}
+              className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-[0_24px_70px_rgba(22,51,94,0.28)]">
+
+              <div className="flex items-start justify-between gap-3 border-b border-[#dce9fb] px-5 py-4">
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-stone-800">
+                    Start {selectedYear} from an earlier year
+                  </h3>
+                  <p className="mt-0.5 text-xs leading-relaxed text-stone-500">
+                    {selectedMinistry} &middot; these are suggestions. Untick what has finished,
+                    change what has moved, add what is new &mdash; nothing reaches the budget until
+                    you accept the list.
+                  </p>
+                </div>
+                <button onClick={() => setCarryOpen(false)} disabled={copying}
+                  className="shrink-0 rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700">
+                  <XIcon size={17} />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 border-b border-stone-100 bg-stone-50 px-5 py-2.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                  Based on
+                </label>
+                <select value={carrySource}
+                  onChange={e => {
+                    const y = Number(e.target.value);
+                    setCarrySource(y);
+                    setCarryRows(rowsFromYear(y, carryPool));
+                  }}
+                  className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[13px] outline-none focus:border-[#2f5b9c]">
+                  {carryYears.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <button onClick={() => setCarryRows(rows => rows.map(r => ({ ...r, include: true })))}
+                  className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 transition-colors hover:bg-stone-100">
+                  Tick all
+                </button>
+                <button onClick={() => setCarryRows(rows => rows.map(r => ({ ...r, include: false })))}
+                  className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 transition-colors hover:bg-stone-100">
+                  Untick all
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-3">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-[#c4d8f2] text-[10px] uppercase tracking-[0.09em] text-[#4a6483]">
+                      <th className="w-8 py-1.5"></th>
+                      <th className="py-1.5 text-left font-semibold">Line</th>
+                      <th className="w-32 py-1.5 text-left font-semibold">Kind</th>
+                      <th className="w-32 py-1.5 text-right font-semibold">{selectedYear} (RM)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {carryRows.map(r => (
+                      <tr key={r.key} className={`border-b border-stone-100 align-top ${r.include ? "" : "opacity-45"}`}>
+                        <td className="py-1.5">
+                          <input type="checkbox" checked={r.include}
+                            onChange={e => patchCarryRow(r.key, { include: e.target.checked })}
+                            className="mt-1.5 h-4 w-4 accent-[#4a6da7]" />
+                        </td>
+                        <td className="py-1.5 pr-2">
+                          <input value={r.project_name}
+                            onChange={e => patchCarryRow(r.key, { project_name: e.target.value })}
+                            placeholder="Name this line"
+                            className="w-full rounded-lg border border-stone-200 px-2 py-1 outline-none focus:border-[#2f5b9c]" />
+                          {/* Carried twice makes two lines, and two lines of the
+                              same name split the spending between them. */}
+                          {r.already && (
+                            <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">
+                              Already in {selectedYear} &mdash; ticking this adds a second line
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-2">
+                          <select value={r.project_type}
+                            onChange={e => patchCarryRow(r.key, { project_type: e.target.value as "expense" | "income" })}
+                            className="w-full rounded-lg border border-stone-200 px-1.5 py-1 outline-none focus:border-[#2f5b9c]">
+                            <option value="expense">Expenditure</option>
+                            <option value="income">Income</option>
+                          </select>
+                        </td>
+                        <td className="py-1.5">
+                          <input type="number" min="0" step="0.01" inputMode="decimal" value={r.amount}
+                            onChange={e => patchCarryRow(r.key, { amount: e.target.value })}
+                            className="w-full rounded-lg border border-stone-200 px-2 py-1 text-right tabular-nums outline-none focus:border-[#2f5b9c]" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <button onClick={addCarryRow}
+                  className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-stone-300 px-3 py-1.5 text-[12px] font-semibold text-stone-600 transition-colors hover:border-[#4a6da7] hover:text-[#4a6da7]">
+                  <Plus size={13} /> Add a line that is new this year
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#dce9fb] bg-white px-5 py-3">
+                <span className="text-[12px] text-stone-500">
+                  <strong className="text-stone-800">{chosen.length}</strong> line{chosen.length === 1 ? "" : "s"}
+                  {" \u00b7 "}<span className="tabular-nums font-semibold text-stone-800">{formatCurrency(total)}</span>
+                </span>
+                <div className="flex gap-2">
+                  <button onClick={() => setCarryOpen(false)} disabled={copying}
+                    className="rounded-lg bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-200 disabled:opacity-50">
+                    Cancel
+                  </button>
+                  <button onClick={commitCarryForward} disabled={copying || chosen.length === 0}
+                    className="rounded-lg bg-[#4a6da7] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3d5a8f] disabled:bg-stone-300">
+                    {copying ? "Adding\u2026" : `Add ${chosen.length} line${chosen.length === 1 ? "" : "s"} to ${selectedYear}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Review Change Request Modal ── */}
       {reviewModal && (
