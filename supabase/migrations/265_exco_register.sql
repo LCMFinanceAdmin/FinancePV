@@ -506,35 +506,12 @@ $fn$;
 
 CREATE OR REPLACE FUNCTION public.decline_budget_change_request(
   request uuid, reason text,
-  p_resolution_ref text, p_resolution_date date)
+  p_resolution_ref text DEFAULT NULL, p_resolution_date date DEFAULT NULL)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
 AS $fn$
 BEGIN
   RAISE EXCEPTION 'This page is out of date — reload it. A budget decision now '
                   'cites a resolution from the EXCO register rather than typed text.';
-END;
-$fn$;
-
--- 246's two-argument forms, which decided a change with no resolution at all,
--- are closed the same way. Nothing in the app calls them; leaving a door open
--- that bypasses the register would make the register advisory.
-CREATE OR REPLACE FUNCTION public.apply_budget_change_request(
-  request uuid, p_year int)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
-AS $fn$
-BEGIN
-  RAISE EXCEPTION 'This page is out of date — reload it. A budget decision now '
-                  'cites a resolution from the EXCO register.';
-END;
-$fn$;
-
-CREATE OR REPLACE FUNCTION public.decline_budget_change_request(
-  request uuid, reason text)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
-AS $fn$
-BEGIN
-  RAISE EXCEPTION 'This page is out of date — reload it. A budget decision now '
-                  'cites a resolution from the EXCO register.';
 END;
 $fn$;
 
