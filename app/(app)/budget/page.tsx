@@ -895,6 +895,32 @@ function BudgetInner() {
   // into one function that holds definer rights and runs them in one
   // transaction, so the people who may decide can also carry it out, and the
   // request and the budget cannot end up disagreeing.
+  /**
+   * Tell the person who asked what was decided.
+   *
+   * A budget proposal has always notified its author either way. A change
+   * request did not: it was raised, the board was emailed, somebody approved
+   * or declined it, and nothing went back. The requester found out by
+   * reopening their ministry's budget page and noticing the panel had
+   * changed — which, for a request that was declined, meant they often did
+   * not find out at all.
+   */
+  async function notifyRequesterOfDecision(
+    req: ChangeRequest, decision: "approved" | "declined", why: string,
+  ) {
+    const line = String(req.proposed_data?.project_name ?? "").trim() || "a budget line";
+    const what = req.change_type === "add" ? "add" : req.change_type === "edit" ? "change" : "remove";
+    await supabase.from("notifications").insert({
+      recipient_email: req.requested_by,
+      type: "BUDGET_CHANGE_DECIDED",
+      pv_no: `${req.ministry} ${selectedYear}`,
+      message: decision === "approved"
+        ? `Your request to ${what} "${line}" in the ${req.ministry} budget was approved${why ? ` — EXCO resolution ${why}` : ""}.`
+        : `Your request to ${what} "${line}" in the ${req.ministry} budget was declined${why ? `: ${why}` : ""}.`,
+      read: false, created_at: new Date().toISOString(),
+    });
+  }
+
   async function approveChangeRequest(req: ChangeRequest) {
     setSaving(true);
     try {
@@ -909,6 +935,7 @@ function BudgetInner() {
         p_resolution_date: resolutionDate,
       });
       if (error) { showToast("Error applying: " + error.message, false); return; }
+      await notifyRequesterOfDecision(req, "approved", resolutionRef.trim());
       showToast("Approved and applied to budget");
       setReviewModal(null);
       await loadBudgetData(selectedMinistry);
@@ -929,6 +956,7 @@ function BudgetInner() {
       p_resolution_date: resolutionDate,
     });
     if (error) { showToast("Error: " + error.message, false); return; }
+    await notifyRequesterOfDecision(req, "declined", rejectionReason.trim());
     showToast("Change request declined");
     setReviewModal(null);
     setRejectionReason("");

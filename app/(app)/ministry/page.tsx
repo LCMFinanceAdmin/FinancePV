@@ -24,7 +24,38 @@ function isImage(url: string) {
   return /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i.test(url);
 }
 
-type TabKey = "requests" | "pending" | "my_pvs" | "ministry";
+type TabKey = "requests" | "pending" | "my_pvs" | "ministry" | "budget";
+
+/**
+ * A request to change a budget already in force.
+ *
+ * It lived only on the budget page, under the ministry it belonged to, so an
+ * EXCO member saw a decision on their own request by reopening that page and
+ * noticing the panel had changed. The queue is where they already look.
+ */
+interface BudgetChangeRequest {
+  id: string;
+  ministry: string;
+  change_type: "add" | "edit" | "delete";
+  proposed_data: Record<string, unknown>;
+  requested_by: string;
+  requested_at: string;
+  status: "pending" | "approved" | "rejected";
+  rejection_reason: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  resolution_ref: string | null;
+}
+
+/** Who may decide one — migration 246's can_decide_budget_change. */
+const DECIDES_BUDGET = [
+  "TREASURER", "BISHOP", "SECRETARY", "GENERAL_MANAGER",
+  "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
+];
+
+const CHANGE_VERB: Record<string, string> = {
+  add: "Add", edit: "Change", delete: "Remove",
+};
 
 export default function ExcoPage() {
   const supabase = createClient();
@@ -49,6 +80,9 @@ export default function ExcoPage() {
    */
   const [myRole, setMyRole] = useState("");
   const [myRequests, setMyRequests] = useState<PurchaseRequest[]>([]);
+  /** Budget changes waiting on this viewer, and the ones they raised. */
+  const [budgetDecisions, setBudgetDecisions] = useState<BudgetChangeRequest[]>([]);
+  const [myBudgetRequests, setMyBudgetRequests] = useState<BudgetChangeRequest[]>([]);
   /**
    * What the budget said about each request on screen.
    *
@@ -188,6 +222,22 @@ export default function ExcoPage() {
         .eq("submitted_by_email", user.email)
         .order("submitted_at", { ascending: false });
       setMyRequests((mineRes ?? []) as PurchaseRequest[]);
+
+      // Budget changes. Two different lists out of one read: what is waiting
+      // on this viewer to decide, and what they asked for themselves. Not
+      // scoped to their portfolios — a budget change is decided by the office,
+      // not by whose ministry it is, which is the rule the database already
+      // enforces.
+      const { data: budgetReqs } = await supabase.from("budget_change_requests")
+        .select("id,ministry,change_type,proposed_data,requested_by,requested_at,status,rejection_reason,approved_at,rejected_at,resolution_ref")
+        .order("requested_at", { ascending: false });
+      const allBudget = (budgetReqs ?? []) as BudgetChangeRequest[];
+      const me = (user.email ?? "").trim().toLowerCase();
+      const mineOnly = (r: BudgetChangeRequest) => (r.requested_by ?? "").trim().toLowerCase() === me;
+      setMyBudgetRequests(allBudget.filter(mineOnly));
+      setBudgetDecisions(DECIDES_BUDGET.includes(myRole)
+        ? allBudget.filter(r => r.status === "pending" && !mineOnly(r))
+        : []);
     } finally {
       setLoading(false);
     }
@@ -267,6 +317,15 @@ export default function ExcoPage() {
 
   const raisesVouchers = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
                           "GENERAL_MANAGER"].includes(myRole);
+  const decidesBudget = DECIDES_BUDGET.includes(myRole);
+
+  /** What a budget request is asking for, in one line. */
+  const budgetLineOf = (r: BudgetChangeRequest) => {
+    const name = String(r.proposed_data?.project_name ?? "").trim() || "an unnamed line";
+    const amount = Number(r.proposed_data?.estimated_expenses ?? 0)
+                || Number(r.proposed_data?.estimated_income ?? 0);
+    return { name, amount };
+  };
 
   const TABS: { key: TabKey; label: string; count: number }[] = [
     { key: "requests", label: "Payment Requests",     count: pendingRequests.length },
@@ -278,6 +337,12 @@ export default function ExcoPage() {
       ? { key: "my_pvs" as const, label: "My PVs", count: myPvs.length }
       : { key: "my_pvs" as const, label: "My PRs", count: myRequests.length },
     { key: "ministry", label: "Ministry PVs",         count: ministryPvs.length },
+    // Budget changes, for everybody. A decider sees what is waiting on them;
+    // everybody else sees their own and what became of it.
+    { key: "budget", label: "Budget",
+      count: decidesBudget
+        ? budgetDecisions.length
+        : myBudgetRequests.filter(r => r.status === "pending").length },
   ];
 
   const pvList = tab === "pending" ? pendingPvs : tab === "my_pvs" ? myPvs : ministryPvs;
@@ -596,7 +661,131 @@ export default function ExcoPage() {
         )
       )}
 
-      {tab !== "requests" && !(tab === "my_pvs" && !raisesVouchers) && (
+      {/* ── Budget changes ───────────────────────────────────────────────
+          Deciding one still happens on the budget page, where the figures,
+          the ministry's other lines and the resolution fields are. This is
+          where you find out there is one to decide, and what happened to
+          yours — which is what was missing, not another decision form. */}
+      {tab === "budget" && (
+        loading ? (
+          <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
+        ) : (
+          <div className="space-y-4">
+            {decidesBudget && budgetDecisions.length > 0 && (
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                  <PiggyBank size={12} /> Awaiting your decision
+                </div>
+                <div className="space-y-2">
+                  {budgetDecisions.map(r => {
+                    const { name, amount } = budgetLineOf(r);
+                    return (
+                      <Card key={r.id} className="border-amber-200">
+                        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                                {CHANGE_VERB[r.change_type] ?? "Change"}
+                              </span>
+                              <span className="text-[11px] font-semibold text-stone-500">{r.ministry}</span>
+                            </div>
+                            <div className="mt-0.5 truncate text-sm font-bold text-stone-800">{name}</div>
+                            <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-stone-500">
+                              <span className="font-medium">{r.requested_by}</span>
+                              <span className="text-stone-400">{formatDate(r.requested_at)}</span>
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            {amount > 0 && (
+                              <div className="text-sm font-bold tabular-nums text-stone-800">
+                                {formatCurrency(amount)}
+                              </div>
+                            )}
+                            <Link href={`/budget?ministry=${encodeURIComponent(r.ministry)}`}
+                              className="text-[11px] font-bold text-[#4a6da7] hover:underline">
+                              Review on the budget page &rarr;
+                            </Link>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                Your budget requests
+              </div>
+              {myBudgetRequests.length === 0 ? (
+                <Card><CardBody>
+                  <div className="space-y-2 py-8 text-center">
+                    <p className="text-sm text-stone-400">
+                      You have not asked for a change to an approved budget.
+                    </p>
+                    <p className="text-xs text-stone-400">
+                      A payment nothing in the budget covers can still be verified &mdash; but if it
+                      is going to recur, the line is worth asking for.
+                    </p>
+                    <Link href="/budget"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-1.5 text-[12px] font-bold text-[#4a6da7] transition-colors hover:border-[#4a6da7]/40 hover:bg-[#f5f9ff]">
+                      <PiggyBank size={13} /> Request a budget line &rarr;
+                    </Link>
+                  </div>
+                </CardBody></Card>
+              ) : (
+                <div className="space-y-2">
+                  {myBudgetRequests.map(r => {
+                    const { name, amount } = budgetLineOf(r);
+                    const decided = r.status !== "pending";
+                    return (
+                      <Card key={r.id} className={r.status === "rejected" ? "border-red-200" : ""}>
+                        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-semibold text-stone-500">
+                                {CHANGE_VERB[r.change_type] ?? "Change"} &middot; {r.ministry}
+                              </span>
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                                r.status === "approved" ? "bg-green-100 text-green-800"
+                                : r.status === "rejected" ? "bg-red-100 text-red-700"
+                                : "bg-amber-100 text-amber-800"}`}>
+                                {r.status === "approved" ? "Approved"
+                                  : r.status === "rejected" ? "Declined" : "With the board"}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 truncate text-sm font-bold text-stone-800">{name}</div>
+                            <div className="text-[11px] text-stone-400">
+                              Asked {formatDate(r.requested_at)}
+                              {decided && (r.approved_at || r.rejected_at)
+                                ? ` · decided ${formatDate(r.approved_at ?? r.rejected_at ?? "")}` : ""}
+                              {r.resolution_ref ? ` · EXCO ${r.resolution_ref}` : ""}
+                            </div>
+                            {/* The reason is the whole point of being told. */}
+                            {r.status === "rejected" && r.rejection_reason && (
+                              <div className="mt-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-[12px] text-red-700">
+                                {r.rejection_reason}
+                              </div>
+                            )}
+                          </div>
+                          {amount > 0 && (
+                            <div className="shrink-0 text-sm font-bold tabular-nums text-stone-800">
+                              {formatCurrency(amount)}
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      )}
+
+      {tab !== "requests" && tab !== "budget" && !(tab === "my_pvs" && !raisesVouchers) && (
       loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : pvList.length === 0 ? (
