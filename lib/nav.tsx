@@ -94,16 +94,6 @@ const raisesPvDirectly = (u: UserProfile) => u.isFinanceAdmin || u.isGeneralMana
 const isClaimant = (u: UserProfile) => !raisesPvDirectly(u);
 
 /**
- * The church's own structure, offered to guests.
- *
- * Shown to them rather than to everybody only because it is what they
- * asked for — there is nothing in these two pages that any other role
- * could not see, so widening this predicate is safe if the church wants
- * the structure in front of all its people.
- */
-const isGuest = (u: UserProfile) => !!u.isGuest;
-
-/**
  * Who is asked to sign somebody's leave.
  *
  * The last clause is the one that was missing: a department head named on a
@@ -194,6 +184,24 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Everybody, which is the answer to the question 89ef8881 left open.
+    //
+    // These two pages arrived with the Guest role and were shown to guests
+    // alone — "only because it is what they asked for", with a note that
+    // nothing in them is beyond any other role and that widening was the
+    // church's call to make. It was made in November 2026: the structure goes
+    // in front of all its people.
+    //
+    // So a staff member, an EXCO member or a signatory can now find out who
+    // holds which office, which none of them could before. Finance, the
+    // General Manager and the Administrator see these alongside the editable
+    // versions under Administration — the same lists twice, deliberately,
+    // because one rule everybody can state beats a rule that is shorter.
+    //
+    // Nothing is exposed by this. Both pages read definer functions granted to
+    // every signed-in account already, returning names and nothing else — no
+    // address, no contact detail, no employment, no money — and 217 revoked
+    // them from anon, so they are not reachable without an account.
     id: "church",
     label: "The Church",
     desc: "How LCM is organised, and who holds office",
@@ -203,12 +211,12 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/church/directory", label: "Church Directory",
         desc: "Districts, the churches in each, and their head pastors",
-        icon: <Church size={size} />, show: isGuest,
+        icon: <Church size={size} />, show: () => true,
       },
       {
         href: "/church/offices", label: "Elected Offices",
         desc: "Who currently holds each office and portfolio",
-        icon: <Landmark size={size} />, show: isGuest,
+        icon: <Landmark size={size} />, show: () => true,
       },
     ],
   },
