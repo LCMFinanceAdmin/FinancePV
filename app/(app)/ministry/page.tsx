@@ -10,13 +10,12 @@ import { formatCurrency, formatDate, computedBadgeStatus } from "@/lib/utils";
 import { BudgetImpact } from "@/components/budget/budget-impact";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { expandMinistries } from "@/lib/ministries";
-import { VerifierPanel } from "@/components/ministry/verifier-panel";
-import { CheckerPanel } from "@/components/ministry/checker-panel";
 import { loadMyVerifierScopes, coveredByScope, scopedMinistries, type VerifierScope } from "@/lib/verifiers";
 import type { PV, PurchaseRequest } from "@/lib/types";
+import { statusLabel } from "@/lib/pr-progress";
 import {
   CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
-  Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText,
+  Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText, UserCog,
 } from "lucide-react";
 
 function isImage(url: string) {
@@ -38,6 +37,16 @@ export default function ExcoPage() {
    */
   const [checkers, setCheckers] = useState<{ name: string; checker_email: string | null; checker_name: string | null }[]>([]);
   const [myPvs, setMyPvs] = useState<Partial<PV>[]>([]);
+  /**
+   * The viewer's own role, for the tab that is named after what they raise.
+   *
+   * An EXCO member cannot raise a payment voucher — the submit form writes
+   * them a payment request, which Finance turns into one. "My PVs" named
+   * something they are not allowed to do, and the tab was empty for them
+   * besides, because the voucher carries the email of whoever raised it.
+   */
+  const [myRole, setMyRole] = useState("");
+  const [myRequests, setMyRequests] = useState<PurchaseRequest[]>([]);
   const [ministryPvs, setMinistryPvs] = useState<Partial<PV>[]>([]);
   // Payment Requests awaiting this committee's verification — the first
   // constitutional gate, before anything reaches the finance desk.
@@ -116,6 +125,7 @@ export default function ExcoPage() {
       // is none. So the people with the authority had nothing to act on, and
       // the only way to change a delegation was through the database.
       const myRole = (security as { role?: string } | null)?.role ?? "";
+      setMyRole(myRole);
       const { data: allMin } = await supabase.from("ministries")
         .select("name,checker_email,checker_name").order("name");
       setCheckers(allMin ?? []);
@@ -163,6 +173,12 @@ export default function ExcoPage() {
       setMyPvs(myRes.data ?? []);
       setMinistryPvs((ministryRes.data ?? []).filter(inScope));
       setPendingRequests(((requestsRes.data ?? []) as PurchaseRequest[]).filter(inScope));
+
+      // What this person raised themselves. Requests, not vouchers: see myRole.
+      const { data: mineRes } = await supabase.from("purchase_requests").select("*")
+        .eq("submitted_by_email", user.email)
+        .order("submitted_at", { ascending: false });
+      setMyRequests((mineRes ?? []) as PurchaseRequest[]);
     } finally {
       setLoading(false);
     }
@@ -240,10 +256,18 @@ export default function ExcoPage() {
     }
   }
 
+  const raisesVouchers = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3",
+                          "GENERAL_MANAGER"].includes(myRole);
+
   const TABS: { key: TabKey; label: string; count: number }[] = [
     { key: "requests", label: "Payment Requests",     count: pendingRequests.length },
     { key: "pending",  label: "Pending Verification", count: pendingPvs.length },
-    { key: "my_pvs",  label: "My PVs",               count: myPvs.length },
+    // Named for what this reader actually raises, and carrying what they
+    // actually raised. Finance and the GM write vouchers; everybody else
+    // writes requests.
+    raisesVouchers
+      ? { key: "my_pvs" as const, label: "My PVs", count: myPvs.length }
+      : { key: "my_pvs" as const, label: "My PRs", count: myRequests.length },
     { key: "ministry", label: "Ministry PVs",         count: ministryPvs.length },
   ];
 
@@ -266,6 +290,14 @@ export default function ExcoPage() {
             {scopes.length > 0 && `, including ${scopes.length === 1 ? "one ministry" : `${scopes.length} ministries`} you verify for`}
           </p>
         </div>
+        {/* The standing arrangements — who may verify for you, and who checks
+            the particulars — used to sit above the tabs as two open forms, so
+            opening your queue meant scrolling past settings to reach the work.
+            They are set once a year; they belong behind a button. */}
+        <Link href="/ministry/delegates"
+          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-[12px] font-semibold text-stone-600 transition-colors hover:border-[#4a6da7]/40 hover:text-[#4a6da7]">
+          <UserCog size={14} /> Who may act for me
+        </Link>
       </div>
 
       <ApprovalPath currentIndex={1} />
@@ -309,7 +341,15 @@ export default function ExcoPage() {
             {pendingRequests.map(pr => {
               const isOpen = reqSelected?.id === pr.id;
               return (
-                <Card key={pr.id} className={isOpen ? "border-[#4a6da7]" : ""}>
+                <Card key={pr.id} className={isOpen ? "border-[#4a6da7]" : "border-amber-200"}>
+                  {/* What is being asked of the reader, before anything else.
+                      The card used to open with the request and keep the
+                      action at the bottom, under a budget panel and a list of
+                      attachments, so the one thing the page exists for was the
+                      last thing on it. */}
+                  <div className="flex items-center gap-1.5 rounded-t-[inherit] bg-amber-50 px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                    <ShieldCheck size={12} /> Awaiting your verification
+                  </div>
                   <div className="px-4 py-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
@@ -327,8 +367,14 @@ export default function ExcoPage() {
                             </span>
                           )}
                         </div>
-                        <div className="text-sm font-semibold text-stone-800">{pr.title}</div>
-                        <div className="text-xs text-stone-500">{pr.purpose}</div>
+                        <div className="text-[15px] font-bold text-stone-800">{pr.title}</div>
+                        {/* Said once. The form offers a title and a purpose and
+                            people fill both in with the same words, so the card
+                            printed the same sentence twice, then a third time as
+                            a line item. */}
+                        {pr.purpose && pr.purpose.trim() !== (pr.title ?? "").trim() && (
+                          <div className="text-xs text-stone-500">{pr.purpose}</div>
+                        )}
                         <div className="text-xs text-stone-400">
                           By {pr.submitted_by_name || pr.submitted_by_email} · {formatDate(pr.submitted_at)}
                         </div>
@@ -336,14 +382,18 @@ export default function ExcoPage() {
                       <div className="text-base font-bold text-stone-800 shrink-0">{formatCurrency(pr.estimated_amount)}</div>
                     </div>
 
-                    {/* Is this inside the ministry's approved budget? */}
+                    {/* Is this inside the ministry's approved budget? One
+                        fact, so one line — it opens if the verifier wants the
+                        workings behind it. As a panel it was the largest thing
+                        on the card and outweighed the request itself. */}
                     <BudgetImpact
+                      variant="expandable"
                       ministry={pr.ministry}
                       projectName={pr.project}
                       amount={pr.estimated_amount ?? 0}
                     />
 
-                    {pr.line_items?.length > 0 && (
+                    {pr.line_items?.length > 1 && (
                       <div className="border-t border-stone-100 pt-2 space-y-1">
                         {pr.line_items.map((li, i) => (
                           <div key={i} className="flex justify-between text-xs text-stone-700">
@@ -371,9 +421,11 @@ export default function ExcoPage() {
                     )}
 
                     {!isOpen ? (
-                      <Button size="sm" onClick={() => { setReqSelected(pr); setRemarks(""); setReqSigDraft(savedExcoSig); }}>
-                        <ShieldCheck size={13} /> Verify or reject
-                      </Button>
+                      <button type="button"
+                        onClick={() => { setReqSelected(pr); setRemarks(""); setReqSigDraft(savedExcoSig); }}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#4a6da7] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#3d5a8e]">
+                        <ShieldCheck size={15} /> Review &amp; verify this request
+                      </button>
                     ) : (
                       <div className="space-y-2 border-t border-stone-100 pt-3">
                         <textarea
@@ -426,7 +478,51 @@ export default function ExcoPage() {
         )
       )}
 
-      {tab !== "requests" && (
+      {/* What this person raised themselves, where what they raise is a
+          request. The wording comes from lib/pr-progress, the same call the
+          tracker makes, so the two cannot disagree about where something is.
+          The voucher is not fetched here — "Track" goes to the page that does
+          follow it all the way to paid. */}
+      {tab === "my_pvs" && !raisesVouchers && (
+        loading ? (
+          <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
+        ) : myRequests.length === 0 ? (
+          <Card><CardBody>
+            <div className="py-8 text-center text-stone-400 text-sm">
+              You have not raised any payment requests yet.
+            </div>
+          </CardBody></Card>
+        ) : (
+          <div className="space-y-2">
+            {myRequests.map(pr => (
+              <Card key={pr.id}>
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-stone-500">{pr.request_no}</span>
+                      <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-semibold text-stone-600">
+                        {statusLabel(pr.status, null)}
+                      </span>
+                      <span className="text-[11px] text-stone-400">{pr.ministry}</span>
+                    </div>
+                    <div className="mt-0.5 truncate text-sm font-semibold text-stone-800">{pr.title}</div>
+                    <div className="text-[11px] text-stone-400">Submitted {formatDate(pr.submitted_at)}</div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-bold text-stone-800">{formatCurrency(pr.estimated_amount)}</div>
+                    <Link href="/payment-requests"
+                      className="text-[11px] font-semibold text-[#4a6da7] hover:underline">
+                      Track &rarr;
+                    </Link>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )
+      )}
+
+      {tab !== "requests" && !(tab === "my_pvs" && !raisesVouchers) && (
       loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : pvList.length === 0 ? (
@@ -560,14 +656,11 @@ export default function ExcoPage() {
         </div>
       ))}
 
-      {/* ── Standing delegations ─────────────────────────────────────────
-          Below the queue, not above it. Both are set once and left alone for
-          months, while the queue is why anybody opens this page; having them
-          lead meant scrolling past two settings panels to reach the work, and
-          an empty queue read as an empty page. */}
-      <VerifierPanel ministries={manageableMinistries} myEmail={myEmail} />
-
-      <CheckerPanel ministries={manageableMinistries} />
+      {/* The standing delegations were moved below the queue first, for the
+          reason that commit gave: they are set once a year and the queue is
+          why anybody opens this page. They have since left the page entirely,
+          to /ministry/delegates behind the button in the header, which is the
+          same reasoning carried the rest of the way. */}
     </div>
   );
 }
