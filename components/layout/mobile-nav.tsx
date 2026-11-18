@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { fetchUnprocessedGmClaimCount } from "@/lib/gm-claims-count";
 import {
-  LayoutDashboard, FilePlus, FileText, LayoutGrid, Users, Building2,
+  LayoutDashboard, FilePlus, Route, LayoutGrid, Users, Building2,
   FlaskConical, X, ClipboardList, Activity, PiggyBank, LogOut, Hammer,
   CalendarDays, Inbox,
 } from "lucide-react";
@@ -76,22 +76,38 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
     window.location.reload();
   }
 
-  // Primary bottom bar items (max 4, role-appropriate)
+  // Primary bottom bar items, in the order they are wanted; the first five a
+  // role qualifies for are the ones shown. Five rather than four because a
+  // claimant now has five things worth one tap — raise a claim, follow it,
+  // check the budget behind it, and verify the committee's — and burying any
+  // of them behind More made the sixth tab the one people learned to press.
+  //
+  // Two changes worth stating plainly.
+  //
+  // "My PVs" is gone. It pointed at /my-pvs, which lists vouchers somebody
+  // raised, and nobody outside Finance and the General Manager raises one —
+  // the submit form writes everybody else a payment request. So for the people
+  // this tab was shown to it was a permanently empty page, the same mistake
+  // the EXCO Queue's own "My PVs" tab was making. Its place goes to the page
+  // that does follow a claim, all the way to paid.
+  //
+  // Budget was a signatory's tab only. An EXCO member spends against a budget
+  // and had to go through More to see what was left of it.
   const primaryItems = [
     { href: "/dashboard",          label: "Home",       icon: <LayoutDashboard size={21} />, show: !user.isSignatory && !user.isBuildingManager },
     { href: "/submit",             label: "Submit",     icon: <FilePlus size={21} />,        show: !user.isSignatory && !user.isBuildingManager },
-    { href: "/my-pvs",             label: "My PVs",     icon: <FileText size={21} />,        show: !user.isSignatory && !user.isFinanceAdmin && !user.isBuildingManager },
+    { href: "/payment-requests",   label: "Track",      icon: <Route size={21} />,           show: !user.isSignatory && !user.isFinanceAdmin && !user.isBuildingManager },
     { href: "/settings/access",    label: "Access",     icon: <LayoutGrid size={21} />,      show: user.isFinanceAdmin },
     { href: "/signatory-activity", label: "Activity",   icon: <Activity size={21} />,        show: user.isFinanceAdmin },
+    { href: "/budget",             label: "Budget",     icon: <PiggyBank size={21} />,       show: user.isSignatory || !!user.isMinistryHead || !!user.isMinistryVerifier },
     { href: "/ministry",           label: "EXCO",       icon: <Building2 size={21} />,       show: (!!user.isMinistryHead || !!user.isMinistryVerifier || !!user.isMinistryChecker) && !user.isSignatory },
     { href: "/signatory",          label: "Queue",      icon: <Users size={21} />,           show: user.isSignatory },
     { href: "/gm-claims",          label: "Claims",     icon: <Inbox size={21} />,           show: user.isGeneralManager || user.isFinanceAdmin || user.isSignatory },
-    { href: "/budget",             label: "Budget",     icon: <PiggyBank size={21} />,       show: user.isSignatory },
     { href: "/submit?type=bam",    label: "Submit PV",  icon: <Hammer size={21} />,          show: !!user.isBuildingManager },
     { href: "/bam-queue",          label: "BAM Queue",  icon: <Building2 size={21} />,       show: !!user.isBuildingManager || !!user.isBamCommittee },
     { href: "/worksheets",         label: "Worksheets", icon: <ClipboardList size={21} />,   show: !!user.isBuildingManager },
     { href: "/bookings",           label: "Bookings",   icon: <CalendarDays size={21} />,    show: !!user.isBuildingManager },
-  ].filter(i => i.show).slice(0, 4);
+  ].filter(i => i.show).slice(0, 5);
 
   // Same nav model as the sidebar and the dashboard directory — the More
   // sheet used to keep its own copy, which is how a page could appear in one
@@ -284,7 +300,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
               <Link
                 key={n.href}
                 href={n.href}
-                className="flex-1 flex flex-col items-center pt-2 pb-3 gap-1 relative transition-colors"
+                className="relative flex min-w-0 flex-1 flex-col items-center gap-1 px-0.5 pb-3 pt-2 transition-colors"
               >
                 {/* Active indicator bar */}
                 {active && (
@@ -300,7 +316,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
                   )}
                 </span>
                 <span className={cn(
-                  "text-[9.5px] font-medium transition-colors",
+                  "w-full truncate text-center text-[9.5px] font-medium leading-none transition-colors",
                   active ? "text-[#3a5a9f]" : "text-stone-400"
                 )}>
                   {n.label}
@@ -312,7 +328,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
           {/* More tab */}
           <button
             onClick={() => setShowMore(true)}
-            className="flex-1 flex flex-col items-center pt-2 pb-3 gap-1 relative transition-colors"
+            className="relative flex min-w-0 flex-1 flex-col items-center gap-1 px-0.5 pb-3 pt-2 transition-colors"
           >
             {showMore && (
               <span
@@ -329,7 +345,7 @@ export function MobileNav({ user, ministryList }: { user: UserProfile; ministryL
               {initials}
             </span>
             <span className={cn(
-              "text-[9.5px] font-medium transition-colors",
+              "w-full truncate text-center text-[9.5px] font-medium leading-none transition-colors",
               showMore ? "text-[#3a5a9f]" : "text-stone-400"
             )}>
               More

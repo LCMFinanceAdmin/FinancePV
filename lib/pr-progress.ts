@@ -18,6 +18,23 @@ export const STAGES = [
 ] as const;
 
 /** Nobody is holding it: the money has gone out and the chain is finished. */
+/**
+ * The same six stages, short enough for a phone.
+ *
+ * Six equal columns on a 375px screen leave about fifty pixels of text each.
+ * "Ministry EXCO", "General Manager" and "Finance / PV" each wrap onto two
+ * lines in that, so half the labels sat a line lower than the others and the
+ * rail read as a thicket rather than a line. Nothing was unreadable; it was
+ * just hard to take in at a glance, which is the only thing a rail is for.
+ *
+ * Index for index with STAGES. The test below holds the two in step, because
+ * a short name that has drifted onto the wrong dot is worse than a long one
+ * that wrapped.
+ */
+export const STAGES_SHORT = [
+  "Submitted", "EXCO", "GM", "Finance", "Signing", "Paid",
+] as const;
+
 export const DONE = STAGES.length;
 /** It is not on the chain at all — refused or withdrawn. */
 export const OFF_CHAIN = -1;

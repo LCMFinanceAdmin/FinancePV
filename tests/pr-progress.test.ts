@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  STAGES, DONE, OFF_CHAIN, currentStage, statusLabel, bucketOf,
+  STAGES, STAGES_SHORT, DONE, OFF_CHAIN, currentStage, statusLabel, bucketOf,
 } from "@/lib/pr-progress";
 
 test("the chain runs past Finance, to the signatories and out to payment", () => {
@@ -103,4 +103,26 @@ test("anything refused lands on the closed shelf, whichever record refused it", 
   assert.equal(bucketOf("CANCELLED"), "closed");
   assert.equal(bucketOf("PV_RAISED", "REJECTED"), "closed");
   assert.equal(bucketOf("PV_RAISED", "CANCELLED"), "closed");
+});
+
+test("the short stage names line up with the long ones, one for one", () => {
+  // The phone rail shows STAGES_SHORT at the index currentStage returns. A
+  // short name that has drifted onto the wrong dot would tell somebody their
+  // claim is with the GM when it is with the signatories, and nothing in the
+  // page would look wrong.
+  assert.equal(STAGES_SHORT.length, STAGES.length);
+  assert.equal(STAGES_SHORT[currentStage("SUBMITTED")], "EXCO");
+  assert.equal(STAGES_SHORT[currentStage("EXCO_VERIFIED")], "GM");
+  assert.equal(STAGES_SHORT[currentStage("GM_APPROVED")], "Finance");
+  assert.equal(STAGES_SHORT[currentStage("PV_RAISED", "PENDING_SIGNATORY")], "Signing");
+  assert.equal(STAGES_SHORT[currentStage("PV_RAISED", "APPROVED")], "Paid");
+});
+
+test("every short name fits the column a phone gives it", () => {
+  // Six equal columns on a 375px screen, less the page gutter, leave roughly
+  // fifty pixels each. Nine characters at 10px is about as much as that holds
+  // on one line, and one line each is the whole point of the short set.
+  for (const s of STAGES_SHORT) {
+    assert.ok(s.length <= 9, `${s} is too long for the rail`);
+  }
 });

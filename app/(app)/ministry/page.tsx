@@ -327,19 +327,22 @@ export default function ExcoPage() {
     return { name, amount };
   };
 
-  const TABS: { key: TabKey; label: string; count: number }[] = [
-    { key: "requests", label: "Payment Requests",     count: pendingRequests.length },
-    { key: "pending",  label: "Pending Verification", count: pendingPvs.length },
+  // `short` is what a phone shows. Five tabs sharing 343 pixels gave every
+  // label two lines and pushed the fifth clean out of the rounded box, so the
+  // Budget tab existed and could not be seen or reached.
+  const TABS: { key: TabKey; label: string; short: string; count: number }[] = [
+    { key: "requests", label: "Payment Requests",     short: "Requests",  count: pendingRequests.length },
+    { key: "pending",  label: "Pending Verification", short: "To verify", count: pendingPvs.length },
     // Named for what this reader actually raises, and carrying what they
     // actually raised. Finance and the GM write vouchers; everybody else
     // writes requests.
     raisesVouchers
-      ? { key: "my_pvs" as const, label: "My PVs", count: myPvs.length }
-      : { key: "my_pvs" as const, label: "My PRs", count: myRequests.length },
-    { key: "ministry", label: "Ministry PVs",         count: ministryPvs.length },
+      ? { key: "my_pvs" as const, label: "My PVs", short: "My PVs", count: myPvs.length }
+      : { key: "my_pvs" as const, label: "My PRs", short: "My PRs", count: myRequests.length },
+    { key: "ministry", label: "Ministry PVs",         short: "Ministry", count: ministryPvs.length },
     // Budget changes, for everybody. A decider sees what is waiting on them;
     // everybody else sees their own and what became of it.
-    { key: "budget", label: "Budget",
+    { key: "budget", label: "Budget", short: "Budget",
       count: decidesBudget
         ? budgetDecisions.length
         : myBudgetRequests.filter(r => r.status === "pending").length },
@@ -399,18 +402,31 @@ export default function ExcoPage() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-stone-100 rounded-xl">
+      {/* Tabs.
+          Five of these never fitted a phone in one row. Forced to share the
+          width they gave every label two lines and pushed the fifth clean out
+          of the rounded box, so the Budget tab existed and could neither be
+          seen nor reached. A scrolling strip fixes the clipping and keeps it
+          hidden, which for a tab somebody has just been told about is no
+          better — so on a phone it is three across and two below, every tab on
+          screen, and from 640px up the single row it was built as. */}
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-stone-100 p-1 sm:flex">
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => { setTab(t.key); setSelected(null); setRemarks(""); }}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+            // nowrap holds a short label on one line inside its grid cell, where
+            // truncate is there to catch it. Above 640px the label wraps as it
+            // always did: "Payment Requests" plus its count is wider than a
+            // fifth of a tablet, and forcing one line spills it out of its own
+            // highlight and over the tab beside it.
+            className={`flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-2 text-[13px] font-medium transition-all sm:flex-1 sm:whitespace-normal sm:px-3 sm:text-sm ${
               tab === t.key ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"
             }`}
           >
-            {t.label}
-            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+            <span className="truncate sm:hidden">{t.short}</span>
+            <span className="hidden sm:inline">{t.label}</span>
+            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs ${
               tab === t.key ? "bg-stone-100 text-stone-600" : "bg-stone-200 text-stone-500"
             }`}>{t.count}</span>
           </button>

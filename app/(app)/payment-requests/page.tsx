@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { PurchaseRequest, PRStatus, PVStatus } from "@/lib/types";
 import {
-  STAGES, currentStage, statusLabel, bucketOf, type Bucket,
+  STAGES, STAGES_SHORT, currentStage, statusLabel, bucketOf, type Bucket,
 } from "@/lib/pr-progress";
 import {
   Plus, FileText, ExternalLink, ChevronDown, ChevronUp, Check, RefreshCw, ShieldCheck, BellRing,
@@ -344,10 +344,15 @@ export default function PaymentRequestsPage() {
                               : "border-2 border-stone-200 bg-white"}`}>
                               {done && <Check size={11} strokeWidth={3.5} />}
                             </span>
-                            <span className={`mt-1.5 px-1 text-center text-[11px] leading-tight ${
+                            <span className={`mt-1.5 px-0.5 text-center text-[10px] leading-tight sm:px-1 sm:text-[11px] ${
                               now ? "font-bold text-[#2563eb]"
                               : done ? "font-semibold text-green-700" : "text-stone-400"}`}>
-                              {stage}
+                              {/* The short name on a phone, the full one from
+                                  640px up. Both are rendered and one is hidden
+                                  by CSS, so the rail does not depend on
+                                  measuring anything at runtime. */}
+                              <span className="sm:hidden">{STAGES_SHORT[i]}</span>
+                              <span className="hidden sm:inline">{stage}</span>
                             </span>
                           </li>
                         );
