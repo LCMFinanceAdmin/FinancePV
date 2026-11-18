@@ -12,6 +12,15 @@ import { PiggyBank, AlertTriangle, CheckCircle2, HelpCircle, Shuffle, ChevronDow
 // only showed ministry-wide totals behind an extra click.
 
 interface Props {
+  /**
+   * Told the verdict once it is known.
+   *
+   * So a caller can act on "nothing covers this" without running the same
+   * query again to find out. The EXCO Queue uses it to offer the way of
+   * getting a line approved, which is otherwise a page nobody standing on a
+   * request would think to open.
+   */
+  onVerdict?: (verdict: BudgetImpactResult["verdict"]) => void;
   ministry?: string | null;
   projectName?: string | null;
   amount: number;
@@ -69,7 +78,7 @@ const VERDICT = {
 } as const;
 
 export function BudgetImpact({
-  ministry, projectName, amount, excludePvId, date, variant = "panel", className = "",
+  ministry, projectName, amount, excludePvId, date, variant = "panel", className = "", onVerdict,
 }: Props) {
   const supabase = createClient();
   const [data, setData] = useState<BudgetImpactResult | null>(null);
@@ -84,7 +93,7 @@ export function BudgetImpact({
         ministry: ministry ?? "", projectName, amount, excludePvId,
         year: date ? new Date(date).getFullYear() : undefined,
       });
-      if (!cancelled) { setData(result); setLoading(false); }
+      if (!cancelled) { setData(result); setLoading(false); onVerdict?.(result.verdict); }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

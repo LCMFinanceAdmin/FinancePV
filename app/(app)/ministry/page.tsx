@@ -13,9 +13,11 @@ import { expandMinistries } from "@/lib/ministries";
 import { loadMyVerifierScopes, coveredByScope, scopedMinistries, type VerifierScope } from "@/lib/verifiers";
 import type { PV, PurchaseRequest } from "@/lib/types";
 import { statusLabel } from "@/lib/pr-progress";
+import type { BudgetImpactResult } from "@/lib/budget-utils";
 import {
   CheckCircle, XCircle, ShieldCheck, Eye, EyeOff,
   Paperclip, ChevronDown, ChevronUp, ExternalLink, FileText, UserCog,
+  UserRound, Clock, PiggyBank,
 } from "lucide-react";
 
 function isImage(url: string) {
@@ -47,6 +49,13 @@ export default function ExcoPage() {
    */
   const [myRole, setMyRole] = useState("");
   const [myRequests, setMyRequests] = useState<PurchaseRequest[]>([]);
+  /**
+   * What the budget said about each request on screen.
+   *
+   * Only so the card can offer the way forward when nothing covers it — see
+   * the prompt below the budget chip.
+   */
+  const [prVerdicts, setPrVerdicts] = useState<Record<string, BudgetImpactResult["verdict"]>>({});
   const [ministryPvs, setMinistryPvs] = useState<Partial<PV>[]>([]);
   // Payment Requests awaiting this committee's verification — the first
   // constitutional gate, before anything reaches the finance desk.
@@ -276,6 +285,23 @@ export default function ExcoPage() {
 
   const ownMinistries = expandMinistries(myMinistries);
   /** True when this is somebody else's ministry that you have been asked to cover. */
+  /**
+   * When a request arrived, to the minute.
+   *
+   * A verifier is asked how long something has been sitting with them, and a
+   * bare date cannot answer it for anything raised today. The minute is also
+   * what makes the record worth anything afterwards.
+   */
+  const submittedStamp = (iso?: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString("en-MY", {
+      day: "numeric", month: "short", year: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    });
+  };
+
   const onBehalf = (ministry?: string | null) =>
     !!ministry && !ownMinistries.includes(ministry);
 
@@ -375,8 +401,26 @@ export default function ExcoPage() {
                         {pr.purpose && pr.purpose.trim() !== (pr.title ?? "").trim() && (
                           <div className="text-xs text-stone-500">{pr.purpose}</div>
                         )}
-                        <div className="text-xs text-stone-400">
-                          By {pr.submitted_by_name || pr.submitted_by_email} · {formatDate(pr.submitted_at)}
+                        {/* Who asked, and when, as a line of its own. It was
+                            grey small print under the title, which is the
+                            wrong weight for the two facts a verifier checks
+                            first — and it gave a date where the question is
+                            usually "since when", so it now carries the time
+                            and the address as well. */}
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-stone-50 px-2.5 py-1.5">
+                          <span className="flex items-center gap-1.5">
+                            <UserRound size={13} className="shrink-0 text-stone-400" />
+                            <span className="text-[13px] font-bold text-stone-800">
+                              {pr.submitted_by_name || pr.submitted_by_email}
+                            </span>
+                          </span>
+                          {pr.submitted_by_name && pr.submitted_by_email && (
+                            <span className="text-[12px] text-stone-500">{pr.submitted_by_email}</span>
+                          )}
+                          <span className="flex items-center gap-1.5 text-[12px] font-medium text-stone-500">
+                            <Clock size={12} className="shrink-0 text-stone-400" />
+                            {submittedStamp(pr.submitted_at) || formatDate(pr.submitted_at)}
+                          </span>
                         </div>
                       </div>
                       <div className="text-base font-bold text-stone-800 shrink-0">{formatCurrency(pr.estimated_amount)}</div>
@@ -391,7 +435,37 @@ export default function ExcoPage() {
                       ministry={pr.ministry}
                       projectName={pr.project}
                       amount={pr.estimated_amount ?? 0}
+                      onVerdict={v => setPrVerdicts(prev =>
+                        prev[pr.id] === v ? prev : { ...prev, [pr.id]: v })}
                     />
+
+                    {/* Nothing covers this — so say what to do about it.
+                        Asking the EXCO to verify a payment with no budget line
+                        behind it, and then leaving them to work out that the
+                        remedy is on another page under a differently worded
+                        button, is how a request sits for a fortnight. The
+                        route already existed: /budget offers anyone without
+                        direct edit rights "Request a new budget line", which
+                        files a change request and notifies the board.
+
+                        It does not block verifying. An unbudgeted payment can
+                        still be right, and the chain carries the flag to the
+                        GM and the signatories either way. */}
+                    {(prVerdicts[pr.id] === "UNPLANNED" || prVerdicts[pr.id] === "EXCEEDS") && (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[12px] text-amber-800">
+                        <PiggyBank size={13} className="shrink-0 text-amber-600" />
+                        <span>
+                          {prVerdicts[pr.id] === "EXCEEDS"
+                            ? "This goes past what the committee voted."
+                            : "No budget line covers this."}
+                          {" "}You can still verify it &mdash; or ask for the line first.
+                        </span>
+                        <Link href="/budget"
+                          className="ml-auto shrink-0 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-800 transition-colors hover:bg-amber-100">
+                          Request a budget line &rarr;
+                        </Link>
+                      </div>
+                    )}
 
                     {pr.line_items?.length > 1 && (
                       <div className="border-t border-stone-100 pt-2 space-y-1">
