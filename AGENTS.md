@@ -82,6 +82,28 @@ any produces an account that looks privileged and is not.
 ### Numbering
 PV numbers (`LCM/BAM/LSC/HLE-YYYY-XXX`) are derived from `MAX(pv_no)` in the `pvs` table — there is no separate sequence. Deleting all PVs auto-resets to `001`.
 
+### Budget years, and the EXCO register
+
+Budgets are year-scoped (`budget_items.year`). A year ahead of the current one
+is a **proposal** (`budget_proposals`): its lines carry `proposal_id` and are
+not live budget until the Treasurer or Finance approves the package, at which
+point `approve_budget_proposal` clears `proposal_id` in the same transaction.
+A ministry may write the lines of its own budget *while it is a draft* and not
+after — that is migration 248, and `canWriteLines` on the budget page follows
+it. Changing a budget already in force is a `budget_change_requests` row that
+one of the Treasurer, Bishop, Secretary, GM or a Finance Executive decides.
+
+Every one of those decisions **cites a resolution from the EXCO register**
+(`exco_meetings` → `exco_resolutions`, migration 265). The four decision
+functions take a `p_resolution uuid` and read the reference and date off the
+register; the older typed-text forms still exist and refuse with "reload the
+page". `resolution_ref` / `resolution_date` stay on the decision rows, written
+from the register, so reports read the same columns as before. A resolution a
+decision stands on cannot be deleted (FK is `ON DELETE RESTRICT`).
+
+The register is at `/church/resolutions`; `components/exco/resolution-picker.tsx`
+is what every citation field should use.
+
 ### BAM Worksheet → PV
 When a BEM submits a PV from a worksheet, the edge function uses `worksheet_bem_signature_data` (not `finance_signature_data`) to detect the worksheet origin and correctly attribute the signature to the BEM slot, not the Finance Executive slot.
 
