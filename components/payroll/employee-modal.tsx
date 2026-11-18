@@ -15,6 +15,7 @@ import { ladder, type QualificationRung } from "@/lib/payroll/qualification-scal
 import { SALARY_BANK_NAMES } from "@/lib/banks";
 import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
+import { serviceSpan } from "@/lib/payroll/service";
 import { incrementEffectiveMonth } from "@/lib/payroll/calc";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
 
@@ -157,6 +158,10 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   // certificate is dated matters more than the day it reaches the office.
   const [qualificationOn, setQualificationOn] = useState(existing?.qualification_on ?? "");
   const [rungs, setRungs] = useState<QualificationRung[]>([]);
+  // The 52 congregations, so a posting is picked rather than typed. Typed, it
+  // produced fifteen distinct spellings for seven churches — among them a
+  // parenthetical fragment and a job title with a church name glued to it.
+  const [congregations, setCongregations] = useState<{ id: string; name: string }[]>([]);
   const [employmentType, setEmploymentType] = useState<EmploymentType>(existing?.employment_type ?? "PERMANENT");
   // Who employs them. Immovable once set: changing it mid-life would detach the
   // person from the runs that have already paid them, so a move between
@@ -165,7 +170,13 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   const [employerId, setEmployerId] = useState<string>(existing?.employer_id ?? "");
   const [isPastor, setIsPastor] = useState(existing?.is_pastor ?? false);
   const [isStaff, setIsStaff] = useState(existing?.is_staff ?? false);
-  const [priorExp, setPriorExp] = useState(String(existing?.prior_experience_years ?? 0));
+  // When they first joined LCM, across every engagement, and when the earlier
+  // one ended. History, not arithmetic: date_commenced goes on carrying the
+  // increment cycle, the 13th month and the sheet. These two replace the
+  // "Prior Experience (years)" box, which was written to since 2021 and read
+  // by nothing. See lib/payroll/service.ts and migration 266.
+  const [firstJoined, setFirstJoined] = useState(existing?.first_joined ?? "");
+  const [previousTo, setPreviousTo] = useState(existing?.previous_service_to ?? "");
   const [isOrangAsli, setIsOrangAsli] = useState(existing?.is_orang_asli ?? false);
   // Neither a citizen nor a PR. EIS covers citizens and PRs, so this is the
   // only thing that keeps a foreign employee out of a scheme that will never
@@ -249,15 +260,17 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
 
   useEffect(() => {
     (async () => {
-      const [{ data }, { data: q }] = await Promise.all([
+      const [{ data }, { data: q }, { data: cg }] = await Promise.all([
         supabase.from("payroll_employers")
           .select("*").eq("active", true).order("sort_order"),
         supabase.from("qualifications").select("code, label, rank").order("rank"),
+        supabase.from("congregations").select("id, name").order("name"),
       ]);
       const list = (data as Employer[]) ?? [];
       setFormEmployers(list);
       setEmployerId(cur => cur || list[0]?.id || "");
       setRungs((q as QualificationRung[]) ?? []);
+      setCongregations((cg as { id: string; name: string }[]) ?? []);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -435,7 +448,8 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
         employer_id: employerId,
         is_pastor: isPastor,
         is_staff: isStaff,
-        prior_experience_years: parseInt(priorExp) || 0,
+        first_joined: firstJoined || null,
+        previous_service_to: firstJoined ? (previousTo || null) : null,
         is_orang_asli: isOrangAsli,
         is_foreigner: isForeigner,
         epf_foreigner_elected: isForeigner && epfElected,
@@ -628,6 +642,28 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
         : `Confirmed ${shown}. Months before ${monthName} are shown as probation; ${monthName} onwards reads the salary in force from that date.` };
   })();
 
+  // What the two service dates come to, while they can still be corrected.
+  const serviceNote = (() => {
+    const span = serviceSpan({
+      date_commenced: dateCommenced || null,
+      first_joined: firstJoined || null,
+      previous_service_to: previousTo || null,
+    });
+    if (!span.returned) {
+      return dateCommenced && firstJoined
+        ? "That is not before the commencement date, so it adds nothing — leave it blank unless they served earlier."
+        : "The date the earlier engagement finished.";
+    }
+    return `${span.label} in total`
+      + (span.breakMonths !== null
+          ? `, ${span.breakMonths} month${span.breakMonths === 1 ? "" : "s"} of it away.`
+          : ".")
+      + " Leave counts from the first joining; everything the payroll computes still counts from the commencement date above.";
+  })();
+
+  const congregationMatch = congregations.some(
+    c => c.name.trim().toLowerCase() === churchName.trim().toLowerCase());
+
   const revisionBackdated = !!revisionFrom && revisionFrom < new Date().toISOString().slice(0, 10);
 
   const inputCls = "w-full border-2 border-stone-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#2f5b9c]";
@@ -814,8 +850,30 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                 <input type="checkbox" checked={epfOver60} onChange={e => setEpfOver60(e.target.checked)} /> Still contributing to EPF at 60+
               </label>
             </div>
-            {isPastor && (
-              <div><label className={labelCls}>Prior Experience (years)</label><input type="number" className={inputCls} value={priorExp} onChange={e => setPriorExp(e.target.value)} /></div>
+            {/* Somebody who left LCM and came back. The commencement date
+                above is this engagement and has to stay that way — it carries
+                the increment cycle, the 13th-month count and the first month
+                of the yearly sheet, and backdating it would have the sheet
+                report pay for years nobody was employed. These two carry the
+                history instead, and the leave bands read them. */}
+            <div>
+              <label className={labelCls}>First joined LCM</label>
+              <input type="date" className={inputCls} value={firstJoined ?? ""}
+                onChange={e => setFirstJoined(e.target.value)} />
+              <p className="mt-1 text-[10.5px] leading-snug text-stone-400">
+                Only for somebody who served before, left, and has returned on a new letter.
+                Leave blank where this is their only engagement.
+              </p>
+            </div>
+            {firstJoined && (
+              <div>
+                <label className={labelCls}>Previous service ended</label>
+                <input type="date" className={inputCls} value={previousTo ?? ""}
+                  onChange={e => setPreviousTo(e.target.value)} />
+                <p className="mt-1 text-[10.5px] leading-snug text-stone-400">
+                  {serviceNote}
+                </p>
+              </div>
             )}
           </div>
 
@@ -831,7 +889,38 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                   <option value="OTHER">Other</option>
                 </select>
               </div>
-              {postingType === "CHURCH" && <div><label className={labelCls}>Church</label><input className={inputCls} value={churchName} onChange={e => setChurchName(e.target.value)} /></div>}
+              {/* Picked, not typed. Fifteen distinct spellings had been typed
+                  for seven churches — one of them a parenthetical fragment,
+                  one a job title with a church name glued on. A datalist
+                  rather than a select because some postings are not
+                  congregations at all: a handful of staff serve Orang Asli
+                  villages that have no congregation record, and a dropdown
+                  with no way out would have them picking the wrong church. */}
+              {postingType === "CHURCH" && (
+                <div>
+                  <label className={labelCls}>Church</label>
+                  <input className={inputCls} list="congregation-options" value={churchName}
+                    onChange={e => setChurchName(e.target.value)}
+                    placeholder={congregations.length ? "Start typing, or pick from the list" : "Church"} />
+                  <datalist id="congregation-options">
+                    {congregations.map(c => <option key={c.id} value={c.name} />)}
+                  </datalist>
+                  {churchName.trim() !== "" && !congregationMatch && congregations.length > 0 && (
+                    <p className="mt-1 text-[10.5px] leading-snug text-amber-700">
+                      No congregation of that name. Fine for a village or a preaching point that
+                      has no congregation record &mdash; but check the spelling if it should be
+                      one of the {congregations.length} on the list.
+                    </p>
+                  )}
+                  {isPastor && (
+                    <p className="mt-1 text-[10.5px] leading-snug text-stone-400">
+                      This is the posting that prints on the payslip. Where a pastor serves more
+                      than one church, or is transferred, record each posting with its dates
+                      under <span className="font-semibold">Postings</span> on their page.
+                    </p>
+                  )}
+                </div>
+              )}
               {postingType === "OFFICE" && (
                 <div>
                   <label className={labelCls}>Department</label>

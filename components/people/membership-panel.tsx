@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { fieldClass, labelClass } from "@/lib/field-styles";
-import { ProfileSection, EmptyState, period } from "@/components/people/ui";
+import { ProfileSection, EmptyState, period, duration } from "@/components/people/ui";
 import { Modal } from "@/components/ui/modal";
 import { Church, Plus, LogOut, Trash2, Star, Pencil } from "lucide-react";
 
@@ -28,10 +28,20 @@ interface Membership {
 }
 interface Congregation { id: string; name: string }
 
-export function MembershipPanel({ personId, congregations, canEdit, onChanged, say }: {
+export function MembershipPanel({ personId, congregations, canEdit, onChanged, say, as = "membership" }: {
   personId: string;
   congregations: Congregation[];
   canEdit: boolean;
+  /**
+   * The same rows read two ways.
+   *
+   * For a lay member these periods are where they have worshipped. For a
+   * pastor they are postings — a transfer out of one church and into another,
+   * or a term shared across several — and payroll needs them under that name.
+   * One table either way: a posting IS a period at a congregation, and giving
+   * pastors a second table would be two records of one fact.
+   */
+  as?: "membership" | "posting";
   /** Tells the profile to reload the timeline, which reads the same rows. */
   onChanged: () => void;
   say: (msg: string, ok?: boolean) => void;
@@ -64,6 +74,7 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
   useEffect(() => { load(); }, [load]);
 
   const nameOf = (id: string) => congregations.find(c => c.id === id)?.name ?? "Unknown church";
+  const posting = as === "posting";
 
   async function endMembership(m: Membership, on: string) {
     const { error } = await supabase.from("person_congregations")
@@ -116,15 +127,15 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
 
   return (
     <>
-      <ProfileSection title="Church membership"
+      <ProfileSection title={posting ? "Postings" : "Church membership"}
         action={canEdit && (
           <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
-            <Plus size={13} /> Add membership
+            <Plus size={13} /> {posting ? "Add posting" : "Add membership"}
           </Button>
         )}>
         {rows.length === 0 ? (
           <EmptyState icon={<Church size={18} />}
-            message="No church membership recorded."
+            message={posting ? "No postings recorded." : "No church membership recorded."}
             action={canEdit && (
               <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>Add one</Button>
             )} />
@@ -141,10 +152,10 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="text-sm font-semibold text-stone-800">{nameOf(m.congregation_id)}</span>
-                      <span className="text-[13px] text-stone-500">{m.role || "Member"}</span>
+                      <span className="text-[13px] text-stone-500">{m.role || (posting ? "Pastor" : "Member")}</span>
                       {m.is_primary && currentRow && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                          <Star size={9} /> Main church
+                          <Star size={9} /> {posting ? "Main posting" : "Main church"}
                         </span>
                       )}
                       {currentRow && (
@@ -155,6 +166,11 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
                     </div>
                     <p className="text-[12px] text-stone-500">
                       {period(m.start_date, m.end_date) || "No dates recorded"}
+                      {/* How long it ran. The dates say when he was
+                          transferred; this says how long he was there, which
+                          is the question actually being asked of a posting. */}
+                      {duration(m.start_date, m.end_date)
+                        ? ` · ${duration(m.start_date, m.end_date)}` : ""}
                       {m.role_note ? ` · ${m.role_note}` : ""}
                     </p>
                   </div>
@@ -175,10 +191,10 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
                               <Star size={14} />
                             </button>
                           )}
-                          <button onClick={() => setEnding(m)} title="They have left this church"
+                          <button onClick={() => setEnding(m)} title={posting ? "This posting has ended" : "They have left this church"}
                             aria-label={`End membership of ${nameOf(m.congregation_id)}`}
                             className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800">
-                            <LogOut size={13} /> End
+                            <LogOut size={13} /> {posting ? "Transfer out" : "End"}
                           </button>
                         </>
                       ) : (
@@ -201,8 +217,9 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
         )}
 
         <p className="mt-3 border-t border-stone-100 pt-3 text-[11px] text-stone-400">
-          Ending a membership keeps it on the record — that is how the history of where somebody has
-          worshipped is kept. Delete only removes a mistake.
+          {posting
+            ? "Ending a posting keeps it on the record — that is how the history of where somebody has served is kept, and where the tenure beside each one comes from. Delete only removes a mistake."
+            : "Ending a membership keeps it on the record — that is how the history of where somebody has worshipped is kept. Delete only removes a mistake."}
         </p>
       </ProfileSection>
 
@@ -214,7 +231,9 @@ export function MembershipPanel({ personId, congregations, canEdit, onChanged, s
             const wasEdit = !!editing;
             setAdding(false); setEditing(null);
             await load(); onChanged();
-            say(wasEdit ? "Membership updated" : "Membership added");
+            say(posting
+              ? (wasEdit ? "Posting updated" : "Posting added")
+              : (wasEdit ? "Membership updated" : "Membership added"));
           }} />
       )}
 

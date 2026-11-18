@@ -512,7 +512,24 @@ export interface PayrollEmployee {
   employment_type: EmploymentType;
   is_pastor: boolean;
   is_staff: boolean;
+  /**
+   * SUPERSEDED by `first_joined` — migration 266. Written since 2021 and read
+   * by nothing; zero for every employee. Kept so no historic row loses a
+   * value, but nothing writes it any more.
+   */
   prior_experience_years: number;
+  /**
+   * When they first joined LCM, across every engagement — migration 266.
+   *
+   * Null means this is the only one and `date_commenced` is the whole story.
+   * Read by the leave service band and by the display of total service, and
+   * deliberately by nothing the payroll computes: the increment cycle, the
+   * 13th month, the pro-rating of a joining month and the first month of the
+   * yearly sheet all belong to the current engagement.
+   */
+  first_joined?: string | null;
+  /** When the earlier engagement ended, so the break is recorded not guessed. */
+  previous_service_to?: string | null;
   is_orang_asli: boolean;
   date_commenced: string | null;
   /**

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown, Church } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, figureOf, fullGross, type CalcLine, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
@@ -14,6 +14,8 @@ import { useToast, Toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
 import { probationFacts, isProbationMonth } from "@/lib/payroll/probation";
+import { serviceSpan } from "@/lib/payroll/service";
+import { MembershipPanel } from "@/components/people/membership-panel";
 import { FigureCell } from "@/components/payroll/figure-cell";
 import { UnpaidDaysCell } from "@/components/payroll/unpaid-days-cell";
 import { EmployeeModal } from "@/components/payroll/employee-modal";
@@ -98,15 +100,6 @@ function epfAgeNote(dob: string | null, contributing: boolean): string {
   if (age >= 75) return "Closed — neither side contributes";
   if (age < 60) return "—";
   return contributing ? "Still contributing" : "Employer only";
-}
-function yearsOfService(commenced: string | null): string {
-  if (!commenced) return "—";
-  const d = new Date(commenced);
-  const now = new Date();
-  let yrs = now.getFullYear() - d.getFullYear();
-  const m = now.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) yrs--;
-  return `${yrs} year${yrs !== 1 ? "s" : ""}`;
 }
 function grossOf(s: PayrollSalary): number {
   return Number(s.base_salary) + Number(s.increment_carried) + Number(s.increment_current)
@@ -217,6 +210,7 @@ export default function PayrollEmployeePage() {
   // Said rather than alerted. See components/ui/toast.tsx for why the
   // browser's own dialogs were no longer good enough for figures like these.
   const notify = useToast();
+  const [congregations, setCongregations] = useState<{ id: string; name: string }[]>([]);
   /**
    * The question currently being asked before something is removed.
    *
@@ -318,7 +312,7 @@ export default function PayrollEmployeePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: e }, { data: s }, { data: ln }, { data: allw }, { data: tmpl }] = await Promise.all([
+    const [{ data: e }, { data: s }, { data: ln }, { data: allw }, { data: tmpl }, { data: cg }] = await Promise.all([
       supabase.from("payroll_employees").select("*").eq("id", id).single(),
       supabase.from("payroll_salary").select("*").eq("employee_id", id).order("effective_from", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("employee_loans").select("*").eq("employee_id", id).order("created_at", { ascending: false }),
@@ -327,8 +321,11 @@ export default function PayrollEmployeePage() {
         .eq("employee_id", id).order("name"),
       supabase.from("recurring_pvs").select("*")
         .ilike("group_name", "%Allowance%").eq("active", true).limit(1),
+      // For the postings panel below — the same 52 the modal picks from.
+      supabase.from("congregations").select("id, name").order("name"),
     ]);
     setEmp(e as PayrollEmployee);
+    setCongregations((cg as { id: string; name: string }[]) ?? []);
     setSalaries((s as PayrollSalary[]) ?? []);
     setLoans((ln as EmployeeLoan[]) ?? []);
     setAllowances((allw as AllowancePv[]) ?? []);
@@ -483,6 +480,9 @@ export default function PayrollEmployeePage() {
    * this there was no way to tell them apart.
    */
   const probation = probationFacts(emp, salaries);
+  // Total service, which for somebody who left and came back is not the
+  // same as the engagement the payroll computes from.
+  const service = serviceSpan(emp);
   const probationMonth = (m: number) => isProbationMonth(emp, year, m);
 
   /** Months of this year that sit before anything on record. */
@@ -1029,7 +1029,15 @@ export default function PayrollEmployeePage() {
             </div>
             <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
               <div className="text-[11px] font-semibold text-stone-400">Service</div>
-              <div className="text-lg font-bold text-stone-700 mt-0.5">{yearsOfService(emp.date_commenced)}</div>
+              <div className="text-lg font-bold text-stone-700 mt-0.5">{service.label}</div>
+              {/* Two numbers, because for a returner they differ and the
+                  payroll reads the smaller one. */}
+              {service.returned && (
+                <div className="text-[10.5px] leading-snug text-stone-400">
+                  this engagement {service.currentYears === 0 ? "under a year" : `${service.currentYears} yr`}
+                  {service.breakMonths !== null && ` · ${service.breakMonths} mo away`}
+                </div>
+              )}
             </div>
           </div>
           <div className="bg-white border border-stone-200 rounded-2xl p-5">
@@ -1037,7 +1045,16 @@ export default function PayrollEmployeePage() {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2.5 text-sm">
               <Field label="I/C No" value={emp.ic_no || "—"} />
               <Field label="Date of Birth // Age" value={`${fmtDate(emp.dob)} // ${ageFrom(emp.dob)}`} />
-              <Field label="Commenced // Service" value={`${fmtDate(emp.date_commenced)} // ${yearsOfService(emp.date_commenced)}`} />
+              <Field label="Commenced // Service" value={`${fmtDate(emp.date_commenced)} // ${service.label}`} />
+              {/* Only where they served before. Everything the payroll
+                  computes reads the commencement date above; this pair is
+                  history, and the leave bands. */}
+              {service.returned && (
+                <Field label="First joined // Previous service to"
+                  value={`${fmtDate(emp.first_joined ?? null)} // `
+                    + (emp.previous_service_to ? fmtDate(emp.previous_service_to) : "not recorded")
+                    + " — leave counts from the first joining"} />
+              )}
               {/* Beside the date that decides it, because that is the
                   question somebody is answering when they look here. */}
               <Field label="Increment cycle"
@@ -1079,6 +1096,37 @@ export default function PayrollEmployeePage() {
               <Field label="Bank" value={emp.bank_name ? `${emp.bank_name} · ${emp.bank_acct}` : "—"} />
             </div>
           </div>
+
+          {/* Postings — where they serve, when they were transferred, and how
+              long each posting ran.
+              
+              The same rows the People Directory calls church membership,
+              because a posting IS a period at a congregation and a second
+              table for pastors would be two records of one fact. The Church
+              box in Edit Employee is the one line that prints on the payslip;
+              this is the history behind it, and the only place that can hold
+              a pastor serving two churches at once. */}
+          {emp.person_id ? (
+            <MembershipPanel
+              personId={emp.person_id}
+              congregations={congregations}
+              canEdit={canEdit}
+              as="posting"
+              onChanged={load}
+              say={(msg, ok) => (ok === false ? notify.fail(msg) : notify.ok(msg))}
+            />
+          ) : (
+            <div className="bg-white border border-stone-200 rounded-2xl p-5">
+              <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5 mb-1">
+                <Church size={15} className="text-[#4a6da7]" /> Postings
+              </h2>
+              <p className="text-sm text-stone-400">
+                Postings are kept against the People Directory record, and this employee is not
+                linked to one. Open <span className="font-semibold">Edit details</span> and pick
+                them from the directory to record where they serve.
+              </p>
+            </div>
+          )}
         </>
       )}
 
@@ -2658,7 +2706,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
               </tr>
               <tr>
                 <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Date Commenced</td>
-                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{fmtDate(emp.date_commenced)}{emp.date_commenced ? ` · ${yearsOfService(emp.date_commenced)} service` : ""}</td>
+                <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{fmtDate(emp.date_commenced)}{emp.date_commenced ? ` · ${serviceSpan(emp).label} service` : ""}</td>
                 <td className="border border-stone-200 px-3 py-1.5 text-stone-500">Marital Status</td>
                 <td className="border border-stone-200 px-3 py-1.5 font-semibold text-stone-800">{emp.marital_status || "—"}{emp.spouse_working ? " · Spouse working" : ""}</td>
               </tr>
