@@ -36,13 +36,27 @@ const A50 = "#fffbeb"; const A300 = "#fcd34d"; const A700 = "#b45309";
 const G50 = "#f0fdf4"; const G700 = "#15803d"; const G800 = "#166534";
 const R50 = "#fef2f2"; const R700 = "#b91c1c"; const R800 = "#991b1b";
 const W = "#ffffff";
+// One colour per kind of column, and the four statutory schemes share theirs.
+// PCB, EPF, SOCSO and EIS are all money the law takes and LCM remits, so they
+// read as one band; what separates them is the rule between them, not a
+// different hue each. Gross, net and the church's cost are the three figures
+// somebody actually looks for, so each gets its own.
+const C_STAT = "#0f766e";   // PCB · EPF · SOCSO · EIS — the statutory band
+const C_SKBBK = "#115e59";  // inside that band, a shade down, so it still reads apart
+const C_MONTH = "#44403c";  // the spine of the table
+const C_GROSS = "#2f5b9c";  // what was earned
+const C_NET = "#6d28d9";    // what was paid
+const C_LCM = "#1e293b";    // what it cost the church
 
 const s = StyleSheet.create({
   page: { fontFamily: "Helvetica", fontSize: 7, padding: 22, color: S800, backgroundColor: W },
   hdr: { alignItems: "center", marginBottom: 9 },
   org: { fontSize: 6.5, color: S500, marginBottom: 2, letterSpacing: 1.5 },
-  title: { fontSize: 13, fontFamily: "Helvetica-Bold", color: S800, marginBottom: 2 },
-  sub: { fontSize: 7.5, color: S500 },
+  title: { fontSize: 15, fontFamily: "Helvetica-Bold", color: S800, marginBottom: 2 },
+  // The year is what somebody reads first when a stack of these is being
+  // flipped through, so it is the largest thing on the page rather than a
+  // caption under the title.
+  sub: { fontSize: 22.5, fontFamily: "Helvetica-Bold", color: B, letterSpacing: 0.5 },
   secBar: { backgroundColor: B, color: W, fontSize: 6.5, fontFamily: "Helvetica-Bold", padding: "3 6", textTransform: "uppercase", letterSpacing: 0.8 },
   pRow: { flexDirection: "row", borderBottom: `0.5 solid ${S200}` },
   pLbl: { width: "18%", backgroundColor: S50, padding: "3 6", color: S500, fontSize: 6.5 },
@@ -65,14 +79,19 @@ const s = StyleSheet.create({
   trAlt: { flexDirection: "row", borderBottom: `0.5 solid ${S200}`, backgroundColor: S50 },
   trSub: { flexDirection: "row", borderBottom: `0.5 solid ${S200}`, backgroundColor: S100 },
   trAnn: { flexDirection: "row", backgroundColor: B },
-  th: { backgroundColor: B, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${DB}` },
+  // One header style per kind of column. `th` stays as the statutory one
+  // because that is what most of them are.
+  th: { backgroundColor: C_STAT, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${W}` },
+  thGross: { backgroundColor: C_GROSS, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${W}` },
+  thNet: { backgroundColor: C_NET, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${W}` },
+  thLcm: { backgroundColor: C_LCM, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${W}` },
   // The scheme each pair of columns belongs to, above them.
-  thGrp: { backgroundColor: B, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "2 2", textAlign: "center", borderRight: `0.5 solid ${DB}`, borderBottom: `0.5 solid ${DB}` },
-  thGrpBlank: { backgroundColor: B, padding: "2 2", borderRight: `0.5 solid ${DB}`, borderBottom: `0.5 solid ${DB}` },
-  thSk: { backgroundColor: DB, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${DB}` },
-  thL: { backgroundColor: B, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 3", textAlign: "left", borderRight: `0.5 solid ${DB}` },
-  thR: { backgroundColor: R800, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${DB}` },
-  thG: { backgroundColor: G800, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${DB}` },
+  thGrp: { backgroundColor: C_STAT, color: W, fontSize: 6.5, fontFamily: "Helvetica-Bold", padding: "2 2", textAlign: "center", borderRight: `0.5 solid ${W}`, borderBottom: `0.5 solid ${W}`, letterSpacing: 0.6 },
+  thGrpBlank: { backgroundColor: S100, padding: "2 2", borderRight: `0.5 solid ${S200}`, borderBottom: `0.5 solid ${S200}` },
+  thSk: { backgroundColor: C_SKBBK, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${W}` },
+  thL: { backgroundColor: C_MONTH, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 3", textAlign: "left", borderRight: `0.5 solid ${W}` },
+  thR: { backgroundColor: R800, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${W}` },
+  thG: { backgroundColor: G800, color: W, fontSize: 6, fontFamily: "Helvetica-Bold", padding: "3 2", textAlign: "right", borderRight: `0.5 solid ${W}` },
   td: { fontSize: 6, padding: "2.5 2", textAlign: "right", borderRight: `0.5 solid ${S200}` },
   tdL: { fontSize: 6, padding: "2.5 3", textAlign: "left", fontFamily: "Helvetica-Bold", color: S700, borderRight: `0.5 solid ${S200}` },
   tdB: { fontSize: 6, padding: "2.5 2", textAlign: "right", fontFamily: "Helvetica-Bold", borderRight: `0.5 solid ${S200}` },
@@ -93,8 +112,13 @@ const s = StyleSheet.create({
   tdAnnRed: { fontSize: 6, padding: "3 2", textAlign: "right", fontFamily: "Helvetica-Bold", color: W, backgroundColor: R800, borderRight: `0.5 solid ${DB}` },
   notes: { marginTop: 7, fontSize: 5.5, color: S500 },
   nl: { marginBottom: 1.5 },
-  sigRow: { flexDirection: "row", marginTop: 22, gap: 30 },
+  sigRow: { flexDirection: "row", marginTop: 22, gap: 30, alignItems: "flex-end" },
   sigBox: { flex: 1 },
+  // The employee's name, for finding this sheet in a stack of them. Not a
+  // signature block: there is nothing here for them to sign.
+  whoBox: { flex: 1, justifyContent: "flex-end" },
+  whoName: { fontSize: 16.5, fontFamily: "Helvetica-Bold", color: S800 },
+  whoMeta: { fontSize: 6.5, color: S500, marginTop: 2 },
   sigLine: { borderBottom: `0.75 solid ${S500}`, marginBottom: 4, paddingBottom: 10 },
   sigLbl: { fontSize: 6.5, color: S700 },
   sigDate: { fontSize: 6, color: S500, marginTop: 3 },
@@ -105,9 +129,9 @@ const s = StyleSheet.create({
 // boundary: it keeps its own column and tint, but it is filed on the same
 // PERKESO schedule as SOCSO, so a rule either side would cut it off from what
 // it belongs to.
-const catL = { borderLeft: "1.5 solid #a8a29e" };
+const catL = { borderLeft: `2 solid ${C_MONTH}` };
 
-const C = { mo:44, gr:54, pcb:42, ee:46, er:46, se:38, sr:38, sk:36, ie:34, ir:34, epl:42, ptptn:46, unp:44, net:58, lcm:58, cu:46 };
+const C = { mo:32, gr:54, pcb:42, ee:46, er:46, se:38, sr:38, sk:36, ie:34, ir:34, epl:42, ptptn:46, unp:44, net:58, lcm:58, cu:46 };
 
 export interface YearlySheetPDFProps {
   emp: PayrollEmployee;
@@ -212,17 +236,24 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
               ever retuned. The trailing blank covers EPL, any custom columns
               and the two totals — none of which belong to a scheme. */}
           <View style={s.thr}>
-            <Text style={[s.thGrpBlank,{width:C.mo+C.gr+C.pcb}]}> </Text>
-            <Text style={[s.thGrp,{width:C.ee+C.er}]}>EPF</Text>
-            <Text style={[s.thGrp,{width:C.se+C.sk+C.sr}]}>SOCSO</Text>
-            <Text style={[s.thGrp,{width:C.ie+C.ir}]}>EIS</Text>
-            <Text style={[s.thGrpBlank,{width:(hasEpl?C.epl:0)+(hasPtptn?C.ptptn:0)+(hasUnpaid?C.unp:0)+customCols.length*C.cu+C.net+C.lcm,...noRight}]}> </Text>
+            <Text style={[s.thGrpBlank,{width:C.mo}]}> </Text>
+            <Text style={[s.thGrpBlank,{width:C.gr,...catL}]}> </Text>
+            <Text style={[s.thGrpBlank,{width:C.pcb,...catL}]}> </Text>
+            <Text style={[s.thGrp,{width:C.ee+C.er,...catL}]}>EPF</Text>
+            <Text style={[s.thGrp,{width:C.se+C.sk+C.sr,...catL}]}>SOCSO</Text>
+            <Text style={[s.thGrp,{width:C.ie+C.ir,...catL}]}>EIS</Text>
+            {hasEpl && <Text style={[s.thGrpBlank,{width:C.epl,...catL}]}> </Text>}
+            {hasPtptn && <Text style={[s.thGrpBlank,{width:C.ptptn,...(hasEpl?{}:catL)}]}> </Text>}
+            {hasUnpaid && <Text style={[s.thGrpBlank,{width:C.unp,...((hasEpl||hasPtptn)?{}:catL)}]}> </Text>}
+            {customCols.length>0 && <Text style={[s.thGrpBlank,{width:customCols.length*C.cu,...((hasEpl||hasPtptn||hasUnpaid)?{}:catL)}]}> </Text>}
+            <Text style={[s.thGrpBlank,{width:C.net,...catL}]}> </Text>
+            <Text style={[s.thGrpBlank,{width:C.lcm,...catL,...noRight}]}> </Text>
           </View>
 
           {/* Header */}
           <View style={s.thr}>
             <Text style={[s.thL,{width:C.mo}]}>Month</Text>
-            <Text style={[s.th,{width:C.gr,...catL}]}>Gross</Text>
+            <Text style={[s.thGross,{width:C.gr,...catL}]}>Gross</Text>
             <Text style={[s.th,{width:C.pcb,...catL}]}>PCB</Text>
             <Text style={[s.th,{width:C.ee,...catL}]}>EPF EE</Text>
             <Text style={[s.th,{width:C.er}]}>EPF ER</Text>
@@ -235,8 +266,8 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             {hasPtptn && <Text style={[s.thR,{width:C.ptptn,...catL}]}>PTPTN</Text>}
             {hasUnpaid && <Text style={[s.thR,{width:C.unp,...catL}]}>UNPAID</Text>}
             {customCols.map(col=><Text key={col.label} style={[col.type==="allowance"?s.thG:s.thR,{width:C.cu,...(col===customCols[0]?catL:{})}]}>{col.label}</Text>)}
-            <Text style={[s.th,{width:C.net,...catL}]}>Net</Text>
-            <Text style={[s.th,{width:C.lcm,...catL,...noRight}]}>Total LCM</Text>
+            <Text style={[s.thNet,{width:C.net,...catL}]}>Net</Text>
+            <Text style={[s.thLcm,{width:C.lcm,...catL,...noRight}]}>Total LCM</Text>
           </View>
 
           {/* Monthly rows */}
@@ -347,15 +378,24 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
         </View>
 
         {/* Signatures */}
+        {/* Who this belongs to, and who drew it up.
+            
+            The two have swapped sides, and only one of them is a signature
+            now. Nobody acknowledges a statement of their own pay, so the
+            employee's name is no longer a line to sign over — it is the
+            thing that identifies the sheet when a stack of them is being
+            flipped through on paper, which is why it is set large and sits
+            where the thumb is. */}
         <View style={s.sigRow}>
-          <View style={s.sigBox}>
-            <View style={s.sigLine} />
-            <Text style={s.sigLbl}>Prepared by / Finance Executive</Text>
-            <Text style={s.sigDate}>Date: ___________________</Text>
+          <View style={s.whoBox}>
+            <Text style={s.whoName}>{emp.full_name}</Text>
+            <Text style={s.whoMeta}>
+              {emp.emp_no || "—"}{emp.designation ? ` · ${emp.designation}` : ""} · Year {year}
+            </Text>
           </View>
           <View style={s.sigBox}>
             <View style={s.sigLine} />
-            <Text style={s.sigLbl}>Acknowledged by / {emp.full_name}</Text>
+            <Text style={s.sigLbl}>Prepared by / Finance Executive</Text>
             <Text style={s.sigDate}>Date: ___________________</Text>
           </View>
         </View>
