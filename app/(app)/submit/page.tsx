@@ -8,6 +8,7 @@ import { formatCurrency, getLOATier } from "@/lib/utils";
 import {
   Plus, Trash2, Info, ChevronDown, PenLine, Upload, CheckCircle,
   X as XIcon, Car, Camera, Paperclip, FileText as FileIcon, ScreenShare, Images, Link2, RefreshCw,
+  Wallet,
 } from "lucide-react";
 import { loadBudgetProjects } from "@/lib/budget-utils";
 import { SignaturePad } from "@/components/ui/signature-pad";
@@ -23,6 +24,27 @@ const MINISTRIES = [
   "Sisters and Women Fellowship (SWF)", "Young Adults & Youth (YAY)",
   "Luther Study Centre",
 ];
+
+const sameMinistry = (a: string, b: string) =>
+  (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+
+/**
+ * The ministry to pre-fill for somebody who holds a portfolio — an EXCO member
+ * raising a claim is almost always raising it for their own committee, so the
+ * picker should already say so.
+ *
+ * Only returns a name this form can actually offer. A portfolio whose spelling
+ * the register and the pickers disagree on (SWF today) would otherwise set the
+ * select to a value with no matching <option>, which renders blank and looks
+ * like the default silently failed. Better to leave it unset and let them pick.
+ */
+function homeMinistry(ministries: string[] | null): string {
+  for (const m of ministries ?? []) {
+    const known = MINISTRIES.find(x => sameMinistry(x, m));
+    if (known) return known;
+  }
+  return "";
+}
 
 const WORKSHEET_TYPE_LABEL = {
   PA_PERSONNEL: "PA Personnel",
@@ -336,6 +358,12 @@ export default function SubmitPVPage() {
     });
   }
   const [isTravelClaim, setIsTravelClaim] = useState(false);
+  // The third way a claim can be categorised, alongside General and Travel: it
+  // draws on the claimant's own allowance rather than a ministry budget. It was
+  // a dropdown sitting in the middle of the form, which put a question about
+  // the claimant in among questions about the payment. It is a mode, like
+  // Travel, so it is chosen where the other modes are chosen.
+  const [isPersonalClaim, setIsPersonalClaim] = useState(false);
   const [travelItems, setTravelItems] = useState<TravelItem[]>([{ ...EMPTY_TRAVEL_ITEM }]);
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return LCM_LOCATIONS;
@@ -472,8 +500,11 @@ export default function SubmitPVPage() {
           applicant_email: user.email ?? "",
           applicant_name: profile?.full_name || user.user_metadata?.full_name || "",
           sig_applicant_name: profile?.full_name || user.user_metadata?.full_name || "",
-          // Pre-fill ministry to Property for Building Manager
-          ministry: isBM ? "Property" : f.ministry,
+          // Pre-fill ministry to Property for Building Manager, and to their own
+          // portfolio for an EXCO member. `f.ministry` wins over both: a ?type=
+          // link, a GM claim or a worksheet may have set it already, and a
+          // default must never overwrite a ministry somebody was sent here with.
+          ministry: isBM ? "Property" : (f.ministry || homeMinistry(profile?.ministries ?? [])),
         }));
       });
     });
@@ -673,8 +704,41 @@ export default function SubmitPVPage() {
 
   const chosenEntitlement = entitlements.find(e => e.code === form.claim_category) ?? null;
 
+  // Whether the ministry on the form is one this person actually holds.
+  const holdsPortfolio = userMinistries.length > 0;
+  const isOwnPortfolio = holdsPortfolio && userMinistries.some(m => sameMinistry(m, form.ministry));
+
+  // A portfolio holder may raise a claim against another committee's budget —
+  // that is how one ministry pays for something another is running. When they
+  // do, the project stops being optional. Their own ministry they answer for;
+  // somebody else's they do not, and the project is the only thing that pins
+  // the money to a line its owner can recognise. Left optional for everyone
+  // without a portfolio, who never had a default to depart from.
+  const projectRequired = holdsPortfolio && !!form.ministry && !isOwnPortfolio;
+
+  // Only Finance and the Accounts Executive raise vouchers, so only they can be
+  // correcting or following one. Everybody else has a payment request and no PV
+  // to relate it to.
+  const canReferencePv = isFinanceAdmin;
+
   function setField<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm(f => ({ ...f, [key]: value }));
+  }
+
+  // General, Travel and Personal are one choice, not three toggles — a claim is
+  // one of them. Leaving Personal clears the entitlement with it, so a claim
+  // can never be submitted as an ordinary payment while still carrying the
+  // allowance it was briefly going to draw on.
+  function chooseTravel() {
+    const next = !isTravelClaim;
+    setIsTravelClaim(next);
+    if (next) { setIsPersonalClaim(false); setField("claim_category", ""); }
+  }
+  function choosePersonal() {
+    const next = !isPersonalClaim;
+    setIsPersonalClaim(next);
+    if (next) setIsTravelClaim(false);
+    else setField("claim_category", "");
   }
 
   function updateLineItem(idx: number, field: keyof PVLineItem, value: string | number) {
@@ -786,6 +850,14 @@ export default function SubmitPVPage() {
     if (!form.payee_name.trim()) { setError("Please enter the payee name."); return; }
     if (!form.purpose.trim()) { setError("Please enter the purpose of payment."); return; }
     if (displayAmount <= 0) { setError("Please enter at least one line item with an amount."); return; }
+    if (projectRequired && !form.project.trim()) {
+      setError(`${form.ministry} is not your portfolio — choose the project this is being charged to.`);
+      return;
+    }
+    if (isPersonalClaim && !form.claim_category) {
+      setError("Choose which entitlement this personal claim draws on, or switch it back to a general claim.");
+      return;
+    }
     setSubmitting(true);
     try {
       // Upload attachments to Supabase storage (skip pre-populated GM claim files)
@@ -885,7 +957,10 @@ export default function SubmitPVPage() {
           payment_type: isTravelClaim ? "TRAVEL_CLAIM" : "GENERAL",
           sig_applicant_name: form.sig_applicant_name,
           sig_applicant_confirm: form.sig_applicant_confirm,
-          claim_category: form.claim_category || null,
+          // Belt and braces: the toggle clears this on the way out of Personal
+          // mode, but the payload is the thing that reaches the voucher, so it
+          // decides from the mode rather than from a field that could be stale.
+          claim_category: isPersonalClaim ? (form.claim_category || null) : null,
           attachment_urls: attachmentUrls,
           ...(isFinanceAdmin && finSigData ? { finance_signature_data: finSigData } : {}),
           ...(applicantSigData ? { applicant_signature_data: applicantSigData } : {}),
@@ -1321,7 +1396,14 @@ export default function SubmitPVPage() {
         </div>
       )}
       <div>
-        <label className={mLabel}>Project <span className="text-stone-300 font-normal normal-case">(optional)</span></label>
+        <label className={mLabel}>Project {projectRequired
+          ? <span className="text-red-400">*</span>
+          : <span className="text-stone-300 font-normal normal-case">(optional)</span>}</label>
+        {projectRequired && (
+          <p className="text-[11px] text-stone-500 mb-1">
+            {form.ministry} is not your portfolio — name the project this is charged to.
+          </p>
+        )}
         {form.ministry && projects.length > 0 ? (
           <div className="relative">
             <select className={`${mInput} appearance-none pr-10 cursor-pointer`} value={form.project}
@@ -1349,15 +1431,17 @@ export default function SubmitPVPage() {
           placeholder="e.g. Monthly Cost of Living Allowance" />
       </div>
       {entitlements.length > 0 ? (
-        <div>
-          <label className={mLabel}>Claiming a personal entitlement?</label>
-          <select className={mInput} value={form.claim_category}
-            onChange={e => setField("claim_category", e.target.value)}>
-            <option value="">No — this is an ordinary payment</option>
-            {entitlements.map(e => <option key={e.code} value={e.code}>{e.name}</option>)}
-          </select>
-          <ClaimEntitlementNote ent={chosenEntitlement} amount={displayAmount} />
-        </div>
+        isPersonalClaim && (
+          <div>
+            <label className={mLabel}>Which entitlement <span className="text-red-400">*</span></label>
+            <select className={mInput} value={form.claim_category}
+              onChange={e => setField("claim_category", e.target.value)}>
+              <option value="">— Select entitlement —</option>
+              {entitlements.map(e => <option key={e.code} value={e.code}>{e.name}</option>)}
+            </select>
+            <ClaimEntitlementNote ent={chosenEntitlement} amount={displayAmount} />
+          </div>
+        )
       ) : (
         // An empty list means LCM does not employ you — pastors and parish
         // workers employed by their own congregation, former pastors, people
@@ -1372,7 +1456,9 @@ export default function SubmitPVPage() {
           </p>
         </div>
       )}
-      <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} compact />
+      {canReferencePv && (
+        <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} compact />
+      )}
     </div>,
 
     // 3: Claim Items
@@ -1381,13 +1467,28 @@ export default function SubmitPVPage() {
         {customLocations.map(l => <option key={l} value={l} />)}
       </datalist>
 
-      {/* Travel toggle */}
-      <button type="button" onClick={() => setIsTravelClaim(t => !t)}
-        className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border font-semibold text-sm transition-colors ${
-          isTravelClaim ? "bg-[#7C4A0A] text-white border-transparent" : "border-[#7C4A0A] text-[#7C4A0A] bg-white"
-        }`}>
-        <Car size={15} /> {isTravelClaim ? "Switch to General Claim" : "Switch to Travel Claim"}
-      </button>
+      {/* What kind of claim this is: General, Travel or Personal */}
+      <div className={`grid gap-2 ${entitlements.length > 0 ? "grid-cols-2" : "grid-cols-1"}`}>
+        <button type="button" onClick={chooseTravel}
+          className={`flex items-center justify-center gap-2 py-3 rounded-xl border font-semibold text-sm transition-colors ${
+            isTravelClaim ? "bg-[#7C4A0A] text-white border-transparent" : "border-[#7C4A0A] text-[#7C4A0A] bg-white"
+          }`}>
+          <Car size={15} /> Travel Claim
+        </button>
+        {entitlements.length > 0 && (
+          <button type="button" onClick={choosePersonal}
+            className={`flex items-center justify-center gap-2 py-3 rounded-xl border font-semibold text-sm transition-colors ${
+              isPersonalClaim ? "bg-[#3C6E47] text-white border-transparent" : "border-[#3C6E47] text-[#3C6E47] bg-white"
+            }`}>
+            <Wallet size={15} /> Personal Claim
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-stone-500 -mt-1">
+        {isTravelClaim ? "Mileage and travel costs, itemised by journey."
+          : isPersonalClaim ? "Drawn against your own allowance rather than a ministry budget."
+          : "An ordinary payment from a ministry budget."}
+      </p>
 
       {isTravelClaim ? (
         <div className="space-y-3">
@@ -1967,12 +2068,15 @@ export default function SubmitPVPage() {
               </Row>
             )}
 
-            <Row label="Project 计划" sublabel="Sub-project or budget code">
+            <Row label={projectRequired ? "Project 计划 *" : "Project 计划"}
+                 sublabel={projectRequired
+                   ? `Required — ${form.ministry} is not your portfolio`
+                   : "Sub-project or budget code"}>
               {form.ministry ? (
                 projects.length > 0 ? (
                   <div className="flex-1 flex items-end gap-2">
                     <InlineSelect value={form.project} onChange={v => setField("project", v)}>
-                      <option value="">— Select project (optional) —</option>
+                      <option value="">{projectRequired ? "— Select project —" : "— Select project (optional) —"}</option>
                       {projects.map(p => <option key={p} value={p}>{p}</option>)}
                     </InlineSelect>
                     {canManageProjects && (
@@ -1998,20 +2102,22 @@ export default function SubmitPVPage() {
                 onChange={e => setField("purpose", e.target.value)} placeholder="e.g. Monthly Cost of Living Allowance" required />
             </Row>
 
-            {entitlements.length > 0 && (
-              <Row label="Personal entitlement" sublabel="Only if this claim draws on your own allowance">
+            {isPersonalClaim && entitlements.length > 0 && (
+              <Row label="Which entitlement" sublabel="The allowance this claim draws on">
                 <select className={uline} value={form.claim_category}
                   onChange={e => setField("claim_category", e.target.value)}>
-                  <option value="">No — an ordinary payment from a ministry budget</option>
+                  <option value="">— Select entitlement —</option>
                   {entitlements.map(e => <option key={e.code} value={e.code}>{e.name}</option>)}
                 </select>
                 <ClaimEntitlementNote ent={chosenEntitlement} amount={displayAmount} />
               </Row>
             )}
 
-            <Row label="Relates to PV" sublabel="Only if this corrects or follows an earlier voucher">
-              <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} />
-            </Row>
+            {canReferencePv && (
+              <Row label="Relates to PV" sublabel="Only if this corrects or follows an earlier voucher">
+                <ReferenceFields form={form} setField={setField} earlierPvs={earlierPvs} />
+              </Row>
+            )}
           </div>
 
           {/* Particulars table */}
@@ -2021,12 +2127,22 @@ export default function SubmitPVPage() {
                 Particulars of Claim / Payment
                 <span className="text-stone-400 font-normal ml-1">(Please attach relevant Receipts / Invoices / Bills)</span>
               </p>
-              <button type="button" onClick={() => setIsTravelClaim(t => !t)}
-                className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors shrink-0 ml-3 ${
-                  isTravelClaim ? "bg-[#7C4A0A] text-white border-transparent" : "border-[#7C4A0A] text-[#7C4A0A] hover:bg-amber-50"
-                }`}>
-                <Car size={11} /> Travel Claim
-              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                <button type="button" onClick={chooseTravel}
+                  className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                    isTravelClaim ? "bg-[#7C4A0A] text-white border-transparent" : "border-[#7C4A0A] text-[#7C4A0A] hover:bg-amber-50"
+                  }`}>
+                  <Car size={11} /> Travel Claim
+                </button>
+                {entitlements.length > 0 && (
+                  <button type="button" onClick={choosePersonal}
+                    className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                      isPersonalClaim ? "bg-[#3C6E47] text-white border-transparent" : "border-[#3C6E47] text-[#3C6E47] hover:bg-emerald-50"
+                    }`}>
+                    <Wallet size={11} /> Personal Claim
+                  </button>
+                )}
+              </div>
             </div>
 
             <datalist id="lcm-locations">
