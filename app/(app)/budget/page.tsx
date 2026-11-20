@@ -15,7 +15,7 @@ import {
 const MINISTRIES = [
   "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
   "Property", "Head Quarters (HQ)", "Reconcile", "Trustees",
-  "Sisters and Women Fellowship (SWF)", "Young Adult and Youth (YAY)",
+  "Sisters and Women Fellowship (SWF)", "Young Adults & Youth (YAY)",
 ];
 
 const FINANCE_ADMIN_ROLES = ["FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];

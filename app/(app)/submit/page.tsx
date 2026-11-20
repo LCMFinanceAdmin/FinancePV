@@ -19,7 +19,7 @@ import type { PVLineItem, WorkerWorksheet } from "@/lib/types";
 const MINISTRIES = [
   "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
   "Property", "Head Quarters (HQ)", "Reconcile", "Trustees",
-  "Sisters and Women Fellowship (SWF)", "Young Adult and Youth (YAY)",
+  "Sisters and Women Fellowship (SWF)", "Young Adults & Youth (YAY)",
   "Luther Study Centre",
 ];
 

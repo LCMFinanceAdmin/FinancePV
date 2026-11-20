@@ -8,7 +8,7 @@ import { Download, CheckCircle, X, Filter } from "lucide-react";
 const MINISTRIES = [
   "Mission", "Social Concern", "Education", "Stewardship", "Orang Asli",
   "Property", "Head Quarters (HQ)", "Reconcile", "Trustees",
-  "Sisters and Women Fellowship (SWF)", "Young Adult and Youth (YAY)",
+  "Sisters and Women Fellowship (SWF)", "Young Adults & Youth (YAY)",
 ];
 const PAYMENT_METHODS = ["Online Transfer", "Cheque", "Cash", "JomPay", "Auto Debit"];
 

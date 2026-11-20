@@ -30,7 +30,7 @@ const LCM_MINISTRIES = [
   "LCM HQ",
   "Mission",
   "Stewardship",
-  "Young Adult and Youth (YAY)",
+  "Young Adults & Youth (YAY)",
   "Orang Asli",
   "Social Concern",
   "Education",
