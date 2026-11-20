@@ -231,6 +231,41 @@ test("none of this reaches a citizen", () => {
   assert.ok(here.eis.ee > 0);
 });
 
+// ── An allowance outside the statutory bases ─────────────────────────────
+//
+// COLA — a cost of living allowance — is money paid monthly that EPF, SOCSO,
+// EIS, SKBBK and PCB are not computed on. A custom item already is that: it
+// is added after every statutory figure has been worked out, never into the
+// gross they read. These tests are here so that stays true.
+
+test("a custom allowance is paid without EPF, SOCSO, EIS or SKBBK touching it", () => {
+  const plain = line({ gross: 3000, age: 40, bands: BANDS });
+  const withCola = line({ gross: 3000, age: 40, bands: BANDS,
+    customItems: [{ label: "COLA", type: "allowance", amount: 400 }] });
+
+  assert.equal(withCola.gross, plain.gross, "the gross the schemes read is untouched");
+  assert.equal(withCola.epf.ee, plain.epf.ee);
+  assert.equal(withCola.epf.er, plain.epf.er);
+  assert.equal(withCola.socso.ee, plain.socso.ee);
+  assert.equal(withCola.socso.er, plain.socso.er);
+  assert.equal(withCola.eis.ee, plain.eis.ee);
+  assert.equal(withCola.skbbk, plain.skbbk);
+});
+
+test("but it reaches the employee, and it costs the church", () => {
+  const plain = line({ gross: 3000, age: 40, bands: BANDS });
+  const withCola = line({ gross: 3000, age: 40, bands: BANDS,
+    customItems: [{ label: "COLA", type: "allowance", amount: 400 }] });
+  assert.equal(round2(withCola.net - plain.net), 400);
+  assert.equal(round2(withCola.totalLcmPayment - plain.totalLcmPayment), 400);
+});
+
+test("PCB is keyed by hand, so an allowance cannot move it either", () => {
+  const withCola = line({ gross: 3000, age: 40, bands: BANDS, manualPcb: 120,
+    customItems: [{ label: "COLA", type: "allowance", amount: 400 }] });
+  assert.equal(withCola.pcb, 120);
+});
+
 test("SKBBK is kept out of the contributions total", () => {
   // That figure means EPF + EIS + SOCSO everywhere it is filed; folding a
   // fourth scheme in would overstate SOCSO in the year-end returns.

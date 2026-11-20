@@ -8,7 +8,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  AlertTriangle, CalendarClock, Church, HandCoins, Percent, Plus, Trash2, UserX, Wallet, X,
+  AlertTriangle, CalendarClock, Church, HandCoins, Info, Percent, Plus, ShieldCheck,
+  Trash2, UserX, Wallet, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { ladder, type QualificationRung } from "@/lib/payroll/qualification-scale";
@@ -16,6 +17,8 @@ import { SALARY_BANK_NAMES } from "@/lib/banks";
 import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { serviceSpan } from "@/lib/payroll/service";
+import { dobFromIc } from "@/lib/ic-no";
+import { ComboBox } from "@/components/ui/combo-box";
 import { incrementEffectiveMonth } from "@/lib/payroll/calc";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
 
@@ -94,6 +97,7 @@ const SECTION_TONE = {
   tax:      { ring: "border-amber-200",  bg: "bg-amber-50/60",   dot: "bg-amber-500",   text: "text-amber-900" },
   payout:   { ring: "border-emerald-200", bg: "bg-emerald-50/50", dot: "bg-emerald-500", text: "text-emerald-900" },
   status:   { ring: "border-violet-200", bg: "bg-violet-50/50",  dot: "bg-violet-500",  text: "text-violet-900" },
+  socso:    { ring: "border-sky-200",    bg: "bg-sky-50/60",     dot: "bg-sky-500",     text: "text-sky-900" },
   salary:   { ring: "border-[#bcd3f0]",  bg: "bg-[#eef5ff]",     dot: "bg-[#2f5b9c]",   text: "text-[#173a72]" },
   extras:   { ring: "border-teal-200",   bg: "bg-teal-50/50",    dot: "bg-teal-500",    text: "text-teal-900" },
   danger:   { ring: "border-red-200",    bg: "bg-red-50/60",     dot: "bg-red-500",     text: "text-red-800" },
@@ -148,6 +152,9 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   const [directory, setDirectory] = useState<DirectoryPerson[]>([]);
 
   const [icNo, setIcNo] = useState(existing?.ic_no ?? "");
+  // Set when the date of birth was read out of the IC rather than typed, so
+  // the form can say where it came from and invite a correction.
+  const [dobFromIcNote, setDobFromIcNote] = useState(false);
   const [dob, setDob] = useState(existing?.dob ?? "");
   const [designation, setDesignation] = useState(existing?.designation ?? "");
   // What they hold now. Base salary follows it, so it has to be settable
@@ -234,7 +241,12 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
    * pay. Today is still the default, because it is usually right; it is a box
    * now because it is not always.
    */
-  const [revisionFrom, setRevisionFrom] = useState(new Date().toISOString().slice(0, 10));
+  // The salary block says a great deal that is true and mostly not wanted
+  // while somebody is typing. Folded away by default, and never folded over a
+  // warning: an unknown increment cycle still shows itself.
+  const [showSalaryNotes, setShowSalaryNotes] = useState(false);
+  const [revisionFrom, setRevisionFrom] = useState(
+    existing?.date_commenced ?? new Date().toISOString().slice(0, 10));
 
   // snapshot of the loaded salary row (edit mode) — used to detect changes
   const [latestSalarySnapshot, setLatestSalarySnapshot] = useState<Record<string, number> | null>(null);
@@ -388,6 +400,12 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
           setFamilyAllowance(String(s.family_allowance));
           setStm(String(s.stm_allowance));
           setLatestSalarySnapshot({ ...s });
+          // The date the salary in force was set from, not today. Editing the
+          // figures somebody keyed at commencement is a correction to that
+          // row, and dating it today would leave every month before it on the
+          // old number — which is exactly the trap that put three different
+          // grosses on EMP-001's 2026 sheet. Today remains a keystroke away.
+          if (s.effective_from) setRevisionFrom(String(s.effective_from));
         }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -661,6 +679,20 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
       + " Leave counts from the first joining; everything the payroll computes still counts from the commencement date above.";
   })();
 
+  /**
+   * The date of birth is already in the IC number.
+   *
+   * Filled in rather than enforced: it is only ever offered into an empty
+   * box, so a date somebody keyed by hand — a correction, or a record whose
+   * IC is wrong — is never overwritten by one derived from the number.
+   */
+  function onIcChange(next: string) {
+    setIcNo(next);
+    if (dob) return;
+    const found = dobFromIc(next);
+    if (found) { setDob(found); setDobFromIcNote(true); }
+  }
+
   const congregationMatch = congregations.some(
     c => c.name.trim().toLowerCase() === churchName.trim().toLowerCase());
 
@@ -711,8 +743,43 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                 </p>
               )}
             </div>
-            <div><label className={labelCls}>I/C No</label><input className={inputCls} value={icNo} onChange={e => setIcNo(e.target.value)} /></div>
-            <div><label className={labelCls}>Date of Birth</label><input type="date" className={inputCls} value={dob ?? ""} onChange={e => setDob(e.target.value)} /></div>
+            {/* What they are, under the name — because almost everything
+                below reads one of these three, and finding them after the
+                bank details meant filling the form in and going back. */}
+            <div className="sm:col-span-2 -mt-1 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">They are</span>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isPastor} onChange={e => setIsPastor(e.target.checked)} /> Pastor</label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isStaff} onChange={e => setIsStaff(e.target.checked)} /> Staff</label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isOrangAsli} onChange={e => setIsOrangAsli(e.target.checked)} /> Orang Asli</label>
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                title="Neither a Malaysian citizen nor a permanent resident. A permanent resident is not a foreigner here.">
+                <input type="checkbox" checked={isForeigner} onChange={e => setIsForeigner(e.target.checked)} /> Foreign national
+              </label>
+              {isOrangAsli && (
+                <span className="basis-full text-[10.5px] leading-snug text-stone-500">
+                  Orang Asli carry the bare statutory EPF employer rate and no 13th month.
+                </span>
+              )}
+            </div>
+
+            <div>
+              <label className={labelCls}>I/C No</label>
+              <input className={inputCls} value={icNo} onChange={e => onIcChange(e.target.value)}
+                inputMode="numeric" placeholder="730103-14-5013" />
+            </div>
+            <div>
+              <label className={labelCls}>Date of Birth</label>
+              <input type="date" className={inputCls} value={dob ?? ""}
+                onChange={e => { setDob(e.target.value); setDobFromIcNote(false); }} />
+              {/* Said, not assumed. The century is a rule rather than a fact —
+                  two digits cannot tell 1973 from 2073 — so the date is
+                  offered and left open to correction. */}
+              {dobFromIcNote && (
+                <p className="mt-1 text-[10.5px] leading-snug text-[#2f5b9c]">
+                  Read from the I/C number. Change it if that is not right.
+                </p>
+              )}
+            </div>
             <div><label className={labelCls}>Designation</label><input className={inputCls} value={designation} onChange={e => setDesignation(e.target.value)} /></div>
             {rungs.length > 0 && (
               <div>
@@ -801,55 +868,6 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                 <option value="CONTRACT">Contract</option>
               </select>
             </div>
-            <div className="flex items-end gap-4 pb-1 flex-wrap">
-              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isPastor} onChange={e => setIsPastor(e.target.checked)} /> Pastor</label>
-              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isStaff} onChange={e => setIsStaff(e.target.checked)} /> Staff</label>
-              <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" checked={isOrangAsli} onChange={e => setIsOrangAsli(e.target.checked)} /> Orang Asli</label>
-              <label className="flex items-center gap-1.5 text-sm text-stone-700"
-                title="Neither a Malaysian citizen nor a permanent resident. EIS covers citizens and PRs only, so nothing is contributed either side. A permanent resident is not a foreigner here.">
-                <input type="checkbox" checked={isForeigner} onChange={e => setIsForeigner(e.target.checked)} /> Foreign national
-              </label>
-              <label className="flex items-center gap-1.5 text-sm text-stone-700"
-                title="SKBBK (Lindung 24) tops up the employee's SOCSO contribution. Untick only for someone who has opted out of the scheme.">
-                <input type="checkbox" checked={inSkbbk} onChange={e => setInSkbbk(e.target.checked)} /> In SKBBK (Lindung 24)
-              </label>
-              {/* Unticking it used to empty the opening month as well — a
-                  month that was deducted, remitted and filed for everybody.
-                  It no longer does, and saying so here stops the box being
-                  mistrusted for the months it does govern. */}
-              {isForeigner && (
-                <label className="flex items-center gap-1.5 text-sm text-stone-700"
-                  title="A foreign employee is not an EPF member by default. Elected, they pay the employee rate and LCM the flat monthly sum — set both on the Statutory Rates page.">
-                  <input type="checkbox" checked={epfElected} onChange={e => setEpfElected(e.target.checked)} /> Elected to contribute to EPF
-                </label>
-              )}
-              {isForeigner && (
-                <p className="basis-full text-[10.5px] leading-snug text-stone-500">
-                  <span className="font-semibold">No EIS</span>, either side &mdash; the scheme
-                  covers citizens and permanent residents only.{" "}
-                  <span className="font-semibold">SOCSO is Category 2</span>, employment injury
-                  only: the employer contributes and the employee does not.{" "}
-                  <span className="font-semibold">EPF is an election</span> &mdash; unticked,
-                  neither side contributes; ticked, the employee pays the rate and LCM a flat sum
-                  a month rather than a percentage. All three figures are on the{" "}
-                  <span className="font-semibold">Statutory Rates</span> page. Tick{" "}
-                  <em>Foreign national</em> only for somebody who is neither a citizen nor a PR
-                  &mdash; a PR is inside every one of these schemes.
-                </p>
-              )}
-              {!inSkbbk && (
-                <p className="basis-full text-[10.5px] leading-snug text-stone-500">
-                  Leaving the scheme takes effect from the month after it stopped being
-                  compulsory &mdash; the opening months stay deducted. Set where compulsory
-                  enrolment ends on the <span className="font-semibold">Statutory Rates</span>{" "}
-                  page, per year.
-                </p>
-              )}
-              <label className="flex items-center gap-1.5 text-sm text-stone-700"
-                title="At 60 the employee's own EPF contribution becomes optional. Ticked, both sides carry on at the ordinary rate; unticked, only the employer pays. EPF closes to both sides at 75.">
-                <input type="checkbox" checked={epfOver60} onChange={e => setEpfOver60(e.target.checked)} /> Still contributing to EPF at 60+
-              </label>
-            </div>
             {/* Somebody who left LCM and came back. The commencement date
                 above is this engagement and has to stay that way — it carries
                 the increment cycle, the 13th-month count and the first month
@@ -899,12 +917,10 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
               {postingType === "CHURCH" && (
                 <div>
                   <label className={labelCls}>Church</label>
-                  <input className={inputCls} list="congregation-options" value={churchName}
-                    onChange={e => setChurchName(e.target.value)}
-                    placeholder={congregations.length ? "Start typing, or pick from the list" : "Church"} />
-                  <datalist id="congregation-options">
-                    {congregations.map(c => <option key={c.id} value={c.name} />)}
-                  </datalist>
+                  <ComboBox value={churchName} onChange={setChurchName}
+                    options={congregations.map(c => c.name)}
+                    placeholder={congregations.length ? "Start typing, or pick from the list" : "Church"}
+                    emptyNote="No congregation of that name — what you have typed will be kept as it is." />
                   {churchName.trim() !== "" && !congregationMatch && congregations.length > 0 && (
                     <p className="mt-1 text-[10.5px] leading-snug text-amber-700">
                       No congregation of that name. Fine for a village or a preaching point that
@@ -948,9 +964,71 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
             </div>
           </Section>
 
+          {/* SOCSO, EIS and SKBBK — one scheme's worth of choices, where
+              somebody looking for them would look. Scattered among the role
+              ticks, the SKBBK box in particular was read as a property of the
+              person rather than of the scheme. */}
+          <Section tone="socso" title="SOCSO, EIS &amp; SKBBK" icon={<ShieldCheck size={12} />}
+            hint="What PERKESO takes, and who is in which scheme.">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                title="SKBBK (Lindung 24) is its own scheme on top of the employee's SOCSO contribution. Untick only for someone who has left it.">
+                <input type="checkbox" checked={inSkbbk} onChange={e => setInSkbbk(e.target.checked)} /> In SKBBK (Lindung 24)
+              </label>
+              {/* Unticking it used to empty the opening month as well — a
+                  month that was deducted, remitted and filed for everybody.
+                  It no longer does, and saying so stops the box being
+                  mistrusted for the months it does govern. */}
+              {!inSkbbk && (
+                <p className="basis-full text-[10.5px] leading-snug text-stone-500">
+                  Leaving the scheme takes effect from the month after it stopped being
+                  compulsory &mdash; the opening months stay deducted. Set where compulsory
+                  enrolment ends on the <span className="font-semibold">Statutory Rates</span>{" "}
+                  page, per year.
+                </p>
+              )}
+              {isForeigner && (
+                <p className="basis-full text-[10.5px] leading-snug text-stone-500">
+                  Marked a <em>foreign national</em> above, so: <span className="font-semibold">no
+                  EIS</span> either side &mdash; the scheme covers citizens and permanent residents
+                  only &mdash; and <span className="font-semibold">SOCSO is Category 2</span>,
+                  employment injury only, the employer contributing and the employee not.
+                </p>
+              )}
+              {!isForeigner && (
+                <p className="basis-full text-[10.5px] leading-snug text-stone-400">
+                  SOCSO and EIS follow from age and nationality, so there is nothing to choose
+                  here: at 60 SOCSO becomes employment injury only and EIS stops.
+                </p>
+              )}
+            </div>
+          </Section>
+
           {/* EPF / bank */}
           <Section tone="payout" title="EPF, Tax &amp; Payout" icon={<Wallet size={12} />}
-            hint="Scheme numbers and the bank account the salary is paid into.">
+            hint="Scheme numbers, the EPF choices, and the bank account the salary is paid into.">
+            {/* The two EPF elections, with EPF — not among the role ticks,
+                where neither said which scheme it belonged to. */}
+            <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+              <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                title="At 60 the employee's own EPF contribution becomes optional. Ticked, both sides carry on at the ordinary rate; unticked, only the employer pays. EPF closes to both sides at 75.">
+                <input type="checkbox" checked={epfOver60} onChange={e => setEpfOver60(e.target.checked)} /> Still contributing to EPF at 60+
+              </label>
+              {isForeigner && (
+                <label className="flex items-center gap-1.5 text-sm text-stone-700"
+                  title="A foreign employee is not an EPF member by default. Elected, they pay the employee rate and LCM the flat monthly sum — set both on the Statutory Rates page.">
+                  <input type="checkbox" checked={epfElected} onChange={e => setEpfElected(e.target.checked)} /> Elected to contribute to EPF
+                </label>
+              )}
+              {isForeigner && (
+                <p className="basis-full text-[10.5px] leading-snug text-stone-500">
+                  A foreign national is not an EPF member by default. Unticked, neither side
+                  contributes; ticked, the employee pays the rate and LCM a flat sum a month
+                  rather than a percentage &mdash; both on the{" "}
+                  <span className="font-semibold">Statutory Rates</span> page.
+                </p>
+              )}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className={labelCls}>EPF No.</label><input className={inputCls} value={epfNo} onChange={e => setEpfNo(e.target.value)} /></div>
               <div><label className={labelCls}>Voluntary EPF (RM, fixed)</label><input type="number" className={inputCls} value={voluntaryEpf} onChange={e => setVoluntaryEpf(e.target.value)} /></div>
@@ -1023,13 +1101,38 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                       <span className="ml-1 font-normal text-[#2f5b9c]">— backdated</span>
                     )}
                   </label>
-                  <input type="date" className={`${inputCls} sm:max-w-[16rem]`} value={revisionFrom}
-                    onChange={e => setRevisionFrom(e.target.value)} />
-                  <p className="mt-1 text-[10.5px] leading-snug text-stone-400">
-                    The month the pay actually changed. A salary that has been in force since
-                    January belongs to January, however late it is keyed &mdash; dated today, the
-                    yearly sheet reads the old figure for every month before this one.
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input type="date" className={`${inputCls} sm:max-w-[16rem]`} value={revisionFrom}
+                      onChange={e => setRevisionFrom(e.target.value)} />
+                    {/* Three paragraphs of consequence used to sit open under
+                        this box. They are right, and they are not what
+                        somebody filling the form in is reading — so they fold
+                        away behind the one button that offers them. */}
+                    <button type="button" onClick={() => setShowSalaryNotes(v => !v)}
+                      aria-expanded={showSalaryNotes}
+                      className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition-colors ${
+                        showSalaryNotes
+                          ? "border-[#2f5b9c] bg-white text-[#2f5b9c]"
+                          : "border-stone-300 bg-white/70 text-stone-500 hover:border-[#2f5b9c] hover:text-[#2f5b9c]"}`}>
+                      <Info size={12} /> {showSalaryNotes ? "Hide notes" : "What this does"}
+                    </button>
+                    {dateCommenced && revisionFrom !== dateCommenced && (
+                      <button type="button" onClick={() => setRevisionFrom(dateCommenced)}
+                        className="text-[11px] font-semibold text-[#4a6da7] hover:underline">
+                        Use the commencement date
+                      </button>
+                    )}
+                  </div>
+                  {showSalaryNotes && (
+                    <p className="mt-1.5 text-[10.5px] leading-snug text-stone-500">
+                      The month the pay actually changed. A salary that has been in force since
+                      January belongs to January, however late it is keyed &mdash; dated today, the
+                      yearly sheet reads the old figure for every month before this one. A new
+                      salary mid-year &mdash; a rise the management awards, or a move up the
+                      qualification scale &mdash; is dated the month it starts, and the months
+                      before it keep what they were paid.
+                    </p>
+                  )}
                 </div>
               )}
               {/* What the retyped components come to against what is on
@@ -1060,13 +1163,16 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                           </>
                         )}
                         <span className="mt-0.5 block font-normal">
-                          Saving writes a salary revision effective{" "}
-                          <span className="font-semibold">{fmtLongDate(revisionFrom)}</span>. The
-                          months before it keep whatever salary was in force then
-                          {revisionBackdated
-                            ? " — which is the point of backdating it."
-                            : ", so date this when the pay actually changed, not when you are keying it."}
+                          Effective <span className="font-semibold">{fmtLongDate(revisionFrom)}</span>.
                         </span>
+                        {showSalaryNotes && (
+                          <span className="mt-0.5 block font-normal">
+                            The months before it keep whatever salary was in force then
+                            {revisionBackdated
+                              ? " — which is the point of backdating it."
+                              : ", so date this when the pay actually changed, not when you are keying it."}
+                          </span>
+                        )}
                       </>
                     )}
                   </p>
@@ -1080,7 +1186,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                     the commencement date decides it — and that date is in
                     another section of this form, which is why it is repeated
                     here beside the figure it governs. */}
-                {incrementCycle ? (
+                {incrementCycle && (showSalaryNotes || !incrementCycle.known) ? (
                   <p className={`rounded-lg px-2.5 py-1.5 text-[11.5px] leading-snug ${
                     incrementCycle.known
                       ? "bg-white/70 text-stone-600"
