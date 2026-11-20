@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
 import { probationFacts, isProbationMonth } from "@/lib/payroll/probation";
 import { serviceSpan } from "@/lib/payroll/service";
+import { SHEET } from "@/lib/payroll/sheet-palette";
 import { MembershipPanel } from "@/components/people/membership-panel";
 import { FigureCell } from "@/components/payroll/figure-cell";
 import { UnpaidDaysCell } from "@/components/payroll/unpaid-days-cell";
@@ -33,6 +34,7 @@ import { AdjustmentModal } from "@/components/payroll/adjustment-modal";
 import { PayItemModal } from "@/components/payroll/pay-item-modal";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
 function monthShort(m: number): string { return m === 13 ? "13th" : (MONTH_SHORT[m - 1] ?? String(m)); }
 /**
@@ -888,7 +890,7 @@ export default function PayrollEmployeePage() {
    * "column", so those cells are marked in the markup instead.
    */
   const gridCss = `.ysheet tbody tr > *:is(${categoryStarts.map(n => `:nth-child(${n})`).join(",")})`
-    + `{border-left:2px solid #a8a29e}`;
+    + `{border-left:2px solid ${SHEET.month}}`;
 
   function exportCsv() {
     const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
@@ -1203,47 +1205,58 @@ export default function PayrollEmployeePage() {
                       from "SOCSO EE". Anything not belonging to a scheme spans
                       both rows so the reading order stays one column, one
                       heading. */}
-                  <tr className="text-stone-600 [&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:bg-stone-100">
-                    <th rowSpan={2} className="border border-stone-200 px-1 py-0.5 text-left align-bottom">Month</th>
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">Gross</th>
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">PCB</th>
-                    <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4a6da7]">EPF</th>
+                  {/* One colour per kind of column, the four statutory schemes
+                      sharing theirs — the same scheme as the printed
+                      statement, so the sheet on screen and the sheet on the
+                      desk read the same way. */}
+                  <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:shadow-[inset_0_-2px_0_rgba(0,0,0,0.22)]">
+                    {/* Three letters and a tag. It was taking the width of
+                        a money column for no reason, the same way the
+                        printed sheet was. */}
+                    <th rowSpan={2} className="w-14 border border-white/25 px-1 py-0.5 align-bottom text-white text-left" style={{ backgroundColor: SHEET.month }}>Month</th>
+                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right" style={{ backgroundColor: SHEET.gross }}>Gross</th>
+                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right" style={{ backgroundColor: SHEET.stat }}>PCB</th>
+                    <th colSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-center text-[9px] font-bold uppercase tracking-wider" style={{ backgroundColor: SHEET.stat }}>EPF</th>
                     {/* SKBBK sits inside SOCSO because that is what it is —
                         Lindung 24 tops up the employee's SOCSO contribution and
                         is filed on PERKESO's return. It keeps its own column
                         and its own tint because it is not SOCSO EE: the two are
                         reported as separate figures and reconciled separately. */}
-                    <th colSpan={3} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4a6da7]">SOCSO</th>
-                    <th colSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-[#4a6da7]">EIS</th>
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">EPL</th>
+                    <th colSpan={3} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-center text-[9px] font-bold uppercase tracking-wider" style={{ backgroundColor: SHEET.stat }}>SOCSO</th>
+                    <th colSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-center text-[9px] font-bold uppercase tracking-wider" style={{ backgroundColor: SHEET.stat }}>EIS</th>
+                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right" style={{ backgroundColor: SHEET.deduct }}>EPL</th>
                     {/* Days, with what they come to underneath. Deducted after
                         the statutory columns, which is why it sits here with
                         the other deductions rather than beside Gross. */}
                     <th rowSpan={2}
                       title="Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS."
-                      className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom">
+                      className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right" style={{ backgroundColor: SHEET.deduct }}>
                       Unpaid
-                      <span className="block text-[8px] font-normal text-stone-400">days</span>
+                      <span className="block text-[8px] font-normal text-white/70">days</span>
                     </th>
                     {customCols.map(col => (
-                      <th key={col.label} rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right align-bottom max-w-[90px]">
+                      <th key={col.label} rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right max-w-[90px]"
+                        style={{ backgroundColor: col.type === "allowance" ? SHEET.allow : SHEET.deduct }}>
                         <div className="truncate text-[9px]">{col.label}</div>
-                        <div className={`text-[8px] font-normal ${col.type === "allowance" ? "text-green-600" : "text-red-500"}`}>{col.type === "allowance" ? "+ allowance" : "− deduction"}</div>
+                        <div className="text-[8px] font-normal text-white/70">{col.type === "allowance" ? "+ allowance" : "− deduction"}</div>
                       </th>
                     ))}
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right font-bold align-bottom">Net</th>
-                    <th rowSpan={2} className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right font-bold align-bottom">Total LCM</th>
-                    <th rowSpan={2} className="border border-stone-200 px-1 py-1 print:hidden w-14"></th>
+                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right font-bold" style={{ backgroundColor: SHEET.net }}>Net</th>
+                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right font-bold" style={{ backgroundColor: SHEET.lcm }}>Total LCM</th>
+                    <th rowSpan={2} className="border border-stone-200 bg-stone-100 px-1 py-1 print:hidden w-14"></th>
                   </tr>
-                  <tr className="text-stone-600 [&>th]:sticky [&>th]:top-[29px] [&>th]:z-20 [&>th]:bg-stone-100 [&>th]:shadow-[inset_0_-2px_0_#d6d3d1]">
-                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right text-[9px] font-semibold">EE</th>
-                    <th className="border border-stone-200 px-1 py-0.5 text-right text-[9px] font-semibold">ER</th>
-                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right text-[9px] font-semibold">EE</th>
-                    <th className="border border-stone-200 px-1 py-0.5 text-right text-[9px] font-semibold !bg-amber-50 text-amber-800"
+                  <tr className="[&>th]:sticky [&>th]:top-[29px] [&>th]:z-20 [&>th]:shadow-[inset_0_-2px_0_rgba(0,0,0,0.22)]">
+                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white border-l-2 border-l-stone-700" style={{ backgroundColor: SHEET.stat }}>EE</th>
+                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white" style={{ backgroundColor: SHEET.stat }}>ER</th>
+                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white border-l-2 border-l-stone-700" style={{ backgroundColor: SHEET.stat }}>EE</th>
+                    {/* A shade down from the band it sits in: filed on the
+                        same PERKESO return as SOCSO, reconciled as its own
+                        figure. */}
+                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white" style={{ backgroundColor: SHEET.skbbk }}
                         title="SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution">SKBBK</th>
-                    <th className="border border-stone-200 px-1 py-0.5 text-right text-[9px] font-semibold">ER</th>
-                    <th className="border border-stone-200 border-l-2 border-l-stone-400 px-1 py-0.5 text-right text-[9px] font-semibold">EE</th>
-                    <th className="border border-stone-200 px-1 py-0.5 text-right text-[9px] font-semibold">ER</th>
+                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white" style={{ backgroundColor: SHEET.stat }}>ER</th>
+                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white border-l-2 border-l-stone-700" style={{ backgroundColor: SHEET.stat }}>EE</th>
+                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white" style={{ backgroundColor: SHEET.stat }}>ER</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1860,7 +1873,56 @@ export default function PayrollEmployeePage() {
               </p>
             )}
 
-            <p className="text-[9px] text-stone-400 mt-3">
+            {/* What the colours mean. The printed statement has carried
+                this key for a while and the screen had none, so a red column
+                on one and a red column on the other were explained in only
+                one place. */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-stone-500">
+              <span className="font-semibold uppercase tracking-wider text-stone-400">Columns</span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: SHEET.gross }} />
+                Gross — what the schemes are worked out on
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: SHEET.stat }} />
+                PCB, EPF, SOCSO and EIS — taken by law and remitted
+              </span>
+              {monthLines.some(l => l.eplDeduction > 0) && (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: SHEET.deduct }} />
+                  EPL — loan repayment, off take-home after the statutory figures
+                </span>
+              )}
+              {monthLines.some(l => (l.unpaidLeave?.days ?? 0) > 0) && (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: SHEET.deduct }} />
+                  Unpaid — days at the month&rsquo;s gross over its calendar days; the statutory
+                  figures stay on the full wage
+                </span>
+              )}
+              {customCols.some(c => c.type === "allowance") && (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: SHEET.allow }} />
+                  Allowances — paid on top, and outside every statutory figure
+                </span>
+              )}
+              {customCols.some(c => c.type === "deduction") && (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: SHEET.deduct }} />
+                  Deductions — taken off take-home
+                </span>
+              )}
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: SHEET.net }} />
+                Net — what reaches them
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: SHEET.lcm }} />
+                Total LCM — what it costs the church
+              </span>
+            </div>
+
+            <p className="text-[9px] text-stone-400 mt-2">
               EPF / SOCSO / EIS auto-calculated from the {rates ? year : "default"} rate table (<Link href="/payroll/rates" className="text-[#4a6da7] hover:underline">edit rates</Link>);
               <span className="font-semibold"> PCB entered manually</span> per month (click a PCB cell).
               Current-year increment takes effect from <span className="font-semibold">{MONTHS[effMonth - 1]}</span>{" "}

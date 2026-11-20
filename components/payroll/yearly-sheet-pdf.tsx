@@ -3,6 +3,7 @@ import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary, PayrollEmployeeCustomItem } from "@/lib/types";
 import type { CalcLine } from "@/lib/payroll/calc";
 import { isProbationMonth } from "@/lib/payroll/probation";
+import { SHEET } from "@/lib/payroll/sheet-palette";
 
 const ML = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
@@ -36,17 +37,14 @@ const A50 = "#fffbeb"; const A300 = "#fcd34d"; const A700 = "#b45309";
 const G50 = "#f0fdf4"; const G700 = "#15803d"; const G800 = "#166534";
 const R50 = "#fef2f2"; const R700 = "#b91c1c"; const R800 = "#991b1b";
 const W = "#ffffff";
-// One colour per kind of column, and the four statutory schemes share theirs.
-// PCB, EPF, SOCSO and EIS are all money the law takes and LCM remits, so they
-// read as one band; what separates them is the rule between them, not a
-// different hue each. Gross, net and the church's cost are the three figures
-// somebody actually looks for, so each gets its own.
-const C_STAT = "#0f766e";   // PCB · EPF · SOCSO · EIS — the statutory band
-const C_SKBBK = "#115e59";  // inside that band, a shade down, so it still reads apart
-const C_MONTH = "#44403c";  // the spine of the table
-const C_GROSS = "#2f5b9c";  // what was earned
-const C_NET = "#6d28d9";    // what was paid
-const C_LCM = "#1e293b";    // what it cost the church
+// Shared with the yearly sheet on screen, so the page and the paper read the
+// same way. See lib/payroll/sheet-palette.ts for what each one is for.
+const C_STAT = SHEET.stat;
+const C_SKBBK = SHEET.skbbk;
+const C_MONTH = SHEET.month;
+const C_GROSS = SHEET.gross;
+const C_NET = SHEET.net;
+const C_LCM = SHEET.lcm;
 
 const s = StyleSheet.create({
   page: { fontFamily: "Helvetica", fontSize: 7, padding: 22, color: S800, backgroundColor: W },
