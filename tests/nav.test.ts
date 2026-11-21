@@ -179,3 +179,36 @@ test("a claimant is never offered the same page twice", () => {
     assert.deepEqual([...new Set(all)], all, `${u.role} sees a duplicate`);
   }
 });
+
+// ── What comes first ───────────────────────────────────────────────────────
+//
+// Order is a priority statement, and it is read by the sidebar, the dashboard
+// cards and the mobile sheet alike. Approvals and Payments were third and
+// fourth, under the claim form and the church directory, which put a queue
+// with five items waiting in it below a list of districts.
+
+test("Approvals comes first and Payments second for whoever has both", () => {
+  const ids = visibleGroups(FINANCE, true).map(g => g.id);
+  assert.deepEqual(ids.slice(0, 2), ["approvals", "payments"]);
+});
+
+test("the GM sees the same two at the top", () => {
+  const ids = visibleGroups(GM, true).map(g => g.id);
+  assert.deepEqual(ids.slice(0, 2), ["approvals", "payments"]);
+});
+
+test("a claimant with no queue still opens on their claim form", () => {
+  // Nothing is pushed down for somebody who has neither group: an empty group
+  // is dropped rather than left standing at the top.
+  const ids = visibleGroups(STAFF, true).map(g => g.id);
+  assert.equal(ids[0], "claims");
+  assert.ok(!ids.includes("payments"));
+});
+
+test("an EXCO member's queue outranks their own claim form", () => {
+  // The consequence of the rule above, stated rather than discovered: a
+  // volunteer who verifies their committee's requests is holding somebody
+  // else up, and their own claim is not.
+  const ids = visibleGroups(VOLUNTEER, true).map(g => g.id);
+  assert.ok(ids.indexOf("approvals") < ids.indexOf("claims"));
+});

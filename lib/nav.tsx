@@ -152,74 +152,21 @@ export const PINNED: NavItem[] = [
   },
 ];
 
+/**
+ * The order here is the order everywhere: the sidebar renders it, the
+ * dashboard lays its cards out in it, and the mobile sheet follows it.
+ *
+ * Approvals first and Payments second, because those are the two that hold
+ * somebody else up. Everything below them is work that waits — records,
+ * budgets, the building, payroll — and nobody is standing still while it does.
+ * They used to sit third and fourth, under the claim form and the directory,
+ * which put a queue with five items in it below a list of districts.
+ *
+ * Whoever sees neither loses nothing: a group with no item this person may
+ * open is dropped by visibleGroups, so a claimant with no queue still opens on
+ * their claim form.
+ */
 export const NAV_GROUPS: NavGroup[] = [
-  {
-    /**
-     * Raising a claim, and finding out where it got to.
-     *
-     * These two were a sidebar apart: the form was pinned at the top as
-     * "Submit PV", and the only way to see what had become of it was a
-     * "Payments" group holding one entry. Payments is what Finance does to a
-     * voucher; it is not what a claimant is doing, and nobody looking for
-     * their own claim would open it. Submitting and tracking are one task, so
-     * they are one group, named for the form the person actually fills in.
-     */
-    id: "claims",
-    label: "Submit PR (Claim Form)",
-    desc: "Claim what you are owed, and track it",
-    icon: <ReceiptText size={size} />,
-    accent: "#2563eb",
-    items: [
-      {
-        href: "/submit", label: "New Claim Form", desc: "Claim money you have spent or are owed",
-        icon: <FilePlus size={size} />, show: isClaimant,
-      },
-      {
-        // Gated exactly as it was under Payments, the Administrator included:
-        // she keeps the church's records and has no part in the money, and
-        // moving an entry is no reason to hand her one.
-        href: "/payment-requests", label: "Track Progress", desc: "Where each claim has reached",
-        icon: <ClipboardList size={size} />, show: (u) => isClaimant(u) && !isAdmin(u),
-      },
-    ],
-  },
-  {
-    // Everybody, which is the answer to the question 89ef8881 left open.
-    //
-    // These two pages arrived with the Guest role and were shown to guests
-    // alone — "only because it is what they asked for", with a note that
-    // nothing in them is beyond any other role and that widening was the
-    // church's call to make. It was made in November 2026: the structure goes
-    // in front of all its people.
-    //
-    // So a staff member, an EXCO member or a signatory can now find out who
-    // holds which office, which none of them could before. Finance, the
-    // General Manager and the Administrator see these alongside the editable
-    // versions under Administration — the same lists twice, deliberately,
-    // because one rule everybody can state beats a rule that is shorter.
-    //
-    // Nothing is exposed by this. Both pages read definer functions granted to
-    // every signed-in account already, returning names and nothing else — no
-    // address, no contact detail, no employment, no money — and 217 revoked
-    // them from anon, so they are not reachable without an account.
-    id: "church",
-    label: "The Church",
-    desc: "How LCM is organised, and who holds office",
-    icon: <Church size={size} />,
-    accent: "#0d9488",
-    items: [
-      {
-        href: "/church/directory", label: "Church Directory",
-        desc: "Districts, the churches in each, and their head pastors",
-        icon: <Church size={size} />, show: () => true,
-      },
-      {
-        href: "/church/offices", label: "Elected Offices",
-        desc: "Who currently holds each office and portfolio",
-        icon: <Landmark size={size} />, show: () => true,
-      },
-    ],
-  },
   {
     id: "approvals",
     label: "Approvals",
@@ -296,6 +243,73 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/banking", label: "Banking", desc: "Account balances and statements",
         icon: <Landmark size={size} />, show: (u) => u.isFinanceAdmin || u.isGeneralManager,
+      },
+    ],
+  },
+  {
+    /**
+     * Raising a claim, and finding out where it got to.
+     *
+     * These two were a sidebar apart: the form was pinned at the top as
+     * "Submit PV", and the only way to see what had become of it was a
+     * "Payments" group holding one entry. Payments is what Finance does to a
+     * voucher; it is not what a claimant is doing, and nobody looking for
+     * their own claim would open it. Submitting and tracking are one task, so
+     * they are one group, named for the form the person actually fills in.
+     */
+    id: "claims",
+    label: "Submit PR (Claim Form)",
+    desc: "Claim what you are owed, and track it",
+    icon: <ReceiptText size={size} />,
+    accent: "#2563eb",
+    items: [
+      {
+        href: "/submit", label: "New Claim Form", desc: "Claim money you have spent or are owed",
+        icon: <FilePlus size={size} />, show: isClaimant,
+      },
+      {
+        // Gated exactly as it was under Payments, the Administrator included:
+        // she keeps the church's records and has no part in the money, and
+        // moving an entry is no reason to hand her one.
+        href: "/payment-requests", label: "Track Progress", desc: "Where each claim has reached",
+        icon: <ClipboardList size={size} />, show: (u) => isClaimant(u) && !isAdmin(u),
+      },
+    ],
+  },
+  {
+    // Everybody, which is the answer to the question 89ef8881 left open.
+    //
+    // These two pages arrived with the Guest role and were shown to guests
+    // alone — "only because it is what they asked for", with a note that
+    // nothing in them is beyond any other role and that widening was the
+    // church's call to make. It was made in November 2026: the structure goes
+    // in front of all its people.
+    //
+    // So a staff member, an EXCO member or a signatory can now find out who
+    // holds which office, which none of them could before. Finance, the
+    // General Manager and the Administrator see these alongside the editable
+    // versions under Administration — the same lists twice, deliberately,
+    // because one rule everybody can state beats a rule that is shorter.
+    //
+    // Nothing is exposed by this. Both pages read definer functions granted to
+    // every signed-in account already, returning names and nothing else — no
+    // address, no contact detail, no employment, no money — and 217 revoked
+    // them from anon, so they are not reachable without an account.
+    id: "church",
+    label: "The Church",
+    desc: "How LCM is organised, and who holds office",
+    icon: <Church size={size} />,
+    accent: "#0d9488",
+    items: [
+      {
+        href: "/church/directory", label: "Church Directory",
+        desc: "Districts, the churches in each, and their head pastors",
+        icon: <Church size={size} />, show: () => true,
+      },
+      {
+        href: "/church/offices", label: "Elected Offices",
+        desc: "Who currently holds each office and portfolio",
+        icon: <Landmark size={size} />, show: () => true,
       },
     ],
   },
