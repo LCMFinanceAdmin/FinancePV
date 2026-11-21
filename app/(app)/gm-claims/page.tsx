@@ -9,11 +9,12 @@ import { formatCurrency, formatDate, workingDaysBetween } from "@/lib/utils";
 import type { PVApproval } from "@/lib/types";
 import type { POLineItem } from "@/components/gm/po-pdf";
 import { BudgetImpact } from "@/components/budget/budget-impact";
+import { awaitsGm } from "@/lib/gm-claim-gate";
 import {
   Plus, X, ChevronDown, ChevronUp, Paperclip, Link2, ExternalLink,
   CheckCircle, Clock, FileText, CreditCard, AlertCircle, Banknote,
   Package, Trash2, LayoutList, Table2, Printer, Share2, Upload, Eye, Camera, ShieldCheck,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, Lock,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -949,7 +950,15 @@ export default function GMClaimsPage() {
   async function linkPV(claimId: string, pvId: string) {
     setLinking(true);
     try {
-      await supabase.from("gm_claims").update({ pv_id: pvId, updated_at: new Date().toISOString() }).eq("id", claimId);
+      // supabase-js returns a refusal, it does not throw one, so the catch
+      // below never saw a rejected write and the toast said "linked
+      // successfully" regardless. That mattered little while nothing could
+      // refuse; migration 272 can, and a control that reports success when it
+      // refused is worse than no control.
+      const { error } = await supabase.from("gm_claims")
+        .update({ pv_id: pvId, updated_at: new Date().toISOString() })
+        .eq("id", claimId);
+      if (error) { showToast(error.message || "Failed to link PV", false); return; }
       showToast("PV linked successfully");
       setLinkModal(null);
       await load();
@@ -1176,7 +1185,16 @@ export default function GMClaimsPage() {
                     // Arrived from an EXCO-verified Payment Request and not yet
                     // accepted — highlighted so the GM can't miss that a new
                     // item needs their instruction to Finance.
-                    const awaitingGm = claim.gm_status === "AWAITING_GM";
+                    //
+                    // It is also what stops Finance raising the voucher early.
+                    // Acceptance IS the instruction to Finance, so until it
+                    // comes there is nothing to raise: the row is visible and
+                    // readable, and the two buttons that would attach a PV to
+                    // it are shown dead rather than hidden, so the reason is
+                    // on screen instead of the control simply being absent.
+                    // The rule itself is in the database — migration 272 —
+                    // because a greyed button is a courtesy, not a control.
+                    const awaitingGm = awaitsGm(claim);
                     const rowBg = awaitingGm ? "bg-yellow-100"
                       : isPaid ? "bg-green-50"
                       : isRejectedRow ? "bg-red-50"
@@ -1346,17 +1364,43 @@ export default function GMClaimsPage() {
                         <td className="px-2 py-1.5 border border-gray-300 align-middle print:hidden">
                           <div className="flex flex-col gap-1.5 items-start">
                             {isFinanceAdmin && stage === "NOT_PREPARED" && (
-                              <Link
-                                href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
-                                className="flex items-center gap-1 text-[10.5px] font-bold px-2 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] whitespace-nowrap">
-                                <FileText size={11} /> Create PV
-                              </Link>
+                              awaitingGm ? (
+                                <span
+                                  title="The General Manager has not accepted this claim yet. His acceptance is the instruction to raise the voucher."
+                                  className="flex items-center gap-1 text-[10.5px] font-bold px-2 py-1 rounded-lg bg-stone-200 text-stone-400 cursor-not-allowed whitespace-nowrap">
+                                  <Lock size={11} /> Create PV
+                                </span>
+                              ) : (
+                                <Link
+                                  href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
+                                  className="flex items-center gap-1 text-[10.5px] font-bold px-2 py-1 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] whitespace-nowrap">
+                                  <FileText size={11} /> Create PV
+                                </Link>
+                              )
                             )}
                             {isFinanceAdmin && (
-                              <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
-                                className="text-[10.5px] text-stone-400 hover:text-stone-600 text-left">
-                                {claim.pv_id ? "Change PV" : "Link PV"}
-                              </button>
+                              // Linking an existing voucher puts the church on
+                              // the hook for the claim exactly as raising one
+                              // does, so it waits on the same acceptance. Once
+                              // a PV is attached, Change PV stays live — that
+                              // is correcting a mistake, not committing money.
+                              awaitingGm && !claim.pv_id ? (
+                                <span
+                                  title="The General Manager has not accepted this claim yet."
+                                  className="text-[10.5px] text-stone-300 cursor-not-allowed text-left">
+                                  Link PV
+                                </span>
+                              ) : (
+                                <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
+                                  className="text-[10.5px] text-stone-400 hover:text-stone-600 text-left">
+                                  {claim.pv_id ? "Change PV" : "Link PV"}
+                                </button>
+                              )
+                            )}
+                            {isFinanceAdmin && awaitingGm && !claim.pv_id && (
+                              <div className="text-[10px] leading-tight text-stone-400 max-w-[120px]">
+                                Waiting on the GM to accept
+                              </div>
                             )}
                             <button onClick={() => handleShare(claim, stage)}
                               className="flex items-center gap-1 text-[10.5px] text-stone-500 hover:text-[#4a6da7] text-left">
@@ -1602,6 +1646,7 @@ export default function GMClaimsPage() {
               const meta = STAGE_META[stage];
               const isOpen = expanded.has(claim.id);
               const isPOClaim = claim.claim_type === "PURCHASE_ORDER";
+              const awaitingGm = awaitsGm(claim);
 
               return (
                 <div key={claim.id} className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
@@ -1686,18 +1731,41 @@ export default function GMClaimsPage() {
                       }} />
                     )}
 
+                    {/* Same gate as the table: until the GM accepts, neither
+                        button is live, and the card says which way round it
+                        is rather than leaving a blank space. */}
                     {isFinanceAdmin && stage === "NOT_PREPARED" && (
-                      <>
-                        <Link
-                          href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
-                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] transition-colors">
-                          <FileText size={11} /> Create PV
-                        </Link>
-                        <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
-                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
-                          <Link2 size={11} /> Link Existing PV
-                        </button>
-                      </>
+                      awaitingGm ? (
+                        <div className="flex items-center gap-2 text-xs text-stone-500 bg-stone-50 rounded-lg px-3 py-1.5 w-full">
+                          <Lock size={12} className="text-stone-400 shrink-0" />
+                          <span>Waiting on the General Manager to accept this claim before a PV can be raised.</span>
+                        </div>
+                      ) : (
+                        <>
+                          <Link
+                            href={`/submit?claim_claimant=${encodeURIComponent(claim.claimant_name)}&claim_ministry=${encodeURIComponent(claim.ministry ?? "")}&claim_amount=${claim.amount}&claim_purpose=${encodeURIComponent(claim.purpose)}&claim_id=${claim.id}`}
+                            className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#4a6da7] text-white hover:bg-[#3a5d97] transition-colors">
+                            <FileText size={11} /> Create PV
+                          </Link>
+                          <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}
+                            className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
+                            <Link2 size={11} /> Link Existing PV
+                          </button>
+                        </>
+                      )
+                    )}
+                    {/* The other half of the gate. Accept lived in the table
+                        only, so a GM reading on a phone — which is what the
+                        card view is for — had no way to release the claim he
+                        was being asked to release. */}
+                    {isGM && awaitingGm && (
+                      <button
+                        onClick={() => acceptClaim(claim)}
+                        disabled={acceptingClaimId === claim.id}
+                        className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50">
+                        <ShieldCheck size={12} />
+                        {acceptingClaimId === claim.id ? "Accepting…" : "Accept & send to Finance"}
+                      </button>
                     )}
                     {isFinanceAdmin && claim.pv_id && (
                       <button onClick={() => { setLinkModal(claim); setPvSearch(""); setPvOptions([]); }}

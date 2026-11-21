@@ -15,6 +15,7 @@ import { SignaturePad } from "@/components/ui/signature-pad";
 import { worksheetPrintHtml } from "@/components/worksheets/worksheet-html";
 import { svgToPngDataUri } from "@/components/pv/pv-pdf-download";
 import { uploadHtmlDoc } from "@/lib/upload-html";
+import { awaitsGm, awaitingGmReason } from "@/lib/gm-claim-gate";
 import type { PVLineItem, WorkerWorksheet } from "@/lib/types";
 
 // ── Ministry list ───────────────────────────────────────────────────────
@@ -345,6 +346,11 @@ export default function SubmitPVPage() {
   const [success, setSuccess] = useState("");
   const [prBanner, setPrBanner] = useState<{ id: string; request_no: string; title: string } | null>(null);
   const [claimBanner, setClaimBanner] = useState<{ id: string; claim_no: string; claimant: string } | null>(null);
+  // Set when the claim this page was opened for is still waiting on the
+  // General Manager. Finance raises the voucher on his instruction, and
+  // accepting the claim in GM Claims is that instruction — so arriving here
+  // first, by a kept link or a typed address, stops rather than pre-fills.
+  const [claimBlocked, setClaimBlocked] = useState("");
   const [worksheetBanner, setWorksheetBanner] = useState<{ id: string; worksheet_no: string; worker_name: string } | null>(null);
   const [typeRestricted, setTypeRestricted] = useState(false); // ?type= link requested a form this account can't submit
   const [linkCopied, setLinkCopied] = useState(false);
@@ -522,6 +528,15 @@ export default function SubmitPVPage() {
       supabase.from("gm_claims").select("*").eq("id", claimId).single().then(({ data }) => {
         if (data) {
           setClaimBanner(b => b ? { ...b, claim_no: data.claim_no } : b);
+
+          // Not yet released by the GM. Nothing is pre-filled and nothing can
+          // be submitted against it — the database refuses the link besides
+          // (migration 272), so a voucher raised anyway would be an orphan
+          // rather than a quietly-approved claim.
+          if (awaitsGm(data)) {
+            setClaimBlocked(awaitingGmReason(data.claim_no));
+            return;
+          }
 
           // A claim created from an approved Payment Request already carries
           // the bank details, items and the ministry EXCO's verification, so
@@ -845,6 +860,7 @@ export default function SubmitPVPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(""); setSuccess("");
+    if (claimBlocked) { setError(claimBlocked); return; }
     if (!form.sig_applicant_confirm) { setError("Please confirm the declaration before submitting."); return; }
     if (isMobile && !applicantSigData && !worksheetBanner) { setError("Please sign the declaration before submitting."); return; }
     if (!form.payee_name.trim()) { setError("Please enter the payee name."); return; }
@@ -1006,9 +1022,20 @@ export default function SubmitPVPage() {
       const urlParams = new URLSearchParams(window.location.search);
       const urlClaimId = urlParams.get("claim_id");
       if (urlClaimId && result.pv_id) {
-        await supabase.from("gm_claims").update({
+        const { error: linkErr } = await supabase.from("gm_claims").update({
           pv_id: result.pv_id, updated_at: new Date().toISOString(),
         }).eq("id", urlClaimId);
+        // The voucher exists either way — submit-pv already wrote it — so a
+        // refused link leaves a real PV with no claim attached to it. Say so
+        // instead of reporting a clean submission: whoever did this needs to
+        // know there is now a voucher to cancel.
+        if (linkErr) {
+          setError(
+            `PV ${result.pv_no} was created, but it could not be attached to the claim: `
+            + `${linkErr.message} The voucher exists and should be cancelled if it was raised in error.`,
+          );
+          return; // the finally below clears `submitting`
+        }
         // Notify GM that PV is ready for verification
         const claimant = urlParams.get("claim_claimant") ?? "";
         const { data: gmUsers } = await supabase.from("user_roles").select("email")
@@ -1709,11 +1736,18 @@ export default function SubmitPVPage() {
             </div>
           )}
           {claimBanner && (
-            <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
-              <span className="text-green-700 font-semibold shrink-0">📋 {claimBanner.claim_no || "GM Claim"}</span>
-              <span className="text-green-800 flex-1 text-xs">Creating PV for GM Claim — Claimant: <strong>{claimBanner.claimant}</strong></span>
-              <button type="button" onClick={() => setClaimBanner(null)} className="text-green-400 text-xs shrink-0">Clear</button>
-            </div>
+            claimBlocked ? (
+              <div className="mx-4 mt-4 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-300 rounded-xl text-sm">
+                <span className="text-amber-700 font-semibold shrink-0">🔒 {claimBanner.claim_no || "GM Claim"}</span>
+                <span className="text-amber-900 flex-1 text-xs">{claimBlocked}</span>
+              </div>
+            ) : (
+              <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
+                <span className="text-green-700 font-semibold shrink-0">📋 {claimBanner.claim_no || "GM Claim"}</span>
+                <span className="text-green-800 flex-1 text-xs">Creating PV for GM Claim — Claimant: <strong>{claimBanner.claimant}</strong></span>
+                <button type="button" onClick={() => setClaimBanner(null)} className="text-green-400 text-xs shrink-0">Clear</button>
+              </div>
+            )
           )}
           {prBanner && (
             <div className="mx-4 mt-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
@@ -1780,7 +1814,7 @@ export default function SubmitPVPage() {
               )}
               {error && <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>}
               {success && <div className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">{success}</div>}
-              <button type="submit" disabled={submitting}
+              <button type="submit" disabled={submitting || !!claimBlocked}
                 className="w-full py-4 bg-[#4a6da7] hover:bg-[#3d5a8e] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                 {submitting ? "Submitting…" : requestMode ? "Submit Payment Request" : "Submit Payment Voucher"}
               </button>
@@ -1870,11 +1904,18 @@ export default function SubmitPVPage() {
         </div>
       )}
       {claimBanner && (
-        <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
-          <span className="text-green-700 font-semibold shrink-0">📋 {claimBanner.claim_no || "GM Claim"}</span>
-          <span className="text-green-800 flex-1">Creating PV for GM Claim — Claimant: <strong>{claimBanner.claimant}</strong></span>
-          <button type="button" onClick={() => setClaimBanner(null)} className="text-green-400 hover:text-green-600 text-xs">Clear</button>
-        </div>
+        claimBlocked ? (
+          <div className="mb-4 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-300 rounded-xl text-sm">
+            <span className="text-amber-700 font-semibold shrink-0">🔒 {claimBanner.claim_no || "GM Claim"}</span>
+            <span className="text-amber-900 flex-1">{claimBlocked}</span>
+          </div>
+        ) : (
+          <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm">
+            <span className="text-green-700 font-semibold shrink-0">📋 {claimBanner.claim_no || "GM Claim"}</span>
+            <span className="text-green-800 flex-1">Creating PV for GM Claim — Claimant: <strong>{claimBanner.claimant}</strong></span>
+            <button type="button" onClick={() => setClaimBanner(null)} className="text-green-400 hover:text-green-600 text-xs">Clear</button>
+          </div>
+        )
       )}
       {prBanner && (
         <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
@@ -2381,7 +2422,7 @@ export default function SubmitPVPage() {
         {error && <div className="mt-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
         {success && <div className="mt-4 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 font-medium">{success}</div>}
 
-        <button type="submit" disabled={submitting}
+        <button type="submit" disabled={submitting || !!claimBlocked}
           className="mt-4 w-full py-3 bg-[#4a6da7] hover:bg-[#3d5a8e] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
           {submitting ? "Submitting…" : requestMode ? "Submit Payment Request" : "Submit Payment Voucher"}
         </button>
