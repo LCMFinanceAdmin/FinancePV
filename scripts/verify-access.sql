@@ -48,10 +48,28 @@ LANGUAGE sql STABLE AS $fn$
    LIMIT 1;
 $fn$;
 
+-- An EXCO member, for the probes that ask what somebody with a portfolio and
+-- no further standing may do.
+--
+-- The Secretary is excluded, and not because of anything she may or may not
+-- do. The records probes below seat her in the Treasurer's office, which is
+-- the point of that probe -- the role comes with the office -- and
+-- seat_office_holder also empties the incoming holder's ministries. So from
+-- that line on she is a Treasurer with no portfolio, and every later probe
+-- addressing her as an EXCO member would be asking the wrong person: the
+-- budget ones would report a rule broken, and the one that reads
+-- ministries[1] would hand a NULL ministry to an INSERT and take the whole
+-- run down with it.
+--
+-- The Secretary holds no portfolio today, so this clause selects nothing out
+-- and costs nothing. It is here for the day she is given one, so that a
+-- reshuffle in the church does not arrive looking like a bug in the database.
 CREATE OR REPLACE FUNCTION pg_temp.a_portfolio_holder() RETURNS text
 LANGUAGE sql STABLE AS $fn$
   SELECT email FROM user_roles
-   WHERE COALESCE(array_length(ministries, 1), 0) > 0 ORDER BY email LIMIT 1;
+   WHERE COALESCE(array_length(ministries, 1), 0) > 0
+     AND role::text <> 'SECRETARY'
+   ORDER BY email LIMIT 1;
 $fn$;
 
 -- Somebody with a portfolio who is nonetheless outside the budget-change
@@ -428,6 +446,13 @@ BEGIN
   PERFORM pg_temp.try_update('records', secretary, 'Secretary',
     $q$UPDATE user_roles SET role = role$q$,
     'set a role by hand', $e$SELECT 0$e$);
+  -- The NULL third argument is load-bearing. It is the outgoing holder, and
+  -- naming one demotes them to STAFF -- so passing the sitting Treasurer here,
+  -- which is the obvious way to make this probe test a proper handover, would
+  -- strip the role from the person every budget probe below addresses as the
+  -- Treasurer. The "allowed" ones would fail, which is survivable; the
+  -- "refused" ones would pass while asking a STAFF member, which is not.
+  -- Probe the handover somewhere it cannot reach the rest of the run.
   PERFORM pg_temp.try_call('records', secretary, 'Secretary',
     format($q$SELECT seat_office_holder(%L, %L, NULL)$q$, treasury, secretary),
     'seat a holder, taking the role from the office', true);
