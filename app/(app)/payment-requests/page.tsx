@@ -22,14 +22,14 @@ import {
  * Presentation, so it stays here; where the request actually is lives in
  * lib/pr-progress, which the chain and the tabs read from the same call.
  */
-function chipStyle(status: PRStatus, pv: PVStatus | null) {
-  const AMBER = "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
-  const SKY = "bg-sky-50 text-sky-700 ring-1 ring-sky-200";
-  const INDIGO = "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200";
-  const EMERALD = "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
-  const GREEN = "bg-green-50 text-green-700 ring-1 ring-green-200";
-  const RED = "bg-red-50 text-red-700 ring-1 ring-red-200";
+const AMBER = "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
+const SKY = "bg-sky-50 text-sky-700 ring-1 ring-sky-200";
+const INDIGO = "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200";
+const EMERALD = "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
+const GREEN = "bg-green-50 text-green-700 ring-1 ring-green-200";
+const RED = "bg-red-50 text-red-700 ring-1 ring-red-200";
 
+function chipStyle(status: PRStatus, pv: PVStatus | null) {
   if (status === "REJECTED" || status === "CANCELLED") return { cls: RED, Icon: XCircle };
   if (status !== "PV_RAISED") {
     return status === "GM_APPROVED"
@@ -65,6 +65,45 @@ const BUCKET_LABELS: { key: Bucket; label: string }[] = [
  */
 const SEES_EVERY_REQUEST = ["BISHOP", "TREASURER", "SECRETARY", "GENERAL_MANAGER",
                             "FINANCE_ADMIN", "FINANCE_ADMIN_2", "FINANCE_ADMIN_3"];
+
+/** The voucher a request or a claim became, as much of it as this page shows. */
+interface Voucher {
+  status: PVStatus;
+  pv_no: string;
+  paid_at: string | null;
+  /** The bank slip. Public URL, so the link works wherever it is opened. */
+  payment_receipt_url: string | null;
+}
+
+/**
+ * Where a claim has reached, said the way the person waiting on the money
+ * would say it. The voucher's own words — PV_PREPARED, PENDING_SIGNATORY —
+ * describe Finance's process, and the claimant is not in it.
+ */
+function claimStage(v: Voucher | null): { label: string; cls: string } {
+  if (!v) return { label: "With Finance", cls: AMBER };
+  switch (v.status) {
+    case "PAID":                     return { label: "Paid", cls: GREEN };
+    case "APPROVED":                 return { label: "Signed — awaiting payment", cls: EMERALD };
+    case "PENDING_SIGNATORY":        return { label: "With the signatories", cls: INDIGO };
+    case "REJECTED":
+    case "REJECTED_HEAD":
+    case "CANCELLED":                return { label: "Not proceeding", cls: RED };
+    default:                         return { label: "Voucher raised", cls: SKY };
+  }
+}
+
+/** A claim logged against this person by the General Manager. */
+interface MyClaim {
+  id: string;
+  claim_no: string;
+  purpose: string;
+  amount: number;
+  ministry: string | null;
+  received_at: string;
+  pv_id: string | null;
+  request_id: string | null;
+}
 
 export default function PaymentRequestsPage() {
   // Asking the verifier again.
@@ -118,8 +157,21 @@ export default function PaymentRequestsPage() {
    * moved saw the same thing as somebody already paid. The rest of the
    * journey is on the voucher, so the voucher is fetched.
    */
-  const [vouchers, setVouchers] = useState<Record<string, { status: PVStatus; pv_no: string; paid_at: string | null }>>({});
+  const [vouchers, setVouchers] = useState<Record<string, Voucher>>({});
   const [query, setQuery] = useState("");
+
+  /**
+   * Claims the General Manager accepted in this person's name.
+   *
+   * A claim that starts life here becomes a purchase_requests row and is
+   * tracked below. One the GM logs himself — somebody who handed in a receipt
+   * rather than filling in the form — exists only in gm_claims, so until now
+   * the claimant had nowhere at all to look: not this page, which reads
+   * requests, and not My Submissions, which lists vouchers they submitted and
+   * Finance submitted this one. The only route was a link the GM remembered
+   * to share.
+   */
+  const [claims, setClaims] = useState<MyClaim[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -141,13 +193,41 @@ export default function PaymentRequestsPage() {
       setPrs(rows);
       setMyEmail(user.email ?? "");
 
-      const pvIds = [...new Set(rows.map(r => r.pv_id).filter(Boolean))] as string[];
+      // Claims the GM logged in this person's name. Always their own, whatever
+      // the scope toggle above says — "raised for you" means you.
+      //
+      // A claim that came from a request below carries request_id and would
+      // otherwise appear twice, once as the request and once as the claim it
+      // became; those are dropped, since the request is the fuller row.
+      const mine = (user.email ?? "").toLowerCase();
+      // ilike narrows on the server; it cannot miss a match, but `_` is a
+      // wildcard to Postgres and a plain character in an address, so
+      // john_doe@ would also pull johnXdoe@. The exact compare below is what
+      // decides — the query is there to avoid reading the whole table.
+      const { data: claimRows } = mine
+        ? await supabase.from("gm_claims")
+            .select("id,claim_no,purpose,amount,ministry,received_at,pv_id,request_id,claimant_email")
+            .ilike("claimant_email", mine)
+            .order("received_at", { ascending: false })
+        : { data: [] };
+      const myClaims = ((claimRows ?? []) as (MyClaim & { claimant_email: string | null })[])
+        .filter(c => (c.claimant_email ?? "").toLowerCase() === mine && !c.request_id);
+      setClaims(myClaims);
+
+      const pvIds = [...new Set([
+        ...rows.map(r => r.pv_id),
+        ...myClaims.map(c => c.pv_id),
+      ].filter(Boolean))] as string[];
       if (pvIds.length > 0) {
+        // 273 is what makes this read return the claimant's own voucher. Before
+        // it, a claimant got rows only for vouchers booked to a ministry of
+        // theirs, so this map came back short and the row below said nothing.
         const { data: pvs } = await supabase.from("pvs")
-          .select("id, status, pv_no, paid_at").in("id", pvIds);
+          .select("id, status, pv_no, paid_at, payment_receipt_url").in("id", pvIds);
         setVouchers(Object.fromEntries((pvs ?? []).map(
-          (v: { id: string; status: PVStatus; pv_no: string; paid_at: string | null }) =>
-            [v.id, { status: v.status, pv_no: v.pv_no, paid_at: v.paid_at }])));
+          (v: Voucher & { id: string }) =>
+            [v.id, { status: v.status, pv_no: v.pv_no, paid_at: v.paid_at,
+                     payment_receipt_url: v.payment_receipt_url }])));
       }
     } finally {
       setLoading(false);
@@ -248,12 +328,75 @@ export default function PaymentRequestsPage() {
         </Link>
       </div>
 
+      {/* ── Claims raised for you ──────────────────────────────────────────
+          Expenses the General Manager logged in this person's name. They are
+          not requests and never appear in the list below; before this there
+          was no page at all that showed them to the person owed the money. */}
+      {!loading && claims.length > 0 && (
+        <div className="cloudlight-card rounded-2xl p-4">
+          <div className="mb-1 flex items-center gap-2">
+            <Wallet size={15} className="text-[#4a6da7]" />
+            <h2 className="text-sm font-bold text-stone-700">Claims raised for you</h2>
+          </div>
+          <p className="mb-3 text-xs text-stone-400">
+            Expenses the General Manager accepted in your name. Finance raises the voucher — you did not have to.
+          </p>
+          <div className="space-y-2">
+            {claims.map(c => {
+              const v = c.pv_id ? vouchers[c.pv_id] ?? null : null;
+              const stage = claimStage(v);
+              return (
+                <div key={c.id} className="rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-stone-100 px-1.5 py-0.5 text-[11px] font-semibold text-stone-500">
+                      {c.claim_no}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${stage.cls}`}>
+                      {stage.label}
+                    </span>
+                    {/* Coerced, like everywhere else that reads this column:
+                        gm_claims.amount is numeric and does not always arrive
+                        as a JS number. */}
+                    <span className="ml-auto text-sm font-bold text-stone-700">{formatCurrency(Number(c.amount))}</span>
+                  </div>
+                  <div className="mt-1 truncate text-sm text-stone-700">{c.purpose}</div>
+                  <div className="mt-0.5 text-[11px] text-stone-400">
+                    {c.ministry ? `${c.ministry} · ` : ""}Received {formatDate(c.received_at)}
+                    {v?.paid_at ? ` · Paid ${formatDate(v.paid_at)}` : ""}
+                  </div>
+                  {/* A voucher the claimant can now open, because 273 lets
+                      them. Absent while Finance has not raised one yet. */}
+                  {c.pv_id && (
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                      <Link href={`/my-pvs/${c.pv_id}`}
+                        className="flex items-center gap-1 font-medium text-[#4a6da7] hover:underline">
+                        <ExternalLink size={12} /> {v?.pv_no ?? "View voucher"}
+                      </Link>
+                      {v?.payment_receipt_url && (
+                        <a href={v.payment_receipt_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 font-medium text-emerald-700 hover:underline">
+                          <FileText size={12} /> Bank slip
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-12 text-stone-400 text-sm">Loading…</div>
       ) : shown.length === 0 ? (
         <div className="cloudlight-card rounded-2xl py-12 text-center text-sm text-stone-400">
           {scope === "all"
             ? "No payment requests have been raised."
+            : claims.length > 0
+            // Otherwise this reads as "you have claimed nothing" directly
+            // under a list of their claims.
+            ? "No payment requests of your own — the claims above were raised for you by the General Manager."
             : "No payment requests yet. Click “New Request” to raise one."}
         </div>
       ) : (
@@ -394,6 +537,18 @@ export default function PaymentRequestsPage() {
                       <Link href={`/my-pvs/${pr.pv_id}`} className="font-medium underline">
                         {pvOf(pr)?.pv_no ?? "View PV"} &rarr;
                       </Link>
+                      {/* Proof the money left the account, where Finance has
+                          attached it. The claimant's own evidence — asking
+                          Finance for it by message was the only way before. */}
+                      {pv === "PAID" && pvOf(pr)?.payment_receipt_url && (
+                        <>
+                          {" · "}
+                          <a href={pvOf(pr)!.payment_receipt_url!} target="_blank" rel="noopener noreferrer"
+                            className="font-medium underline">
+                            Bank slip
+                          </a>
+                        </>
+                      )}
                     </div>
                   )}
 

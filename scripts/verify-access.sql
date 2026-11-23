@@ -54,6 +54,54 @@ LANGUAGE sql STABLE AS $fn$
    WHERE COALESCE(array_length(ministries, 1), 0) > 0 ORDER BY email LIMIT 1;
 $fn$;
 
+-- Somebody 273 is actually for, and the claim that puts them there.
+--
+-- The situation is built rather than hunted for. Every claimant in the book
+-- today also sits on the committee their expense was booked to, or is Finance,
+-- so a probe that looked for a real one would skip -- and a skipped probe on a
+-- policy that was just written is the worst of both: it reports nothing and
+-- reads like nothing is wrong. Worse, pick a claimant who would have seen the
+-- voucher anyway and the check goes green whether or not the policy exists.
+--
+-- So: find a person who could NOT see some voucher on either older ground --
+-- not booked to a ministry of theirs, not submitted by them, not Finance or a
+-- senior officer who sees every voucher -- and name them claimant on it. The
+-- row is written inside this transaction and rolled back with everything else.
+--
+-- Returns the email, with pg_temp.probe_pv() holding the voucher; NULL if no
+-- such pairing exists at all, which would itself be worth knowing.
+CREATE OR REPLACE FUNCTION pg_temp.stage_a_claimant() RETURNS text
+LANGUAGE plpgsql AS $fn$
+DECLARE e text; v uuid;
+BEGIN
+  FOR e IN
+    SELECT lower(u.email) FROM user_roles u
+     WHERE COALESCE(u.is_test_account, false) = false
+       AND u.role <> 'GUEST'
+     ORDER BY u.email
+  LOOP
+    PERFORM set_config('request.jwt.claims', json_build_object('email', e)::text, true);
+    IF is_finance_admin_or_senior() THEN CONTINUE; END IF;
+    SELECT p.id INTO v FROM pvs p
+     WHERE NOT can_see_ministry_pv(p.ministry)
+       AND lower(COALESCE(p.submitted_by_email, '')) <> e
+       AND p.id NOT IN (SELECT pv_id FROM gm_claims WHERE pv_id IS NOT NULL)
+       AND p.id NOT IN (SELECT pv_id FROM purchase_requests WHERE pv_id IS NOT NULL)
+     ORDER BY p.pv_no LIMIT 1;
+    IF v IS NOT NULL THEN
+      PERFORM set_config('request.jwt.claims', NULL, true);
+      EXECUTE format(
+        'CREATE OR REPLACE FUNCTION pg_temp.probe_pv() RETURNS uuid LANGUAGE sql IMMUTABLE AS $p$ SELECT %L::uuid $p$', v);
+      INSERT INTO gm_claims(claim_no, claimant_name, claimant_email, amount, purpose,
+                            created_by_email, pv_id, gm_status)
+      VALUES ('_PROBE-273', '_probe', e, 1, '_probe', '_probe', v, 'ACCEPTED');
+      RETURN e;
+    END IF;
+  END LOOP;
+  PERFORM set_config('request.jwt.claims', NULL, true);
+  RETURN NULL;
+END $fn$;
+
 CREATE OR REPLACE FUNCTION pg_temp.try_insert(
   p_area text, p_email text, p_who text, p_sql text, p_what text, p_expected boolean)
 RETURNS void LANGUAGE plpgsql AS $fn$
@@ -201,6 +249,7 @@ DECLARE
                           AND is_pastor IS NOT TRUE AND role <> 'GUEST'
                           AND COALESCE(is_test_account, false) = false
                         ORDER BY email LIMIT 1);
+  claimant    text := pg_temp.stage_a_claimant();
 BEGIN
   -- Money records belong to Finance.
   PERFORM pg_temp.try_insert('money', finance, 'Finance Executive',
@@ -501,6 +550,45 @@ BEGIN
   PERFORM pg_temp.try_insert('payroll', exco, 'EXCO member',
     $q$INSERT INTO payroll_run_custom_defs(label, type) VALUES ('_probe','allowance')$q$,
     'add a column to a payroll run', false);
+
+  -- The voucher that pays your own claim (273).
+  --
+  -- Finance submits a claim voucher, so the submitter ground never reaches the
+  -- claimant, and the ministry ground only does by the accident of which
+  -- committee the expense was booked to. Both probes exclude those two
+  -- grounds, so what they measure is this policy and nothing else.
+  PERFORM pg_temp.try_count('claims', claimant, 'A claimant',
+    format($q$
+      SELECT count(*) FROM pvs p
+       WHERE p.id IN (SELECT pv_id FROM gm_claims
+                       WHERE lower(claimant_email) = %L AND pv_id IS NOT NULL)
+         AND NOT can_see_ministry_pv(p.ministry)
+         AND lower(COALESCE(p.submitted_by_email, '')) <> %L $q$, claimant, claimant),
+    'open the voucher paying their own claim', 'some');
+
+  -- And nothing beyond it. A policy written one predicate too wide would pass
+  -- the probe above and hand them the whole book.
+  PERFORM pg_temp.try_count('claims', claimant, 'A claimant',
+    format($q$
+      SELECT count(*) FROM pvs p
+       WHERE NOT can_see_ministry_pv(p.ministry)
+         AND lower(COALESCE(p.submitted_by_email, '')) <> %L
+         AND p.id NOT IN (SELECT pv_id FROM gm_claims
+                           WHERE lower(claimant_email) = %L AND pv_id IS NOT NULL)
+         AND p.id NOT IN (SELECT pv_id FROM purchase_requests
+                           WHERE lower(submitted_by_email) = %L AND pv_id IS NOT NULL)
+      $q$, claimant, claimant, claimant),
+    'read somebody else''s voucher', 'none');
+
+  -- Read only. Seeing the voucher that pays you is not a licence to alter it,
+  -- and 273 grants SELECT alone -- an UPDATE matches no row and fails
+  -- silently, which is why this is counted rather than trusted.
+  PERFORM pg_temp.try_update('claims', claimant, 'A claimant',
+    format($q$
+      UPDATE pvs SET purpose = '_probe'
+       WHERE id IN (SELECT pv_id FROM gm_claims
+                     WHERE lower(claimant_email) = %L AND pv_id IS NOT NULL) $q$, claimant),
+    'edit the voucher paying their own claim', 'SELECT 0');
 
 END $probe$;
 
