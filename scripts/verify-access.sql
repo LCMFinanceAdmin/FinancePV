@@ -54,6 +54,26 @@ LANGUAGE sql STABLE AS $fn$
    WHERE COALESCE(array_length(ministries, 1), 0) > 0 ORDER BY email LIMIT 1;
 $fn$;
 
+-- Somebody with a portfolio who is nonetheless outside the budget-change
+-- gate.
+--
+-- a_portfolio_holder() takes the first person holding any ministry, which
+-- today is an EXCO member and tomorrow might be the General Manager -- he
+-- holds portfolios, and he may decide a budget change. A probe that expects a
+-- refusal has to name somebody who will actually be refused, or the day that
+-- sort order changes it reports the rule broken when what moved was the
+-- person. The list is can_decide_budget_change()'s, spelled out because a
+-- probe cannot ask the function whether it would have said yes.
+CREATE OR REPLACE FUNCTION pg_temp.outside_the_change_gate() RETURNS text
+LANGUAGE sql STABLE AS $fn$
+  SELECT email FROM user_roles
+   WHERE COALESCE(array_length(ministries, 1), 0) > 0
+     AND COALESCE(is_test_account, false) = false
+     AND role::text NOT IN ('FINANCE_ADMIN', 'FINANCE_ADMIN_2', 'FINANCE_ADMIN_3',
+                            'TREASURER', 'BISHOP', 'SECRETARY', 'GENERAL_MANAGER')
+   ORDER BY email LIMIT 1;
+$fn$;
+
 -- Somebody 273 is actually for, and the claim that puts them there.
 --
 -- The situation is built rather than hunted for. Every claimant in the book
@@ -228,6 +248,17 @@ DECLARE
                       AND COALESCE(is_test_account, false) = false
                       ORDER BY email LIMIT 1);
   a_budget  uuid;
+  a_change  uuid;
+  outsider  text := pg_temp.outside_the_change_gate();
+  -- The Bishop stands either side of the two budget gates: he may decide a
+  -- change to a budget in force and may not approve the budget itself. The
+  -- Secretary is in the same position and would have read better here, but
+  -- the records probes above seat her in the Treasurer's office, so by the
+  -- time the budget probes run she is a Treasurer. Nothing in this script
+  -- changes what the Bishop is.
+  bishop    text := (SELECT email FROM user_roles WHERE role = 'BISHOP'
+                      AND COALESCE(is_test_account, false) = false
+                      ORDER BY email LIMIT 1);
   -- The EXCO register a budget decision now cites (265), staged below.
   held_meeting      uuid;
   future_meeting    uuid;
@@ -400,6 +431,16 @@ BEGIN
   PERFORM pg_temp.try_call('records', secretary, 'Secretary',
     format($q$SELECT seat_office_holder(%L, %L, NULL)$q$, treasury, secretary),
     'seat a holder, taking the role from the office', true);
+  -- That probe just seated this person in the Treasurer's office, and the
+  -- whole point of it is that the role comes with the office -- so from here
+  -- on, inside this transaction, they ARE the Treasurer. The handle is spent.
+  --
+  -- Dropped rather than documented, because a later probe reusing it would
+  -- not fail: it would pass, having silently asked a Treasurer whatever it
+  -- meant to ask a Secretary. That has already happened once. A NULL makes
+  -- the next use report "nobody is in this position" and the tally say some
+  -- checks did not run, which is a question rather than a lie.
+  secretary := NULL;
   -- The leave compliance list names people and their service dates, so it is
   -- not for everybody who can sign in (250).
   PERFORM pg_temp.try_call('leave', gm, 'General Manager',
@@ -503,6 +544,92 @@ BEGIN
     format($q$SELECT reject_budget_proposal(%L, %L, %L::uuid, 'Trim the camp line')$q$,
            a_budget, treasurer, a_resolution),
     'send back citing a resolution', true);
+
+  -- ── Changing a budget already in force ────────────────────────────────
+  --
+  -- The other two decisions 265 reworked, and nothing probed either of them.
+  -- They matter more than the pair above rather than less: a mid-year change
+  -- needs no threshold and no countersign, so one officer decides it alone,
+  -- and which officers those are is the whole of the control.
+  --
+  -- can_decide_budget_change() is deliberately wider than the proposal gate --
+  -- it adds the Bishop, the Secretary and the General Manager. That widening
+  -- was written in one function and checked nowhere, so the two probes below
+  -- stand either side of it: the Bishop may decide a change to a budget in
+  -- force, and may not approve the budget itself.
+  INSERT INTO budget_proposals(ministry, year, status, created_by)
+  VALUES ('_probe', 2996, 'SUBMITTED', '_probe') RETURNING id INTO a_budget;
+
+  PERFORM pg_temp.try_call('budget', bishop, 'Bishop',
+    format($q$SELECT approve_budget_proposal(%L, %L, %L::uuid, NULL)$q$,
+           a_budget, bishop, a_resolution),
+    'approve a budget proposal', false);
+
+  INSERT INTO budget_change_requests(ministry, change_type, proposed_data, requested_by)
+  VALUES ('_probe', 'add', '{"project_name":"_probe line","estimated_expenses":1}'::jsonb, '_probe')
+  RETURNING id INTO a_change;
+
+  PERFORM pg_temp.try_call('budget', desk, 'Ministry desk',
+    format($q$SELECT apply_budget_change_request(%L, 2998, %L::uuid)$q$,
+           a_change, a_resolution),
+    'change a budget in force', false);
+  PERFORM pg_temp.try_call('budget', outsider, 'EXCO member',
+    format($q$SELECT apply_budget_change_request(%L, 2998, %L::uuid)$q$,
+           a_change, a_resolution),
+    'change a budget in force', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT apply_budget_change_request(%L, 2998, NULL::uuid)$q$, a_change),
+    'change it citing no resolution', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT apply_budget_change_request(%L, 2998, %L::uuid)$q$,
+           a_change, future_resolution),
+    'change it citing a meeting still to come', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT apply_budget_change_request(%L, 2998, 'EXCO/9999/3', CURRENT_DATE)$q$, a_change),
+    'change it by typing a reference instead', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT apply_budget_change_request(%L, 2998, %L::uuid)$q$,
+           a_change, a_resolution),
+    'change it citing a resolution', true);
+
+  -- Declining one. A fresh request, because the function refuses anything no
+  -- longer pending -- which is what stops two officers deciding the same
+  -- change in opposite directions, and is probed at the end.
+  INSERT INTO budget_change_requests(ministry, change_type, proposed_data, requested_by)
+  VALUES ('_probe', 'add', '{"project_name":"_probe line 2"}'::jsonb, '_probe')
+  RETURNING id INTO a_change;
+
+  PERFORM pg_temp.try_call('budget', outsider, 'EXCO member',
+    format($q$SELECT decline_budget_change_request(%L, 'no', %L::uuid)$q$,
+           a_change, a_resolution),
+    'refuse a change to a budget in force', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT decline_budget_change_request(%L, '  ', %L::uuid)$q$,
+           a_change, a_resolution),
+    'refuse it with no reason', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT decline_budget_change_request(%L, 'Too costly', NULL::uuid)$q$, a_change),
+    'refuse it citing no resolution', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT decline_budget_change_request(%L, 'Too costly', %L::uuid)$q$,
+           a_change, future_resolution),
+    'refuse it citing a meeting still to come', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT decline_budget_change_request(%L, 'Too costly', 'EXCO/9999/3', CURRENT_DATE)$q$,
+           a_change),
+    'refuse it by typing a reference instead', false);
+  PERFORM pg_temp.try_call('budget', bishop, 'Bishop',
+    format($q$SELECT decline_budget_change_request(%L, 'Too costly', %L::uuid)$q$,
+           a_change, a_resolution),
+    'refuse it citing a resolution', true);
+
+  -- And once it is decided it is decided: the next officer along is told, not
+  -- allowed to reverse it. The only thing standing between one decision and
+  -- two, since nothing else countersigns.
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT apply_budget_change_request(%L, 2998, %L::uuid)$q$,
+           a_change, a_resolution),
+    'change one the Bishop has already refused', false);
   -- A ministry writes its own budget while it is a draft (248), and nobody
   -- else's, ever (247). 237 handed back the proposal and the change request
   -- and left the lines behind, so from 1 October until 248 an EXCO member
