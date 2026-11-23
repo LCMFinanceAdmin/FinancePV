@@ -1124,14 +1124,35 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                     )}
                   </div>
                   {showSalaryNotes && (
-                    <p className="mt-1.5 text-[10.5px] leading-snug text-stone-500">
-                      The month the pay actually changed. A salary that has been in force since
-                      January belongs to January, however late it is keyed &mdash; dated today, the
-                      yearly sheet reads the old figure for every month before this one. A new
-                      salary mid-year &mdash; a rise the management awards, or a move up the
-                      qualification scale &mdash; is dated the month it starts, and the months
-                      before it keep what they were paid.
-                    </p>
+                    <>
+                      <p className="mt-1.5 text-[10.5px] leading-snug text-stone-500">
+                        The month the pay actually changed. A salary that has been in force since
+                        January belongs to January, however late it is keyed &mdash; dated today, the
+                        yearly sheet reads the old figure for every month before this one. A new
+                        salary mid-year &mdash; a rise the management awards, or a move up the
+                        qualification scale &mdash; is dated the month it starts, and the months
+                        before it keep what they were paid.
+                      </p>
+                      {/* The half of this field nobody guesses. It reads as a
+                          start date for everything on the row, and the current
+                          year's increment is the one thing it does not start:
+                          that comes off the commencement date, so a revision
+                          dated August on a January cycle still pays the
+                          increment from January. Said here because the
+                          alternative is somebody moving this date to hold an
+                          increment back and watching it get paid anyway. */}
+                      <p className="mt-1 text-[10.5px] leading-snug text-stone-500">
+                        It does not decide when this year&rsquo;s increment starts being paid. That
+                        comes off the commencement date: this record&rsquo;s cycle runs{" "}
+                        <span className="font-semibold">{incrementCycle.cycle}</span>, so any date
+                        inside one of those periods pays the current year&rsquo;s increment from{" "}
+                        <span className="font-semibold">{incrementCycle.monthName}</span> all the
+                        same. Dating a revision later in the same period holds nothing back &mdash;
+                        it only moves which months read these figures at all. To change the month
+                        the increment itself begins, use <span className="font-semibold">Increment
+                        Month</span> higher up this form, not this date.
+                      </p>
+                    </>
                   )}
                 </div>
               )}
