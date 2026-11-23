@@ -811,3 +811,74 @@ test("the payslip's earnings list follows the same period", () => {
   assert.equal(has(2026, 11), true);
   assert.equal(has(2027, 6), true, "the far end of the period");
 });
+
+// ── The gross, in four figures ───────────────────────────────────────────
+//
+// The yearly sheet shows what makes up the gross: basic, experience,
+// increments, allowances. Four columns that did not add up to the Gross beside
+// them would be worse than no columns, so the one thing worth proving is that
+// they always do — including the cases where grossForMonth itself does
+// something: an increment not yet in payment, and a month only part worked.
+
+test("the four parts add up to the gross, month after month", async () => {
+  const { grossBreakdownForMonth, grossForMonth } = await import("@/lib/payroll/calc");
+  const s = {
+    base_salary: 1950, increment_carried: 1270, increment_current: 110,
+    experience_bonus: 180, family_allowance: 300, stm_allowance: 0,
+  };
+  // Commenced 1 July, so the increment belongs to the July–June cycle and is
+  // withheld for the first half of the year.
+  for (let m = 1; m <= 12; m++) {
+    const b = grossBreakdownForMonth(s, "2011-07-01", m, false, null, null,
+      { year: 2026, effectiveFrom: "2026-07-01" });
+    const g = grossForMonth(s, "2011-07-01", m, false, null, null,
+      { year: 2026, effectiveFrom: "2026-07-01" });
+    assert.equal(b.gross, g, `month ${m}`);
+    assert.equal(round2(b.basic + b.increment + b.experience + b.allowances), g, `month ${m} parts`);
+  }
+});
+
+test("the withheld increment is missing from the increment column, not from basic", async () => {
+  const { grossBreakdownForMonth } = await import("@/lib/payroll/calc");
+  const s = {
+    base_salary: 1950, increment_carried: 1270, increment_current: 110,
+    experience_bonus: 180, family_allowance: 300, stm_allowance: 0,
+  };
+  const period = { year: 2026, effectiveFrom: "2026-07-01" };
+  const jun = grossBreakdownForMonth(s, "2011-07-01", 6, false, null, null, period);
+  const jul = grossBreakdownForMonth(s, "2011-07-01", 7, false, null, null, period);
+  assert.equal(jun.increment, 1270, "carried only");
+  assert.equal(jul.increment, 1380, "carried plus the one granted for this cycle");
+  assert.equal(jun.basic, jul.basic, "basic does not move");
+  assert.equal(jul.gross - jun.gross, 110);
+});
+
+test("a month only part worked still adds up, with the shortfall on basic", async () => {
+  const { grossBreakdownForMonth, grossForMonth } = await import("@/lib/payroll/calc");
+  const s = {
+    base_salary: 3000, increment_carried: 0, increment_current: 0,
+    experience_bonus: 180, family_allowance: 120, stm_allowance: 0,
+  };
+  // Joined on the 15th of a 31-day month.
+  const days = { daysInMonth: 31, daysPaid: 17, reason: "joined 15 Oct" };
+  const b = grossBreakdownForMonth(s, "2026-10-15", 10, false, null, days);
+  const g = grossForMonth(s, "2026-10-15", 10, false, null, days);
+  assert.equal(b.gross, g);
+  assert.equal(round2(b.basic + b.increment + b.experience + b.allowances), g);
+  // The agreed allowances are what the payslip names; here the sheet records
+  // what was paid, and the difference sits on basic rather than nowhere.
+  assert.ok(b.basic < 3000, "basic carries the shortfall");
+});
+
+test("the 13th month is paid on the whole gross, increment included", async () => {
+  const { grossBreakdownForMonth } = await import("@/lib/payroll/calc");
+  const s = {
+    base_salary: 1950, increment_carried: 1270, increment_current: 110,
+    experience_bonus: 180, family_allowance: 300, stm_allowance: 0,
+  };
+  // January, when the increment would otherwise be withheld.
+  const b = grossBreakdownForMonth(s, "2011-07-01", 1, true, null, null,
+    { year: 2026, effectiveFrom: "2026-07-01" });
+  assert.equal(b.increment, 1380);
+  assert.equal(b.gross, 3810);
+});

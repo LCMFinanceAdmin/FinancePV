@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown, Church } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, figureOf, fullGross, type CalcLine, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, figureOf, fullGross, type CalcLine, type GrossBreakdown, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
@@ -32,6 +32,15 @@ import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
 import { EmployeeDocuments } from "@/components/payroll/employee-documents";
 import { AdjustmentModal } from "@/components/payroll/adjustment-modal";
 import { PayItemModal } from "@/components/payroll/pay-item-modal";
+
+/**
+ * The four figures the gross is shown in, in the order the columns appear.
+ *
+ * Here rather than written out at each of the four rows that render them —
+ * month, sub-total, 13th month, annual — because a column added to one and
+ * not the others puts every figure to its right under the wrong heading.
+ */
+const GROSS_PARTS = ["basic", "experience", "increment", "allowances"] as const;
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
@@ -67,17 +76,21 @@ function itemAppliesToMonth(item: { year: number; month: number; is_recurring: b
  * The figure is the bolder and larger of the two, because it is what somebody
  * is looking for. The scheme above it is context, and reads as context.
  */
-function SheetHead({ bg, label, group, rule, align = "text-right", width, title }: {
+interface SheetColumn {
   bg: string;
   label: string;
   /** The scheme this column sits in — EPF, SOCSO, EIS. Blank for the rest. */
   group?: string;
-  /** Draw the 2px rule that starts a new scheme to the left of this column. */
+  /** Draw the 2px rule that starts a new category to the left of this column. */
   rule?: boolean;
+  /** The figures somebody is actually looking for: Gross, Net, Total LCM. */
+  bold?: boolean;
   align?: string;
   width?: string;
   title?: string;
-}) {
+}
+
+function SheetHead({ bg, label, group, rule, bold, align = "text-right", width, title }: SheetColumn) {
   return (
     <th
       title={title}
@@ -88,7 +101,9 @@ function SheetHead({ bg, label, group, rule, align = "text-right", width, title 
       <span className="block truncate text-[9px] font-bold uppercase leading-tight text-white/85">
         {group || " "}
       </span>
-      <span className="block truncate text-[11px] font-bold leading-tight text-white">{label}</span>
+      <span className={`block truncate font-bold leading-tight text-white ${bold ? "text-[12px]" : "text-[11px]"}`}>
+        {label}
+      </span>
     </th>
   );
 }
@@ -860,7 +875,11 @@ export default function PayrollEmployeePage() {
   // the sheet and the form can never disagree about what the bonus comes to.
   const thirteenth: CalcLine | null = lineForMonth(13, adjInput(13));
   const allLines = thirteenth ? [...monthLines, thirteenth] : monthLines;
-  const sum = (pick: (l: CalcLine) => number) => allLines.reduce((s, l) => s + pick(l), 0);
+  // The month is handed to the picker as well as the line, because the gross
+  // breakdown needs to know which month it is reading. allLines is the twelve
+  // in order, with the 13th month appended where one is due.
+  const sum = (pick: (l: CalcLine, month: number) => number) =>
+    allLines.reduce((s, l, i) => s + pick(l, i < 12 ? i + 1 : 13), 0);
 
   // Unique custom item columns across the year, in first-appearance order
   const customCols: { label: string; type: "allowance" | "deduction" }[] = [];
@@ -896,34 +915,101 @@ export default function PayrollEmployeePage() {
   }
 
   /**
-   * Which columns begin a new category, 1-based, for the rules between them.
+   * The gross on a row, in the four parts the sheet shows.
    *
-   * Derived rather than written down because the custom columns sit between EPL
-   * and Net: add an allowance and every index after it moves. A hardcoded list
-   * would put the thick rule through the middle of a category the first time
-   * somebody added one.
+   * Taken from grossBreakdownForMonth so the increment timing is decided in
+   * one place, then reconciled to the figure the row actually prints — which
+   * is not always the salary record's. Two things move it: a 13th month is a
+   * fraction of December's gross, and Finance may key a correction against
+   * any month. The first is scaled, because every part of the payment is
+   * proportionally smaller; the second lands on basic, because a correction
+   * is a sum of money and not a share of one.
    *
-   *   1 Month | 2 Gross | 3 PCB | 4-5 EPF | 6-8 SOCSO | 9-10 EIS | 11 EPL
-   *   | 12.. custom | Net | Total LCM | actions
+   * Either way the four columns add up to the Gross beside them. Columns that
+   * nearly add up would be worse than no columns.
+   */
+  const grossPartsFor = (m: number, line: CalcLine): GrossBreakdown | null => {
+    const sal = salaryForMonth(m === 13 ? 12 : m) ?? salaryForMonth(m);
+    if (!sal) return null;
+    const is13 = m === 13;
+    const base = grossBreakdownForMonth(
+      sal, emp.date_commenced, is13 ? 12 : m, is13, emp.increment_month_override,
+      is13 ? null : monthDays(emp.date_commenced, emp.resigned_date, year, m),
+      { year, effectiveFrom: sal.effective_from },
+    );
+    if (round2(line.gross) === round2(base.gross)) return base;
+    if (is13 && base.gross > 0) {
+      const k = line.gross / base.gross;
+      const experience = round2(base.experience * k);
+      const increment = round2(base.increment * k);
+      const allowances = round2(base.allowances * k);
+      return {
+        experience, increment, allowances,
+        basic: round2(line.gross - experience - increment - allowances),
+        gross: round2(line.gross),
+      };
+    }
+    return {
+      ...base,
+      basic: round2(base.basic + (line.gross - base.gross)),
+      gross: round2(line.gross),
+    };
+  };
+
+  /**
+   * Every column of the yearly sheet, in order, declared once.
+   *
+   * The header renders this and the rules between categories are counted off
+   * it, so the two cannot disagree. They used to: the rule positions were a
+   * hand-written list of indices, and when the unpaid-days column went in
+   * nobody renumbered them, so every rule from there rightwards sat one column
+   * to the left of where it belonged. A list of numbers describing a list of
+   * columns will always eventually describe a different one.
    *
    * SKBBK is deliberately not a boundary. It keeps its own column and its own
    * tint, but it is filed on PERKESO's return as part of the same schedule as
-   * SOCSO, so a thick rule either side would separate it from what it belongs to.
+   * SOCSO, so a thick rule either side would separate it from what it belongs
+   * to. Unpaid days is not one either: it and EPL are both money off take-home
+   * after the statutory figures, and they wear the same red.
    */
-  const categoryStarts = (() => {
-    const fixed = [2, 3, 4, 6, 9, 11];      // Gross, PCB, EPF, SOCSO, EIS, EPL
-    // 13, not 12. The columns are: 1 month, 2 gross, 3 PCB, 4-5 EPF, 6-8 SOCSO
-    // and SKBBK, 9-10 EIS, 11 EPL, 12 unpaid days — so the first custom column
-    // is the thirteenth. Counted from 12, every rule from here rightwards
-    // landed one column early: on the unpaid-days column instead of the first
-    // custom one, and, with no custom columns at all, on unpaid days and Net
-    // rather than Net and Total LCM. Which is why Total LCM has never had the
-    // rule that starts it.
-    const firstCustom = 13;
-    const custom = customCols.map((_, i) => firstCustom + i);
-    const net = firstCustom + customCols.length;
-    return [...fixed, ...custom, net, net + 1];
-  })();
+  const sheetColumns: SheetColumn[] = [
+    { bg: SHEET.month, label: "Month", align: "text-left", width: "w-14" },
+    // What the gross is made of, then the gross itself. Asked for because a
+    // single figure says what somebody is paid and nothing about why, and the
+    // why is what a query about a payslip is nearly always about.
+    { bg: SHEET.gross, group: "Gross", label: "Basic", rule: true,
+      title: "Basic salary on the letter of appointment. A month only part worked carries its shortfall here, so the four columns add up to the Gross beside them." },
+    { bg: SHEET.gross, group: "Gross", label: "Experience" },
+    { bg: SHEET.gross, group: "Gross", label: "Increments",
+      title: "Accumulated increments, plus the one granted for the increment year once it is in payment." },
+    { bg: SHEET.gross, group: "Gross", label: "Allowances",
+      title: "Family and STM allowances agreed in the salary record. Custom allowances keyed against a month have their own column." },
+    { bg: SHEET.gross, label: "Gross", bold: true },
+    { bg: SHEET.stat, label: "PCB", rule: true },
+    { bg: SHEET.stat, group: "EPF", label: "Employee", rule: true },
+    { bg: SHEET.stat, group: "EPF", label: "Employer" },
+    { bg: SHEET.stat, group: "SOCSO", label: "Employee", rule: true },
+    { bg: SHEET.skbbk, group: "SOCSO", label: "SKBBK",
+      title: "SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution" },
+    { bg: SHEET.stat, group: "SOCSO", label: "Employer" },
+    { bg: SHEET.stat, group: "EIS", label: "Employee", rule: true },
+    { bg: SHEET.stat, group: "EIS", label: "Employer" },
+    { bg: SHEET.deduct, label: "EPL", rule: true },
+    { bg: SHEET.deduct, group: "Unpaid", label: "days",
+      title: "Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS." },
+    ...customCols.map(col => ({
+      bg: col.type === "allowance" ? SHEET.allow : SHEET.deduct,
+      group: col.type === "allowance" ? "+ allowance" : "− deduction",
+      label: col.label, title: col.label, rule: true, width: "max-w-[90px]",
+    })),
+    { bg: SHEET.net, label: "Net", rule: true, bold: true },
+    { bg: SHEET.lcm, label: "Total LCM", rule: true, bold: true },
+  ];
+
+  /** Which columns begin a new category, 1-based, for the rules between them. */
+  const categoryStarts = sheetColumns
+    .map((c, i) => (c.rule ? i + 1 : 0))
+    .filter(n => n > 0);
 
   /**
    * The rules themselves.
@@ -931,21 +1017,30 @@ export default function PayrollEmployeePage() {
    * A <style> rule rather than utility classes: the indices are computed, and
    * Tailwind only emits classes it can find written out in the source, so a
    * class built from a template literal produces no CSS at all. Scoped to
-   * tbody — the header rows carry colspans, which make nth-child stop meaning
-   * "column", so those cells are marked in the markup instead.
+   * tbody — the header carries its own rules in the markup.
    */
   const gridCss = `.ysheet tbody tr > *:is(${categoryStarts.map(n => `:nth-child(${n})`).join(",")})`
     + `{border-left:2px solid ${SHEET.month}}`;
 
   function exportCsv() {
     const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
-    const head = ["Month", "Gross", "PCB", "EPF EE", "EPF ER", "SOCSO EE", "SKBBK", "SOCSO ER", "EIS EE", "EIS ER", "EPL", ...customHead, "Net", "Total LCM"];
+    // Spelt out here too. A column called EE in a spreadsheet opened six
+    // months later by somebody in another office is a column nobody can read.
+    const head = ["Month", "Basic", "Experience", "Increments", "Allowances", "Gross", "PCB",
+      "EPF Employee", "EPF Employer", "SOCSO Employee", "SKBBK", "SOCSO Employer",
+      "EIS Employee", "EIS Employer", "EPL", ...customHead, "Net", "Total LCM"];
+    const parts = (l: CalcLine, monthNum: number) => {
+      const g = grossPartsFor(monthNum, l);
+      return [g?.basic ?? "", g?.experience ?? "", g?.increment ?? "", g?.allowances ?? ""];
+    };
     const mkRow = (label: string, l: CalcLine, monthNum: number) =>
-      [label, l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
+      [label, ...parts(l, monthNum), l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
        ...customCols.map(c => customAmt(monthNum, c)), l.net, l.totalLcmPayment];
     const rows: (string | number)[][] = monthLines.map((l, i) => mkRow(MONTHS[i], l, i + 1));
     if (thirteenth) rows.push(mkRow("13th MTH", thirteenth, 13));
-    rows.push(["ANNUAL", sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.skbbk), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
+    rows.push(["ANNUAL",
+      ...GROSS_PARTS.map(part => round2(sum((l, m) => grossPartsFor(m, l)?.[part] ?? 0))),
+      sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.skbbk), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
     const csv = [head, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -1242,7 +1337,7 @@ export default function PayrollEmployeePage() {
           <>
             <div className="overflow-auto max-h-[72vh] rounded-lg">
               <style>{gridCss}</style>
-              <table className="ysheet w-full text-[12px] border-collapse" style={{ minWidth: 1000 }}>
+              <table className="ysheet w-full text-[12px] border-collapse" style={{ minWidth: 1260 }}>
                 <thead>
                   {/* One row, and every heading says the whole of what its
                       column holds.
@@ -1256,47 +1351,13 @@ export default function PayrollEmployeePage() {
                       that spanned both rows only ever covered the first, which
                       is the other half of the same gap.
 
-                      So the grouping moved inside the cell. "EPF" over "EE" is
-                      one heading in one box: nothing to align, nothing to
-                      offset, and no way for the two halves to drift apart. The
-                      scheme is still legible as a block because the colour band
-                      and the 2px rules either side say so. */}
+                      So the grouping moved inside the cell. "EPF" over
+                      "Employee" is one heading in one box: nothing to align,
+                      nothing to offset, and no way for the two halves to drift
+                      apart. The scheme is still legible as a block because the
+                      colour band and the 2px rules either side say so. */}
                   <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:shadow-[inset_0_-2px_0_rgba(0,0,0,0.22)]">
-                    {/* Three letters and a tag. It was taking the width of a
-                        money column for no reason, the same way the printed
-                        sheet was. */}
-                    <SheetHead bg={SHEET.month} label="Month" align="text-left" width="w-14" />
-                    <SheetHead bg={SHEET.gross} label="Gross" rule />
-                    <SheetHead bg={SHEET.stat} label="PCB" rule />
-                    <SheetHead bg={SHEET.stat} group="EPF" label="EE" rule />
-                    <SheetHead bg={SHEET.stat} group="EPF" label="ER" />
-                    <SheetHead bg={SHEET.stat} group="SOCSO" label="EE" rule />
-                    {/* SKBBK sits inside SOCSO because that is what it is —
-                        Lindung 24 tops up the employee's SOCSO contribution and
-                        is filed on PERKESO's return. It keeps its own column
-                        and its own tint because it is not SOCSO EE: the two are
-                        reported as separate figures and reconciled separately. */}
-                    <SheetHead bg={SHEET.skbbk} group="SOCSO" label="SKBBK"
-                      title="SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution" />
-                    <SheetHead bg={SHEET.stat} group="SOCSO" label="ER" />
-                    <SheetHead bg={SHEET.stat} group="EIS" label="EE" rule />
-                    <SheetHead bg={SHEET.stat} group="EIS" label="ER" />
-                    <SheetHead bg={SHEET.deduct} label="EPL" rule />
-                    {/* No rule before this one: EPL and unpaid leave are both
-                        money off take-home after the statutory figures, they
-                        wear the same red, and the key below calls them one
-                        thing. The body never drew a rule here either — the
-                        header did, and they disagreed. */}
-                    <SheetHead bg={SHEET.deduct} group="Unpaid" label="days"
-                      title="Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS." />
-                    {customCols.map(col => (
-                      <SheetHead key={col.label}
-                        bg={col.type === "allowance" ? SHEET.allow : SHEET.deduct}
-                        group={col.type === "allowance" ? "+ allowance" : "− deduction"}
-                        label={col.label} title={col.label} rule width="max-w-[90px]" />
-                    ))}
-                    <SheetHead bg={SHEET.net} label="Net" rule />
-                    <SheetHead bg={SHEET.lcm} label="Total LCM" rule />
+                    {sheetColumns.map((col, i) => <SheetHead key={i} {...col} />)}
                     <th className="border border-stone-200 bg-stone-100 px-1 py-1 print:hidden w-14"></th>
                   </tr>
                 </thead>
@@ -1319,6 +1380,14 @@ export default function PayrollEmployeePage() {
                           </span>
                         )}
                       </td>
+                      {GROSS_PARTS.map(part => {
+                        const g = grossPartsFor(monthNum, l);
+                        return (
+                          <td key={part} className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-500">
+                            {g ? num(g[part]) : <span className="text-stone-300">—</span>}
+                          </td>
+                        );
+                      })}
                       <FigureCell
                         employeeId={emp.id} employeeName={emp.full_name}
                         year={year} month={monthNum} category="GROSS"
@@ -1419,6 +1488,11 @@ export default function PayrollEmployeePage() {
                   {/* Sub-total (12 months) */}
                   <tr className="bg-stone-100 font-semibold [&>td]:border-t-2 [&>td]:border-t-stone-300">
                     <td className="border border-stone-200 px-1.5 py-1">SUB-T (12)</td>
+                    {GROSS_PARTS.map(part => (
+                      <td key={part} className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-500">
+                        {num(monthLines.reduce((t, l, i) => t + (grossPartsFor(i + 1, l)?.[part] ?? 0), 0))}
+                      </td>
+                    ))}
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.gross, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.pcb, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.epf.ee, 0))}</td>
@@ -1463,6 +1537,14 @@ export default function PayrollEmployeePage() {
                           read-only, which meant a 13th month that needed
                           putting right could only be fixed by changing
                           December's salary — and that moved December too. */}
+                      {GROSS_PARTS.map(part => {
+                        const g = grossPartsFor(13, thirteenth);
+                        return (
+                          <td key={part} className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">
+                            {g ? num(g[part]) : <span className="text-stone-300">—</span>}
+                          </td>
+                        );
+                      })}
                       <FigureCell
                         employeeId={emp.id} employeeName={emp.full_name}
                         year={year} month={13} category="GROSS"
@@ -1564,6 +1646,11 @@ export default function PayrollEmployeePage() {
                   {/* Annual total */}
                   <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7] [&>td]:border-t-2 [&>td]:border-t-[#4a6da7]/40">
                     <td className="border border-stone-200 px-1.5 py-1">ANNUAL</td>
+                    {GROSS_PARTS.map(part => (
+                      <td key={part} className="border border-stone-200 px-1 py-0.5 text-right font-mono">
+                        {num(sum((l, m) => grossPartsFor(m, l)?.[part] ?? 0))}
+                      </td>
+                    ))}
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.gross))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.pcb))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.epf.ee))}</td>

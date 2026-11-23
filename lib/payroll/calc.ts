@@ -582,7 +582,21 @@ export function monthFraction(d?: MonthDays | null): number {
   return d.daysPaid / d.daysInMonth;
 }
 
-export interface EarningComponent { label: string; amount: number }
+/**
+ * Which part of the gross a line belongs to.
+ *
+ * The payslip lists six named components; the yearly sheet has room for four
+ * columns. Rather than a second rule deciding which is which — and drifting —
+ * each component says what it is as it is built.
+ */
+export type GrossBucket = "basic" | "increment" | "experience" | "allowance" | "incomplete";
+
+export interface EarningComponent {
+  label: string;
+  amount: number;
+  /** Set by grossComponentsForMonth. Optional, so callers may build their own. */
+  bucket?: GrossBucket;
+}
 
 /**
  * The same figure as grossForMonth, itemised.
@@ -622,14 +636,16 @@ export function grossComponentsForMonth(
   const out: EarningComponent[] = [
     // Always listed, even at zero: a payslip with no basic salary line reads as
     // though something failed to load.
-    { label: "Basic Salary", amount: Number(s.base_salary) },
+    { label: "Basic Salary", amount: Number(s.base_salary), bucket: "basic" },
   ];
-  const add = (label: string, amount: number) => { if (amount > 0) out.push({ label, amount }); };
-  add("Increment (accumulated)", Number(s.increment_carried));
-  if (incrementApplies) add("Current year increment", Number(s.increment_current));
-  add("Experience bonus", Number(s.experience_bonus));
-  add("Family allowance", Number(s.family_allowance));
-  add("STM / Allowance", Number(s.stm_allowance));
+  const add = (label: string, amount: number, bucket: GrossBucket) => {
+    if (amount > 0) out.push({ label, amount, bucket });
+  };
+  add("Increment (accumulated)", Number(s.increment_carried), "increment");
+  if (incrementApplies) add("Current year increment", Number(s.increment_current), "increment");
+  add("Experience bonus", Number(s.experience_bonus), "experience");
+  add("Family allowance", Number(s.family_allowance), "allowance");
+  add("STM / Allowance", Number(s.stm_allowance), "allowance");
 
   // An incomplete month is shown as what was agreed, less a named deduction,
   // rather than by quietly shrinking every line above. The agreed salary is
@@ -641,8 +657,56 @@ export function grossComponentsForMonth(
     out.push({
       label: `Incomplete month (${days.daysPaid} of ${days.daysInMonth} days, ${days.reason})`,
       amount: round2(full * fraction) - round2(full),
+      bucket: "incomplete",
     });
   }
+  return out;
+}
+
+/** The gross in four figures, as the yearly sheet shows it. */
+export interface GrossBreakdown {
+  basic: number;
+  increment: number;
+  experience: number;
+  allowances: number;
+  /** The four above, added up. Equal to grossForMonth for the same arguments. */
+  gross: number;
+}
+
+/**
+ * The same figure as grossForMonth, in the four parts a sheet has room for.
+ *
+ * Built from grossComponentsForMonth rather than from the salary record, so
+ * the increment timing is decided once. A column that disagreed with the Gross
+ * beside it would be worse than no column.
+ *
+ * The part-month line is folded into basic rather than given a column of its
+ * own. The payslip shows the agreed figures and names the shortfall
+ * underneath, because that is what somebody checks against their letter of
+ * appointment; the sheet is a ledger of what was paid, and a row that does not
+ * add up is not a ledger. So a month somebody joined on the 15th shows a basic
+ * of half the agreed one, and the Unpaid column — which is a different thing,
+ * being leave rather than service — is untouched.
+ */
+export function grossBreakdownForMonth(
+  s: SalaryComponents,
+  dateCommenced: string | null,
+  month: number,
+  is13th: boolean,
+  incrementMonthOverride?: number | null,
+  days?: MonthDays | null,
+  period?: { year: number; effectiveFrom: string | null } | null,
+): GrossBreakdown {
+  const parts = grossComponentsForMonth(s, dateCommenced, month, is13th, incrementMonthOverride, days, period);
+  const of = (b: GrossBucket) => parts.filter(p => p.bucket === b).reduce((t, p) => t + p.amount, 0);
+  const out: GrossBreakdown = {
+    basic: round2(of("basic") + of("incomplete")),
+    increment: round2(of("increment")),
+    experience: round2(of("experience")),
+    allowances: round2(of("allowance")),
+    gross: 0,
+  };
+  out.gross = round2(out.basic + out.increment + out.experience + out.allowances);
   return out;
 }
 

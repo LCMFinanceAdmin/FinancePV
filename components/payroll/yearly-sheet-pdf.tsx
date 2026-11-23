@@ -129,7 +129,10 @@ const s = StyleSheet.create({
 // it belongs to.
 const catL = { borderLeft: `2 solid ${C_MONTH}` };
 
-const C = { mo:32, gr:54, pcb:42, ee:46, er:46, se:38, sr:38, sk:36, ie:34, ir:34, epl:42, ptptn:46, unp:44, net:58, lcm:58, cu:46 };
+// "Employee" and "Employer" spelt out, so se/sr/ie/ir widen from the 34-38
+// that "SOCSO EE" fitted into. The scheme is named once in the band above
+// them, which is why the column itself no longer has to repeat it.
+const C = { mo:32, gr:54, pcb:42, ee:46, er:46, se:40, sr:40, sk:36, ie:40, ir:40, epl:42, ptptn:46, unp:44, net:58, lcm:58, cu:46 };
 
 export interface YearlySheetPDFProps {
   emp: PayrollEmployee;
@@ -253,13 +256,13 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
             <Text style={[s.thL,{width:C.mo}]}>Month</Text>
             <Text style={[s.thGross,{width:C.gr,...catL}]}>Gross</Text>
             <Text style={[s.th,{width:C.pcb,...catL}]}>PCB</Text>
-            <Text style={[s.th,{width:C.ee,...catL}]}>EPF EE</Text>
-            <Text style={[s.th,{width:C.er}]}>EPF ER</Text>
-            <Text style={[s.th,{width:C.se,...catL}]}>SOCSO EE</Text>
+            <Text style={[s.th,{width:C.ee,...catL}]}>Employee</Text>
+            <Text style={[s.th,{width:C.er}]}>Employer</Text>
+            <Text style={[s.th,{width:C.se,...catL}]}>Employee</Text>
             <Text style={[s.thSk,{width:C.sk}]}>SKBBK</Text>
-            <Text style={[s.th,{width:C.sr}]}>SOCSO ER</Text>
-            <Text style={[s.th,{width:C.ie,...catL}]}>EIS EE</Text>
-            <Text style={[s.th,{width:C.ir}]}>EIS ER</Text>
+            <Text style={[s.th,{width:C.sr}]}>Employer</Text>
+            <Text style={[s.th,{width:C.ie,...catL}]}>Employee</Text>
+            <Text style={[s.th,{width:C.ir}]}>Employer</Text>
             {hasEpl && <Text style={[s.thR,{width:C.epl,...catL}]}>EPL</Text>}
             {hasPtptn && <Text style={[s.thR,{width:C.ptptn,...catL}]}>PTPTN</Text>}
             {hasUnpaid && <Text style={[s.thR,{width:C.unp,...catL}]}>UNPAID</Text>}
