@@ -7,23 +7,7 @@ import { SHEET } from "@/lib/payroll/sheet-palette";
 
 const ML = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
-/**
- * How many spans the make-up block prints before it starts summarising.
- *
- * Measured, not guessed: `npm run preview:statement` renders the most crowded
- * statement this component produces — loan, PTPTN, unpaid leave and a custom
- * allowance all present — and reports the page count.
- *
- * Four spans fit exactly, with nothing to spare; three fit with the summary
- * line that says how many were left out, and that line is worth more than a
- * fourth row. Five of anything spills onto a second page holding nothing but
- * a signature, which is a worse statement than a summarised one.
- *
- * A plainer statement has room for more. The cap does not vary with it,
- * because tying a vertical limit to which columns happen to be present is a
- * coupling that will be wrong quietly rather than loudly.
- */
-const MAX_SPANS = 3;
+
 
 function n(v: number) { return v.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -137,7 +121,9 @@ const s = StyleSheet.create({
   mkWhen: { width: 48, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: S800 },
   mkParts: { flex: 1, fontSize: 5.5, color: S500 },
   mkSum: { width: 50, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: C_GROSS, textAlign: "right" },
-  mkMore: { fontSize: 5, color: S500, fontStyle: "italic" },
+  // Absolutely positioned, so it takes no part in the layout and cannot be
+  // the thing that tips a statement onto the page it is there to number.
+  pageNo: { position: "absolute", bottom: 10, right: 22, fontSize: 5.5, color: S500 },
   // 22pt of air once sat here. It was the easiest thing on the page to spend
   // when the footer grew a block that says something.
   sigRow: { flexDirection: "row", marginTop: 8, gap: 30, alignItems: "flex-end" },
@@ -259,6 +245,15 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
   return (
     <Document title={`${emp.full_name} — Salary Sheet ${year}`} author="Lutheran Church in Malaysia">
       <Page size="A4" orientation="landscape" style={s.page}>
+        {/* Only once there are two. A statement that has always been one page
+            does not need telling it is one page — but a loose second sheet,
+            or a first sheet that looks complete and is not, does. */}
+        <Text
+          style={s.pageNo}
+          fixed
+          render={({ pageNumber, totalPages }) =>
+            totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : ""}
+        />
 
         {/* Header */}
         <View style={s.hdr}>
@@ -441,9 +436,14 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
 
         {/* How the gross is made up */}
         {grossSpans.length > 0 && (
-          <View style={s.mkBox}>
+          // wrap={false}: a year with enough changes to push this onto a
+          // second page should move the whole block there, not leave two of
+          // its rows above the fold and three below. Twelve rows is the most
+          // it can ever hold — one per month — so it always fits on one page
+          // somewhere.
+          <View style={s.mkBox} wrap={false}>
             <Text style={s.mkHd}>HOW THE GROSS IS MADE UP</Text>
-            {grossSpans.slice(0, MAX_SPANS).map(sp => (
+            {grossSpans.map(sp => (
               <View key={`${sp.from}-${sp.to}`} style={s.mkRow}>
                 <Text style={s.mkWhen}>
                   {ML[sp.from - 1]}{sp.to !== sp.from ? `–${ML[sp.to - 1]}` : ""}
@@ -454,18 +454,14 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
                 <Text style={s.mkSum}>{n(sp.parts.gross)}</Text>
               </View>
             ))}
-            {grossSpans.length > MAX_SPANS && (
-              <Text style={s.mkMore}>
-                … and {grossSpans.length - MAX_SPANS} further change
-                {grossSpans.length - MAX_SPANS === 1 ? "" : "s"} in the year. Every month&rsquo;s gross
-                is in the table above; ask Finance for the make-up of the later ones.
-              </Text>
-            )}
           </View>
         )}
 
         {/* Notes */}
-        <View style={s.notes}>
+        {/* Whole or not at all, like the block above it. Split, the second page
+            opened on a single leftover line about green columns, which reads
+            like a printing fault rather than a footnote. */}
+        <View style={s.notes} wrap={false}>
           <Text style={s.nl}>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Increment effective from {ML[effMonth-1]}.</Text>
           {emp.confirmed_on && monthLines.some((_,i)=>isProbationMonth(emp, year, i+1)) && (
             <Text style={s.nl}>

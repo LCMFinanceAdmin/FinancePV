@@ -149,13 +149,14 @@ const [, , pageW] = page.view as number[];
 
 console.log(`\n${out}\n`);
 console.log(`Page ${Math.round(pageW)} x ${Math.round(page.view[3])}pt`);
-// One page is the design. The footer's make-up block grows with the number of
-// times somebody's salary moved in the year, which makes it the thing most
-// likely to break that — and a second page is invisible from any measurement
-// of the first.
+// One page is the usual, and a second is allowed: a year with enough salary
+// changes prints a make-up line for each of them rather than summarising, and
+// that is the choice the church made. What is not allowed is finding out at
+// the printer, so the count is reported — a second page is invisible from any
+// measurement of the first.
 console.log(doc.numPages === 1
   ? "Pages: 1\n"
-  : `Pages: ${doc.numPages} — IT NO LONGER FITS ON ONE\n`);
+  : `Pages: ${doc.numPages} — the make-up block ran on; check page ${doc.numPages} reads properly\n`);
 
 console.log("Largest type:");
 for (const i of text.filter(i => sizeOf(i) >= 12)) {
