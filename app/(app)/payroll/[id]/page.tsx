@@ -2587,6 +2587,21 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
         width: 140px !important;
         font-size: 17px !important;
       }
+      /* The make-up block, which prints at the size of the notes around it
+         rather than the 10px it wears on screen.
+         
+         Everything under this heading is restated for paper one class at a
+         time — the table, the head, the captions, the revisions — because
+         print scales the type and not the widths. A block added without a
+         rule here does not come out slightly small; it comes out at half the
+         size of its own heading, next to figures three times its height.
+         The two fixed columns are restated for the same reason ys-rev-lab is:
+         they are sized for the 10px they are set in on screen. */
+      #ys-print-area .ys-makeup div { font-size: 19px !important; }
+      #ys-print-area .ys-makeup .ys-mk-head { font-size: 17px !important; }
+      #ys-print-area .ys-makeup .ys-mk-when { width: 150px !important; }
+      #ys-print-area .ys-makeup .ys-mk-sum { width: 190px !important; }
+
       #ys-print-area .ys-signatures div { font-size: 21px !important; }
 
       /* The annual line is the one somebody looks for first. Black fill and
@@ -3215,20 +3230,20 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
             sends. Two renderings of one sheet, and for a while only one of
             them had been given the thing that was asked for. */}
         {grossSpans.length > 0 && (
-          <div className="ys-keep mt-5 border-t border-stone-200 pt-3">
-            <div className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5">
+          <div className="ys-makeup ys-keep mt-5 border-t border-stone-200 pt-3">
+            <div className="ys-mk-head text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5">
               How the gross is made up
             </div>
             <div className="space-y-1">
               {grossSpans.map(sp => (
                 <div key={`${sp.from}-${sp.to}`} className="flex items-baseline gap-3">
-                  <div className="w-16 shrink-0 text-[10px] font-bold text-stone-700">
+                  <div className="ys-mk-when w-16 shrink-0 text-[10px] font-bold text-stone-700">
                     {MONTH_LABELS[sp.from - 1]}{sp.to !== sp.from ? `–${MONTH_LABELS[sp.to - 1]}` : ""}
                   </div>
                   <div className="flex-1 text-[10px] text-stone-500">
                     {grossPartLabels(sp.parts).map(([label, v]) => `${label} ${num(v)}`).join("  +  ")}
                   </div>
-                  <div className="w-20 shrink-0 text-right text-[10px] font-bold text-[#2f5b9c]">
+                  <div className="ys-mk-sum w-20 shrink-0 text-right text-[10px] font-bold text-[#2f5b9c]">
                     {num(sp.parts.gross)}
                   </div>
                 </div>
