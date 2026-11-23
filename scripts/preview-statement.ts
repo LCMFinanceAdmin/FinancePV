@@ -10,8 +10,16 @@
 // probation months, so every optional column is present and the table is at
 // its widest. Anything that fits here fits.
 //
-//   npm run preview:statement           the wide case
+//   npm run preview:statement             the wide case
 //   npm run preview:statement -- --plain   salary and statutory only
+//   npm run preview:statement -- --many    a salary that moves every month
+//
+// --many is for the footer. The make-up block prints a line per span of
+// months whose gross is the same, so the ordinary statement shows one or two
+// and says nothing about what a crowded one does. This gives it ten, which is
+// the case that runs the statement onto a second page — the thing most likely
+// to break and the least likely to be noticed, since a second page is
+// invisible from any measurement of the first.
 //
 // It then reads its own output back and prints what the page actually
 // measures — the type sizes and the column positions — because those are the
@@ -28,6 +36,7 @@ import { calcLine, grossBreakdownForMonth, grossForMonth, monthDays, type Contri
 import type { PayrollEmployee, PayrollSalary, PayrollEmployeeCustomItem } from "@/lib/types";
 
 const plain = process.argv.includes("--plain");
+const many = process.argv.includes("--many");
 const YEAR = 2026;
 
 // One band, covering the invented wage. The real schedule is PERKESO's and
@@ -64,7 +73,11 @@ const confirmed = {
   experience_bonus: 180, family_allowance: 120, stm_allowance: 0,
   effective_from: "2026-06-01",
 } as unknown as PayrollSalary;
-const salaryFor = (month: number) => (month < 6 ? onProbation : confirmed);
+const salaryFor = (month: number): PayrollSalary =>
+  // --many: a rise every month, which is nobody's real payroll but is the
+  // shape of the worst one — ten spans under the table rather than two.
+  many ? ({ ...confirmed, base_salary: 2800 + month * 25 } as unknown as PayrollSalary)
+       : (month < 6 ? onProbation : confirmed);
 /** The row the sheet header quotes — the one in force at the end of the year. */
 const salary = confirmed;
 
@@ -109,7 +122,9 @@ const monthLines = Array.from({ length: 12 }, (_, i) => {
 const dir = process.env.OUT_DIR
   ?? join(process.env.USERPROFILE ?? process.env.HOME ?? ".", "Downloads");
 mkdirSync(dir, { recursive: true });
-const out = join(dir, `salary-statement-preview${plain ? "-plain" : ""}.pdf`);
+// A name per variant, so the three can be compared side by side rather than
+// each overwriting the last.
+const out = join(dir, `salary-statement-preview${plain ? "-plain" : ""}${many ? "-many" : ""}.pdf`);
 
 // The footer's make-up block, worked out the way the page works it out: the
 // same function the on-screen columns use, so the preview cannot flatter a

@@ -112,3 +112,39 @@ be the question the leave form asks.
 
 Run it. A migration that tightens access is exactly the change whose damage
 shows up weeks later as a save that quietly did nothing.
+
+## `preview-statement.ts` — what does the printed statement actually look like?
+
+```
+npm run preview:statement             the wide case
+npm run preview:statement -- --plain  salary and statutory only
+npm run preview:statement -- --many   a salary that moves every month
+```
+
+The Employee Salary Statement is printed and flipped through on paper, and the
+page it is printed on is behind a sign-in. So the only way to see a change to
+it used to be to deploy, sign in, open an employee and press Share — and in
+practice layout was judged by reading the source and hoping. It shipped with a
+white band across its header that way.
+
+This renders it to a PDF, then reads its own output back and prints what the
+page measures: the type sizes, the column positions, how much of the usable
+width the table takes, and the page count. Those are the things a change to
+the stylesheet silently gets wrong, and they are checkable without looking at
+pixels.
+
+The figures are invented, and chosen to be the awkward case rather than a tidy
+one — a pastor with a loan, PTPTN, a custom allowance, unpaid leave and
+probation months, so every optional column is present and the table is at its
+widest. Anything that fits here fits. Real salaries are not kept in the
+repository.
+
+`--many` is for the footer. The make-up block under the table prints a line
+per span of months whose gross is the same, so an ordinary statement shows one
+or two and says nothing about what a crowded one does. This gives it ten,
+which is the case that runs the statement onto a second page.
+
+### After changing the statement's layout
+
+Run all three. A second page is invisible from any measurement of the first,
+and the one that overflows is never the one in front of you.
