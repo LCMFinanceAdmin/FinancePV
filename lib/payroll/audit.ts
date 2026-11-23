@@ -7,6 +7,11 @@ export type PayrollAuditAction =
   | "EMPLOYEE_CREATED" | "EMPLOYEE_UPDATED" | "EMPLOYEE_DELETED" | "SALARY_CHANGE"
   | "DOC_UPLOAD" | "DOC_UPDATE" | "DOC_DELETE"
   | "LOAN_APPLIED" | "LOAN_SIGNED" | "LOAN_REJECTED" | "LOAN_APPROVED_LEGACY"
+  // A loan's own terms corrected after it was recorded. The yearly sheet
+  // builds the instalments from the schedule rather than from what was
+  // repaid, so a changed term restates months already past — which makes the
+  // before-and-after the only record of what those sheets used to say.
+  | "LOAN_UPDATED"
   | "RUN_FINALIZED" | "VOUCHER_PAID" | "BANK_EXPORT" | "PAYSLIPS_SENT"
   // Raising the run's payment vouchers for approval, and unwinding a run —
   // both change what has been committed, so both belong in the trail.

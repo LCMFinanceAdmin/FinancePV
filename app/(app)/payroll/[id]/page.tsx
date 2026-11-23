@@ -40,7 +40,7 @@ import { PayItemModal } from "@/components/payroll/pay-item-modal";
  * month, sub-total, 13th month, annual — because a column added to one and
  * not the others puts every figure to its right under the wrong heading.
  */
-const GROSS_PARTS = ["basic", "experience", "increment", "allowances"] as const;
+const GROSS_PARTS = ["basic", "experience", "carried", "current", "allowances"] as const;
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
@@ -941,11 +941,12 @@ export default function PayrollEmployeePage() {
     if (is13 && base.gross > 0) {
       const k = line.gross / base.gross;
       const experience = round2(base.experience * k);
-      const increment = round2(base.increment * k);
+      const carried = round2(base.carried * k);
+      const current = round2(base.current * k);
       const allowances = round2(base.allowances * k);
       return {
-        experience, increment, allowances,
-        basic: round2(line.gross - experience - increment - allowances),
+        experience, carried, current, allowances,
+        basic: round2(line.gross - experience - carried - current - allowances),
         gross: round2(line.gross),
       };
     }
@@ -955,6 +956,9 @@ export default function PayrollEmployeePage() {
       gross: round2(line.gross),
     };
   };
+
+  /** The year they started, for the heading on the carried-increment column. */
+  const commencementYear = emp.date_commenced ? Number(emp.date_commenced.slice(0, 4)) : null;
 
   /**
    * Every column of the yearly sheet, in order, declared once.
@@ -980,8 +984,17 @@ export default function PayrollEmployeePage() {
     { bg: SHEET.gross, group: "Gross", label: "Basic", rule: true,
       title: "Basic salary on the letter of appointment. A month only part worked carries its shortfall here, so the four columns add up to the Gross beside them." },
     { bg: SHEET.gross, group: "Gross", label: "Experience" },
-    { bg: SHEET.gross, group: "Gross", label: "Increments",
-      title: "Accumulated increments, plus the one granted for the increment year once it is in payment." },
+    // Two columns, not one. "Everything awarded since you started" and "what
+    // you were awarded this year" are different questions, and the second is
+    // the one somebody asks when their pay changes mid-year — it is withheld
+    // until its effective month, so the column is empty before it and not
+    // after. Rolled together, the figure moved and nothing said why.
+    { bg: SHEET.gross, group: "Increment", label: commencementYear ? `since ${commencementYear}` : "carried",
+      title: commencementYear
+        ? `Increments accumulated since ${commencementYear}, the year they commenced.`
+        : "Increments accumulated before the current increment year." },
+    { bg: SHEET.gross, group: "Increment", label: String(year),
+      title: `The increment awarded for the ${year} increment year. Withheld until its effective month, so it is blank before then.` },
     { bg: SHEET.gross, group: "Gross", label: "Allowances",
       title: "Family and STM allowances agreed in the salary record. Custom allowances keyed against a month have their own column." },
     { bg: SHEET.gross, label: "Gross", bold: true },
@@ -1026,12 +1039,14 @@ export default function PayrollEmployeePage() {
     const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
     // Spelt out here too. A column called EE in a spreadsheet opened six
     // months later by somebody in another office is a column nobody can read.
-    const head = ["Month", "Basic", "Experience", "Increments", "Allowances", "Gross", "PCB",
+    const head = ["Month", "Basic", "Experience",
+      `Increment since ${commencementYear ?? "commencement"}`, `Increment ${year}`,
+      "Allowances", "Gross", "PCB",
       "EPF Employee", "EPF Employer", "SOCSO Employee", "SKBBK", "SOCSO Employer",
       "EIS Employee", "EIS Employer", "EPL", ...customHead, "Net", "Total LCM"];
     const parts = (l: CalcLine, monthNum: number) => {
       const g = grossPartsFor(monthNum, l);
-      return [g?.basic ?? "", g?.experience ?? "", g?.increment ?? "", g?.allowances ?? ""];
+      return [g?.basic ?? "", g?.experience ?? "", g?.carried ?? "", g?.current ?? "", g?.allowances ?? ""];
     };
     const mkRow = (label: string, l: CalcLine, monthNum: number) =>
       [label, ...parts(l, monthNum), l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
@@ -1337,7 +1352,7 @@ export default function PayrollEmployeePage() {
           <>
             <div className="overflow-auto max-h-[72vh] rounded-lg">
               <style>{gridCss}</style>
-              <table className="ysheet w-full text-[12px] border-collapse" style={{ minWidth: 1260 }}>
+              <table className="ysheet w-full text-[12px] border-collapse" style={{ minWidth: 1340 }}>
                 <thead>
                   {/* One row, and every heading says the whole of what its
                       column holds.

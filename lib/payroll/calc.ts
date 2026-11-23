@@ -589,7 +589,13 @@ export function monthFraction(d?: MonthDays | null): number {
  * columns. Rather than a second rule deciding which is which — and drifting —
  * each component says what it is as it is built.
  */
-export type GrossBucket = "basic" | "increment" | "experience" | "allowance" | "incomplete";
+// The two increments are kept apart, because they answer different
+// questions: "carried" is everything awarded since the year they started,
+// and "current" is this increment year's own award — the one that is
+// withheld until its effective month and is what somebody asks about when
+// their pay changes mid-year.
+export type GrossBucket =
+  | "basic" | "carried" | "current" | "experience" | "allowance" | "incomplete";
 
 export interface EarningComponent {
   label: string;
@@ -641,8 +647,8 @@ export function grossComponentsForMonth(
   const add = (label: string, amount: number, bucket: GrossBucket) => {
     if (amount > 0) out.push({ label, amount, bucket });
   };
-  add("Increment (accumulated)", Number(s.increment_carried), "increment");
-  if (incrementApplies) add("Current year increment", Number(s.increment_current), "increment");
+  add("Increment (accumulated)", Number(s.increment_carried), "carried");
+  if (incrementApplies) add("Current year increment", Number(s.increment_current), "current");
   add("Experience bonus", Number(s.experience_bonus), "experience");
   add("Family allowance", Number(s.family_allowance), "allowance");
   add("STM / Allowance", Number(s.stm_allowance), "allowance");
@@ -666,8 +672,11 @@ export function grossComponentsForMonth(
 /** The gross in four figures, as the yearly sheet shows it. */
 export interface GrossBreakdown {
   basic: number;
-  increment: number;
   experience: number;
+  /** Increments awarded since the year they commenced. */
+  carried: number;
+  /** This increment year's own award, once it is in payment. */
+  current: number;
   allowances: number;
   /** The four above, added up. Equal to grossForMonth for the same arguments. */
   gross: number;
@@ -701,12 +710,13 @@ export function grossBreakdownForMonth(
   const of = (b: GrossBucket) => parts.filter(p => p.bucket === b).reduce((t, p) => t + p.amount, 0);
   const out: GrossBreakdown = {
     basic: round2(of("basic") + of("incomplete")),
-    increment: round2(of("increment")),
     experience: round2(of("experience")),
+    carried: round2(of("carried")),
+    current: round2(of("current")),
     allowances: round2(of("allowance")),
     gross: 0,
   };
-  out.gross = round2(out.basic + out.increment + out.experience + out.allowances);
+  out.gross = round2(out.basic + out.experience + out.carried + out.current + out.allowances);
   return out;
 }
 

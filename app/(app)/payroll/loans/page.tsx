@@ -1,11 +1,12 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, FilePlus2, HandCoins, Lock, Paperclip, PenLine, Plus, X, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, FilePlus2, HandCoins, Lock, Paperclip, Pencil, PenLine, Plus, X, XCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { RecordLoanModal } from "@/components/payroll/record-loan-modal";
 import { OpeningBalanceEditor } from "@/components/payroll/opening-balance-editor";
 import { SettleLoan } from "@/components/payroll/settle-loan";
+import { EditLoanModal } from "@/components/payroll/edit-loan-modal";
 import { LoanFacts } from "@/components/payroll/loan-facts";
 import { LoanAffordability } from "@/components/payroll/loan-affordability";
 import { affordabilityOf } from "@/lib/payroll/loan-affordability";
@@ -315,6 +316,8 @@ export default function PayrollLoansPage() {
   const [showModal, setShowModal] = useState(false);
   // A loan agreed on paper, keyed for tracking rather than applied for.
   const [showRecord, setShowRecord] = useState(false);
+  /** The loan whose terms are being corrected, if any. */
+  const [editing, setEditing] = useState<EmployeeLoan | null>(null);
   const [repayments, setRepayments] = useState<LoanRepayment[]>([]);
   // The salary a loan is set against, and the rate tables it is worked out
   // with. Needed to answer what an instalment actually leaves somebody.
@@ -523,6 +526,17 @@ export default function PayrollLoansPage() {
                       {loan.status === "ACTIVE" && owed > 0.005 && (
                         <div className="text-xs font-semibold text-stone-600">{outstanding} month{outstanding !== 1 ? "s" : ""} outstanding</div>
                       )}
+                      {/* The terms as agreed, correctable by whoever keeps the
+                          payroll. A loan keyed with the wrong term could only
+                          be put right by deleting it and keying it again,
+                          which burns the loan number and orphans every sheet
+                          that already quoted it. */}
+                      {canApply && (
+                        <button onClick={() => setEditing(loan)}
+                          className="mt-1 flex items-center gap-1 text-[11px] font-medium text-stone-400 transition-colors hover:text-[#4a6da7] ml-auto">
+                          <Pencil size={11} /> Edit
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -704,6 +718,18 @@ export default function PayrollLoansPage() {
         </div>
       )}
 
+      {editing && user && (
+        <EditLoanModal
+          loan={editing}
+          employees={employees}
+          user={user}
+          onClose={() => setEditing(null)}
+          onSaved={(msg) => {
+            setEditing(null); loadLoans();
+            setToast(msg); setTimeout(() => setToast(""), 4000);
+          }}
+        />
+      )}
       {showRecord && user && (
         <RecordLoanModal user={user} employees={employees}
           onClose={() => setShowRecord(false)}
