@@ -24,7 +24,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { YearlySheetPDF } from "@/components/payroll/yearly-sheet-pdf";
-import { calcLine, type ContributionBand } from "@/lib/payroll/calc";
+import { calcLine, grossBreakdownForMonth, grossForMonth, monthDays, type ContributionBand } from "@/lib/payroll/calc";
 import type { PayrollEmployee, PayrollSalary, PayrollEmployeeCustomItem } from "@/lib/types";
 
 const plain = process.argv.includes("--plain");
@@ -49,11 +49,24 @@ const emp = {
   bank_name: "Maybank", bank_acct: "512345678901",
 } as unknown as PayrollEmployee;
 
-const salary = {
-  base_salary: 3100, increment_carried: 300, increment_current: 100,
+// Two salary rows, because one is the tidy case. She is on probation from
+// March and confirmed in June, which is what the header already claims — and
+// which gives the footer's make-up block two spans to print rather than one.
+// A statement that only ever renders an unchanging salary proves nothing about
+// the block that exists to explain a salary changing.
+const onProbation = {
+  base_salary: 2800, increment_carried: 0, increment_current: 0,
   experience_bonus: 180, family_allowance: 120, stm_allowance: 0,
   effective_from: "2026-03-01",
 } as unknown as PayrollSalary;
+const confirmed = {
+  base_salary: 3100, increment_carried: 300, increment_current: 100,
+  experience_bonus: 180, family_allowance: 120, stm_allowance: 0,
+  effective_from: "2026-06-01",
+} as unknown as PayrollSalary;
+const salaryFor = (month: number) => (month < 6 ? onProbation : confirmed);
+/** The row the sheet header quotes — the one in force at the end of the year. */
+const salary = confirmed;
 
 const customItemsByMonth: Record<number, PayrollEmployeeCustomItem[]> = {};
 if (!plain) {
@@ -72,8 +85,15 @@ const monthLines = Array.from({ length: 12 }, (_, i) => {
   // Not employed until March, and a fortnight unpaid in September.
   const employed = month >= 3;
   const unpaidDays = !plain && month === 9 ? 14 : 0;
+  const sal = salaryFor(month);
   return calcLine({
-    gross: employed ? 3800 : 0,
+    // From the same salary row the footer's breakdown is built from, so the
+    // Gross column and the make-up block underneath cannot disagree.
+    gross: employed
+      ? grossForMonth(sal, emp.date_commenced, month, false, null,
+          monthDays(emp.date_commenced, null, YEAR, month),
+          { year: YEAR, effectiveFrom: sal.effective_from })
+      : 0,
     age: 38, month, employmentType: "PERMANENT", isOrangAsli: false,
     voluntaryEpf: 0, manualPcb: employed ? 95 : 0,
     eplDeduction: !plain && employed ? 280 : 0,
@@ -91,10 +111,24 @@ const dir = process.env.OUT_DIR
 mkdirSync(dir, { recursive: true });
 const out = join(dir, `salary-statement-preview${plain ? "-plain" : ""}.pdf`);
 
+// The footer's make-up block, worked out the way the page works it out: the
+// same function the on-screen columns use, so the preview cannot flatter a
+// footer the real sheet would fill differently.
+const grossParts = Array.from({ length: 12 }, (_, i) => {
+  const month = i + 1;
+  if (month < 3) return null;   // not employed until March
+  const sal = salaryFor(month);
+  return grossBreakdownForMonth(
+    sal, emp.date_commenced, month, false, null,
+    monthDays(emp.date_commenced, null, YEAR, month),
+    { year: YEAR, effectiveFrom: sal.effective_from },
+  );
+});
+
 await renderToFile(
   createElement(YearlySheetPDF, {
     emp, year: YEAR, salary, monthLines, thirteenth: null,
-    pcbArr: monthLines.map(l => l.pcb), customItemsByMonth, effMonth: 1,
+    pcbArr: monthLines.map(l => l.pcb), customItemsByMonth, effMonth: 1, grossParts,
   }),
   out,
 );
@@ -114,7 +148,14 @@ const sizeOf = (i: Item) => Math.round(Math.hypot(i.transform[1], i.transform[3]
 const [, , pageW] = page.view as number[];
 
 console.log(`\n${out}\n`);
-console.log(`Page ${Math.round(pageW)} x ${Math.round(page.view[3])}pt\n`);
+console.log(`Page ${Math.round(pageW)} x ${Math.round(page.view[3])}pt`);
+// One page is the design. The footer's make-up block grows with the number of
+// times somebody's salary moved in the year, which makes it the thing most
+// likely to break that — and a second page is invisible from any measurement
+// of the first.
+console.log(doc.numPages === 1
+  ? "Pages: 1\n"
+  : `Pages: ${doc.numPages} — IT NO LONGER FITS ON ONE\n`);
 
 console.log("Largest type:");
 for (const i of text.filter(i => sizeOf(i) >= 12)) {

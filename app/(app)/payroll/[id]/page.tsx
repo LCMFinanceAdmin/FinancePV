@@ -2461,7 +2461,8 @@ export default function PayrollEmployeePage() {
           emp={emp} year={year} salary={current}
           monthLines={monthLines} thirteenth={thirteenth}
           pcbArr={pcb} customItemsByMonth={customItemsByMonth}
-          effMonth={effMonth} adjustments={adjustments} loans={loans}
+          effMonth={effMonth} grossParts={monthLines.map((l, i) => grossPartsFor(i + 1, l))}
+          adjustments={adjustments} loans={loans}
           onClose={() => setShowYearlySheet(false)}
         />
       )}
@@ -2470,7 +2471,7 @@ export default function PayrollEmployeePage() {
 }
 
 // ─── Yearly Sheet Modal ──────────────────────────────────────────────────────
-function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, adjustments, loans, onClose }: {
+function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts, adjustments, loans, onClose }: {
   emp: PayrollEmployee;
   year: number;
   salary: PayrollSalary;
@@ -2479,6 +2480,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   pcbArr: number[];
   customItemsByMonth: Record<number, PayrollEmployeeCustomItem[]>;
   effMonth: number;
+  /** What each month's gross is made of, for the footer of the printed sheet. */
+  grossParts: (GrossBreakdown | null)[];
   /** This year's corrections. Already scoped to the year by the query. */
   adjustments: PayrollAdjustment[];
   loans: EmployeeLoan[];
@@ -2803,7 +2806,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       const { pdf } = await import("@react-pdf/renderer");
       const blob = await pdf(
         <YearlySheetPDF emp={emp} year={year} salary={salary} monthLines={monthLines}
-          thirteenth={thirteenth} pcbArr={pcbArr} customItemsByMonth={customItemsByMonth} effMonth={effMonth} />
+          thirteenth={thirteenth} pcbArr={pcbArr} customItemsByMonth={customItemsByMonth}
+          effMonth={effMonth} grossParts={grossParts} />
       ).toBlob();
       const fileName = `${emp.full_name.replace(/\s+/g, "_")}_${year}_Salary.pdf`;
       const file = new File([blob], fileName, { type: "application/pdf" });

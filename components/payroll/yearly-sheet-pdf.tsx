@@ -1,11 +1,29 @@
 "use client";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary, PayrollEmployeeCustomItem } from "@/lib/types";
-import type { CalcLine } from "@/lib/payroll/calc";
+import type { CalcLine, GrossBreakdown } from "@/lib/payroll/calc";
 import { isProbationMonth } from "@/lib/payroll/probation";
 import { SHEET } from "@/lib/payroll/sheet-palette";
 
 const ML = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
+/**
+ * How many spans the make-up block prints before it starts summarising.
+ *
+ * Measured, not guessed: `npm run preview:statement` renders the most crowded
+ * statement this component produces — loan, PTPTN, unpaid leave and a custom
+ * allowance all present — and reports the page count.
+ *
+ * Four spans fit exactly, with nothing to spare; three fit with the summary
+ * line that says how many were left out, and that line is worth more than a
+ * fourth row. Five of anything spills onto a second page holding nothing but
+ * a signature, which is a worse statement than a summarised one.
+ *
+ * A plainer statement has room for more. The cap does not vary with it,
+ * because tying a vertical limit to which columns happen to be present is a
+ * coupling that will be wrong quietly rather than loudly.
+ */
+const MAX_SPANS = 3;
 
 function n(v: number) { return v.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -110,7 +128,19 @@ const s = StyleSheet.create({
   tdAnnRed: { fontSize: 6, padding: "3 2", textAlign: "right", fontFamily: "Helvetica-Bold", color: W, backgroundColor: R800, borderRight: `0.5 solid ${DB}` },
   notes: { marginTop: 7, fontSize: 5.5, color: S500 },
   nl: { marginBottom: 1.5 },
-  sigRow: { flexDirection: "row", marginTop: 22, gap: 30, alignItems: "flex-end" },
+  // How the gross is arrived at. The table has no room for the five figures
+  // the screen shows in columns, and this is the question asked about a
+  // statement more than any other, so it is set out underneath instead.
+  mkBox: { marginTop: 5, borderTop: `0.5 solid ${S200}`, paddingTop: 3 },
+  mkHd: { fontSize: 5, fontFamily: "Helvetica-Bold", color: S500, letterSpacing: 0.5, marginBottom: 1.5 },
+  mkRow: { flexDirection: "row", marginBottom: 1, alignItems: "baseline" },
+  mkWhen: { width: 48, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: S800 },
+  mkParts: { flex: 1, fontSize: 5.5, color: S500 },
+  mkSum: { width: 50, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: C_GROSS, textAlign: "right" },
+  mkMore: { fontSize: 5, color: S500, fontStyle: "italic" },
+  // 22pt of air once sat here. It was the easiest thing on the page to spend
+  // when the footer grew a block that says something.
+  sigRow: { flexDirection: "row", marginTop: 8, gap: 30, alignItems: "flex-end" },
   sigBox: { flex: 1 },
   // The employee's name, for finding this sheet in a stack of them. Not a
   // signature block: there is nothing here for them to sign.
@@ -143,9 +173,20 @@ export interface YearlySheetPDFProps {
   pcbArr: number[];
   customItemsByMonth: Record<number, PayrollEmployeeCustomItem[]>;
   effMonth: number;
+  /**
+   * What each month's gross is made of, January first, twelve entries.
+   *
+   * Passed in rather than worked out here, because working it out needs every
+   * salary row in force across the year and this component is handed one. The
+   * page already has them, and already computes this for the columns on
+   * screen — so the footer and the sheet cannot say different things.
+   *
+   * Optional: a caller that does not pass it simply gets no breakdown.
+   */
+  grossParts?: (GrossBreakdown | null)[];
 }
 
-export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth }: YearlySheetPDFProps) {
+export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts }: YearlySheetPDFProps) {
   const customCols: { label: string; type: "allowance" | "deduction" }[] = [];
   const seen = new Set<string>();
   for (let m = 1; m <= 13; m++) for (const ci of customItemsByMonth[m] ?? []) {
@@ -154,6 +195,41 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
   }
   // Sums every matching row, matching the sheet and what calcLine adds. Taking
   // the first hid a top-up whenever two rows shared a name.
+  /**
+   * The year's gross, as the spans it was actually paid in.
+   *
+   * Twelve identical lines would be a worse answer than one, and a year with a
+   * mid-year increment has exactly two spans — which is the whole of what
+   * somebody is looking for when they ask why the figure moved. Consecutive
+   * months whose five parts match are run together; anything that moves starts
+   * a new span, so a confirmation, an increment and a correction each show up
+   * as the month they happened in.
+   */
+  const grossSpans = (() => {
+    if (!grossParts) return [];
+    const key = (g: GrossBreakdown) =>
+      [g.basic, g.experience, g.carried, g.current, g.allowances].join("|");
+    const out: { from: number; to: number; parts: GrossBreakdown }[] = [];
+    for (let m = 1; m <= 12; m++) {
+      const g = grossParts[m - 1];
+      // A month nobody was employed for breaks the run rather than joining it.
+      if (!g || g.gross <= 0) continue;
+      const last = out[out.length - 1];
+      if (last && last.to === m - 1 && key(last.parts) === key(g)) last.to = m;
+      else out.push({ from: m, to: m, parts: g });
+    }
+    return out;
+  })();
+  const startedIn = emp.date_commenced ? emp.date_commenced.slice(0, 4) : null;
+  /** The named figures of a span, zeroes left out — except basic, which is the loan-bearing one. */
+  const partsOf = (g: GrossBreakdown) => ([
+    ["Basic", g.basic],
+    ["Experience", g.experience],
+    [startedIn ? `Increment since ${startedIn}` : "Increment carried", g.carried],
+    [`Increment ${year}`, g.current],
+    ["Allowances", g.allowances],
+  ] as [string, number][]).filter(([, v], i) => i === 0 || v !== 0);
+
   const cAmt = (mo: number, col: { label: string; type: "allowance" | "deduction" }) =>
     (customItemsByMonth[mo] ?? [])
       .filter(i => i.label === col.label && i.type === col.type)
@@ -363,9 +439,34 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
           </View>
         </View>
 
+        {/* How the gross is made up */}
+        {grossSpans.length > 0 && (
+          <View style={s.mkBox}>
+            <Text style={s.mkHd}>HOW THE GROSS IS MADE UP</Text>
+            {grossSpans.slice(0, MAX_SPANS).map(sp => (
+              <View key={`${sp.from}-${sp.to}`} style={s.mkRow}>
+                <Text style={s.mkWhen}>
+                  {ML[sp.from - 1]}{sp.to !== sp.from ? `–${ML[sp.to - 1]}` : ""}
+                </Text>
+                <Text style={s.mkParts}>
+                  {partsOf(sp.parts).map(([label, v]) => `${label} ${n(v)}`).join("  +  ")}
+                </Text>
+                <Text style={s.mkSum}>{n(sp.parts.gross)}</Text>
+              </View>
+            ))}
+            {grossSpans.length > MAX_SPANS && (
+              <Text style={s.mkMore}>
+                … and {grossSpans.length - MAX_SPANS} further change
+                {grossSpans.length - MAX_SPANS === 1 ? "" : "s"} in the year. Every month&rsquo;s gross
+                is in the table above; ask Finance for the make-up of the later ones.
+              </Text>
+            )}
+          </View>
+        )}
+
         {/* Notes */}
         <View style={s.notes}>
-          <Text style={s.nl}>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Increment effective from {["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][effMonth-1]}.</Text>
+          <Text style={s.nl}>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Increment effective from {ML[effMonth-1]}.</Text>
           {emp.confirmed_on && monthLines.some((_,i)=>isProbationMonth(emp, year, i+1)) && (
             <Text style={s.nl}>
               ° On the probation salary. Confirmed {fmtDate(emp.confirmed_on)} — the step up from
