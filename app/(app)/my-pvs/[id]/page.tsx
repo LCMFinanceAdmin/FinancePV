@@ -798,7 +798,18 @@ export default function PVDetailPage() {
     await saveAttachmentData(pv.attachments ?? [], null);
   }
 
-  async function handleReplaceReceipt(file: File) {
+  /**
+   * Put a bank slip on the voucher — the first one or a replacement.
+   *
+   * It was `handleReplaceReceipt` and reachable only from a Replace button
+   * that rendered inside `{pv.payment_receipt_url && …}`, so a voucher with no
+   * slip offered nothing: the only moment one could ever be attached was the
+   * Mark as Paid modal, and that modal does not come back. Anything paid from
+   * the Payments page, which had no slip field at all, could never be given
+   * its proof of payment. admin-action has accepted payment_receipt_url on
+   * UPDATE_ATTACHMENTS the whole time; only the control was missing.
+   */
+  async function handleSetReceipt(file: File) {
     if (!pv) return;
     setAttachLoading(true);
     try {
@@ -1583,7 +1594,7 @@ export default function PVDetailPage() {
                         className="p-1 rounded hover:bg-emerald-100 text-emerald-600 transition-colors cursor-pointer disabled:opacity-40">
                         <Upload size={14} />
                         <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
-                          onChange={e => { const f = e.target.files?.[0]; if (f) handleReplaceReceipt(f); e.target.value = ""; }} />
+                          onChange={e => { const f = e.target.files?.[0]; if (f) handleSetReceipt(f); e.target.value = ""; }} />
                       </label>
                       <button
                         onClick={handleRemoveReceipt}
@@ -1595,6 +1606,23 @@ export default function PVDetailPage() {
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* Paid, but no slip on it yet. Its own control rather than a
+                  line in Add Documents, because a slip filed as an ordinary
+                  attachment is not a receipt: it would not be named, would not
+                  reach the PAID banner, and would sit indistinguishable from
+                  the invoice it is the proof for. */}
+              {!pv.payment_receipt_url && user?.isFinanceAdmin && pv.status === "PAID" && (
+                <label className={`flex items-center gap-2 p-2 bg-emerald-50/60 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors ${attachLoading ? "opacity-50 pointer-events-none" : ""}`}>
+                  <Upload size={14} className="text-emerald-600 shrink-0" />
+                  <span className="flex-1 text-xs font-medium text-emerald-700 min-w-0">
+                    {attachLoading ? "Uploading…" : "Attach bank slip"}
+                  </span>
+                  <span className="text-[10px] text-emerald-600/70 shrink-0">PDF, JPG, PNG</span>
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleSetReceipt(f); e.target.value = ""; }} />
+                </label>
               )}
             </div>
 

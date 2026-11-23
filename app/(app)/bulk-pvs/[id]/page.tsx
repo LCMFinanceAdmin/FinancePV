@@ -774,7 +774,7 @@ export default function BulkPVPage() {
     if (ref) ref.value = "";
   }
 
-  async function handleReplacePvReceipt(pv: PV, file: File) {
+  async function handleSetPvReceipt(pv: PV, file: File) {
     setAttachLoadingId(pv.id);
     try {
       const ext = file.name.split(".").pop() ?? "pdf";
@@ -1653,7 +1653,7 @@ export default function BulkPVPage() {
                           <label className="p-1 rounded hover:bg-emerald-100 text-emerald-600 transition-colors cursor-pointer">
                             <Upload size={13} />
                             <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
-                              onChange={e => { const f = e.target.files?.[0]; if (f) handleReplacePvReceipt(pv, f); if (e.target) e.target.value = ""; }} />
+                              onChange={e => { const f = e.target.files?.[0]; if (f) handleSetPvReceipt(pv, f); if (e.target) e.target.value = ""; }} />
                           </label>
                           <button onClick={() => savePvAttachments(pv.id, pv.attachments ?? [], null)}
                             disabled={attachLoadingId === pv.id}
@@ -1663,6 +1663,20 @@ export default function BulkPVPage() {
                         </div>
                       )}
                     </div>
+                  )}
+                  {/* Paid with no slip on it. Payroll vouchers are marked paid
+                      in a batch, so this is the usual case here rather than
+                      the exception — and until now there was no way to attach
+                      the bank advice to any of them after the fact. */}
+                  {!pv.payment_receipt_url && user?.isFinanceAdmin && pv.status === "PAID" && (
+                    <label className={`flex items-center gap-2 p-2 bg-emerald-50/60 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors ${attachLoadingId === pv.id ? "opacity-50 pointer-events-none" : ""}`}>
+                      <Upload size={13} className="text-emerald-600 shrink-0" />
+                      <span className="flex-1 text-xs font-medium text-emerald-700 min-w-0">
+                        {attachLoadingId === pv.id ? "Uploading…" : "Attach bank slip"}
+                      </span>
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleSetPvReceipt(pv, f); if (e.target) e.target.value = ""; }} />
+                    </label>
                   )}
                 </div>
                 {user?.isFinanceAdmin && (

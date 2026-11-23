@@ -61,6 +61,21 @@ export default function PaymentsPage() {
   const [payAccountId, setPayAccountId] = useState("");
   const [manualRef, setManualRef] = useState(false);
 
+  /**
+   * The bank's advice for the transfer, attached to every voucher in the run.
+   *
+   * References are one per voucher, deliberately — the statement shows a line
+   * each and reconciling needs them to match. The slip is the other way round:
+   * one IBG batch produces one advice covering all of them, so the same file
+   * goes on each voucher rather than being asked for N times.
+   *
+   * It had no field here at all, which meant anything paid from this page
+   * could never carry its proof of payment — the only place to attach one was
+   * the Mark as Paid modal on a single voucher's page.
+   */
+  const [slipFile, setSlipFile] = useState<File | null>(null);
+  const [slipUploading, setSlipUploading] = useState(false);
+
   // History state
   const [paid, setPaid] = useState<Partial<PV>[]>([]);
   const [loadingPaid, setLoadingPaid] = useState(false);
@@ -143,6 +158,25 @@ export default function PaymentsPage() {
     const account = accounts.find(a => a.id === payAccountId) ?? null;
     setPaying(true);
     try {
+      // Once, before the loop. Uploading per voucher would put N copies of one
+      // advice in storage, and a failure half way would leave some vouchers
+      // with a slip and some without.
+      let slipUrl = "";
+      if (slipFile) {
+        setSlipUploading(true);
+        try {
+          const ext = slipFile.name.split(".").pop() ?? "pdf";
+          const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+          const path = `batch/${stamp}.${ext}`;
+          const { error: upErr } = await supabase.storage
+            .from("payment-receipts").upload(path, slipFile, { upsert: true });
+          if (upErr) throw new Error(`Bank slip upload failed: ${upErr.message}`);
+          slipUrl = supabase.storage.from("payment-receipts").getPublicUrl(path).data.publicUrl;
+        } finally {
+          setSlipUploading(false);
+        }
+      }
+
       const session = (await supabase.auth.getSession()).data.session;
       let successCount = 0;
       let lastError = "";
@@ -179,6 +213,7 @@ export default function PaymentsPage() {
             payment_date: payDate,
             payment_method: payMethod,
             paid_payer_bank: account?.bank_name ?? "",
+            ...(slipUrl ? { payment_receipt_url: slipUrl } : {}),
           }),
         });
         const result = await res.json();
@@ -203,7 +238,7 @@ export default function PaymentsPage() {
       }
 
       setPayModal(false);
-      setPayRef(""); setPayAccountId(""); setManualRef(false);
+      setPayRef(""); setPayAccountId(""); setManualRef(false); setSlipFile(null);
       setPayDate(new Date().toISOString().slice(0, 10));
       setPayMethod("Online Transfer");
       if (successCount > 0) {
@@ -445,7 +480,7 @@ export default function PaymentsPage() {
                 <div className="text-base font-bold text-green-700">Mark {checkedIds.size} PV{checkedIds.size > 1 ? "s" : ""} as Paid</div>
                 <div className="text-xs text-stone-400 mt-0.5">Total: {formatCurrency(totalSelected)}</div>
               </div>
-              <button onClick={() => setPayModal(false)} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+              <button onClick={() => { setPayModal(false); setSlipFile(null); }} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
             </div>
 
             <div className="space-y-3">
@@ -513,14 +548,37 @@ export default function PaymentsPage() {
                   </>
                 )}
               </div>
+
+              {/* One advice for the whole transfer, which is how the bank
+                  issues it. Optional, and it can still be attached voucher by
+                  voucher afterwards from each PV's page. */}
+              <div>
+                <label className="text-xs text-stone-500 block mb-1">
+                  Bank slip / advice <span className="text-stone-400">(optional)</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={e => setSlipFile(e.target.files?.[0] ?? null)}
+                  className="w-full rounded-xl border border-stone-200 bg-white p-2 text-xs text-stone-600 file:mr-3 file:rounded-md file:border-0 file:bg-[#4a6da7] file:px-3 file:py-1 file:text-xs file:font-semibold file:text-white hover:file:bg-[#3a5d97] cursor-pointer" />
+                {slipFile ? (
+                  <p className="mt-1 text-[11px] text-green-700">
+                    ✓ {slipFile.name} — attached to {checkedIds.size === 1 ? "this voucher" : `all ${checkedIds.size} vouchers`}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-stone-400">
+                    The same file goes on every voucher in this batch. It can also be added later from each PV.
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-2 pt-1">
-              <button onClick={markPaid} disabled={paying || (!autoRef && !payRef.trim())}
+              <button onClick={markPaid} disabled={paying || slipUploading || (!autoRef && !payRef.trim())}
                 className="flex-1 py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition-colors disabled:opacity-40">
-                {paying ? "Processing…" : `Confirm — Mark ${checkedIds.size} as Paid`}
+                {slipUploading ? "Uploading slip…" : paying ? "Processing…" : `Confirm — Mark ${checkedIds.size} as Paid`}
               </button>
-              <button onClick={() => setPayModal(false)}
+              <button onClick={() => { setPayModal(false); setSlipFile(null); }}
                 className="px-4 py-3 rounded-xl border border-stone-200 text-stone-600 text-sm hover:bg-stone-50 transition-colors">
                 Cancel
               </button>
