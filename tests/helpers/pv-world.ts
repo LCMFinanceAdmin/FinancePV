@@ -37,7 +37,37 @@ const ALWAYS_PRESENT = [
   "user_security_credentials",
   "pv_number_pool",
   "notifications",
+  // Marking a voucher paid asks both of these who the claim was for. Most
+  // vouchers are nobody's claim, and a test about signatures should not have
+  // to say so.
+  "gm_claims",
+  "purchase_requests",
 ];
+
+/**
+ * One term of a PostgREST `or=(...)` filter: "column.operator.value".
+ *
+ * Only eq and ilike, which is what the handlers use. The value is split off at
+ * the second dot and never again, because an email address is full of dots and
+ * is exactly what gets passed here.
+ *
+ * ilike is matched as case-insensitive equality. Postgres would also treat `_`
+ * and `%` as wildcards, so the real database returns a superset of this — but
+ * every caller filters exactly afterwards for that very reason, so a stub that
+ * matched the wildcards would only be modelling a behaviour nothing relies on.
+ */
+function orTermMatches(row: Row, term: string): boolean {
+  const first = term.indexOf(".");
+  const second = term.indexOf(".", first + 1);
+  if (first < 0 || second < 0) throw new Error(`the stub cannot read the filter "${term}"`);
+  const column = term.slice(0, first);
+  const op = term.slice(first + 1, second);
+  const value = term.slice(second + 1);
+  if (op !== "eq" && op !== "ilike") {
+    throw new Error(`the stub knows nothing of the filter operator "${op}"`);
+  }
+  return norm(row[column]) === norm(value);
+}
 
 /** A query builder over pvWorld.tables, covering only the shapes these functions use. */
 let rowCounter = 0;
@@ -48,6 +78,8 @@ export function pvQuery(table: string) {
   const containsAll: [string, unknown[]][] = [];
   const likes: [string, string][] = [];
   const inLists: [string, unknown[]][] = [];
+  /** Each .or() call is one group of "column.op.value" terms; any may match. */
+  const orGroups: string[][] = [];
   const isNull: string[] = [];
   let sort: { column: string; ascending: boolean } | null = null;
   let limit: number | null = null;
@@ -66,6 +98,7 @@ export function pvQuery(table: string) {
       // Only the prefix form the voucher series uses, which is all it needs.
       likes.every(([c, pattern]) => norm(r[c]).startsWith(norm(pattern.replace(/%$/, "")))) &&
       inLists.every(([c, vs]) => vs.some(v => norm(v) === norm(r[c]))) &&
+      orGroups.every(terms => terms.some(t => orTermMatches(r, t))) &&
       isNull.every(c => r[c] === null || r[c] === undefined));
     if (sort) {
       const { column, ascending } = sort;
@@ -93,6 +126,7 @@ export function pvQuery(table: string) {
     eq: (c: string, v: unknown) => { eqs[c] = v; return q; },
     contains: (c: string, vs: unknown[]) => { containsAll.push([c, vs]); return q; },
     in: (c: string, vs: unknown[]) => { inLists.push([c, vs]); return q; },
+    or: (expr: string) => { orGroups.push(expr.split(",")); return q; },
     like: (c: string, pattern: string) => { likes.push([c, pattern]); return q; },
     is: (c: string, v: unknown) => { if (v === null) isNull.push(c); return q; },
     limit: (n: number) => { limit = n; return q; },

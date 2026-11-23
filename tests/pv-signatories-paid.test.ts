@@ -161,6 +161,78 @@ test("the Accounts Executive records the payment, which is her job", async () =>
   assert.equal(pv().paid_by, "Liew Kim Fung");
 });
 
+// ── Telling the person the money is for ──────────────────────────────────
+//
+// Everything else MARK_PAID sends goes to whoever handled the voucher. On a
+// claim voucher that is nobody's claim: Finance submits it, so the submitter
+// notice reaches Finance, and the ministry push reaches whoever heads the
+// committee it was booked to. The claimant was told nothing and found out by
+// asking.
+
+const CLAIMANT = { email: "joel@lcm", full_name: "Joel Liew", role: "EXCO_YAY" };
+
+/** A voucher Finance raised for somebody else's accepted claim. */
+function claimVoucher(claim: Record<string, unknown> = {}) {
+  voucher({ status: "APPROVED", submitted_by_email: FINANCE.email, purpose: "Camp transport" });
+  pvWorld.tables.user_roles.push(CLAIMANT);
+  pvWorld.tables.gm_claims = [{
+    id: "clm1", claim_no: "CLM-2026-001", pv_id: "pv1",
+    claimant_email: CLAIMANT.email, ...claim,
+  }];
+}
+
+test("the claimant is told when their claim is paid", async () => {
+  claimVoucher();
+  const r = await call(adminHandler, FINANCE, "MARK_PAID", { payment_ref: "TRF-0101" });
+  assert.equal(r.status, 200);
+
+  const told = pvWorld.notifications.filter(n => n.type === "CLAIM_PAID");
+  assert.equal(told.length, 1, "exactly one, to the claimant");
+  assert.equal(told[0].recipient_email, CLAIMANT.email);
+  // What a claimant recognises. They have never seen the voucher number.
+  assert.match(String(told[0].message), /Camp transport/);
+  assert.match(String(told[0].message), /LCM-TEST-001/);
+});
+
+test("the voucher Finance raised for itself tells nobody twice", async () => {
+  // Finance claiming its own expense is both submitter and claimant. One
+  // notice, not two saying the same thing.
+  claimVoucher({ claimant_email: FINANCE.email });
+  await call(adminHandler, FINANCE, "MARK_PAID");
+  assert.equal(pvWorld.notifications.filter(n => n.type === "CLAIM_PAID").length, 0);
+  assert.equal(pvWorld.notifications.filter(n => n.type === "PV_PAID").length, 1);
+});
+
+test("a claim with no email on it is not a reason to fail the payment", async () => {
+  // Two of the claims already in the book have no claimant_email: the column
+  // was optional and one way of logging a claim could not fill it at all. The
+  // payment still has to go through, silently as before.
+  claimVoucher({ claimant_email: null });
+  const r = await call(adminHandler, FINANCE, "MARK_PAID");
+  assert.equal(r.status, 200);
+  assert.equal(pv().status, "PAID");
+  assert.equal(pvWorld.notifications.filter(n => n.type === "CLAIM_PAID").length, 0);
+});
+
+test("a payment request names its own claimant", async () => {
+  // The other way a voucher comes to be somebody's claim.
+  voucher({ status: "APPROVED", submitted_by_email: FINANCE.email });
+  pvWorld.tables.user_roles.push(CLAIMANT);
+  pvWorld.tables.purchase_requests = [
+    { id: "pr1", pv_id: "pv1", submitted_by_email: CLAIMANT.email },
+  ];
+  await call(adminHandler, FINANCE, "MARK_PAID");
+  const told = pvWorld.notifications.filter(n => n.type === "CLAIM_PAID");
+  assert.equal(told.length, 1);
+  assert.equal(told[0].recipient_email, CLAIMANT.email);
+});
+
+test("an ordinary voucher is nobody's claim and nothing extra goes out", async () => {
+  voucher({ status: "APPROVED" });
+  await call(adminHandler, FINANCE, "MARK_PAID");
+  assert.equal(pvWorld.notifications.filter(n => n.type === "CLAIM_PAID").length, 0);
+});
+
 test("somebody outside Finance cannot mark a voucher paid", async () => {
   voucher({ status: "APPROVED" });
   const r = await call(adminHandler, STAFF, "MARK_PAID");

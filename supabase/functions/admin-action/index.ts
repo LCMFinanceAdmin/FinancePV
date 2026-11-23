@@ -325,12 +325,91 @@ Deno.serve(async (req) => {
         created_at: new Date().toISOString(),
       });
       const paidLabel = `${pv.pv_no} · ${formatRM(pv.amount)}`;
+
+      // The person the money is actually for.
+      //
+      // Everything above tells the people who handled the voucher. On a claim
+      // voucher none of them is the claimant: Finance submits it, so
+      // submitted_by_email is Finance, and the ministry push goes to whoever
+      // heads the committee it was booked to. The one person waiting to be
+      // paid was told nothing at all, and found out by asking.
+      //
+      // Both routes in: a claim the GM accepted names its claimant, and a
+      // payment request names whoever raised it.
+      const claimantEmails = await (async () => {
+        const [claims, requests] = await Promise.all([
+          db.from("gm_claims").select("claimant_email").eq("pv_id", pv_id),
+          db.from("purchase_requests").select("submitted_by_email").eq("pv_id", pv_id),
+        ]);
+        const raw = [
+          ...(claims.data ?? []).map((c: { claimant_email: string | null }) => c.claimant_email),
+          ...(requests.data ?? []).map((r: { submitted_by_email: string | null }) => r.submitted_by_email),
+        ];
+        const wanted = new Set<string>();
+        for (const e of raw) {
+          const lower = (e ?? "").trim().toLowerCase();
+          // Finance has already been told, as the submitter.
+          if (!lower.includes("@")) continue;
+          if (lower === (pv.submitted_by_email ?? "").trim().toLowerCase()) continue;
+          wanted.add(lower);
+        }
+        if (wanted.size === 0) return [] as string[];
+        // notifications_select compares recipient_email to the JWT's email
+        // exactly, so a row written in the wrong case is a row the claimant
+        // cannot see, silently. Take the spelling from their account.
+        //
+        // ilike rather than in(): the claim holds whatever was typed and the
+        // account holds whatever was registered, and nothing guarantees the
+        // two agree on case. It can only widen the candidates -- `_` is a
+        // wildcard to Postgres and an ordinary character in an address -- so
+        // the exact compare below is what decides.
+        const { data: accounts } = await db.from("user_roles").select("email")
+          .or([...wanted].map(e => `email.ilike.${e}`).join(","));
+        const canonical = new Map<string, string>();
+        for (const a of (accounts ?? []) as { email: string }[]) {
+          canonical.set(a.email.toLowerCase(), a.email);
+        }
+        return [...wanted].map(e => canonical.get(e) ?? e);
+      })();
+
+      if (claimantEmails.length > 0) {
+        await db.from("notifications").insert(claimantEmails.map(email => ({
+          recipient_email: email,
+          type: "CLAIM_PAID",
+          pv_no: pv.pv_no,
+          pv_id,
+          // Addressed to somebody who never saw a voucher number until now,
+          // so it leads with the money and what it was for.
+          message: `${formatRM(pv.amount)} for ${pv.purpose || "your claim"} has been paid`
+            + `${pv.payment_date ? ` on ${pv.payment_date}` : ""}. Voucher ${pv.pv_no}.`,
+          read: false,
+          created_at: new Date().toISOString(),
+        })));
+      }
+
       await Promise.all([
         sendPushToEmails(db, [pv.submitted_by_email], {
           title: "PV Paid",
           body: `Your PV ${paidLabel} has been paid`,
           url: "/my-pvs",
         }),
+        claimantEmails.length > 0
+          ? sendPushToEmails(db, claimantEmails, {
+              title: "You have been paid",
+              body: `${formatRM(pv.amount)} for ${pv.purpose || "your claim"} has been paid`,
+              // Email only — a push body has to stay to one line, and these
+              // are the two things somebody checks their bank against.
+              detail: [
+                `Voucher ${pv.pv_no}${pv.payment_ref ? `, reference ${pv.payment_ref}` : ""}`
+                + `${pv.payment_method ? `, paid by ${pv.payment_method}` : ""}.`,
+                "The bank slip, where Finance has attached one, is on Track Progress.",
+              ],
+              // Not /my-pvs: that lists vouchers you submitted, and a claimant
+              // submitted none of them. Track Progress is where their claim,
+              // its voucher and the bank slip are.
+              url: "/payment-requests",
+            })
+          : Promise.resolve(),
         sendPushToRoles(db, ["GENERAL_MANAGER"], {
           title: "PV Marked as Paid",
           body: `PV ${paidLabel} has been paid`,

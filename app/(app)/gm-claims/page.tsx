@@ -448,6 +448,7 @@ export default function GMClaimsPage() {
     amount: "",
     claimant_name: "",
     claimant_type: "",
+    claimant_email: "",
     ministry: "",
   });
   const [newRow, setNewRow] = useState(defaultNewRow);
@@ -631,7 +632,9 @@ export default function GMClaimsPage() {
         claim_type: form.claim_type,
         claimant_name: form.claimant_name.trim(),
         claimant_type: form.claimant_type || null,
-        claimant_email: form.claimant_email.trim() || null,
+        // Lower-cased on the way in, so the address stored is the address every
+        // reader compares against and nothing has to work around case.
+        claimant_email: form.claimant_email.trim().toLowerCase() || null,
         ministry: form.ministry || null,
         project: form.project.trim() || null,
         amount: parseFloat(form.amount),
@@ -888,7 +891,11 @@ export default function GMClaimsPage() {
         claim_type: "EXPENSE_CLAIM" as const,
         claimant_name: newRow.claimant_name.trim(),
         claimant_type: newRow.claimant_type || null,
-        claimant_email: null,
+        // Was hard-coded null, which quietly made this the one way to log a
+        // claim that could never tell the claimant anything. The address is
+        // what the paid notice is sent to, what lets them follow it on Track
+        // Progress, and what migration 273 reads to let them open the voucher.
+        claimant_email: newRow.claimant_email.trim().toLowerCase() || null,
         ministry: newRow.ministry.trim() || null,
         project: null,
         amount: parseFloat(newRow.amount),
@@ -1560,10 +1567,14 @@ export default function GMClaimsPage() {
                           className="border-2 border-stone-800 rounded px-1.5 py-1 text-[10.5px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white mb-1" />
                         <select value={newRow.claimant_type}
                           onChange={e => setNewRow(r => ({ ...r, claimant_type: e.target.value }))}
-                          className="border-2 border-stone-800 rounded px-1 py-1 text-[10.5px] w-full focus:outline-none bg-white text-stone-500">
+                          className="border-2 border-stone-800 rounded px-1 py-1 text-[10.5px] w-full focus:outline-none bg-white text-stone-500 mb-1">
                           <option value="">Type…</option>
                           {CLAIMANT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
+                        <input type="email" placeholder="Email (so they are told when paid)…"
+                          value={newRow.claimant_email}
+                          onChange={e => setNewRow(r => ({ ...r, claimant_email: e.target.value }))}
+                          className="border-2 border-stone-800 rounded px-1.5 py-1 text-[10.5px] w-full focus:outline-none focus:ring-1 focus:ring-[#4a6da7]/40 bg-white" />
                       </td>
                       <td className="px-2 py-2 border border-gray-300 align-top">
                         <CommitteePicker
@@ -2120,6 +2131,11 @@ export default function GMClaimsPage() {
                 onChange={e => setF("claimant_email", e.target.value)}
                 placeholder="optional"
                 className="w-full border-2 border-stone-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a6da7]/30" />
+              <p className="text-[11px] text-stone-400 mt-1">
+                Optional, but it is the whole of what the claimant gets: without it they are
+                not told when they are paid, their claim does not appear on their Track
+                Progress, and they cannot open the voucher.
+              </p>
             </div>
 
             {/* Bank details */}

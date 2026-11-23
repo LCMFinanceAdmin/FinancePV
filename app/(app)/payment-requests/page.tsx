@@ -93,6 +93,14 @@ function claimStage(v: Voucher | null): { label: string; cls: string } {
   }
 }
 
+/** An unread "you have been paid", waiting to be seen. */
+interface PaidNotice {
+  id: string;
+  message: string;
+  pv_id: string | null;
+  created_at: string;
+}
+
 /** A claim logged against this person by the General Manager. */
 interface MyClaim {
   id: string;
@@ -172,6 +180,19 @@ export default function PaymentRequestsPage() {
    * to share.
    */
   const [claims, setClaims] = useState<MyClaim[]>([]);
+  const [paidNotices, setPaidNotices] = useState<PaidNotice[]>([]);
+
+  /** Read, and gone. The notification is the telling; the list below is the record. */
+  async function dismissPaidNotice(id: string) {
+    const kept = paidNotices;
+    setPaidNotices(prev => prev.filter(n => n.id !== id));
+    const { error } = await supabase.from("notifications").update({ read: true }).eq("id", id);
+    // supabase-js returns a refusal rather than throwing one, so a policy that
+    // said no would leave the notice gone from the screen and unread in the
+    // table — back again on the next load, looking like it had not worked.
+    // Put it back now instead.
+    if (error) setPaidNotices(kept);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -213,6 +234,21 @@ export default function PaymentRequestsPage() {
       const myClaims = ((claimRows ?? []) as (MyClaim & { claimant_email: string | null })[])
         .filter(c => (c.claimant_email ?? "").toLowerCase() === mine && !c.request_id);
       setClaims(myClaims);
+
+      // "You have been paid", unread.
+      //
+      // admin-action writes one of these when a claim voucher is settled, and
+      // mails it. This is the third channel, and the one that still works for
+      // somebody who never enabled push and has not opened their email: it
+      // waits here until they dismiss it. Without it the row would be written
+      // to a table nothing on this page reads.
+      const { data: paidNotes } = await supabase.from("notifications")
+        .select("id,message,pv_id,created_at")
+        .eq("recipient_email", user.email ?? "")
+        .eq("type", "CLAIM_PAID")
+        .eq("read", false)
+        .order("created_at", { ascending: false });
+      setPaidNotices((paidNotes ?? []) as PaidNotice[]);
 
       const pvIds = [...new Set([
         ...rows.map(r => r.pv_id),
@@ -327,6 +363,34 @@ export default function PaymentRequestsPage() {
           <Plus size={14} /> New Request
         </Link>
       </div>
+
+      {/* ── You have been paid ─────────────────────────────────────────────
+          The one notice that is good news, so it sits above everything and
+          stays until it is dismissed rather than being counted in a tab. */}
+      {paidNotices.length > 0 && (
+        <div className="space-y-2">
+          {paidNotices.map(n => (
+            <div key={n.id}
+              className="flex items-start gap-3 rounded-2xl border border-green-200 bg-green-50 px-4 py-3">
+              <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-green-600" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-green-800">You have been paid</div>
+                <div className="mt-0.5 text-xs text-green-700">{n.message}</div>
+                {n.pv_id && (
+                  <Link href={`/my-pvs/${n.pv_id}`}
+                    className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-green-800 underline">
+                    <ExternalLink size={11} /> See the voucher and the bank slip
+                  </Link>
+                )}
+              </div>
+              <button type="button" onClick={() => dismissPaidNotice(n.id)}
+                className="shrink-0 text-xs font-medium text-green-600 hover:text-green-800">
+                Dismiss
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Claims raised for you ──────────────────────────────────────────
           Expenses the General Manager logged in this person's name. They are
