@@ -669,6 +669,44 @@ export function grossComponentsForMonth(
   return out;
 }
 
+/** A run of months whose gross is made up the same way. */
+export interface GrossSpan {
+  /** 1-based month numbers, inclusive. */
+  from: number;
+  to: number;
+  parts: GrossBreakdown;
+}
+
+/**
+ * The year's gross, as the spans it was actually paid in.
+ *
+ * Twelve identical lines would be a worse answer than one, and a year with a
+ * mid-year increment has exactly two spans — which is the whole of what
+ * somebody is looking for when they ask why the figure moved. Consecutive
+ * months whose parts match are run together; anything that moves starts a new
+ * span, so a confirmation, an increment and a correction each show up as the
+ * month they happened in.
+ *
+ * A month nobody was employed for breaks the run rather than joining it.
+ *
+ * Here rather than in either sheet because both show this now — the one that
+ * is printed from the browser and the one @react-pdf renders — and a grouping
+ * rule kept in two places is two answers to "why did my pay change".
+ */
+export function grossSpansOf(parts: (GrossBreakdown | null | undefined)[]): GrossSpan[] {
+  const key = (g: GrossBreakdown) =>
+    [g.basic, g.experience, g.carried, g.current, g.allowances].join("|");
+  const out: GrossSpan[] = [];
+  for (let m = 1; m <= parts.length; m++) {
+    const g = parts[m - 1];
+    if (!g || g.gross <= 0) continue;
+    const last = out[out.length - 1];
+    if (last && last.to === m - 1 && key(last.parts) === key(g)) last.to = m;
+    else out.push({ from: m, to: m, parts: g });
+  }
+  return out;
+}
+
 /** The gross in four figures, as the yearly sheet shows it. */
 export interface GrossBreakdown {
   basic: number;

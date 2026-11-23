@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown, Church } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, figureOf, fullGross, type CalcLine, type GrossBreakdown, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, grossSpansOf, figureOf, fullGross, type CalcLine, type GrossBreakdown, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
@@ -2798,6 +2798,25 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const emailSubject = `${emp.full_name} — Salary Sheet ${year}`;
   const emailBody = `Please find attached the ${year} Yearly Salary Statement for ${emp.full_name}.\n\nAnnual Gross: RM ${num(sum(l => l.gross))}\nAnnual Net:   RM ${num(sum(l => l.net))}\n\nLutheran Church in Malaysia`;
 
+  /**
+   * The spans the make-up block prints, and the names of their parts.
+   *
+   * Both come from the shared rule rather than from this file's own reading of
+   * the salary record, so what is printed from the browser and what Share
+   * sends cannot disagree about why somebody's pay changed.
+   */
+  const grossSpans = grossSpansOf(grossParts);
+  const startedIn = emp.date_commenced ? emp.date_commenced.slice(0, 4) : null;
+  const grossPartLabels = (g: GrossBreakdown) => ([
+    ["Basic", g.basic],
+    ["Experience", g.experience],
+    [startedIn ? `Increment since ${startedIn}` : "Increment carried", g.carried],
+    [`Increment ${year}`, g.current],
+    ["Allowances", g.allowances],
+    // Basic is always named; a line that began "Experience 180" would read as
+    // though there were no salary under it.
+  ] as [string, number][]).filter(([, v], i) => i === 0 || v !== 0);
+
   function handlePrint() { window.print(); }
 
   async function handleWhatsApp() {
@@ -3181,6 +3200,36 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                       ? "varies by month"
                       : `RM ${num(r.amount)}${r.months.length > 1 ? " each" : ""}`}
                     {" · "}{monthsLabel(r.months)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* How the gross is made up.
+            
+            The same block, from the same figures, as the @react-pdf statement
+            — because this is the one most people actually produce. "Print /
+            Save PDF" prints THIS markup; the React-PDF document is what Share
+            sends. Two renderings of one sheet, and for a while only one of
+            them had been given the thing that was asked for. */}
+        {grossSpans.length > 0 && (
+          <div className="ys-keep mt-5 border-t border-stone-200 pt-3">
+            <div className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5">
+              How the gross is made up
+            </div>
+            <div className="space-y-1">
+              {grossSpans.map(sp => (
+                <div key={`${sp.from}-${sp.to}`} className="flex items-baseline gap-3">
+                  <div className="w-16 shrink-0 text-[10px] font-bold text-stone-700">
+                    {MONTH_LABELS[sp.from - 1]}{sp.to !== sp.from ? `–${MONTH_LABELS[sp.to - 1]}` : ""}
+                  </div>
+                  <div className="flex-1 text-[10px] text-stone-500">
+                    {grossPartLabels(sp.parts).map(([label, v]) => `${label} ${num(v)}`).join("  +  ")}
+                  </div>
+                  <div className="w-20 shrink-0 text-right text-[10px] font-bold text-[#2f5b9c]">
+                    {num(sp.parts.gross)}
                   </div>
                 </div>
               ))}

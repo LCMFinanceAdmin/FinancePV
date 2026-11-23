@@ -933,3 +933,60 @@ test("the schedule stops where the fields say, not where the status does", () =>
   assert.equal(reopened.cancelled, 0, "reopened runs the full term again");
   assert.equal(reopened.rows.length, 36);
 });
+
+// ── The spans the make-up block prints ───────────────────────────────────
+//
+// Two sheets render this now — the one printed from the browser and the one
+// @react-pdf sends — so the grouping is one function. What it has to get
+// right is which months run together, because that is the sentence somebody
+// reads when they ask why their pay changed.
+
+test("months that are made up the same way run together", async () => {
+  const { grossSpansOf } = await import("@/lib/payroll/calc");
+  const p = (basic: number) =>
+    ({ basic, experience: 180, carried: 0, current: 0, allowances: 120, gross: basic + 300 });
+  const spans = grossSpansOf([
+    p(2800), p(2800), p(2800), p(2800), p(2800),
+    p(3100), p(3100), p(3100), p(3100), p(3100), p(3100), p(3100),
+  ]);
+  assert.equal(spans.length, 2);
+  assert.deepEqual([spans[0].from, spans[0].to], [1, 5]);
+  assert.deepEqual([spans[1].from, spans[1].to], [6, 12]);
+});
+
+test("an unchanging year is one span, not twelve", async () => {
+  const { grossSpansOf } = await import("@/lib/payroll/calc");
+  const p = { basic: 3100, experience: 180, carried: 0, current: 0, allowances: 120, gross: 3400 };
+  const spans = grossSpansOf(Array.from({ length: 12 }, () => ({ ...p })));
+  assert.equal(spans.length, 1);
+  assert.deepEqual([spans[0].from, spans[0].to], [1, 12]);
+});
+
+test("the same gross arrived at differently is still a change", async () => {
+  // A hundred off the basic and a hundred onto an allowance leaves the gross
+  // where it was. The sheet would show no movement; this block is the only
+  // thing that can say something happened, so it must not merge them.
+  const { grossSpansOf } = await import("@/lib/payroll/calc");
+  const spans = grossSpansOf([
+    { basic: 3100, experience: 180, carried: 0, current: 0, allowances: 120, gross: 3400 },
+    { basic: 3000, experience: 180, carried: 0, current: 0, allowances: 220, gross: 3400 },
+  ]);
+  assert.equal(spans.length, 2);
+});
+
+test("months nobody was employed for break the run rather than joining it", async () => {
+  const { grossSpansOf } = await import("@/lib/payroll/calc");
+  const p = { basic: 3100, experience: 0, carried: 0, current: 0, allowances: 0, gross: 3100 };
+  // Employed Jan–Feb, gone, back in May. Two spans, not one running through
+  // the months they were not here for.
+  const spans = grossSpansOf([p, p, null, null, p]);
+  assert.equal(spans.length, 2);
+  assert.deepEqual([spans[0].from, spans[0].to], [1, 2]);
+  assert.deepEqual([spans[1].from, spans[1].to], [5, 5]);
+});
+
+test("nothing to show is no spans, not one empty one", async () => {
+  const { grossSpansOf } = await import("@/lib/payroll/calc");
+  assert.deepEqual(grossSpansOf([]), []);
+  assert.deepEqual(grossSpansOf([null, null]), []);
+});

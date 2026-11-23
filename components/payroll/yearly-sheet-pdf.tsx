@@ -1,6 +1,7 @@
 "use client";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary, PayrollEmployeeCustomItem } from "@/lib/types";
+import { grossSpansOf } from "@/lib/payroll/calc";
 import type { CalcLine, GrossBreakdown } from "@/lib/payroll/calc";
 import { isProbationMonth } from "@/lib/payroll/probation";
 import { SHEET } from "@/lib/payroll/sheet-palette";
@@ -181,31 +182,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
   }
   // Sums every matching row, matching the sheet and what calcLine adds. Taking
   // the first hid a top-up whenever two rows shared a name.
-  /**
-   * The year's gross, as the spans it was actually paid in.
-   *
-   * Twelve identical lines would be a worse answer than one, and a year with a
-   * mid-year increment has exactly two spans — which is the whole of what
-   * somebody is looking for when they ask why the figure moved. Consecutive
-   * months whose five parts match are run together; anything that moves starts
-   * a new span, so a confirmation, an increment and a correction each show up
-   * as the month they happened in.
-   */
-  const grossSpans = (() => {
-    if (!grossParts) return [];
-    const key = (g: GrossBreakdown) =>
-      [g.basic, g.experience, g.carried, g.current, g.allowances].join("|");
-    const out: { from: number; to: number; parts: GrossBreakdown }[] = [];
-    for (let m = 1; m <= 12; m++) {
-      const g = grossParts[m - 1];
-      // A month nobody was employed for breaks the run rather than joining it.
-      if (!g || g.gross <= 0) continue;
-      const last = out[out.length - 1];
-      if (last && last.to === m - 1 && key(last.parts) === key(g)) last.to = m;
-      else out.push({ from: m, to: m, parts: g });
-    }
-    return out;
-  })();
+  const grossSpans = grossSpansOf(grossParts ?? []);
   const startedIn = emp.date_commenced ? emp.date_commenced.slice(0, 4) : null;
   /** The named figures of a span, zeroes left out — except basic, which is the loan-bearing one. */
   const partsOf = (g: GrossBreakdown) => ([
