@@ -55,6 +55,44 @@ function itemAppliesToMonth(item: { year: number; month: number; is_recurring: b
   return item.recur_until_year > targetYear ||
     (item.recur_until_year === targetYear && (item.recur_until_month ?? 13) >= targetMonth);
 }
+/**
+ * One heading on the yearly sheet: the scheme it belongs to, then the figure.
+ *
+ * Both lines are always rendered — the top one as a non-breaking space where
+ * a column belongs to no scheme — so every heading is exactly two lines tall.
+ * That is what lets the whole header be a single sticky row: the moment cells
+ * differ in height, something has to be told where the row ends, and the thing
+ * it was told was a hard-coded 29px that stopped being true.
+ *
+ * The figure is the bolder and larger of the two, because it is what somebody
+ * is looking for. The scheme above it is context, and reads as context.
+ */
+function SheetHead({ bg, label, group, rule, align = "text-right", width, title }: {
+  bg: string;
+  label: string;
+  /** The scheme this column sits in — EPF, SOCSO, EIS. Blank for the rest. */
+  group?: string;
+  /** Draw the 2px rule that starts a new scheme to the left of this column. */
+  rule?: boolean;
+  align?: string;
+  width?: string;
+  title?: string;
+}) {
+  return (
+    <th
+      title={title}
+      className={`border border-white/25 px-1 py-1 align-bottom ${align} ${width ?? ""}`
+        + `${rule ? " border-l-2 border-l-stone-700" : ""}`}
+      style={{ backgroundColor: bg }}
+    >
+      <span className="block truncate text-[9px] font-bold uppercase leading-tight text-white/85">
+        {group || " "}
+      </span>
+      <span className="block truncate text-[11px] font-bold leading-tight text-white">{label}</span>
+    </th>
+  );
+}
+
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 /**
@@ -874,7 +912,14 @@ export default function PayrollEmployeePage() {
    */
   const categoryStarts = (() => {
     const fixed = [2, 3, 4, 6, 9, 11];      // Gross, PCB, EPF, SOCSO, EIS, EPL
-    const firstCustom = 12;
+    // 13, not 12. The columns are: 1 month, 2 gross, 3 PCB, 4-5 EPF, 6-8 SOCSO
+    // and SKBBK, 9-10 EIS, 11 EPL, 12 unpaid days — so the first custom column
+    // is the thirteenth. Counted from 12, every rule from here rightwards
+    // landed one column early: on the unpaid-days column instead of the first
+    // custom one, and, with no custom columns at all, on unpaid days and Net
+    // rather than Net and Total LCM. Which is why Total LCM has never had the
+    // rule that starts it.
+    const firstCustom = 13;
     const custom = customCols.map((_, i) => firstCustom + i);
     const net = firstCustom + customCols.length;
     return [...fixed, ...custom, net, net + 1];
@@ -1199,64 +1244,60 @@ export default function PayrollEmployeePage() {
               <style>{gridCss}</style>
               <table className="ysheet w-full text-[12px] border-collapse" style={{ minWidth: 1000 }}>
                 <thead>
-                  {/* Two header rows: the scheme, then the side of it. Without
-                      the grouping, eight look-alike money columns sit in a row
-                      and "SOCSO ER" has to be read letter by letter to be told
-                      from "SOCSO EE". Anything not belonging to a scheme spans
-                      both rows so the reading order stays one column, one
-                      heading. */}
-                  {/* One colour per kind of column, the four statutory schemes
-                      sharing theirs — the same scheme as the printed
-                      statement, so the sheet on screen and the sheet on the
-                      desk read the same way. */}
+                  {/* One row, and every heading says the whole of what its
+                      column holds.
+
+                      It was two rows — the scheme across the top, the side of
+                      it underneath — which reads well on paper and did not
+                      survive being made sticky. The second row was pinned at a
+                      hard-coded 29px while the first row is about 21px tall,
+                      so once the page scrolled a white band opened between
+                      them and the top of January sat behind it. The columns
+                      that spanned both rows only ever covered the first, which
+                      is the other half of the same gap.
+
+                      So the grouping moved inside the cell. "EPF" over "EE" is
+                      one heading in one box: nothing to align, nothing to
+                      offset, and no way for the two halves to drift apart. The
+                      scheme is still legible as a block because the colour band
+                      and the 2px rules either side say so. */}
                   <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:shadow-[inset_0_-2px_0_rgba(0,0,0,0.22)]">
-                    {/* Three letters and a tag. It was taking the width of
-                        a money column for no reason, the same way the
-                        printed sheet was. */}
-                    <th rowSpan={2} className="w-14 border border-white/25 px-1 py-0.5 align-bottom text-white text-left" style={{ backgroundColor: SHEET.month }}>Month</th>
-                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right" style={{ backgroundColor: SHEET.gross }}>Gross</th>
-                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right" style={{ backgroundColor: SHEET.stat }}>PCB</th>
-                    <th colSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-center text-[9px] font-bold uppercase tracking-wider" style={{ backgroundColor: SHEET.stat }}>EPF</th>
+                    {/* Three letters and a tag. It was taking the width of a
+                        money column for no reason, the same way the printed
+                        sheet was. */}
+                    <SheetHead bg={SHEET.month} label="Month" align="text-left" width="w-14" />
+                    <SheetHead bg={SHEET.gross} label="Gross" rule />
+                    <SheetHead bg={SHEET.stat} label="PCB" rule />
+                    <SheetHead bg={SHEET.stat} group="EPF" label="EE" rule />
+                    <SheetHead bg={SHEET.stat} group="EPF" label="ER" />
+                    <SheetHead bg={SHEET.stat} group="SOCSO" label="EE" rule />
                     {/* SKBBK sits inside SOCSO because that is what it is —
                         Lindung 24 tops up the employee's SOCSO contribution and
                         is filed on PERKESO's return. It keeps its own column
                         and its own tint because it is not SOCSO EE: the two are
                         reported as separate figures and reconciled separately. */}
-                    <th colSpan={3} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-center text-[9px] font-bold uppercase tracking-wider" style={{ backgroundColor: SHEET.stat }}>SOCSO</th>
-                    <th colSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-center text-[9px] font-bold uppercase tracking-wider" style={{ backgroundColor: SHEET.stat }}>EIS</th>
-                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right" style={{ backgroundColor: SHEET.deduct }}>EPL</th>
-                    {/* Days, with what they come to underneath. Deducted after
-                        the statutory columns, which is why it sits here with
-                        the other deductions rather than beside Gross. */}
-                    <th rowSpan={2}
-                      title="Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS."
-                      className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right" style={{ backgroundColor: SHEET.deduct }}>
-                      Unpaid
-                      <span className="block text-[8px] font-normal text-white/70">days</span>
-                    </th>
+                    <SheetHead bg={SHEET.skbbk} group="SOCSO" label="SKBBK"
+                      title="SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution" />
+                    <SheetHead bg={SHEET.stat} group="SOCSO" label="ER" />
+                    <SheetHead bg={SHEET.stat} group="EIS" label="EE" rule />
+                    <SheetHead bg={SHEET.stat} group="EIS" label="ER" />
+                    <SheetHead bg={SHEET.deduct} label="EPL" rule />
+                    {/* No rule before this one: EPL and unpaid leave are both
+                        money off take-home after the statutory figures, they
+                        wear the same red, and the key below calls them one
+                        thing. The body never drew a rule here either — the
+                        header did, and they disagreed. */}
+                    <SheetHead bg={SHEET.deduct} group="Unpaid" label="days"
+                      title="Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS." />
                     {customCols.map(col => (
-                      <th key={col.label} rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right max-w-[90px]"
-                        style={{ backgroundColor: col.type === "allowance" ? SHEET.allow : SHEET.deduct }}>
-                        <div className="truncate text-[9px]">{col.label}</div>
-                        <div className="text-[8px] font-normal text-white/70">{col.type === "allowance" ? "+ allowance" : "− deduction"}</div>
-                      </th>
+                      <SheetHead key={col.label}
+                        bg={col.type === "allowance" ? SHEET.allow : SHEET.deduct}
+                        group={col.type === "allowance" ? "+ allowance" : "− deduction"}
+                        label={col.label} title={col.label} rule width="max-w-[90px]" />
                     ))}
-                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right font-bold" style={{ backgroundColor: SHEET.net }}>Net</th>
-                    <th rowSpan={2} className="border border-white/25 px-1 py-0.5 align-bottom text-white border-l-2 border-l-stone-700 text-right font-bold" style={{ backgroundColor: SHEET.lcm }}>Total LCM</th>
-                    <th rowSpan={2} className="border border-stone-200 bg-stone-100 px-1 py-1 print:hidden w-14"></th>
-                  </tr>
-                  <tr className="[&>th]:sticky [&>th]:top-[29px] [&>th]:z-20 [&>th]:shadow-[inset_0_-2px_0_rgba(0,0,0,0.22)]">
-                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white border-l-2 border-l-stone-700" style={{ backgroundColor: SHEET.stat }}>EE</th>
-                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white" style={{ backgroundColor: SHEET.stat }}>ER</th>
-                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white border-l-2 border-l-stone-700" style={{ backgroundColor: SHEET.stat }}>EE</th>
-                    {/* A shade down from the band it sits in: filed on the
-                        same PERKESO return as SOCSO, reconciled as its own
-                        figure. */}
-                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white" style={{ backgroundColor: SHEET.skbbk }}
-                        title="SKBBK (Lindung 24) — employee only, on top of their SOCSO contribution">SKBBK</th>
-                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white" style={{ backgroundColor: SHEET.stat }}>ER</th>
-                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white border-l-2 border-l-stone-700" style={{ backgroundColor: SHEET.stat }}>EE</th>
-                    <th className="border border-white/25 px-1 py-0.5 text-right text-[9px] font-semibold text-white" style={{ backgroundColor: SHEET.stat }}>ER</th>
+                    <SheetHead bg={SHEET.net} label="Net" rule />
+                    <SheetHead bg={SHEET.lcm} label="Total LCM" rule />
+                    <th className="border border-stone-200 bg-stone-100 px-1 py-1 print:hidden w-14"></th>
                   </tr>
                 </thead>
                 <tbody>
