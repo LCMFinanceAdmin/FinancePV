@@ -228,6 +228,11 @@ DECLARE
                       AND COALESCE(is_test_account, false) = false
                       ORDER BY email LIMIT 1);
   a_budget  uuid;
+  -- The EXCO register a budget decision now cites (265), staged below.
+  held_meeting      uuid;
+  future_meeting    uuid;
+  a_resolution      uuid;
+  future_resolution uuid;
   -- A real employee, read as postgres so every probe below inserts an actual
   -- row rather than nothing at all.
   an_employee uuid := (SELECT id FROM payroll_employees ORDER BY emp_no LIMIT 1);
@@ -412,27 +417,65 @@ BEGIN
   -- app records that rather than deciding it (244). approve_budget_proposal
   -- holds definer rights, so it asks these for itself: hiding the button is
   -- not the same as refusing the action.
+  --
+  -- 265 changed how the meeting is named. It used to be typed in — a
+  -- reference and a date, in two boxes — and is now a resolution chosen from
+  -- the EXCO register, so the decision functions take p_resolution uuid and
+  -- read the reference and date off the register themselves. The typed-text
+  -- forms were kept, raising "reload the page", so an open tab gets a sentence
+  -- instead of "function does not exist".
+  --
+  -- These probes were not changed with it, and went on calling the typed-text
+  -- form. Two of them failed, which is how it was noticed; the other four were
+  -- worse — they expected a refusal, got one, and passed, when what refused
+  -- them was the deprecation notice rather than the rule they were written to
+  -- check. Four green lines proving nothing is a worse state than two red
+  -- ones, so the whole block is rewritten against the contract that exists.
+  --
+  -- Two resolutions to cite: one from a meeting that has been held, one from a
+  -- meeting still to come. "A decision is recorded after the EXCO has met" is
+  -- then probed rather than asserted.
+  INSERT INTO exco_meetings(ref, meeting_date, recorded_by)
+  VALUES ('_probe/held', CURRENT_DATE - 7, '_probe') RETURNING id INTO held_meeting;
+  INSERT INTO exco_resolutions(meeting_id, ref, subject, recorded_by)
+  VALUES (held_meeting, 'EXCO/_probe/1', '_probe', '_probe') RETURNING id INTO a_resolution;
+
+  INSERT INTO exco_meetings(ref, meeting_date, recorded_by)
+  VALUES ('_probe/ahead', CURRENT_DATE + 30, '_probe') RETURNING id INTO future_meeting;
+  INSERT INTO exco_resolutions(meeting_id, ref, subject, recorded_by)
+  VALUES (future_meeting, 'EXCO/_probe/2', '_probe', '_probe') RETURNING id INTO future_resolution;
+
   -- A different year from the proposal the 'budget' probes above raise:
   -- (ministry, year) is unique, and the two would collide.
   INSERT INTO budget_proposals(ministry, year, status, created_by)
   VALUES ('_probe', 2998, 'SUBMITTED', '_probe') RETURNING id INTO a_budget;
 
   PERFORM pg_temp.try_call('budget', desk, 'Ministry desk',
-    format($q$SELECT approve_budget_proposal(%L, %L, 'EXCO/9999/1', CURRENT_DATE, NULL)$q$,
-           a_budget, desk),
+    format($q$SELECT approve_budget_proposal(%L, %L, %L::uuid, NULL)$q$,
+           a_budget, desk, a_resolution),
     'approve a budget', false);
   PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
-    format($q$SELECT approve_budget_proposal(%L, %L, '  ', CURRENT_DATE, NULL)$q$,
+    format($q$SELECT approve_budget_proposal(%L, %L, NULL::uuid, NULL)$q$,
            a_budget, treasurer),
-    'approve without naming the meeting', false);
+    'approve citing no resolution', false);
   PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
-    format($q$SELECT approve_budget_proposal(%L, %L, 'EXCO/9999/1', CURRENT_DATE + 30, NULL)$q$,
+    format($q$SELECT approve_budget_proposal(%L, %L, gen_random_uuid(), NULL)$q$,
            a_budget, treasurer),
-    'approve dated after today', false);
+    'approve citing a resolution not in the register', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT approve_budget_proposal(%L, %L, %L::uuid, NULL)$q$,
+           a_budget, treasurer, future_resolution),
+    'approve citing a meeting still to come', false);
+  -- The kept typed-text form must decide nothing, or it is a way round the
+  -- register for anyone who can reach the database directly.
   PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
     format($q$SELECT approve_budget_proposal(%L, %L, 'EXCO/9999/1', CURRENT_DATE, NULL)$q$,
            a_budget, treasurer),
-    'approve naming the meeting', true);
+    'approve by typing a reference instead', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT approve_budget_proposal(%L, %L, %L::uuid, NULL)$q$,
+           a_budget, treasurer, a_resolution),
+    'approve citing a resolution', true);
 
   -- Sending one back is the same meeting's decision, and went straight from
   -- the browser as an UPDATE until 245 — so an EXCO member could reject any
@@ -441,21 +484,25 @@ BEGIN
   VALUES ('_probe', 2997, 'SUBMITTED', '_probe') RETURNING id INTO a_budget;
 
   PERFORM pg_temp.try_call('budget', exco, 'EXCO member',
-    format($q$SELECT reject_budget_proposal(%L, %L, 'EXCO/9999/2', CURRENT_DATE, 'no')$q$,
-           a_budget, exco),
+    format($q$SELECT reject_budget_proposal(%L, %L, %L::uuid, 'no')$q$,
+           a_budget, exco, a_resolution),
     'send a budget back', false);
   PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
-    format($q$SELECT reject_budget_proposal(%L, %L, 'EXCO/9999/2', CURRENT_DATE, '  ')$q$,
-           a_budget, treasurer),
+    format($q$SELECT reject_budget_proposal(%L, %L, %L::uuid, '  ')$q$,
+           a_budget, treasurer, a_resolution),
     'send back with no reason', false);
   PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
-    format($q$SELECT reject_budget_proposal(%L, %L, '  ', CURRENT_DATE, 'Too high')$q$,
+    format($q$SELECT reject_budget_proposal(%L, %L, NULL::uuid, 'Too high')$q$,
            a_budget, treasurer),
-    'send back without naming the meeting', false);
+    'send back citing no resolution', false);
   PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
-    format($q$SELECT reject_budget_proposal(%L, %L, 'EXCO/9999/2', CURRENT_DATE, 'Trim the camp line')$q$,
+    format($q$SELECT reject_budget_proposal(%L, %L, 'EXCO/9999/2', CURRENT_DATE, 'Too high')$q$,
            a_budget, treasurer),
-    'send back naming the meeting', true);
+    'send back by typing a reference instead', false);
+  PERFORM pg_temp.try_call('budget', treasurer, 'Treasurer',
+    format($q$SELECT reject_budget_proposal(%L, %L, %L::uuid, 'Trim the camp line')$q$,
+           a_budget, treasurer, a_resolution),
+    'send back citing a resolution', true);
   -- A ministry writes its own budget while it is a draft (248), and nobody
   -- else's, ever (247). 237 handed back the proposal and the change request
   -- and left the lines behind, so from 1 October until 248 an EXCO member
