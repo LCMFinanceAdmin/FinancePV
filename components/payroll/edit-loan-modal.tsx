@@ -27,10 +27,23 @@ import { X, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { logPayrollAudit } from "@/lib/payroll/audit";
-import { buildSchedule, totalRepayable } from "@/lib/payroll/loan";
-import type { UserProfile, PayrollEmployee, EmployeeLoan } from "@/lib/types";
+import { buildSchedule, totalRepayable, settlementProblem, settlementFieldsFor } from "@/lib/payroll/loan";
+import type { UserProfile, PayrollEmployee, EmployeeLoan, LoanStatus } from "@/lib/types";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * What each status means to somebody choosing one, rather than what it is
+ * called in the column. "ACTIVE" on its own does not say that picking it
+ * starts money coming out of a salary.
+ */
+const STATUSES: { value: LoanStatus; label: string; hint: string }[] = [
+  { value: "PENDING",   label: "Pending",   hint: "Waiting on approval. Nothing is deducted." },
+  { value: "ACTIVE",    label: "Active",    hint: "Running. The instalment comes off every month of the schedule." },
+  { value: "SETTLED",   label: "Settled",   hint: "Finished early. Needs the date it was settled on." },
+  { value: "REJECTED",  label: "Rejected",  hint: "Refused. Nothing is deducted." },
+  { value: "CANCELLED", label: "Cancelled", hint: "Withdrawn before it ran. Nothing is deducted." },
+];
 const monthLabel = (year: number, month: number) => `${MONTHS[month - 1]} ${year}`;
 const money = (n: number) => formatCurrency(n);
 
@@ -54,6 +67,13 @@ export function EditLoanModal({ loan, employees, user, onClose, onSaved }: {
   const [purpose, setPurpose] = useState(loan.purpose ?? "");
   const [approvedOn, setApprovedOn] = useState(loan.approved_outside_on ?? "");
   const [approvedBy, setApprovedBy] = useState(loan.approved_outside_by ?? "");
+  const [status, setStatus] = useState<LoanStatus>(loan.status);
+  // Kept beside the status because the two are one fact. settled_on is what
+  // stops the schedule — scheduleToSettlement reads it and never looks at the
+  // status — so a loan marked settled without a date goes on deducting while
+  // the badge says it is finished, and a loan moved off settled with the date
+  // left behind stays truncated while the badge says it is running.
+  const [settledOn, setSettledOn] = useState(loan.settled_on ?? "");
 
   const p = parseFloat(principal) || 0;
   const m = parseFloat(monthly) || 0;
@@ -84,6 +104,8 @@ export function EditLoanModal({ loan, employees, user, onClose, onSaved }: {
   was("Purpose", loan.purpose ?? "", purpose.trim());
   was("Approved on", loan.approved_outside_on ?? "", approvedOn);
   was("Approved by", loan.approved_outside_by ?? "", approvedBy.trim());
+  was("Status", loan.status, status, v => STATUSES.find(x => x.value === v)?.label ?? String(v));
+  was("Settled on", loan.settled_on ?? "", status === "SETTLED" ? settledOn : "");
 
   /** The four the sheet reads. Moving any of them rewrites months already past. */
   const rewritesHistory = ["Principal", "Monthly", "Term", "First repayment"]
@@ -94,6 +116,8 @@ export function EditLoanModal({ loan, employees, user, onClose, onSaved }: {
     if (p <= 0 || m <= 0 || t <= 0) { setError("The amount, the monthly repayment and the term all have to be more than nothing."); return; }
     if (!startMonth) { setError("Give the month the first repayment comes off — the schedule is built from it."); return; }
     if (!purpose.trim()) { setError("State what the loan was for."); return; }
+    const settleProblem = settlementProblem(status, settledOn);
+    if (settleProblem) { setError(settleProblem); return; }
     if (changes.length === 0) { setError("Nothing has been changed."); return; }
     setError(""); setSaving(true);
     try {
@@ -105,6 +129,10 @@ export function EditLoanModal({ loan, employees, user, onClose, onSaved }: {
         final_installment: f || suggestedFinal,
         start_month: startMonth,
         purpose: purpose.trim(),
+        status,
+        // The date and the note that belong with that status, so the schedule
+        // and the badge cannot tell different stories.
+        ...settlementFieldsFor(status, settledOn),
         ...(loan.approved_outside
           ? { approved_outside_on: approvedOn || null, approved_outside_by: approvedBy.trim() || null }
           : {}),
@@ -191,6 +219,60 @@ export function EditLoanModal({ loan, employees, user, onClose, onSaved }: {
 
           <div><label className={labelCls}>Purpose *</label>
             <input className={inputCls} value={purpose} onChange={e => setPurpose(e.target.value)} /></div>
+
+          <div>
+            <label className={labelCls}>Status *</label>
+            <select className={inputCls} value={status}
+              onChange={e => setStatus(e.target.value as LoanStatus)}>
+              {STATUSES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <p className="mt-1 text-[11px] text-stone-400">
+              {STATUSES.find(o => o.value === status)?.hint}
+            </p>
+          </div>
+
+          {status === "SETTLED" && (
+            <div>
+              <label className={labelCls}>Settled on *</label>
+              <input type="date" className={inputCls} value={settledOn}
+                onChange={e => setSettledOn(e.target.value)} />
+              <p className="mt-1 text-[11px] text-stone-400">
+                Instalments stop from this month. Everything scheduled after it is cancelled.
+              </p>
+            </div>
+          )}
+
+          {/* Settling here sets the status and the date and nothing else. The
+              Settle control on the loan writes the balance off as well, which
+              is what makes the outstanding figure read nil rather than a
+              number nobody is collecting. */}
+          {status === "SETTLED" && loan.status !== "SETTLED" && (
+            <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[11.5px] leading-snug text-stone-600">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-stone-400" />
+              <span>
+                This marks it settled and stops the schedule. It does not write off what is still
+                outstanding — <strong>Settle this loan</strong>, on the loan itself, does both, and
+                records the amount written off. Use this one for a loan whose status was simply
+                keyed wrong.
+              </span>
+            </div>
+          )}
+
+          {/* Making a loan active is the thing on this form that starts money
+              moving, and the signature flow is the only reason it would not
+              already be active. */}
+          {status === "ACTIVE" && loan.status !== "ACTIVE"
+            && !loan.approved_outside
+            && !(loan.signatures?.applicant && loan.signatures?.bishop && loan.signatures?.treasurer) && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11.5px] leading-snug text-amber-900">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                This loan has not been signed by the Bishop and the Treasurer, and is not marked as
+                approved on paper. Making it active starts the deduction against a salary with no
+                approval on record. Your name and this change go in the audit trail.
+              </span>
+            </div>
+          )}
 
           {/* Only for a loan agreed on paper. A loan applied for in the app
               carries e-signatures instead, and those are not editable here —

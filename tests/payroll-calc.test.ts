@@ -12,7 +12,7 @@ import { figureOf,
 } from "@/lib/payroll/calc";
 import { ADJUSTMENT_CATEGORIES, type AdjustmentCategory } from "@/lib/types";
 import { repaidBySchedule, outstandingBalance, installmentForMonth, dueFromBalance,
-  scheduleToSettlement, settlementMonth } from "@/lib/payroll/loan";
+  scheduleToSettlement, settlementMonth, settlementProblem, settlementFieldsFor } from "@/lib/payroll/loan";
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -884,4 +884,52 @@ test("the 13th month is paid on the whole gross, increment included", async () =
   assert.equal(b.carried, 1270);
   assert.equal(b.current, 110, "the 13th month is paid on the whole gross, so it counts");
   assert.equal(b.gross, 3810);
+});
+
+// ── Status and its settlement date ───────────────────────────────────────
+//
+// scheduleToSettlement reads settled_on and never looks at the status, so the
+// two disagree silently and in both directions. Two writers ask this now — the
+// Settle control and the edit form — which is reason enough for the rule to be
+// one function with a test under it rather than a line in each.
+
+test("a settled loan must say when", () => {
+  assert.match(String(settlementProblem("SETTLED", "")), /date it was settled/);
+  assert.match(String(settlementProblem("SETTLED", null)), /date it was settled/);
+  // Not a date the schedule can use is the same as no date: settlementMonth
+  // returns null for both, and the instalments would run on.
+  assert.ok(settlementProblem("SETTLED", "2026"));
+  assert.equal(settlementProblem("SETTLED", "2026-05-31"), null);
+});
+
+test("every other status is free of it", () => {
+  for (const s of ["PENDING", "ACTIVE", "REJECTED", "CANCELLED"] as const) {
+    assert.equal(settlementProblem(s, ""), null, s);
+  }
+});
+
+test("moving off settled takes the date and the note with it", () => {
+  // Left behind, the schedule stays cut short at a month the loan is no longer
+  // settled in — the badge says running and the sheet pays nothing.
+  assert.deepEqual(settlementFieldsFor("ACTIVE", "2026-05-31"),
+    { settled_on: null, settled_note: null });
+  assert.deepEqual(settlementFieldsFor("PENDING", "2026-05-31"),
+    { settled_on: null, settled_note: null });
+});
+
+test("and settling keeps the date, leaving any note alone", () => {
+  assert.deepEqual(settlementFieldsFor("SETTLED", "2026-05-31"), { settled_on: "2026-05-31" });
+});
+
+test("the schedule stops where the fields say, not where the status does", () => {
+  // The whole reason the two are written together.
+  const loan = {
+    principal: 10000, monthly_installment: 280, term_months: 36,
+    final_installment: 200, start_month: "2024-01-01",
+  };
+  const settled = scheduleToSettlement({ ...loan, ...settlementFieldsFor("SETTLED", "2025-01-31") });
+  const reopened = scheduleToSettlement({ ...loan, ...settlementFieldsFor("ACTIVE", "2025-01-31") });
+  assert.ok(settled.cancelled > 0, "settled stops early");
+  assert.equal(reopened.cancelled, 0, "reopened runs the full term again");
+  assert.equal(reopened.rows.length, 36);
 });

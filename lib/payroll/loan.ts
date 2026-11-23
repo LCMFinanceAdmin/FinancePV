@@ -4,7 +4,7 @@
 // final RM200 on the 36th — terms vary per individual. The final installment
 // clears whatever balance remains; if not specified it is computed.
 
-import type { EmployeeLoan } from "@/lib/types";
+import type { EmployeeLoan, LoanStatus } from "@/lib/types";
 
 export interface ScheduleRow {
   index: number;        // 1-based installment number
@@ -180,4 +180,35 @@ export function repaidBySchedule(
     due.reduce((s, r) => s + r.amount, 0),
     Number(loan.principal),
   ));
+}
+
+// ─── Status and its settlement date ─────────────────────────────────────────
+//
+// These two are one fact wearing two columns, and they are written from two
+// places now — the Settle control and the edit form. scheduleToSettlement
+// above reads settled_on and never looks at the status, so they disagree
+// silently and in both directions: a loan marked SETTLED with no date goes on
+// deducting while the badge says it is finished, and a loan moved off SETTLED
+// with the date left behind stays truncated while the badge says it is
+// running. Neither raises anything. The rule lives here so both writers ask
+// the same question.
+
+/** What to say to somebody choosing this status, or null if it is fine. */
+export function settlementProblem(status: LoanStatus, settledOn: string | null | undefined): string | null {
+  if (status !== "SETTLED") return null;
+  if (!settlementMonth(settledOn)) {
+    return "A settled loan needs the date it was settled on — that is what stops the schedule.";
+  }
+  return null;
+}
+
+/** The settlement columns that belong with a status, for an update payload. */
+export function settlementFieldsFor(
+  status: LoanStatus,
+  settledOn: string | null | undefined,
+): { settled_on: string | null; settled_note?: null } {
+  if (status === "SETTLED") return { settled_on: settledOn || null };
+  // Off settled: the date and the note go with it, or the schedule stays cut
+  // short at a month the loan is no longer settled in.
+  return { settled_on: null, settled_note: null };
 }
