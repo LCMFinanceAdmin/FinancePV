@@ -184,14 +184,21 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
   // the first hid a top-up whenever two rows shared a name.
   const grossSpans = grossSpansOf(grossParts ?? []);
   const startedIn = emp.date_commenced ? emp.date_commenced.slice(0, 4) : null;
-  /** The named figures of a span, zeroes left out — except basic, which is the loan-bearing one. */
-  const partsOf = (g: GrossBreakdown) => ([
+  /**
+   * Every part of a span, named, zeroes included — the same five in the same
+   * order as the columns on screen.
+   *
+   * Filtered to what was non-zero it read as a list of whatever happened to
+   * apply, and an increment of nothing looked the same as an increment nobody
+   * had thought about.
+   */
+  const partsOf = (g: GrossBreakdown): [string, number][] => [
     ["Basic", g.basic],
-    ["Experience", g.experience],
     [startedIn ? `Increment since ${startedIn}` : "Increment carried", g.carried],
     [`Increment ${year}`, g.current],
+    ["Experience", g.experience],
     ["Allowances", g.allowances],
-  ] as [string, number][]).filter(([, v], i) => i === 0 || v !== 0);
+  ];
 
   const cAmt = (mo: number, col: { label: string; type: "allowance" | "deduction" }) =>
     (customItemsByMonth[mo] ?? [])

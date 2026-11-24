@@ -40,7 +40,11 @@ import { PayItemModal } from "@/components/payroll/pay-item-modal";
  * month, sub-total, 13th month, annual — because a column added to one and
  * not the others puts every figure to its right under the wrong heading.
  */
-const GROSS_PARTS = ["basic", "experience", "carried", "current", "allowances"] as const;
+// Basic first, then what has been added to it over the years, then what was
+// added this year, then the two that were never part of it. Asked for in
+// that order, and it is the right one: an increment is an increment OF the
+// basic, so the three belong together before anything else is counted.
+const GROSS_PARTS = ["basic", "carried", "current", "experience", "allowances"] as const;
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
@@ -983,7 +987,6 @@ export default function PayrollEmployeePage() {
     // why is what a query about a payslip is nearly always about.
     { bg: SHEET.gross, group: "Gross", label: "Basic", rule: true,
       title: "Basic salary on the letter of appointment. A month only part worked carries its shortfall here, so the four columns add up to the Gross beside them." },
-    { bg: SHEET.gross, group: "Gross", label: "Experience" },
     // Two columns, not one. "Everything awarded since you started" and "what
     // you were awarded this year" are different questions, and the second is
     // the one somebody asks when their pay changes mid-year — it is withheld
@@ -995,6 +998,7 @@ export default function PayrollEmployeePage() {
         : "Increments accumulated before the current increment year." },
     { bg: SHEET.gross, group: "Increment", label: String(year),
       title: `The increment awarded for the ${year} increment year. Withheld until its effective month, so it is blank before then.` },
+    { bg: SHEET.gross, group: "Gross", label: "Experience" },
     { bg: SHEET.gross, group: "Gross", label: "Allowances",
       title: "Family and STM allowances agreed in the salary record. Custom allowances keyed against a month have their own column." },
     { bg: SHEET.gross, label: "Gross", bold: true },
@@ -1039,14 +1043,14 @@ export default function PayrollEmployeePage() {
     const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
     // Spelt out here too. A column called EE in a spreadsheet opened six
     // months later by somebody in another office is a column nobody can read.
-    const head = ["Month", "Basic", "Experience",
+    const head = ["Month", "Basic",
       `Increment since ${commencementYear ?? "commencement"}`, `Increment ${year}`,
-      "Allowances", "Gross", "PCB",
+      "Experience", "Allowances", "Gross", "PCB",
       "EPF Employee", "EPF Employer", "SOCSO Employee", "SKBBK", "SOCSO Employer",
       "EIS Employee", "EIS Employer", "EPL", ...customHead, "Net", "Total LCM"];
     const parts = (l: CalcLine, monthNum: number) => {
       const g = grossPartsFor(monthNum, l);
-      return [g?.basic ?? "", g?.experience ?? "", g?.carried ?? "", g?.current ?? "", g?.allowances ?? ""];
+      return GROSS_PARTS.map(part => g?.[part] ?? "");
     };
     const mkRow = (label: string, l: CalcLine, monthNum: number) =>
       [label, ...parts(l, monthNum), l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
@@ -2822,15 +2826,20 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
    */
   const grossSpans = grossSpansOf(grossParts);
   const startedIn = emp.date_commenced ? emp.date_commenced.slice(0, 4) : null;
-  const grossPartLabels = (g: GrossBreakdown) => ([
+  // All five, every time, zeroes included.
+  //
+  // They were filtered to what was non-zero, which turned the block into a
+  // list of whatever happened to apply — "Basic 2,100.00" on its own, and no
+  // way to tell an increment of nothing from an increment nobody had thought
+  // about. Named at zero it is a statement: this is what the gross is made of
+  // and this is what each part came to.
+  const grossPartLabels = (g: GrossBreakdown): [string, number][] => [
     ["Basic", g.basic],
-    ["Experience", g.experience],
     [startedIn ? `Increment since ${startedIn}` : "Increment carried", g.carried],
     [`Increment ${year}`, g.current],
+    ["Experience", g.experience],
     ["Allowances", g.allowances],
-    // Basic is always named; a line that began "Experience 180" would read as
-    // though there were no salary under it.
-  ] as [string, number][]).filter(([, v], i) => i === 0 || v !== 0);
+  ];
 
   function handlePrint() { window.print(); }
 
