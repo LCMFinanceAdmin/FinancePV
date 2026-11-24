@@ -496,6 +496,36 @@ export default function PayrollEmployeePage() {
     load();
   }
 
+  /**
+   * The qualification the basic is set against, for the sheet's make-up block.
+   *
+   * LCM sets base salary by the qualification somebody holds, so this says
+   * where the Basic above it came from. It is read here rather than in the
+   * revision modal, which loads the same two tables for its own purposes —
+   * the sheet can be opened without ever touching that form.
+   *
+   * Both tables are empty in production as this is written, and no employee
+   * carries a code, so for now this resolves to null for everybody and the
+   * sheet says so rather than leaving the line out.
+   *
+   * Up here with the other hooks, above the two early returns for loading
+   * and for an employee that does not exist. Read below them it would be a
+   * hook called on some renders and not others, which is not a lint
+   * preference — React matches hooks to their state by call order, and the
+   * render after the loading one would hand this state to somebody else.
+   */
+  const [rungs, setRungs] = useState<QualificationRung[]>([]);
+  const [scalePoints, setScalePoints] = useState<SalaryPoint[]>([]);
+  useEffect(() => {
+    (async () => {
+      const [{ data: q }, { data: p }] = await Promise.all([
+        supabase.from("qualifications").select("code, label, rank").order("rank"),
+        supabase.from("qualification_salary_points").select("qualification_code, base_salary, effective_from"),
+      ]);
+      setRungs((q ?? []) as QualificationRung[]);
+      setScalePoints((p ?? []) as SalaryPoint[]);
+    })();
+  }, [supabase]);
   if (loading) return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Loading…</div>;
   if (!emp) return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-stone-400 text-sm">Employee not found.</div>;
 
@@ -957,30 +987,6 @@ export default function PayrollEmployeePage() {
     };
   };
 
-  /**
-   * The qualification the basic is set against, for the sheet's make-up block.
-   *
-   * LCM sets base salary by the qualification somebody holds, so this says
-   * where the Basic above it came from. It is read here rather than in the
-   * revision modal, which loads the same two tables for its own purposes —
-   * the sheet can be opened without ever touching that form.
-   *
-   * Both tables are empty in production as this is written, and no employee
-   * carries a code, so for now this resolves to null for everybody and the
-   * sheet says so rather than leaving the line out.
-   */
-  const [rungs, setRungs] = useState<QualificationRung[]>([]);
-  const [scalePoints, setScalePoints] = useState<SalaryPoint[]>([]);
-  useEffect(() => {
-    (async () => {
-      const [{ data: q }, { data: p }] = await Promise.all([
-        supabase.from("qualifications").select("code, label, rank").order("rank"),
-        supabase.from("qualification_salary_points").select("qualification_code, base_salary, effective_from"),
-      ]);
-      setRungs((q ?? []) as QualificationRung[]);
-      setScalePoints((p ?? []) as SalaryPoint[]);
-    })();
-  }, [supabase]);
   /** The code on the salary in force, falling back to the one on the person. */
   const qualificationCode = current?.qualification_code ?? emp?.qualification_code ?? null;
   const qualificationLabel = qualificationCode
