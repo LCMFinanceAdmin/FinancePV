@@ -274,6 +274,17 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
    * every statutory figure with them.
    */
   const [newItemInGross, setNewItemInGross] = useState(false);
+  /**
+   * The item being corrected, if any, and the two fields worth correcting.
+   *
+   * A custom item could be added and deleted and nothing else, so a figure
+   * typed wrong — or one that should have been marked as part of the gross —
+   * meant deleting it and keying it again. On a recurring item that is the
+   * whole of its history gone to fix a digit.
+   */
+  const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editItemAmount, setEditItemAmount] = useState("");
+  const [editItemInGross, setEditItemInGross] = useState(false);
   const [newItemNoEnd, setNewItemNoEnd] = useState(false);
   const [newItemUntilMonth, setNewItemUntilMonth] = useState(12);
   const [newItemUntilYear, setNewItemUntilYear] = useState<number | "">(now.getFullYear());
@@ -328,6 +339,27 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
     if (e) { setItemError(e.message); return; }
     setNewItemLabel(""); setNewItemAmount(""); setNewItemRecurring(false);
     setNewItemInGross(false); setNewItemNoEnd(false); setAddingItem(false);
+    loadCustomItems();
+  }
+
+  function startEditingItem(item: PayrollEmployeeCustomItem) {
+    setEditingItem(item.id);
+    setEditItemAmount(String(Number(item.amount)));
+    setEditItemInGross(!!item.in_gross);
+    setItemError("");
+  }
+
+  async function saveCustomItem(itemId: string) {
+    const amount = parseFloat(editItemAmount);
+    if (isNaN(amount) || amount <= 0) { setItemError("Enter a valid positive amount."); return; }
+    setItemError("");
+    // supabase-js returns a refusal rather than throwing one, so a policy that
+    // said no would leave the figure changed on screen and unchanged in the
+    // table — back to the old one on the next load, having looked saved.
+    const { error } = await supabase.from("payroll_employee_custom_items")
+      .update({ amount, in_gross: editItemInGross }).eq("id", itemId);
+    if (error) { setItemError(error.message); return; }
+    setEditingItem(null);
     loadCustomItems();
   }
 
@@ -621,11 +653,22 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
     if (!isEdit || !latestSalarySnapshot) return null;
     const keys = ["base_salary", "increment_carried", "increment_current",
       "experience_bonus", "family_allowance", "stm_allowance"] as const;
-    const now = [baseSalary, incrementCarried, incrementCurrent, experienceBonus, familyAllowance, stm]
+    const fromRow = [baseSalary, incrementCarried, incrementCurrent, experienceBonus, familyAllowance, stm]
       .reduce((t, v) => t + (parseFloat(v) || 0), 0);
+    // The custom items that are part of the gross count towards it, because
+    // they ARE it — an allowance up, a deduction down, exactly as calcLine
+    // reads them. Without this the panel compared a whole imported wage
+    // against the salary row alone and called a reduction on money that had
+    // simply moved into an item: Tan Ee Yan's 7,310 reads as 5,990 and a loss
+    // of 1,320, which is the 870 salary difference and the 450 COLA sitting
+    // in the list below, both marked as part of the gross.
+    const inGross = empCustomItems
+      .filter(i => i.in_gross)
+      .reduce((t, i) => t + (i.type === "allowance" ? Number(i.amount) : -Number(i.amount)), 0);
+    const now = Math.round((fromRow + inGross) * 100) / 100;
     const was = keys.reduce((t, k) => t + Number(latestSalarySnapshot[k] ?? 0), 0);
     const change = Math.round((now - was) * 100) / 100;
-    return { was, now, change, changed: Math.abs(change) > 0.005 };
+    return { was, now, change, changed: Math.abs(change) > 0.005, fromRow, inGross };
   })();
 
   const incrementCycle = (() => {
@@ -1181,7 +1224,16 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                         : "bg-green-50 text-green-900 ring-1 ring-inset ring-green-200"}`}>
                     {!salaryDelta.changed ? (
                       <>Gross <span className="font-mono font-semibold">{formatCurrency(salaryDelta.now)}</span>{" "}
-                        a month — unchanged, so no revision is written.</>
+                        a month — unchanged, so no revision is written.
+                        {Math.abs(salaryDelta.inGross) > 0.005 && (
+                          <span className="mt-0.5 block">
+                            {formatCurrency(salaryDelta.fromRow)} on the salary row
+                            {salaryDelta.inGross > 0 ? " plus " : " less "}
+                            {formatCurrency(Math.abs(salaryDelta.inGross))} of custom items marked as
+                            part of the gross.
+                          </span>
+                        )}
+                      </>
                     ) : (
                       <>
                         <span className="font-semibold">
@@ -1194,6 +1246,14 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                             parts, they have to add back to {formatCurrency(salaryDelta.was)} — check
                             the components above before saving.
                           </>
+                        )}
+                        {Math.abs(salaryDelta.inGross) > 0.005 && (
+                          <span className="mt-0.5 block font-normal">
+                            {formatCurrency(salaryDelta.fromRow)} on the salary row
+                            {salaryDelta.inGross > 0 ? " plus " : " less "}
+                            {formatCurrency(Math.abs(salaryDelta.inGross))} of custom items marked as
+                            part of the gross.
+                          </span>
                         )}
                         <span className="mt-0.5 block font-normal">
                           Effective <span className="font-semibold">{fmtLongDate(revisionFrom)}</span>.
@@ -1287,6 +1347,13 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                             in gross
                           </span>
                         )}
+                        {editingItem === item.id && (
+                          <label className="mt-1 flex items-center gap-1.5 cursor-pointer text-[11px] text-stone-500 select-none">
+                            <input type="checkbox" checked={editItemInGross}
+                              onChange={e => setEditItemInGross(e.target.checked)} className="rounded" />
+                            Part of the gross — EPF, SOCSO, EIS and PCB are worked out on it
+                          </label>
+                        )}
                         {item.is_recurring && (
                           <div className="text-[10px] text-sky-600 mt-0.5">
                             {item.recur_until_year
@@ -1295,9 +1362,33 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                           </div>
                         )}
                       </div>
-                      <span className="text-sm font-mono font-semibold text-stone-700 shrink-0">RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</span>
-                      <button type="button" onClick={() => deleteCustomItem(item.id)}
-                        className="text-stone-300 hover:text-red-400 transition-colors mt-0.5 shrink-0"><Trash2 size={13} /></button>
+                      {editingItem === item.id ? (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <input type="number" value={editItemAmount} autoFocus
+                            onChange={e => setEditItemAmount(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") { e.preventDefault(); saveCustomItem(item.id); }
+                              if (e.key === "Escape") setEditingItem(null);
+                            }}
+                            className="w-24 rounded border-2 border-stone-800 px-2 py-1 text-right text-sm font-mono outline-none focus:border-[#2f5b9c]" />
+                          <button type="button" onClick={() => saveCustomItem(item.id)}
+                            className="rounded bg-[#4a6da7] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#3d5c8f]">
+                            Save
+                          </button>
+                          <button type="button" onClick={() => setEditingItem(null)}
+                            className="text-[11px] text-stone-400 hover:text-stone-600">Cancel</button>
+                        </div>
+                      ) : (
+                        <>
+                          <button type="button" onClick={() => startEditingItem(item)}
+                            title="Change the amount, or whether it is part of the gross"
+                            className="text-sm font-mono font-semibold text-stone-700 shrink-0 rounded px-1 hover:bg-white hover:text-[#2f5b9c] transition-colors">
+                            RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}
+                          </button>
+                          <button type="button" onClick={() => deleteCustomItem(item.id)}
+                            className="text-stone-300 hover:text-red-400 transition-colors mt-0.5 shrink-0"><Trash2 size={13} /></button>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
