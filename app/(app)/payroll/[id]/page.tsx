@@ -759,7 +759,9 @@ export default function PayrollEmployeePage() {
       eplDeduction: eplForMonth(m),
       is13thMonth: false,
       rates,
-      customItems: (customItemsByMonth[m] ?? []).map(c => ({ label: c.label, type: c.type, amount: Number(c.amount) })),
+      customItems: (customItemsByMonth[m] ?? []).map(c => ({
+        label: c.label, type: c.type, amount: Number(c.amount), inGross: !!c.in_gross,
+      })),
       adjustments: adj,
     });
   };
@@ -912,14 +914,17 @@ export default function PayrollEmployeePage() {
     allLines.reduce((s, l, i) => s + pick(l, i < 12 ? i + 1 : 13), 0);
 
   // Unique custom item columns across the year, in first-appearance order
-  const customCols: { label: string; type: "allowance" | "deduction" }[] = [];
+  const customCols: { label: string; type: "allowance" | "deduction"; inGross: boolean }[] = [];
   const _customSeen = new Set<string>();
   for (let _m = 1; _m <= 13; _m++) {
     for (const _ci of customItemsByMonth[_m] ?? []) {
       // Keyed by name AND direction, as the run page already does. Keyed by name
       // alone, an allowance and a deduction sharing one collapsed into a column.
       const _k = `${_ci.label}|${_ci.type}`;
-      if (!_customSeen.has(_k)) { _customSeen.add(_k); customCols.push({ label: _ci.label, type: _ci.type }); }
+      if (!_customSeen.has(_k)) {
+        _customSeen.add(_k);
+        customCols.push({ label: _ci.label, type: _ci.type, inGross: !!_ci.in_gross });
+      }
     }
   }
 
@@ -1050,10 +1055,20 @@ export default function PayrollEmployeePage() {
     { bg: SHEET.deduct, label: "EPL", rule: true },
     { bg: SHEET.deduct, group: "Unpaid", label: "days",
       title: "Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS." },
+    // An in-gross item is already counted in the Gross column to the left, so
+    // the heading says so. Without it the sheet invites the one mistake it can
+    // cause: adding the column to the gross by hand and getting a figure the
+    // employee was never paid.
     ...customCols.map(col => ({
-      bg: col.type === "allowance" ? SHEET.allow : SHEET.deduct,
-      group: col.type === "allowance" ? "+ allowance" : "− deduction",
-      label: col.label, title: col.label, rule: true, width: "max-w-[90px]",
+      bg: col.inGross ? SHEET.gross : col.type === "allowance" ? SHEET.allow : SHEET.deduct,
+      group: col.inGross
+        ? (col.type === "allowance" ? "in gross +" : "in gross −")
+        : (col.type === "allowance" ? "+ allowance" : "− deduction"),
+      label: col.label,
+      title: col.inGross
+        ? `${col.label} — part of the gross. EPF, SOCSO, EIS and PCB are worked out on it, and it is already counted in the Gross column.`
+        : `${col.label} — outside the gross, so it carries no EPF, SOCSO, EIS or PCB.`,
+      rule: true, width: "max-w-[90px]",
     })),
     { bg: SHEET.net, label: "Net", rule: true, bold: true },
     { bg: SHEET.lcm, label: "Total LCM", rule: true, bold: true },
@@ -1076,7 +1091,8 @@ export default function PayrollEmployeePage() {
     + `{border-left:2px solid ${SHEET.month}}`;
 
   function exportCsv() {
-    const customHead = customCols.map(c => `${c.label} (${c.type === "allowance" ? "+" : "-"})`);
+    const customHead = customCols.map(c =>
+      `${c.label} (${c.type === "allowance" ? "+" : "-"}${c.inGross ? ", in gross" : ""})`);
     // Spelt out here too. A column called EE in a spreadsheet opened six
     // months later by somebody in another office is a column nobody can read.
     const head = ["Month", "Basic",

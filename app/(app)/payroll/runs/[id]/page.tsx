@@ -292,7 +292,9 @@ export default function PayrollRunDetailPage() {
           daysInMonth: new Date(run.year, run.month, 0).getDate(),
         },
         is13thMonth: is13th, rates,
-        customItems: empCustomItems[e.id] ?? [],
+        // in_gross as the calculator spells it: an item that is part of the
+        // salary moves the gross before any contribution is worked out.
+        customItems: (empCustomItems[e.id] ?? []).map(c => ({ ...c, inGross: !!c.in_gross })),
         adjustments: empAdjustments[e.id] ?? [],
       });
       return { emp: e, line };

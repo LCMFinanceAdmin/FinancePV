@@ -264,6 +264,16 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   const [newItemType, setNewItemType] = useState<"allowance" | "deduction">("allowance");
   const [newItemAmount, setNewItemAmount] = useState("");
   const [newItemRecurring, setNewItemRecurring] = useState(false);
+  /**
+   * Is this money salary, or money alongside the salary?
+   *
+   * It decides whether EPF, SOCSO, EIS and PCB are worked out on it. Off by
+   * default, which is what these were built for: COLA sits outside the salary
+   * and is deliberately outside the statutory schemes with it. On is back
+   * pay, a salary difference, arrears — wages that arrived late and carry
+   * every statutory figure with them.
+   */
+  const [newItemInGross, setNewItemInGross] = useState(false);
   const [newItemNoEnd, setNewItemNoEnd] = useState(false);
   const [newItemUntilMonth, setNewItemUntilMonth] = useState(12);
   const [newItemUntilYear, setNewItemUntilYear] = useState<number | "">(now.getFullYear());
@@ -309,13 +319,15 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
     const { error: e } = await supabase.from("payroll_employee_custom_items").insert({
       employee_id: existing!.id, year: itemYear, month: itemMonth,
       label: newItemLabel.trim(), type: newItemType, amount,
+      in_gross: newItemInGross,
       is_recurring: newItemRecurring,
       recur_until_year: hasEnd ? Number(newItemUntilYear) : null,
       recur_until_month: hasEnd ? newItemUntilMonth : null,
       created_by: session?.user?.email ?? "",
     });
     if (e) { setItemError(e.message); return; }
-    setNewItemLabel(""); setNewItemAmount(""); setNewItemRecurring(false); setNewItemNoEnd(false); setAddingItem(false);
+    setNewItemLabel(""); setNewItemAmount(""); setNewItemRecurring(false);
+    setNewItemInGross(false); setNewItemNoEnd(false); setAddingItem(false);
     loadCustomItems();
   }
 
@@ -1265,6 +1277,16 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                       </span>
                       <div className="flex-1 min-w-0">
                         <span className="text-sm text-stone-700">{item.label}</span>
+                        {/* Which side of the statutory line this money sits
+                            on. Said on the item rather than only on the form
+                            that made it, because it is not visible in the
+                            figure and it decides what three boards are owed. */}
+                        {item.in_gross && (
+                          <span className="ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-[#2f5b9c]/10 text-[#2f5b9c] align-middle"
+                            title="Part of the gross — EPF, SOCSO, EIS and PCB are worked out on it">
+                            in gross
+                          </span>
+                        )}
                         {item.is_recurring && (
                           <div className="text-[10px] text-sky-600 mt-0.5">
                             {item.recur_until_year
@@ -1306,6 +1328,23 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                       placeholder="Amount (RM)"
                       className="border-2 border-stone-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c] w-36" />
                   </div>
+                  {/* Salary, or money alongside the salary. The one choice
+                      here that moves what three statutory boards are owed. */}
+                  <label className="flex items-start gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
+                    <input type="checkbox" checked={newItemInGross}
+                      onChange={e => setNewItemInGross(e.target.checked)} className="mt-0.5 rounded" />
+                    <span>
+                      Part of the gross
+                      <span className="block text-[11px] text-stone-400">
+                        {newItemInGross
+                          ? newItemType === "allowance"
+                            ? "Added to the gross before EPF, SOCSO, EIS and PCB are worked out — back pay, a salary difference, arrears."
+                            : "Taken off the gross before EPF, SOCSO, EIS and PCB are worked out — less salary, not a deduction from take-home."
+                          : "Leave off for money outside the salary, such as COLA, which carries no EPF, SOCSO, EIS or PCB."}
+                      </span>
+                    </span>
+                  </label>
+
                   {/* Recurring toggle */}
                   <label className="flex items-center gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
                     <input type="checkbox" checked={newItemRecurring} onChange={e => setNewItemRecurring(e.target.checked)} className="rounded" />

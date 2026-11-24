@@ -135,7 +135,7 @@ export interface PayslipPDFProps {
   /** Withheld for PTPTN and remitted to them. */
   ptptnDeduction?: number;
   net: number;
-  customItems: { label: string; type: "allowance" | "deduction"; amount: number }[];
+  customItems: { label: string; type: "allowance" | "deduction"; amount: number; inGross?: boolean }[];
   /**
    * Corrections carried by this month.
    *
@@ -183,6 +183,17 @@ export function PayslipPDF({
   } else {
     earns.push({ label: "Basic Salary", amount: gross });
   }
+  // A custom item marked as part of the gross is salary — back pay, a salary
+  // difference — so it is listed here, among the things that add up to GROSS
+  // PAY, and not under ALLOWANCES below. Listed below it would appear to be
+  // paid on top of a gross it is already inside, which reads to the person
+  // holding the payslip as being paid it twice.
+  for (const i of customItems.filter(i => i.inGross)) {
+    earns.push({
+      label: i.label,
+      amount: i.type === "allowance" ? Number(i.amount) : -Number(i.amount),
+    });
+  }
 
   // Allowances sit outside the gross, so they sit outside the earnings list too.
   //
@@ -192,7 +203,7 @@ export function PayslipPDF({
   // them under EARNING therefore made the items above GROSS PAY add up to more
   // than GROSS PAY, and left gross minus deductions short of net by the same
   // amount. Below the gross line they are honest on both counts.
-  const allowances = customItems.filter(i => i.type === "allowance");
+  const allowances = customItems.filter(i => i.type === "allowance" && !i.inGross);
   const totalAllowances = allowances.reduce((t, i) => t + i.amount, 0);
 
   const netAdjustments = adjustments.filter(a => a.category === "NET");
@@ -219,7 +230,11 @@ export function PayslipPDF({
     // Named in full: the person reading this is the borrower, and "PTPTN" is
     // what their own statement from PTPTN will call it.
     ...(ptptnDeduction > 0 ? [{ label: "PTPTN", amount: ptptnDeduction }] : []),
-    ...customItems.filter(i => i.type === "deduction").map(i => ({ label: i.label, amount: i.amount })),
+    // Only the ones outside the gross. An in-gross deduction has already come
+    // off the gross above and is listed there; taken off here as well it would
+    // be deducted twice and the net would not match what was paid.
+    ...customItems.filter(i => i.type === "deduction" && !i.inGross)
+      .map(i => ({ label: i.label, amount: i.amount })),
     // A net-only correction belongs to no scheme, so it has no figure of its
     // own to sit inside. It goes here with its sign flipped — paying somebody
     // an extra 100 is a deduction of −100 — which keeps the one piece of
@@ -229,7 +244,7 @@ export function PayslipPDF({
 
   const totalDeductions = epfEe + socsoEe + skbbk + eisEe + pcbVal + eplDeduction + ptptnDeduction +
     (unpaidLeave?.amount ?? 0) +
-    customItems.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0)
+    customItems.filter(i => i.type === "deduction" && !i.inGross).reduce((s, i) => s + i.amount, 0)
     - netAdjustments.reduce((s, a) => s + Number(a.amount), 0);
 
   const maxRows = Math.max(earns.length, deds.length);

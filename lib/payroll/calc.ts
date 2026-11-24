@@ -242,7 +242,18 @@ export interface CalcInput {
    */
   month?: number;
   rates?: RateConfig;          // editable statutory config; defaults to current rates
-  customItems?: Array<{ label?: string; type: "allowance" | "deduction"; amount: number }>;
+  /**
+   * Money on top of, or off, the salary — one column each on the sheet.
+   *
+   * `inGross` decides whether it is salary or not, and that is the whole of
+   * the difference. Left false (the default, and what every item keyed before
+   * migration 280 means) it is applied after the statutory formulas: COLA is
+   * the case these were built for, and COLA is deliberately outside EPF,
+   * SOCSO and PCB. Set true it moves the gross BEFORE the contributions are
+   * worked out, so every statutory figure follows it — which is what back
+   * pay, a salary difference or an arrears payment actually is.
+   */
+  customItems?: Array<{ label?: string; type: "allowance" | "deduction"; amount: number; inGross?: boolean }>;
   /**
    * Corrections landing in this month.
    *
@@ -290,7 +301,10 @@ export interface CalcLine {
   totalLcmPayment: number;     // gross + employer contributions + custom allowances
   customAllowances: number;
   customDeductions: number;
-  customItems: Array<{ label: string; type: "allowance" | "deduction"; amount: number }>;
+  /** Every item, with the flag, so a sheet can say which are already in the gross. */
+  customItems: Array<{ label: string; type: "allowance" | "deduction"; amount: number; inGross: boolean }>;
+  /** What the in-gross items moved the gross by: allowances up, deductions down. */
+  customInGross: number;
   /** What was applied, kept so a payslip can itemise it rather than just differ. */
   adjustments: CalcAdjustment[];
   /** The net-only adjustment, separated because it belongs to no scheme. */
@@ -789,7 +803,23 @@ function epfContribution(gross: number, rate: number, threshold: number): number
 }
 
 export function calcLine(input: CalcInput): CalcLine {
-  const { gross, voluntaryEpf, manualPcb, eplDeduction, is13thMonth } = input;
+  const { voluntaryEpf, manualPcb, eplDeduction, is13thMonth } = input;
+
+  // ── Custom items that are part of the salary ──────────────────────────
+  //
+  // Folded into the gross here, at the top, before a single contribution is
+  // worked out — so EPF, SOCSO, EIS, SKBBK and the PCB the gross is declared
+  // for all follow them. A deduction marked this way comes off the gross for
+  // the same reason: it is less salary, not a payment out of take-home.
+  //
+  // They are then deliberately NOT added again below. That is the one error
+  // this could make which nobody would catch by looking: the sheet would show
+  // the right gross and the net would be out by exactly the item.
+  const customRaw = input.customItems ?? [];
+  const customInGross = round2(customRaw
+    .filter(i => i.inGross && i.amount > 0)
+    .reduce((t, i) => t + (i.type === "allowance" ? i.amount : -i.amount), 0));
+  const gross = round2(Number(input.gross) + customInGross);
   const ptptn = Number(input.ptptnDeduction) || 0;
   const rates = input.rates ?? DEFAULT_RATES;
 
@@ -939,9 +969,11 @@ export function calcLine(input: CalcInput): CalcLine {
     epfAdj.er + eisAdj.er + socsoAdj.er,
   );
 
-  const customRaw = input.customItems ?? [];
-  const customAllowances = round2(customRaw.filter(i => i.type === "allowance").reduce((s, i) => s + i.amount, 0));
-  const customDeductions = round2(customRaw.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0));
+  // Only the items that are NOT part of the gross. The in-gross ones have
+  // already moved it above, and adding them here as well would pay them twice.
+  const outside = customRaw.filter(i => !i.inGross);
+  const customAllowances = round2(outside.filter(i => i.type === "allowance").reduce((s, i) => s + i.amount, 0));
+  const customDeductions = round2(outside.filter(i => i.type === "deduction").reduce((s, i) => s + i.amount, 0));
 
   // ── Unpaid leave ──────────────────────────────────────────────────────
   // Taken off here, after the contributions rather than before them, so the
@@ -975,7 +1007,9 @@ export function calcLine(input: CalcInput): CalcLine {
     totalLcmPayment,
     customAllowances,
     customDeductions,
-    customItems: customRaw.filter(i => i.amount > 0).map(i => ({ label: i.label ?? "", type: i.type, amount: i.amount })),
+    customItems: customRaw.filter(i => i.amount > 0)
+      .map(i => ({ label: i.label ?? "", type: i.type, amount: i.amount, inGross: !!i.inGross })),
+    customInGross,
     adjustments,
     netAdjustment: adj.NET,
     hasAdjustments: adjustments.length > 0,

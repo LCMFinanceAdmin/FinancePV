@@ -112,7 +112,7 @@ const monthLines = Array.from({ length: 12 }, (_, i) => {
     unpaidLeave: { days: unpaidDays, daysInMonth: new Date(YEAR, month, 0).getDate() },
     is13thMonth: false, bands: BANDS,
     customItems: (customItemsByMonth[month] ?? []).map(i => ({
-      label: i.label, type: i.type, amount: Number(i.amount),
+      label: i.label, type: i.type, amount: Number(i.amount), inGross: !!i.in_gross,
     })),
   });
 });

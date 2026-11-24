@@ -994,3 +994,93 @@ test("a year with nobody employed in it has nothing to say", async () => {
   const { grossPartsAsAt } = await import("@/lib/payroll/calc");
   assert.deepEqual(await grossPartsAsAt([null, null]), []);
 });
+
+// ── A custom item that is part of the salary ─────────────────────────────
+//
+// These were built for money outside the salary — COLA, which is deliberately
+// not subject to EPF, SOCSO or PCB — so they were applied after the statutory
+// formulas. Back pay and a salary difference are not that: they are wages,
+// late, and they carry every statutory figure with them.
+//
+// The error worth guarding against is the quiet one. An item folded into the
+// gross and then added again afterwards gives a sheet with the right gross and
+// a net out by exactly the item, which looks like nothing.
+
+const BASE = {
+  gross: 3000, age: 35, month: 6, employmentType: "PERMANENT" as const,
+  isOrangAsli: false, voluntaryEpf: 0, manualPcb: 0,
+  eplDeduction: 0, is13thMonth: false,
+};
+
+test("an in-gross allowance raises the gross, and the contributions with it", () => {
+  const plain = calcLine({ ...BASE });
+  const withIt = calcLine({ ...BASE,
+    customItems: [{ label: "Salary difference", type: "allowance", amount: 870, inGross: true }] });
+
+  assert.equal(withIt.gross, 3870, "the item is part of the gross");
+  assert.ok(withIt.epf.ee > plain.epf.ee, "EPF follows it");
+  assert.ok(withIt.epf.er > plain.epf.er);
+  assert.ok(withIt.socso.ee >= plain.socso.ee, "SOCSO follows it");
+  assert.equal(withIt.customAllowances, 0, "not counted outside the gross as well");
+  assert.equal(withIt.customInGross, 870);
+});
+
+test("and it is not paid twice", () => {
+  // The whole of the risk. Net must be the net OF the raised gross — not that
+  // plus the item again.
+  const asSalary = calcLine({ ...BASE, gross: 3870 });
+  const viaItem = calcLine({ ...BASE,
+    customItems: [{ label: "Salary difference", type: "allowance", amount: 870, inGross: true }] });
+  assert.equal(viaItem.gross, asSalary.gross);
+  assert.equal(viaItem.net, asSalary.net, "identical to having been paid as salary all along");
+  assert.equal(viaItem.totalLcmPayment, asSalary.totalLcmPayment);
+  assert.deepEqual(viaItem.epf, asSalary.epf);
+  assert.deepEqual(viaItem.socso, asSalary.socso);
+  assert.deepEqual(viaItem.eis, asSalary.eis);
+});
+
+test("an in-gross deduction takes the gross down, and the contributions with it", () => {
+  const withIt = calcLine({ ...BASE,
+    customItems: [{ label: "Overpaid in error", type: "deduction", amount: 500, inGross: true }] });
+  const asSalary = calcLine({ ...BASE, gross: 2500 });
+  assert.equal(withIt.gross, 2500);
+  assert.equal(withIt.net, asSalary.net);
+  assert.deepEqual(withIt.epf, asSalary.epf);
+  assert.equal(withIt.customDeductions, 0, "not taken off take-home as well");
+});
+
+test("left alone, an item behaves exactly as it always did", () => {
+  // Every row keyed before migration 280 means this, so it is the one that
+  // must not move: COLA on top of take-home, and no statutory figure touched.
+  const plain = calcLine({ ...BASE });
+  const cola = calcLine({ ...BASE,
+    customItems: [{ label: "COLA", type: "allowance", amount: 400 }] });
+  assert.equal(cola.gross, plain.gross, "outside the gross");
+  assert.deepEqual(cola.epf, plain.epf, "and outside EPF");
+  assert.deepEqual(cola.socso, plain.socso);
+  assert.equal(cola.customAllowances, 400);
+  assert.equal(cola.customInGross, 0);
+  assert.equal(cola.net, round2(plain.net + 400));
+});
+
+test("the two kinds sit side by side without touching each other", () => {
+  const both = calcLine({ ...BASE, customItems: [
+    { label: "Salary difference", type: "allowance", amount: 870, inGross: true },
+    { label: "COLA", type: "allowance", amount: 400 },
+  ]});
+  const onlySalary = calcLine({ ...BASE, gross: 3870 });
+  assert.equal(both.gross, 3870, "COLA stays out of the gross");
+  assert.equal(both.customAllowances, 400, "and out of the in-gross total");
+  assert.equal(both.customInGross, 870);
+  assert.equal(both.net, round2(onlySalary.net + 400));
+  assert.deepEqual(both.epf, onlySalary.epf, "COLA moves no contribution");
+});
+
+test("every item is reported with its flag, so a sheet can say which is which", () => {
+  const line = calcLine({ ...BASE, customItems: [
+    { label: "Salary difference", type: "allowance", amount: 870, inGross: true },
+    { label: "COLA", type: "allowance", amount: 400 },
+  ]});
+  assert.deepEqual(line.customItems.map(i => [i.label, i.inGross]),
+    [["Salary difference", true], ["COLA", false]]);
+});

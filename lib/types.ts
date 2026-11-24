@@ -690,6 +690,23 @@ export interface CustomPayrollItem {
   label: string;
   type: "allowance" | "deduction";
   amount: number;
+  /**
+   * Part of the salary, and therefore of the gross — see migration 280.
+   *
+   * False, and absent on anything stored before that migration, means money
+   * outside the salary: COLA is the case these were built for, and it is
+   * deliberately not subject to EPF, SOCSO or PCB. True is back pay, a salary
+   * difference, an arrears payment — wages, late — which move the gross
+   * before any contribution is worked out.
+   *
+   * Two spellings, because this shape is read from two places. `in_gross` is
+   * the database column. `inGross` is what calcLine returns and what a
+   * finalised run stores in custom_items, so a payslip reprinted from a run
+   * reads that one. Both optional, and both absent means outside the gross —
+   * which is what every item recorded before 280 is.
+   */
+  in_gross?: boolean;
+  inGross?: boolean;
 }
 
 export interface PayrollEmployeeCustomItem {
@@ -703,6 +720,8 @@ export interface PayrollEmployeeCustomItem {
   is_recurring: boolean;
   recur_until_year: number | null;  // null = no end date
   recur_until_month: number | null; // 1-13
+  /** Part of the gross, and so subject to EPF, SOCSO, EIS and PCB — see 280. */
+  in_gross?: boolean;
   created_by: string | null;
   created_at: string;
 }
