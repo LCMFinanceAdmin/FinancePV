@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  AlertTriangle, CalendarClock, Church, HandCoins, Info, Percent, Plus, ShieldCheck,
+  AlertTriangle, CalendarClock, Church, HandCoins, Info, Pencil, Percent, Plus, ShieldCheck,
   Trash2, UserX, Wallet, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -1380,13 +1380,23 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                         </div>
                       ) : (
                         <>
+                          {/* The figure is clickable, and so is a pencil beside
+                              it. The figure alone was the whole of it, and it
+                              looks exactly like the text it sits in — a control
+                              nobody can see is a control nobody has. */}
                           <button type="button" onClick={() => startEditingItem(item)}
                             title="Change the amount, or whether it is part of the gross"
                             className="text-sm font-mono font-semibold text-stone-700 shrink-0 rounded px-1 hover:bg-white hover:text-[#2f5b9c] transition-colors">
                             RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}
                           </button>
+                          <button type="button" onClick={() => startEditingItem(item)}
+                            title="Edit this item"
+                            className="mt-0.5 shrink-0 rounded p-0.5 text-stone-400 transition-colors hover:bg-white hover:text-[#4a6da7]">
+                            <Pencil size={13} />
+                          </button>
                           <button type="button" onClick={() => deleteCustomItem(item.id)}
-                            className="text-stone-300 hover:text-red-400 transition-colors mt-0.5 shrink-0"><Trash2 size={13} /></button>
+                            title="Remove this item"
+                            className="mt-0.5 shrink-0 rounded p-0.5 text-stone-400 transition-colors hover:bg-white hover:text-red-500"><Trash2 size={13} /></button>
                         </>
                       )}
                     </div>
