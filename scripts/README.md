@@ -149,3 +149,39 @@ line and is the widest the block ever gets.
 
 Run all three. A second page is invisible from any measurement of the first,
 and the one that overflows is never the one in front of you.
+
+## `preview-row.ts` — can somebody actually see that control?
+
+```
+npm run preview:row
+```
+
+Renders one small piece of the app that lives behind a sign-in — the custom
+allowance/deduction row from the Edit Employee modal, resting and being
+edited — to an HTML file, and prints the path. Open it.
+
+It exists because the edit control on that row shipped as a button styled
+exactly like the text it sat in, so the feature was there and nobody could
+find it. It was asked for twice; the second time for something already built.
+Reading the class names would never have caught that. Looking at it did —
+twice, because the first fix was a pencil barely darker than the row behind
+it.
+
+There is nothing to measure here the way the printed statement has page
+counts and column positions. The question is only whether a control can be
+seen, and that is answered by eyes.
+
+### What it does check is itself
+
+The markup is a copy of the component's, so the standing trap is that the
+component moves on while this keeps showing the old thing and looking
+authoritative. Every class string it renders is looked for in
+`components/payroll/employee-modal.tsx`, and anything no longer there is
+named, with a non-zero exit. A harness that cannot tell you it is out of date
+is worse than no harness.
+
+`OUT_DIR` puts the file somewhere else — `OUT_DIR=public/icons` serves it
+from the dev server at `/icons/custom-item-row.html`, which is outside the
+sign-in because `proxy.ts` does not match that path. Useful for looking at it
+in a browser that cannot open local files. Delete it afterwards; it is not
+meant to live in the repository.

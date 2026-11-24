@@ -13,7 +13,8 @@
     "verify:flow": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/verify-flow.ts",
     "audit:over60": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/audit-over60.ts",
     "worksheet:increments": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/increment-worksheet.ts",
-    "preview:statement": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/helpers/register-tsx.mjs scripts/preview-statement.ts"
+    "preview:statement": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/helpers/register-tsx.mjs scripts/preview-statement.ts",
+    "preview:row": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/helpers/register-tsx.mjs scripts/preview-row.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",

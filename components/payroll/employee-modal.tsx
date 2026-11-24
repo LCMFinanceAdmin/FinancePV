@@ -283,8 +283,19 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
    * whole of its history gone to fix a digit.
    */
   const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editItemLabel, setEditItemLabel] = useState("");
   const [editItemAmount, setEditItemAmount] = useState("");
   const [editItemInGross, setEditItemInGross] = useState(false);
+  // The period: which month it starts in, whether it repeats, and where it
+  // stops. Editable for the same reason the amount is — a recurring item keyed
+  // from the wrong month was previously a delete and a re-key, which throws
+  // away the item's history to correct its start.
+  const [editItemMonth, setEditItemMonth] = useState(1);
+  const [editItemYear, setEditItemYear] = useState<number | "">(now.getFullYear());
+  const [editItemRecurring, setEditItemRecurring] = useState(false);
+  const [editItemNoEnd, setEditItemNoEnd] = useState(true);
+  const [editItemUntilMonth, setEditItemUntilMonth] = useState(12);
+  const [editItemUntilYear, setEditItemUntilYear] = useState<number | "">(now.getFullYear());
   const [newItemNoEnd, setNewItemNoEnd] = useState(false);
   const [newItemUntilMonth, setNewItemUntilMonth] = useState(12);
   const [newItemUntilYear, setNewItemUntilYear] = useState<number | "">(now.getFullYear());
@@ -344,20 +355,46 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
 
   function startEditingItem(item: PayrollEmployeeCustomItem) {
     setEditingItem(item.id);
+    setEditItemLabel(item.label);
     setEditItemAmount(String(Number(item.amount)));
     setEditItemInGross(!!item.in_gross);
+    setEditItemMonth(item.month);
+    setEditItemYear(item.year);
+    setEditItemRecurring(item.is_recurring);
+    setEditItemNoEnd(!item.recur_until_year);
+    setEditItemUntilMonth(item.recur_until_month ?? 12);
+    setEditItemUntilYear(item.recur_until_year ?? now.getFullYear());
     setItemError("");
   }
 
   async function saveCustomItem(itemId: string) {
     const amount = parseFloat(editItemAmount);
+    if (!editItemLabel.trim()) { setItemError("Give the item a description."); return; }
     if (isNaN(amount) || amount <= 0) { setItemError("Enter a valid positive amount."); return; }
+    if (editItemYear === "") { setItemError("Give the year it starts in."); return; }
+    const hasEnd = editItemRecurring && !editItemNoEnd && editItemUntilYear !== "";
+    // An item cannot stop before it starts. Without this the row simply never
+    // applies to any month and nothing says why.
+    if (hasEnd) {
+      const from = Number(editItemYear) * 100 + editItemMonth;
+      const to = Number(editItemUntilYear) * 100 + editItemUntilMonth;
+      if (to < from) { setItemError("It cannot end before it starts."); return; }
+    }
     setItemError("");
     // supabase-js returns a refusal rather than throwing one, so a policy that
     // said no would leave the figure changed on screen and unchanged in the
     // table — back to the old one on the next load, having looked saved.
     const { error } = await supabase.from("payroll_employee_custom_items")
-      .update({ amount, in_gross: editItemInGross }).eq("id", itemId);
+      .update({
+        label: editItemLabel.trim(),
+        amount,
+        in_gross: editItemInGross,
+        month: editItemMonth,
+        year: Number(editItemYear),
+        is_recurring: editItemRecurring,
+        recur_until_year: hasEnd ? Number(editItemUntilYear) : null,
+        recur_until_month: hasEnd ? editItemUntilMonth : null,
+      }).eq("id", itemId);
     if (error) { setItemError(error.message); return; }
     setEditingItem(null);
     loadCustomItems();
@@ -1331,61 +1368,124 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
               ) : (
                 <div className="space-y-1.5 mb-3">
                   {empCustomItems.map(item => (
-                    <div key={item.id} className="flex items-start gap-2 px-3 py-1.5 rounded-lg border border-stone-100 bg-stone-50">
-                      <span className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
-                        {item.type === "allowance" ? "+" : "−"}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm text-stone-700">{item.label}</span>
-                        {/* Which side of the statutory line this money sits
-                            on. Said on the item rather than only on the form
-                            that made it, because it is not visible in the
-                            figure and it decides what three boards are owed. */}
-                        {item.in_gross && (
-                          <span className="ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-[#2f5b9c]/10 text-[#2f5b9c] align-middle"
-                            title="Part of the gross — EPF, SOCSO, EIS and PCB are worked out on it">
-                            in gross
-                          </span>
-                        )}
-                        {editingItem === item.id && (
-                          <label className="mt-1 flex items-center gap-1.5 cursor-pointer text-[11px] text-stone-500 select-none">
+                    <div key={item.id} className={editingItem === item.id
+                      ? "rounded-lg border border-[#bcd3f0] bg-[#f6faff] px-3 py-2.5"
+                      : "flex items-start gap-2 px-3 py-1.5 rounded-lg border border-stone-100 bg-stone-50"}>
+                      {editingItem === item.id ? (
+                        /* Everything the item says, editable. It was the amount
+                           alone, in the corner the amount occupies, which left
+                           the description and the period as things only a
+                           delete and a re-key could change — and a re-key loses
+                           the item's history to correct its start month. */
+                        <div className="space-y-2">
+                          {itemError && <p className="text-[11px] text-red-600">{itemError}</p>}
+                          <div className="flex flex-wrap gap-2">
+                            <input value={editItemLabel} autoFocus
+                              onChange={e => setEditItemLabel(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") { e.preventDefault(); saveCustomItem(item.id); }
+                                if (e.key === "Escape") setEditingItem(null);
+                              }}
+                              placeholder="Description"
+                              className="min-w-[180px] flex-1 rounded-lg border-2 border-stone-800 px-2.5 py-1.5 text-sm outline-none focus:border-[#2f5b9c]" />
+                            <input type="number" value={editItemAmount}
+                              onChange={e => setEditItemAmount(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") { e.preventDefault(); saveCustomItem(item.id); }
+                                if (e.key === "Escape") setEditingItem(null);
+                              }}
+                              className="w-28 rounded-lg border-2 border-stone-800 px-2.5 py-1.5 text-right text-sm font-mono outline-none focus:border-[#2f5b9c]" />
+                          </div>
+
+                          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-stone-500 select-none">
                             <input type="checkbox" checked={editItemInGross}
                               onChange={e => setEditItemInGross(e.target.checked)} className="rounded" />
-                            Part of the gross — EPF, SOCSO, EIS and PCB are worked out on it
+                            Part of the gross &mdash; EPF, SOCSO, EIS and PCB are worked out on it
                           </label>
-                        )}
-                        {item.is_recurring && (
-                          <div className="text-[10px] text-sky-600 mt-0.5">
-                            {item.recur_until_year
-                              ? `↻ ${monthShortDir(item.month)} ${item.year} – ${monthShortDir(item.recur_until_month ?? 13)} ${item.recur_until_year}`
-                              : `↻ from ${monthShortDir(item.month)} ${item.year} · ongoing`}
+
+                          {/* The period: which month it starts in, whether it
+                              repeats, and where it stops. */}
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-stone-500">
+                            <span className="font-semibold text-stone-600">From</span>
+                            <select value={editItemMonth} onChange={e => setEditItemMonth(Number(e.target.value))}
+                              className="rounded-lg border-2 border-stone-800 bg-white px-2 py-1 text-[12px] outline-none focus:border-[#2f5b9c]">
+                              {MONTH_SHORT_DIR.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                            </select>
+                            <input type="number" value={editItemYear}
+                              onChange={e => setEditItemYear(e.target.value === "" ? "" : Number(e.target.value))}
+                              className="w-20 rounded-lg border-2 border-stone-800 px-2 py-1 text-[12px] outline-none focus:border-[#2f5b9c]" />
+                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                              <input type="checkbox" checked={editItemRecurring}
+                                onChange={e => setEditItemRecurring(e.target.checked)} className="rounded" />
+                              Repeats every month
+                            </label>
                           </div>
-                        )}
-                      </div>
-                      {editingItem === item.id ? (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <input type="number" value={editItemAmount} autoFocus
-                            onChange={e => setEditItemAmount(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") { e.preventDefault(); saveCustomItem(item.id); }
-                              if (e.key === "Escape") setEditingItem(null);
-                            }}
-                            className="w-24 rounded border-2 border-stone-800 px-2 py-1 text-right text-sm font-mono outline-none focus:border-[#2f5b9c]" />
-                          <button type="button" onClick={() => saveCustomItem(item.id)}
-                            className="rounded bg-[#4a6da7] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#3d5c8f]">
-                            Save
-                          </button>
-                          <button type="button" onClick={() => setEditingItem(null)}
-                            className="text-[11px] text-stone-400 hover:text-stone-600">Cancel</button>
+                          {editItemRecurring && (
+                            <div className="flex flex-wrap items-center gap-2 pl-4 text-[11px] text-stone-500">
+                              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                <input type="checkbox" checked={editItemNoEnd}
+                                  onChange={e => setEditItemNoEnd(e.target.checked)} className="rounded" />
+                                No end date
+                              </label>
+                              {!editItemNoEnd && (
+                                <>
+                                  <span className="font-semibold text-stone-600">until</span>
+                                  <select value={editItemUntilMonth} onChange={e => setEditItemUntilMonth(Number(e.target.value))}
+                                    className="rounded-lg border-2 border-stone-800 bg-white px-2 py-1 text-[12px] outline-none focus:border-[#2f5b9c]">
+                                    {MONTH_SHORT_DIR.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                                  </select>
+                                  <input type="number" value={editItemUntilYear}
+                                    onChange={e => setEditItemUntilYear(e.target.value === "" ? "" : Number(e.target.value))}
+                                    className="w-20 rounded-lg border-2 border-stone-800 px-2 py-1 text-[12px] outline-none focus:border-[#2f5b9c]" />
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <button type="button" onClick={() => saveCustomItem(item.id)}
+                              className="rounded-lg bg-[#4a6da7] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#3d5c8f]">
+                              Save
+                            </button>
+                            <button type="button" onClick={() => setEditingItem(null)}
+                              className="text-[11px] text-stone-400 hover:text-stone-600">Cancel</button>
+                          </div>
                         </div>
                       ) : (
                         <>
+                          <span className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${item.type === "allowance" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                            {item.type === "allowance" ? "+" : "\u2212"}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm text-stone-700">{item.label}</span>
+                            {/* Which side of the statutory line this money sits
+                                on. Said on the item rather than only on the form
+                                that made it, because it is not visible in the
+                                figure and it decides what three boards are owed. */}
+                            {item.in_gross && (
+                              <span className="ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-[#2f5b9c]/10 text-[#2f5b9c] align-middle"
+                                title="Part of the gross — EPF, SOCSO, EIS and PCB are worked out on it">
+                                in gross
+                              </span>
+                            )}
+                            {item.is_recurring ? (
+                              <div className="text-[10px] text-sky-600 mt-0.5">
+                                {item.recur_until_year
+                                  ? `\u21bb ${monthShortDir(item.month)} ${item.year} \u2013 ${monthShortDir(item.recur_until_month ?? 13)} ${item.recur_until_year}`
+                                  : `\u21bb from ${monthShortDir(item.month)} ${item.year} \u00b7 ongoing`}
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-stone-400 mt-0.5">
+                                {monthShortDir(item.month)} {item.year} &middot; one-off
+                              </div>
+                            )}
+                          </div>
                           {/* The figure is clickable, and so is a pencil beside
                               it. The figure alone was the whole of it, and it
                               looks exactly like the text it sits in — a control
                               nobody can see is a control nobody has. */}
                           <button type="button" onClick={() => startEditingItem(item)}
-                            title="Change the amount, or whether it is part of the gross"
+                            title="Change the description, amount, period, or whether it is part of the gross"
                             className="text-sm font-mono font-semibold text-stone-700 shrink-0 rounded px-1 hover:bg-white hover:text-[#2f5b9c] transition-colors">
                             RM {Number(item.amount).toLocaleString("en-MY", { minimumFractionDigits: 2 })}
                           </button>
