@@ -669,42 +669,54 @@ export function grossComponentsForMonth(
   return out;
 }
 
-/** A run of months whose gross is made up the same way. */
-export interface GrossSpan {
-  /** 1-based month numbers, inclusive. */
-  from: number;
-  to: number;
-  parts: GrossBreakdown;
+/** The five figures the gross is built from, in the order they are shown. */
+export type GrossPartKey = "basic" | "carried" | "current" | "experience" | "allowances";
+export const GROSS_PART_KEYS: readonly GrossPartKey[] =
+  ["basic", "carried", "current", "experience", "allowances"] as const;
+
+export interface GrossPartAsAt {
+  key: GrossPartKey;
+  /** What it stands at by the end of the year. */
+  value: number;
+  /**
+   * The month it reached that figure, 1-12, or null where it never moved.
+   *
+   * Null is the ordinary case and reads as "this is what it has been all
+   * year". A number is the month a revision or a new contract took effect,
+   * and it is the only thing on a one-line summary that can say so.
+   */
+  changedIn: number | null;
 }
 
 /**
- * The year's gross, as the spans it was actually paid in.
+ * The gross as it stands at the end of the year, and when each part got there.
  *
- * Twelve identical lines would be a worse answer than one, and a year with a
- * mid-year increment has exactly two spans — which is the whole of what
- * somebody is looking for when they ask why the figure moved. Consecutive
- * months whose parts match are run together; anything that moves starts a new
- * span, so a confirmation, an increment and a correction each show up as the
- * month they happened in.
+ * The make-up used to print a row per span of months, which is accurate and
+ * says the same five things over and over. This says them once, against the
+ * figures in force, and marks the ones that moved with the month they moved
+ * in — which is what somebody is asking when a revision or a new contract
+ * changed their pay part-way through.
  *
- * A month nobody was employed for breaks the run rather than joining it.
+ * Only the latest move is reported. A basic that went up in May and again in
+ * November is shown at its November figure, dated November; the step in May is
+ * in the table above, month by month, which is where a full history belongs.
  *
- * Here rather than in either sheet because both show this now — the one that
- * is printed from the browser and the one @react-pdf renders — and a grouping
- * rule kept in two places is two answers to "why did my pay change".
+ * Months nobody was employed for are skipped rather than counted as zero, so
+ * starting in March is not reported as a rise in March.
  */
-export function grossSpansOf(parts: (GrossBreakdown | null | undefined)[]): GrossSpan[] {
-  const key = (g: GrossBreakdown) =>
-    [g.basic, g.experience, g.carried, g.current, g.allowances].join("|");
-  const out: GrossSpan[] = [];
-  for (let m = 1; m <= parts.length; m++) {
-    const g = parts[m - 1];
-    if (!g || g.gross <= 0) continue;
-    const last = out[out.length - 1];
-    if (last && last.to === m - 1 && key(last.parts) === key(g)) last.to = m;
-    else out.push({ from: m, to: m, parts: g });
-  }
-  return out;
+export function grossPartsAsAt(parts: (GrossBreakdown | null | undefined)[]): GrossPartAsAt[] {
+  const live = parts
+    .map((g, i) => ({ month: i + 1, g }))
+    .filter((x): x is { month: number; g: GrossBreakdown } => !!x.g && x.g.gross > 0);
+  if (live.length === 0) return [];
+  return GROSS_PART_KEYS.map(key => {
+    const value = live[live.length - 1].g[key];
+    // Back through the year while the figure is unchanged. Where that reaches
+    // the first month they were employed, it never moved.
+    let i = live.length - 1;
+    while (i > 0 && live[i - 1].g[key] === value) i--;
+    return { key, value, changedIn: i === 0 ? null : live[i].month };
+  });
 }
 
 /** The gross in four figures, as the yearly sheet shows it. */

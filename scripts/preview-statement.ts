@@ -14,12 +14,10 @@
 //   npm run preview:statement -- --plain   salary and statutory only
 //   npm run preview:statement -- --many    a salary that moves every month
 //
-// --many is for the footer. The make-up block prints a line per span of
-// months whose gross is the same, so the ordinary statement shows one or two
-// and says nothing about what a crowded one does. This gives it ten, which is
-// the case that runs the statement onto a second page — the thing most likely
-// to break and the least likely to be noticed, since a second page is
-// invisible from any measurement of the first.
+// --many is for the footer. The make-up block names each part once and dates
+// the ones that moved, so what it has to get right is a salary that moved —
+// and the ordinary fixture moves once. This moves it every month, which puts
+// a date against every line and is the widest the block ever gets.
 //
 // It then reads its own output back and prints what the page actually
 // measures — the type sizes and the column positions — because those are the
@@ -60,7 +58,7 @@ const emp = {
 
 // Two salary rows, because one is the tidy case. She is on probation from
 // March and confirmed in June, which is what the header already claims — and
-// which gives the footer's make-up block two spans to print rather than one.
+// which gives the footer's make-up block something that moved to report.
 // A statement that only ever renders an unchanging salary proves nothing about
 // the block that exists to explain a salary changing.
 const onProbation = {
@@ -74,8 +72,8 @@ const confirmed = {
   effective_from: "2026-06-01",
 } as unknown as PayrollSalary;
 const salaryFor = (month: number): PayrollSalary =>
-  // --many: a rise every month, which is nobody's real payroll but is the
-  // shape of the worst one — ten spans under the table rather than two.
+  // --many: a rise every month, which is nobody's real payroll but puts a
+  // date against every line of the block underneath the table.
   many ? ({ ...confirmed, base_salary: 2800 + month * 25 } as unknown as PayrollSalary)
        : (month < 6 ? onProbation : confirmed);
 /** The row the sheet header quotes — the one in force at the end of the year. */

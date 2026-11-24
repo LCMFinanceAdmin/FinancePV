@@ -1,8 +1,8 @@
 "use client";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary, PayrollEmployeeCustomItem } from "@/lib/types";
-import { grossSpansOf } from "@/lib/payroll/calc";
-import type { CalcLine, GrossBreakdown } from "@/lib/payroll/calc";
+import { grossPartsAsAt } from "@/lib/payroll/calc";
+import type { CalcLine, GrossBreakdown, GrossPartKey } from "@/lib/payroll/calc";
 import { isProbationMonth } from "@/lib/payroll/probation";
 import { SHEET } from "@/lib/payroll/sheet-palette";
 
@@ -111,17 +111,22 @@ const s = StyleSheet.create({
   tdAnnEpl: { fontSize: 6, padding: "3 2", textAlign: "right", fontFamily: "Helvetica-Bold", color: W, backgroundColor: R800, borderRight: `0.5 solid ${DB}` },
   tdAnnG: { fontSize: 6, padding: "3 2", textAlign: "right", fontFamily: "Helvetica-Bold", color: W, backgroundColor: G800, borderRight: `0.5 solid ${DB}` },
   tdAnnRed: { fontSize: 6, padding: "3 2", textAlign: "right", fontFamily: "Helvetica-Bold", color: W, backgroundColor: R800, borderRight: `0.5 solid ${DB}` },
-  notes: { marginTop: 7, fontSize: 5.5, color: S500 },
+  notes: { flex: 1, marginTop: 5, borderTop: `0.5 solid ${S200}`, paddingTop: 3, fontSize: 5.5, color: S500 },
   nl: { marginBottom: 1.5 },
   // How the gross is arrived at. The table has no room for the five figures
   // the screen shows in columns, and this is the question asked about a
   // statement more than any other, so it is set out underneath instead.
-  mkBox: { marginTop: 5, borderTop: `0.5 solid ${S200}`, paddingTop: 3 },
+  footRow: { flexDirection: "row", gap: 18, alignItems: "flex-start" },
+  mkBox: { width: 300, marginTop: 5, borderTop: `0.5 solid ${S200}`, paddingTop: 3 },
   mkHd: { fontSize: 5, fontFamily: "Helvetica-Bold", color: S500, letterSpacing: 0.5, marginBottom: 1.5 },
-  mkRow: { flexDirection: "row", marginBottom: 1, alignItems: "baseline" },
-  mkWhen: { width: 48, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: S800 },
-  mkParts: { flex: 1, fontSize: 5.5, color: S500 },
-  mkSum: { width: 50, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: C_GROSS, textAlign: "right" },
+  mkRow: { flexDirection: "row", marginBottom: 1, alignItems: "baseline", maxWidth: 300 },
+  mkWhat: { flex: 1, fontSize: 5.5, color: S500 },
+  mkWhatB: { flex: 1, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: S800 },
+  mkSum: { width: 54, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: S800, textAlign: "right" },
+  mkSumB: { width: 54, fontSize: 5.5, fontFamily: "Helvetica-Bold", color: C_GROSS, textAlign: "right" },
+  // The month a revision took effect, in italics beside the figure.
+  mkWhen: { width: 54, fontSize: 5, fontFamily: "Helvetica-Oblique", color: S500, paddingLeft: 4 },
+  mkTotal: { borderTop: `0.5 solid ${S200}`, paddingTop: 1.5, marginTop: 1 },
   // Absolutely positioned, so it takes no part in the layout and cannot be
   // the thing that tips a statement onto the page it is there to number.
   pageNo: { position: "absolute", bottom: 10, right: 22, fontSize: 5.5, color: S500 },
@@ -171,9 +176,15 @@ export interface YearlySheetPDFProps {
    * Optional: a caller that does not pass it simply gets no breakdown.
    */
   grossParts?: (GrossBreakdown | null)[];
+  /**
+   * The qualification the basic is set against, and what the scale says it is
+   * worth in this year. Null where nothing has been recorded.
+   */
+  qualificationLabel?: string | null;
+  qualificationAmount?: number | null;
 }
 
-export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts }: YearlySheetPDFProps) {
+export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts, qualificationLabel, qualificationAmount }: YearlySheetPDFProps) {
   const customCols: { label: string; type: "allowance" | "deduction" }[] = [];
   const seen = new Set<string>();
   for (let m = 1; m <= 13; m++) for (const ci of customItemsByMonth[m] ?? []) {
@@ -182,24 +193,16 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
   }
   // Sums every matching row, matching the sheet and what calcLine adds. Taking
   // the first hid a top-up whenever two rows shared a name.
-  const grossSpans = grossSpansOf(grossParts ?? []);
+  const partsAsAt = grossPartsAsAt(grossParts ?? []);
+  const makeUpTotal = partsAsAt.reduce((t, p) => t + p.value, 0);
   const startedIn = emp.date_commenced ? emp.date_commenced.slice(0, 4) : null;
-  /**
-   * Every part of a span, named, zeroes included — the same five in the same
-   * order as the columns on screen.
-   *
-   * Filtered to what was non-zero it read as a list of whatever happened to
-   * apply, and an increment of nothing looked the same as an increment nobody
-   * had thought about.
-   */
-  const partsOf = (g: GrossBreakdown): [string, number][] => [
-    ["Basic", g.basic],
-    [startedIn ? `Increment since ${startedIn}` : "Increment carried", g.carried],
-    [`Increment ${year}`, g.current],
-    ["Experience", g.experience],
-    ["Allowances", g.allowances],
-  ];
-
+  const makeUpLabel = (key: GrossPartKey) => ({
+    basic: "Basic",
+    carried: startedIn ? `Increment accumulated (since ${startedIn})` : "Increment accumulated",
+    current: `Increment ${year}`,
+    experience: "Experience",
+    allowances: "Allowances",
+  })[key];
   const cAmt = (mo: number, col: { label: string; type: "allowance" | "deduction" }) =>
     (customItemsByMonth[mo] ?? [])
       .filter(i => i.label === col.label && i.type === col.type)
@@ -418,33 +421,63 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
           </View>
         </View>
 
-        {/* How the gross is made up */}
-        {grossSpans.length > 0 && (
-          // wrap={false}: a year with enough changes to push this onto a
-          // second page should move the whole block there, not leave two of
-          // its rows above the fold and three below. Twelve rows is the most
-          // it can ever hold — one per month — so it always fits on one page
-          // somewhere.
+        {/* The make-up and the notes, side by side.
+            
+            The make-up is a narrow list and the notes are a few short lines,
+            and stacked they cost the height of both on a page that has none
+            to spare — seven rows where there used to be two is what pushed
+            this onto a second sheet. Beside each other they cost the height
+            of the taller. */}
+        <View style={s.footRow}>
+        {/* How the gross is made up.
+            
+            One figure per part, as it stands at the end of the year, with the
+            month in brackets where a revision or a new contract moved it. It
+            printed a row per period before, which said the same five
+            things over and over; the month-by-month history is the table
+            above, which is where it belongs. */}
+        {partsAsAt.length > 0 && (
           <View style={s.mkBox} wrap={false}>
             <Text style={s.mkHd}>HOW THE GROSS IS MADE UP</Text>
-            {grossSpans.map(sp => (
-              <View key={`${sp.from}-${sp.to}`} style={s.mkRow}>
+            {partsAsAt.map(p => (
+              <View key={p.key} style={s.mkRow}>
+                <Text style={s.mkWhat}>{makeUpLabel(p.key)}</Text>
+                <Text style={s.mkSum}>{n(p.value)}</Text>
+                {/* Only where it moved: a date against a figure that has been
+                    the same all year is a revision nobody made. */}
                 <Text style={s.mkWhen}>
-                  {ML[sp.from - 1]}{sp.to !== sp.from ? `–${ML[sp.to - 1]}` : ""}
+                  {p.changedIn ? `(${ML[p.changedIn - 1]} ${year})` : ""}
                 </Text>
-                <Text style={s.mkParts}>
-                  {partsOf(sp.parts).map(([label, v]) => `${label} ${n(v)}`).join("  +  ")}
-                </Text>
-                <Text style={s.mkSum}>{n(sp.parts.gross)}</Text>
               </View>
             ))}
+            <View style={[s.mkRow, s.mkTotal]}>
+              <Text style={s.mkWhatB}>Gross</Text>
+              <Text style={s.mkSumB}>{n(makeUpTotal)}</Text>
+              <Text style={s.mkWhen}> </Text>
+            </View>
+            {/* The scale point the basic is set against. Not part of the sum,
+                which is why it sits under the total: LCM sets base salary by
+                the qualification held, so this says where the figure above
+                came from. */}
+            <View style={s.mkRow}>
+              <Text style={s.mkWhat}>
+                Qualification{qualificationLabel ? ` — ${qualificationLabel}` : ""}
+              </Text>
+              <Text style={s.mkSum}>
+                {qualificationAmount !== null && qualificationAmount !== undefined ? n(qualificationAmount) : ""}
+              </Text>
+              <Text style={s.mkWhen}>
+                {qualificationAmount === null || qualificationAmount === undefined
+                  ? "not recorded" : `(as at ${year})`}
+              </Text>
+            </View>
           </View>
         )}
 
         {/* Notes */}
-        {/* Whole or not at all, like the block above it. Split, the second page
-            opened on a single leftover line about green columns, which reads
-            like a printing fault rather than a footnote. */}
+        {/* Whole or not at all, like the block beside it. Split, the second
+            page opened on a single leftover line about green columns, which
+            reads like a printing fault rather than a footnote. */}
         <View style={s.notes} wrap={false}>
           <Text style={s.nl}>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Increment effective from {ML[effMonth-1]}.</Text>
           {emp.confirmed_on && monthLines.some((_,i)=>isProbationMonth(emp, year, i+1)) && (
@@ -457,6 +490,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
           {hasUnpaid && <Text style={[s.nl,{color:R700}]}>UNPAID: days taken without pay, at the month&rsquo;s gross over its calendar days. Taken off take-home after EPF, SOCSO and EIS, which stay on the full wage.</Text>}
           {customCols.filter(c=>c.type==="allowance").length>0 && <Text style={[s.nl,{color:G700}]}>Green columns: special allowances.</Text>}
           {customCols.filter(c=>c.type==="deduction").length>0 && <Text style={[s.nl,{color:R700}]}>Red columns: additional deductions.</Text>}
+        </View>
         </View>
 
         {/* Signatures */}

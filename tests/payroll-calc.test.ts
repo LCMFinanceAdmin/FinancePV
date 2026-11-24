@@ -934,59 +934,63 @@ test("the schedule stops where the fields say, not where the status does", () =>
   assert.equal(reopened.rows.length, 36);
 });
 
-// ── The spans the make-up block prints ───────────────────────────────────
+// ── The gross as it stands, and when each part got there ─────────────────
 //
-// Two sheets render this now — the one printed from the browser and the one
-// @react-pdf sends — so the grouping is one function. What it has to get
-// right is which months run together, because that is the sentence somebody
-// reads when they ask why their pay changed.
+// The make-up block says the five figures once, against what is in force, and
+// marks the ones that moved with the month they moved in. Getting "it never
+// moved" wrong in either direction is the whole risk: a date against a figure
+// that has been the same all year is a revision nobody made, and no date
+// against one that changed hides the thing the line exists to say.
 
-test("months that are made up the same way run together", async () => {
-  const { grossSpansOf } = await import("@/lib/payroll/calc");
-  const p = (basic: number) =>
-    ({ basic, experience: 180, carried: 0, current: 0, allowances: 120, gross: basic + 300 });
-  const spans = grossSpansOf([
-    p(2800), p(2800), p(2800), p(2800), p(2800),
-    p(3100), p(3100), p(3100), p(3100), p(3100), p(3100), p(3100),
+test("a part that never moved carries no date", async () => {
+  const { grossPartsAsAt } = await import("@/lib/payroll/calc");
+  const g = { basic: 3000, experience: 0, carried: 0, current: 0, allowances: 0, gross: 3000 };
+  const out = await grossPartsAsAt(Array.from({ length: 12 }, () => ({ ...g })));
+  assert.equal(out.find(p => p.key === "basic")?.value, 3000);
+  assert.equal(out.find(p => p.key === "basic")?.changedIn, null);
+});
+
+test("a part that moved is dated to the month it moved in", async () => {
+  const { grossPartsAsAt } = await import("@/lib/payroll/calc");
+  const at = (basic: number) =>
+    ({ basic, experience: 0, carried: 0, current: 0, allowances: 0, gross: basic });
+  // 2,100 to April, 3,450 from May.
+  const out = await grossPartsAsAt([
+    at(2100), at(2100), at(2100), at(2100),
+    at(3450), at(3450), at(3450), at(3450), at(3450), at(3450), at(3450), at(3450),
   ]);
-  assert.equal(spans.length, 2);
-  assert.deepEqual([spans[0].from, spans[0].to], [1, 5]);
-  assert.deepEqual([spans[1].from, spans[1].to], [6, 12]);
+  const basic = out.find(p => p.key === "basic")!;
+  assert.equal(basic.value, 3450);
+  assert.equal(basic.changedIn, 5);
 });
 
-test("an unchanging year is one span, not twelve", async () => {
-  const { grossSpansOf } = await import("@/lib/payroll/calc");
-  const p = { basic: 3100, experience: 180, carried: 0, current: 0, allowances: 120, gross: 3400 };
-  const spans = grossSpansOf(Array.from({ length: 12 }, () => ({ ...p })));
-  assert.equal(spans.length, 1);
-  assert.deepEqual([spans[0].from, spans[0].to], [1, 12]);
-});
-
-test("the same gross arrived at differently is still a change", async () => {
-  // A hundred off the basic and a hundred onto an allowance leaves the gross
-  // where it was. The sheet would show no movement; this block is the only
-  // thing that can say something happened, so it must not merge them.
-  const { grossSpansOf } = await import("@/lib/payroll/calc");
-  const spans = grossSpansOf([
-    { basic: 3100, experience: 180, carried: 0, current: 0, allowances: 120, gross: 3400 },
-    { basic: 3000, experience: 180, carried: 0, current: 0, allowances: 220, gross: 3400 },
+test("only the latest move is reported", async () => {
+  // Up in May and again in November. The sheet above carries the full history;
+  // a one-line summary that tried to would stop being one line.
+  const { grossPartsAsAt } = await import("@/lib/payroll/calc");
+  const at = (basic: number) =>
+    ({ basic, experience: 0, carried: 0, current: 0, allowances: 0, gross: basic });
+  const out = await grossPartsAsAt([
+    at(2100), at(2100), at(2100), at(2100),
+    at(3450), at(3450), at(3450), at(3450), at(3450), at(3450),
+    at(3000), at(3000),
   ]);
-  assert.equal(spans.length, 2);
+  const basic = out.find(p => p.key === "basic")!;
+  assert.equal(basic.value, 3000);
+  assert.equal(basic.changedIn, 11);
 });
 
-test("months nobody was employed for break the run rather than joining it", async () => {
-  const { grossSpansOf } = await import("@/lib/payroll/calc");
-  const p = { basic: 3100, experience: 0, carried: 0, current: 0, allowances: 0, gross: 3100 };
-  // Employed Jan–Feb, gone, back in May. Two spans, not one running through
-  // the months they were not here for.
-  const spans = grossSpansOf([p, p, null, null, p]);
-  assert.equal(spans.length, 2);
-  assert.deepEqual([spans[0].from, spans[0].to], [1, 2]);
-  assert.deepEqual([spans[1].from, spans[1].to], [5, 5]);
+test("starting part-way through the year is not a rise", async () => {
+  // Nothing before March, then the same figure throughout. Counting the empty
+  // months as zero would report a revision in March that never happened.
+  const { grossPartsAsAt } = await import("@/lib/payroll/calc");
+  const g = { basic: 3000, experience: 180, carried: 0, current: 0, allowances: 0, gross: 3180 };
+  const out = await grossPartsAsAt([null, null, ...Array.from({ length: 10 }, () => ({ ...g }))]);
+  assert.equal(out.find(p => p.key === "basic")?.changedIn, null);
+  assert.equal(out.find(p => p.key === "experience")?.value, 180);
 });
 
-test("nothing to show is no spans, not one empty one", async () => {
-  const { grossSpansOf } = await import("@/lib/payroll/calc");
-  assert.deepEqual(grossSpansOf([]), []);
-  assert.deepEqual(grossSpansOf([null, null]), []);
+test("a year with nobody employed in it has nothing to say", async () => {
+  const { grossPartsAsAt } = await import("@/lib/payroll/calc");
+  assert.deepEqual(await grossPartsAsAt([null, null]), []);
 });

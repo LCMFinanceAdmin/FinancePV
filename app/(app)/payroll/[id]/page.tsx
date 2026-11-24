@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown, Church } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, grossSpansOf, figureOf, fullGross, type CalcLine, type GrossBreakdown, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, grossPartsAsAt, GROSS_PART_KEYS, figureOf, fullGross, type CalcLine, type GrossBreakdown, type GrossPartKey, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
@@ -22,7 +22,7 @@ import { UnpaidDaysCell } from "@/components/payroll/unpaid-days-cell";
 import { EmployeeModal } from "@/components/payroll/employee-modal";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import {
-  ladder, labelOf, scaleMove, monthAfter,
+  ladder, labelOf, scaleMove, monthAfter, baseSalaryOn,
   type QualificationRung, type SalaryPoint,
 } from "@/lib/payroll/qualification-scale";
 import type { PayrollEmployee, PayrollSalary, EmployeeLoan, UserProfile, PayrollEmployeeCustomItem, PayrollUnpaidLeave,
@@ -40,11 +40,7 @@ import { PayItemModal } from "@/components/payroll/pay-item-modal";
  * month, sub-total, 13th month, annual — because a column added to one and
  * not the others puts every figure to its right under the wrong heading.
  */
-// Basic first, then what has been added to it over the years, then what was
-// added this year, then the two that were never part of it. Asked for in
-// that order, and it is the right one: an increment is an increment OF the
-// basic, so the three belong together before anything else is counted.
-const GROSS_PARTS = ["basic", "carried", "current", "experience", "allowances"] as const;
+
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
@@ -961,6 +957,40 @@ export default function PayrollEmployeePage() {
     };
   };
 
+  /**
+   * The qualification the basic is set against, for the sheet's make-up block.
+   *
+   * LCM sets base salary by the qualification somebody holds, so this says
+   * where the Basic above it came from. It is read here rather than in the
+   * revision modal, which loads the same two tables for its own purposes —
+   * the sheet can be opened without ever touching that form.
+   *
+   * Both tables are empty in production as this is written, and no employee
+   * carries a code, so for now this resolves to null for everybody and the
+   * sheet says so rather than leaving the line out.
+   */
+  const [rungs, setRungs] = useState<QualificationRung[]>([]);
+  const [scalePoints, setScalePoints] = useState<SalaryPoint[]>([]);
+  useEffect(() => {
+    (async () => {
+      const [{ data: q }, { data: p }] = await Promise.all([
+        supabase.from("qualifications").select("code, label, rank").order("rank"),
+        supabase.from("qualification_salary_points").select("qualification_code, base_salary, effective_from"),
+      ]);
+      setRungs((q ?? []) as QualificationRung[]);
+      setScalePoints((p ?? []) as SalaryPoint[]);
+    })();
+  }, [supabase]);
+  /** The code on the salary in force, falling back to the one on the person. */
+  const qualificationCode = current?.qualification_code ?? emp?.qualification_code ?? null;
+  const qualificationLabel = qualificationCode
+    ? (rungs.find(r => r.code === qualificationCode)?.label ?? qualificationCode)
+    : null;
+  // As at the end of the sheet's year: the scale is revised from time to time,
+  // and a 2026 sheet should quote the 2026 figure however many revisions have
+  // happened since.
+  const qualificationAmount = baseSalaryOn(qualificationCode, `${year}-12-31`, scalePoints);
+
   /** The year they started, for the heading on the carried-increment column. */
   const commencementYear = emp.date_commenced ? Number(emp.date_commenced.slice(0, 4)) : null;
 
@@ -1050,7 +1080,7 @@ export default function PayrollEmployeePage() {
       "EIS Employee", "EIS Employer", "EPL", ...customHead, "Net", "Total LCM"];
     const parts = (l: CalcLine, monthNum: number) => {
       const g = grossPartsFor(monthNum, l);
-      return GROSS_PARTS.map(part => g?.[part] ?? "");
+      return GROSS_PART_KEYS.map(part => g?.[part] ?? "");
     };
     const mkRow = (label: string, l: CalcLine, monthNum: number) =>
       [label, ...parts(l, monthNum), l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
@@ -1058,7 +1088,7 @@ export default function PayrollEmployeePage() {
     const rows: (string | number)[][] = monthLines.map((l, i) => mkRow(MONTHS[i], l, i + 1));
     if (thirteenth) rows.push(mkRow("13th MTH", thirteenth, 13));
     rows.push(["ANNUAL",
-      ...GROSS_PARTS.map(part => round2(sum((l, m) => grossPartsFor(m, l)?.[part] ?? 0))),
+      ...GROSS_PART_KEYS.map(part => round2(sum((l, m) => grossPartsFor(m, l)?.[part] ?? 0))),
       sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.skbbk), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
     const csv = [head, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -1399,7 +1429,7 @@ export default function PayrollEmployeePage() {
                           </span>
                         )}
                       </td>
-                      {GROSS_PARTS.map(part => {
+                      {GROSS_PART_KEYS.map(part => {
                         const g = grossPartsFor(monthNum, l);
                         return (
                           <td key={part} className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-500">
@@ -1507,7 +1537,7 @@ export default function PayrollEmployeePage() {
                   {/* Sub-total (12 months) */}
                   <tr className="bg-stone-100 font-semibold [&>td]:border-t-2 [&>td]:border-t-stone-300">
                     <td className="border border-stone-200 px-1.5 py-1">SUB-T (12)</td>
-                    {GROSS_PARTS.map(part => (
+                    {GROSS_PART_KEYS.map(part => (
                       <td key={part} className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-500">
                         {num(monthLines.reduce((t, l, i) => t + (grossPartsFor(i + 1, l)?.[part] ?? 0), 0))}
                       </td>
@@ -1556,7 +1586,7 @@ export default function PayrollEmployeePage() {
                           read-only, which meant a 13th month that needed
                           putting right could only be fixed by changing
                           December's salary — and that moved December too. */}
-                      {GROSS_PARTS.map(part => {
+                      {GROSS_PART_KEYS.map(part => {
                         const g = grossPartsFor(13, thirteenth);
                         return (
                           <td key={part} className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">
@@ -1665,7 +1695,7 @@ export default function PayrollEmployeePage() {
                   {/* Annual total */}
                   <tr className="bg-[#4a6da7]/10 font-bold text-[#4a6da7] [&>td]:border-t-2 [&>td]:border-t-[#4a6da7]/40">
                     <td className="border border-stone-200 px-1.5 py-1">ANNUAL</td>
-                    {GROSS_PARTS.map(part => (
+                    {GROSS_PART_KEYS.map(part => (
                       <td key={part} className="border border-stone-200 px-1 py-0.5 text-right font-mono">
                         {num(sum((l, m) => grossPartsFor(m, l)?.[part] ?? 0))}
                       </td>
@@ -2466,6 +2496,7 @@ export default function PayrollEmployeePage() {
           monthLines={monthLines} thirteenth={thirteenth}
           pcbArr={pcb} customItemsByMonth={customItemsByMonth}
           effMonth={effMonth} grossParts={monthLines.map((l, i) => grossPartsFor(i + 1, l))}
+          qualificationLabel={qualificationLabel} qualificationAmount={qualificationAmount}
           adjustments={adjustments} loans={loans}
           onClose={() => setShowYearlySheet(false)}
         />
@@ -2475,7 +2506,7 @@ export default function PayrollEmployeePage() {
 }
 
 // ─── Yearly Sheet Modal ──────────────────────────────────────────────────────
-function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts, adjustments, loans, onClose }: {
+function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts, qualificationLabel, qualificationAmount, adjustments, loans, onClose }: {
   emp: PayrollEmployee;
   year: number;
   salary: PayrollSalary;
@@ -2486,6 +2517,13 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   effMonth: number;
   /** What each month's gross is made of, for the footer of the printed sheet. */
   grossParts: (GrossBreakdown | null)[];
+  /**
+   * The qualification the basic is set against, and what the scale says it is
+   * worth in this year. Null where nothing has been recorded — which is every
+   * employee until the ladder and its amounts are entered at Payroll → Scale.
+   */
+  qualificationLabel: string | null;
+  qualificationAmount: number | null;
   /** This year's corrections. Already scoped to the year by the query. */
   adjustments: PayrollAdjustment[];
   loans: EmployeeLoan[];
@@ -2818,28 +2856,23 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const emailBody = `Please find attached the ${year} Yearly Salary Statement for ${emp.full_name}.\n\nAnnual Gross: RM ${num(sum(l => l.gross))}\nAnnual Net:   RM ${num(sum(l => l.net))}\n\nLutheran Church in Malaysia`;
 
   /**
-   * The spans the make-up block prints, and the names of their parts.
+   * The make-up block: the five figures as they stand, and when each got there.
    *
-   * Both come from the shared rule rather than from this file's own reading of
-   * the salary record, so what is printed from the browser and what Share
-   * sends cannot disagree about why somebody's pay changed.
+   * From the shared rule rather than this file's own reading of the salary
+   * record, so what is printed from the browser and what Share sends cannot
+   * disagree about why somebody's pay changed.
    */
-  const grossSpans = grossSpansOf(grossParts);
+  const partsAsAt = grossPartsAsAt(grossParts);
   const startedIn = emp.date_commenced ? emp.date_commenced.slice(0, 4) : null;
-  // All five, every time, zeroes included.
-  //
-  // They were filtered to what was non-zero, which turned the block into a
-  // list of whatever happened to apply — "Basic 2,100.00" on its own, and no
-  // way to tell an increment of nothing from an increment nobody had thought
-  // about. Named at zero it is a statement: this is what the gross is made of
-  // and this is what each part came to.
-  const grossPartLabels = (g: GrossBreakdown): [string, number][] => [
-    ["Basic", g.basic],
-    [startedIn ? `Increment since ${startedIn}` : "Increment carried", g.carried],
-    [`Increment ${year}`, g.current],
-    ["Experience", g.experience],
-    ["Allowances", g.allowances],
-  ];
+  const makeUpTotal = partsAsAt.reduce((t, p) => t + p.value, 0);
+  /** What each of the five is called on the sheet. */
+  const makeUpLabel = (key: GrossPartKey) => ({
+    basic: "Basic",
+    carried: startedIn ? `Increment accumulated (since ${startedIn})` : "Increment accumulated",
+    current: `Increment ${year}`,
+    experience: "Experience",
+    allowances: "Allowances",
+  })[key];
 
   function handlePrint() { window.print(); }
 
@@ -2850,7 +2883,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
       const blob = await pdf(
         <YearlySheetPDF emp={emp} year={year} salary={salary} monthLines={monthLines}
           thirteenth={thirteenth} pcbArr={pcbArr} customItemsByMonth={customItemsByMonth}
-          effMonth={effMonth} grossParts={grossParts} />
+          effMonth={effMonth} grossParts={grossParts}
+          qualificationLabel={qualificationLabel} qualificationAmount={qualificationAmount} />
       ).toBlob();
       const fileName = `${emp.full_name.replace(/\s+/g, "_")}_${year}_Salary.pdf`;
       const file = new File([blob], fileName, { type: "application/pdf" });
@@ -3236,27 +3270,55 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
             The same block, from the same figures, as the @react-pdf statement
             — because this is the one most people actually produce. "Print /
             Save PDF" prints THIS markup; the React-PDF document is what Share
-            sends. Two renderings of one sheet, and for a while only one of
-            them had been given the thing that was asked for. */}
-        {grossSpans.length > 0 && (
+            sends.
+            
+            One figure per part, as it stands at the end of the year, with the
+            month in brackets where a revision or a new contract moved it. It
+            used to print a row per span of months, which said the same five
+            things over and over; the full month-by-month history is the table
+            above, which is where it belongs. */}
+        {partsAsAt.length > 0 && (
           <div className="ys-makeup ys-keep mt-5 border-t border-stone-200 pt-3">
             <div className="ys-mk-head text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5">
               How the gross is made up
             </div>
-            <div className="space-y-1">
-              {grossSpans.map(sp => (
-                <div key={`${sp.from}-${sp.to}`} className="flex items-baseline gap-3">
-                  <div className="ys-mk-when w-16 shrink-0 text-[10px] font-bold text-stone-700">
-                    {MONTH_LABELS[sp.from - 1]}{sp.to !== sp.from ? `–${MONTH_LABELS[sp.to - 1]}` : ""}
+            <div className="space-y-0.5 max-w-md">
+              {partsAsAt.map(p => (
+                <div key={p.key} className="flex items-baseline gap-2">
+                  <div className="ys-mk-when flex-1 text-[10px] text-stone-500">{makeUpLabel(p.key)}</div>
+                  <div className="ys-mk-sum text-right text-[10px] font-bold text-stone-700 tabular-nums">
+                    {num(p.value)}
                   </div>
-                  <div className="flex-1 text-[10px] text-stone-500">
-                    {grossPartLabels(sp.parts).map(([label, v]) => `${label} ${num(v)}`).join("  +  ")}
-                  </div>
-                  <div className="ys-mk-sum w-20 shrink-0 text-right text-[10px] font-bold text-[#2f5b9c]">
-                    {num(sp.parts.gross)}
+                  {/* The month a revision or a new contract took effect. Only
+                      where it moved: a date against a figure that has been the
+                      same all year is a revision nobody made. */}
+                  <div className="ys-mk-when w-20 text-[9px] italic text-stone-400">
+                    {p.changedIn ? `(${MONTH_LABELS[p.changedIn - 1]} ${year})` : ""}
                   </div>
                 </div>
               ))}
+              <div className="flex items-baseline gap-2 border-t border-stone-300 pt-0.5">
+                <div className="ys-mk-when flex-1 text-[10px] font-bold text-stone-700">Gross</div>
+                <div className="ys-mk-sum text-right text-[10px] font-bold text-[#2f5b9c] tabular-nums">
+                  {num(makeUpTotal)}
+                </div>
+                <div className="w-20" />
+              </div>
+              {/* The scale point the basic is set against — not a part of the
+                  sum, which is why it sits under the total. LCM sets base
+                  salary by the qualification held, so this is the line that
+                  says where the figure above came from. */}
+              <div className="flex items-baseline gap-2 pt-1">
+                <div className="ys-mk-when flex-1 text-[10px] text-stone-500">
+                  Qualification{qualificationLabel ? ` — ${qualificationLabel}` : ""}
+                </div>
+                <div className="ys-mk-sum text-right text-[10px] font-bold text-stone-700 tabular-nums">
+                  {qualificationAmount !== null ? num(qualificationAmount) : ""}
+                </div>
+                <div className="ys-mk-when w-20 text-[9px] italic text-stone-400">
+                  {qualificationAmount === null ? "not recorded" : `(as at ${year})`}
+                </div>
+              </div>
             </div>
           </div>
         )}

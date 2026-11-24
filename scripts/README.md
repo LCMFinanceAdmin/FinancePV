@@ -139,10 +139,11 @@ probation months, so every optional column is present and the table is at its
 widest. Anything that fits here fits. Real salaries are not kept in the
 repository.
 
-`--many` is for the footer. The make-up block under the table prints a line
-per span of months whose gross is the same, so an ordinary statement shows one
-or two and says nothing about what a crowded one does. This gives it ten,
-which is the case that runs the statement onto a second page.
+`--many` is for the footer. The make-up block under the table names each part
+of the gross once and puts the month in brackets beside the ones a revision
+moved, so what it has to get right is a salary that moved — and the ordinary
+fixture moves once. This moves it every month, which puts a date against every
+line and is the widest the block ever gets.
 
 ### After changing the statement's layout
 
