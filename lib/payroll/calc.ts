@@ -461,6 +461,25 @@ export function fullGross(s: SalaryComponents): number {
     + Number(s.experience_bonus) + Number(s.family_allowance) + Number(s.stm_allowance);
 }
 
+/**
+ * The figure a 13th month is paid on.
+ *
+ * The whole monthly gross, less the STM allowance. The 13th month is a
+ * thirteenth payment of the wage; STM is not wage, it is money attached to a
+ * posting, and it does not become a thirteenth of itself at the end of the
+ * year. On a record carrying 2,060 of it that is 2,060 of bonus nobody
+ * agreed to.
+ *
+ * The family allowance is deliberately still in. It was not asked about, 16
+ * people have one, and dropping it would be guessing with their bonus.
+ *
+ * One function because four places need the answer: the sheet, the run, the
+ * itemisation a payslip prints, and the breakdown under the statement.
+ */
+export function thirteenthMonthBase(s: SalaryComponents): number {
+  return round2(fullGross(s) - Number(s.stm_allowance));
+}
+
 // Gross for a given month, applying increment timing (current-year increment only
 // from its effective month). The 13th month always uses the full gross.
 export function grossForMonth(
@@ -482,8 +501,10 @@ export function grossForMonth(
   period?: { year: number; effectiveFrom: string | null } | null,
 ): number {
   const full = fullGross(s);
-  // A 13th month is a payment, not a month worked, so it is never pro-rated.
-  if (is13th) return full;
+  // A 13th month is a payment, not a month worked, so it is never pro-rated —
+  // and it is paid on the wage without the STM allowance, which is attached to
+  // a posting rather than earned monthly.
+  if (is13th) return thirteenthMonthBase(s);
   const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
   const paidFrom = period
     ? incrementPaidFrom(period.effectiveFrom, dateCommenced, incrementMonthOverride)
@@ -665,7 +686,10 @@ export function grossComponentsForMonth(
   if (incrementApplies) add("Current year increment", Number(s.increment_current), "current");
   add("Experience bonus", Number(s.experience_bonus), "experience");
   add("Family allowance", Number(s.family_allowance), "allowance");
-  add("STM / Allowance", Number(s.stm_allowance), "allowance");
+  // Left off a 13th month, because it is not paid on one — see
+  // thirteenthMonthBase. Listed here it would make the earnings add up to more
+  // than the GROSS PAY printed under them.
+  if (!is13th) add("STM / Allowance", Number(s.stm_allowance), "allowance");
 
   // An incomplete month is shown as what was agreed, less a named deduction,
   // rather than by quietly shrinking every line above. The agreed salary is

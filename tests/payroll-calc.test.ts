@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { figureOf,
-  calcLine, monthDays, monthFraction, grossForMonth, grossComponentsForMonth, incrementEffectiveMonth,
+  calcLine, monthDays, monthFraction, grossForMonth, grossComponentsForMonth, thirteenthMonthBase, incrementEffectiveMonth,
   incrementPaidFrom, DEFAULT_RATES, owedForRunMonth,
   type CalcInput, type ContributionBand, type SalaryComponents,
 } from "@/lib/payroll/calc";
@@ -300,8 +300,15 @@ test("a part month is paid in proportion, and says so on the payslip", () => {
     Math.round(3200 * 17 / 31 * 100) / 100);
   assert.equal(grossForMonth(SALARY, "2020-01-01", 10, false, null), 3200,
     "no days given behaves as it always did");
-  assert.equal(grossForMonth(SALARY, "2026-10-15", 13, true, null, days), 3200,
+  // 3,100 and not 3,200: the STM allowance is no longer paid as part of a
+  // 13th month. It was when this was written, and the change was asked for.
+  // What this line is actually here to catch is unchanged — that a part month
+  // does not pro-rate the bonus — so it is expressed against the rule rather
+  // than a figure, and stays true whatever the base becomes next.
+  assert.equal(grossForMonth(SALARY, "2026-10-15", 13, true, null, days),
+    thirteenthMonthBase(SALARY),
     "the 13th month is never pro-rated");
+  assert.equal(thirteenthMonthBase(SALARY), 3100, "and the base excludes STM");
 
   const parts = grossComponentsForMonth(SALARY, "2026-10-15", 10, false, null, days);
   const sum = Math.round(parts.reduce((t, c) => t + c.amount, 0) * 100) / 100;
@@ -1083,4 +1090,54 @@ test("every item is reported with its flag, so a sheet can say which is which", 
   ]});
   assert.deepEqual(line.customItems.map(i => [i.label, i.inGross]),
     [["Salary difference", true], ["COLA", false]]);
+});
+
+// ── What a 13th month is paid on ─────────────────────────────────────────
+//
+// A thirteenth payment of the wage. The STM allowance is not wage — it is
+// money attached to a posting — and it does not become a thirteenth of itself
+// at the end of the year. On a record carrying 2,060 of it, leaving it in is
+// 2,060 of bonus nobody agreed to.
+
+const WITH_STM = {
+  base_salary: 4520, increment_carried: 90, increment_current: 90,
+  experience_bonus: 550, family_allowance: 0, stm_allowance: 2060,
+};
+
+test("the STM allowance is not paid again as a 13th month", async () => {
+  const { thirteenthMonthBase, fullGross } = await import("@/lib/payroll/calc");
+  assert.equal(fullGross(WITH_STM), 7310, "the monthly wage is unchanged");
+  assert.equal(thirteenthMonthBase(WITH_STM), 5250, "the bonus is paid without it");
+});
+
+test("the family allowance is still in it", async () => {
+  // Not asked about, and sixteen people have one. Dropping it would be
+  // guessing with their bonus, so it stays until somebody says otherwise.
+  const { thirteenthMonthBase } = await import("@/lib/payroll/calc");
+  const withFamily = { ...WITH_STM, family_allowance: 300, stm_allowance: 0 };
+  assert.equal(thirteenthMonthBase(withFamily), 5550);
+});
+
+test("grossForMonth agrees with it when the month is the thirteenth", async () => {
+  const { grossForMonth, thirteenthMonthBase } = await import("@/lib/payroll/calc");
+  assert.equal(grossForMonth(WITH_STM, "2020-01-01", 13, true), thirteenthMonthBase(WITH_STM));
+  // And an ordinary month is untouched: the allowance is wage every other
+  // month of the year.
+  assert.equal(grossForMonth(WITH_STM, "2020-01-01", 6, false), 7310);
+});
+
+test("a payslip's 13th-month earnings add up to its gross", async () => {
+  // The itemisation and the total come from the same rule, so a bonus payslip
+  // cannot list an allowance it was not paid on.
+  const { grossComponentsForMonth, thirteenthMonthBase } = await import("@/lib/payroll/calc");
+  const parts = grossComponentsForMonth(WITH_STM, "2020-01-01", 13, true);
+  assert.ok(!parts.some(p => p.label.includes("STM")), "STM is not listed");
+  assert.equal(round2(parts.reduce((t, p) => t + p.amount, 0)), thirteenthMonthBase(WITH_STM));
+});
+
+test("and an ordinary month's earnings still include it", async () => {
+  const { grossComponentsForMonth, fullGross } = await import("@/lib/payroll/calc");
+  const parts = grossComponentsForMonth(WITH_STM, "2020-01-01", 6, false);
+  assert.ok(parts.some(p => p.label.includes("STM")));
+  assert.equal(round2(parts.reduce((t, p) => t + p.amount, 0)), fullGross(WITH_STM));
 });

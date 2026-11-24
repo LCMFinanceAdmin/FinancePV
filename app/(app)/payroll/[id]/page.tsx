@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown, Church } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, grossPartsAsAt, GROSS_PART_KEYS, figureOf, fullGross, type CalcLine, type GrossBreakdown, type GrossPartKey, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, grossPartsAsAt, thirteenthMonthBase, GROSS_PART_KEYS, figureOf, fullGross, type CalcLine, type GrossBreakdown, type GrossPartKey, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
@@ -717,7 +717,9 @@ export default function PayrollEmployeePage() {
         // The 13th month is paid on December's salary, being a payment for the
         // year rather than a fourteenth month of it — times the fraction of it
         // earned, which is 1 for everybody who was here the whole year.
-        gross: round2(grossOf(salaryForMonth(12) ?? sal) * thirteenthDue.fraction),
+        // Without the STM allowance: a 13th month is a thirteenth of the
+        // wage, and STM is attached to a posting rather than earned monthly.
+        gross: round2(thirteenthMonthBase(salaryForMonth(12) ?? sal) * thirteenthDue.fraction),
         age: ageAt(emp.dob, year, 12),
         employmentType: emp.employment_type,
         isOrangAsli: emp.is_orang_asli,
