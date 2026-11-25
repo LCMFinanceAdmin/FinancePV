@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  ptptnDue, recordedBalance, needsAttention,
+  ptptnDue, recordedBalance, needsAttention, ptptnForYear,
   type PtptnDirection, type PtptnDeduction,
 } from "@/lib/payroll/ptptn";
 
@@ -139,4 +139,73 @@ test("a healthy direction is not flagged", () => {
   assert.equal(needsAttention(advised, [took(1)]).attention, false);
   // Nor is one that is already stopped.
   assert.equal(needsAttention({ ...advised, status: "STOPPED" }, []).attention, false);
+});
+
+// ── A year of it, which is what the yearly sheet draws ──────────────────
+//
+// The sheet had no idea PTPTN existed — no mention of it anywhere on the page
+// — so every month's net was overstated by the instalment for anybody under a
+// direction, and the printed statement, which has had a PTPTN column waiting
+// in it all along, never showed one. These are about the year as a whole,
+// because the months are not independent of each other.
+
+const amounts = (rows: ReturnType<typeof ptptnForYear>) => rows.map(r => r.amount);
+
+test("the year deducts from the starting month on, and never in the 13th", () => {
+  const fromMay: PtptnDirection = {
+    ...advised, opening_balance: 20000, balance_as_at: "2026-01-01",
+    started_on: "2026-05-01",
+  };
+  assert.deepEqual(amounts(ptptnForYear(fromMay, [], 2026)),
+    [0, 0, 0, 0, 200, 200, 200, 200, 200, 200, 200, 200, 0]);
+});
+
+test("the months are not independent: the tail of a loan counts down", () => {
+  // 500 left and 200 a month. Asked month by month, March would report a full
+  // 200 as well and the year would deduct 600 against a 500 record. Walked in
+  // order, the third month is trimmed to what is left and the rest are nil.
+  const nearlyDone: PtptnDirection = { ...advised, opening_balance: 500 };
+  assert.deepEqual(amounts(ptptnForYear(nearlyDone, [], 2026)),
+    [200, 200, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  // And it says why it stopped, rather than leaving a reader to wonder.
+  assert.equal(ptptnForYear(nearlyDone, [], 2026)[3].reason, "record-exhausted");
+});
+
+test("a month a run has already recorded keeps the run's own figure", () => {
+  // Not a projection — what was withheld. The same order of precedence the
+  // sheet's PCB follows: a statement that disagrees with the payslip issued
+  // for the month is worse than one with a gap in it.
+  const rows = ptptnForYear(advised, [{ ...took(1), amount: 150 }], 2026);
+  assert.equal(rows[0].amount, 150);
+  assert.equal(rows[0].fromRun, true);
+  assert.equal(rows[1].fromRun, false, "and February is still a projection");
+  // 1,000 advised and 150 withheld in January leaves 850, so four full months
+  // of 200 follow and the fifth is trimmed to the 50 that is left.
+  assert.deepEqual(amounts(rows), [150, 200, 200, 200, 200, 50, 0, 0, 0, 0, 0, 0, 0]);
+  assert.equal(amounts(rows).reduce((t, n) => t + n, 0), 1000);
+});
+
+test("a recorded month is not counted twice against the record", () => {
+  // It is already in `deductions`; projecting it as well would retire the debt
+  // at double speed and stop the deduction months early.
+  const rows = ptptnForYear(advised, [took(1), took(2)], 2026);
+  assert.equal(rows.reduce((t, r) => t + r.amount, 0), 1000,
+    "the year takes the record and no more");
+});
+
+test("with no balance advised it runs all year, and says nothing about a balance", () => {
+  const rows = ptptnForYear(unadvised, [], 2026);
+  assert.deepEqual(amounts(rows), [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 0]);
+  assert.equal(rows[0].balanceAfter, null, "unknown is shown as unknown, not inferred");
+});
+
+test("a stopped direction deducts nothing, whatever the record says", () => {
+  assert.deepEqual(amounts(ptptnForYear({ ...advised, status: "STOPPED" }, [], 2026)),
+    Array(13).fill(0));
+});
+
+test("a direction that ends part-way stops at its last month", () => {
+  const ends = { ...advised, opening_balance: 20000, ended_on: "2026-03-31" };
+  assert.deepEqual(amounts(ptptnForYear(ends, [], 2026)),
+    [200, 200, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 });

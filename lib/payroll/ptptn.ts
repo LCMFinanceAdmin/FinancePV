@@ -139,6 +139,64 @@ export function ptptnDue(
   return { amount, balanceAfter: round2(balance - amount) };
 }
 
+export interface PtptnMonth extends PtptnDue {
+  /** True where a finalised run already recorded this month's deduction. */
+  fromRun: boolean;
+}
+
+/**
+ * A whole year of one direction: what each month deducts, January to the 13th.
+ *
+ * Walked in order rather than asked month by month, because the answer to
+ * "what is deducted in November" depends on what the ten months before it
+ * took. Asked independently, every month of a loan nearly paid off would
+ * report a full instalment and the record would be overdrawn by the end of
+ * the year.
+ *
+ * A month a run has already recorded keeps the run's own figure. That is not
+ * a projection, it is what was withheld — the same order of precedence the
+ * sheet's PCB follows, and for the same reason: a statement that disagrees
+ * with the payslip issued for the month is worse than one with a gap in it.
+ *
+ * Thirteen entries, index 0 being January and index 12 the 13th month, which
+ * is always nil: a monthly direction is a direction for the months.
+ */
+export function ptptnForYear(
+  direction: PtptnDirection,
+  deductions: readonly PtptnDeduction[],
+  year: number,
+): PtptnMonth[] {
+  const recorded = new Map<number, number>();
+  for (const d of deductions) {
+    if (d.ptptn_id !== direction.id || d.year !== year) continue;
+    recorded.set(d.month, round2((recorded.get(d.month) ?? 0) + (Number(d.amount) || 0)));
+  }
+
+  // Only the projected months go in here. The recorded ones are already in
+  // `deductions`, and counting them twice would retire the debt at double
+  // speed and stop the deduction early.
+  const projected: PtptnDeduction[] = [];
+  const out: PtptnMonth[] = [];
+
+  for (let month = 1; month <= 13; month++) {
+    const taken = recorded.get(month);
+    if (taken !== undefined) {
+      out.push({
+        amount: taken,
+        balanceAfter: recordedBalance(direction, [...deductions, ...projected]),
+        fromRun: true,
+      });
+      continue;
+    }
+    const due = ptptnDue(direction, [...deductions, ...projected], year, month);
+    out.push({ ...due, fromRun: false });
+    if (due.amount > 0) {
+      projected.push({ ptptn_id: direction.id, year, month, amount: due.amount });
+    }
+  }
+  return out;
+}
+
 /**
  * Should somebody look at this direction?
  *

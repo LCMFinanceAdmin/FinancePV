@@ -12,6 +12,7 @@ import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 import { itemAppliesToMonth, itemsForRun, toCalcItem } from "@/lib/payroll/custom-items";
 import { pcbForMonth } from "@/lib/payroll/pcb";
+import { ptptnForYear, type PtptnDirection, type PtptnDeduction } from "@/lib/payroll/ptptn";
 import { PcbCell } from "@/components/payroll/pcb-cell";
 import { useToast, Toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -229,6 +230,20 @@ export default function PayrollEmployeePage() {
    */
   const [keyedPcb, setKeyedPcb] = useState<Record<number, number>>({});
   const [paidPcb, setPaidPcb] = useState<Record<number, number>>({});
+  /**
+   * PTPTN directions on this employee, and what has been deducted against
+   * them.
+   *
+   * The sheet did not know PTPTN existed. Every month's net was overstated by
+   * the instalment for anybody under a direction, and the printed statement
+   * — which has had a PTPTN column waiting in it all along — never showed
+   * one, because the figure it renders from was never computed.
+   *
+   * LCM is not the lender here. PTPTN lends, the employee borrows, and LCM is
+   * directed to deduct and remit; see lib/payroll/ptptn.
+   */
+  const [ptptnDirections, setPtptnDirections] = useState<PtptnDirection[]>([]);
+  const [ptptnTaken, setPtptnTaken] = useState<PtptnDeduction[]>([]);
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [bands, setBands] = useState<ContributionBand[]>([]);
   const [canEdit, setCanEdit] = useState(false);
@@ -294,6 +309,23 @@ export default function PayrollEmployeePage() {
       pcbForMonth(i + 1, paidPcb[i + 1], keyedPcb[i + 1], Number(emp?.fixed_pcb ?? 0))),
     [paidPcb, keyedPcb, emp?.fixed_pcb]);
   const pcb = useMemo(() => pcbView.map(v => v.amount), [pcbView]);
+
+  /**
+   * What PTPTN takes each month, summed across every direction on this person
+   * — one child's loan each, where there is more than one.
+   *
+   * Thirteen entries, index 12 being the 13th month, which is always nil.
+   */
+  const ptptnByMonth = useMemo(() => {
+    const totals = Array<number>(13).fill(0);
+    for (const dir of ptptnDirections) {
+      ptptnForYear(dir, ptptnTaken, year).forEach((due, i) => {
+        totals[i] = round2(totals[i] + due.amount);
+      });
+    }
+    return totals;
+  }, [ptptnDirections, ptptnTaken, year]);
+  const ptptnForMonth = (m: number) => ptptnByMonth[m - 1] ?? 0;
   const [showYearlySheet, setShowYearlySheet] = useState(false);
   const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "documents">("overview");
 
@@ -345,6 +377,17 @@ export default function PayrollEmployeePage() {
   }, [supabase, id, year]);
 
   useEffect(() => { refreshPcb(); }, [refreshPcb]);
+
+  const refreshPtptn = useCallback(async () => {
+    const [{ data: dirs }, { data: deds }] = await Promise.all([
+      supabase.from("employee_ptptn").select("*").eq("employee_id", id),
+      supabase.from("ptptn_deductions").select("ptptn_id,year,month,amount,payroll_run_id"),
+    ]);
+    setPtptnDirections((dirs as PtptnDirection[]) ?? []);
+    setPtptnTaken((deds as PtptnDeduction[]) ?? []);
+  }, [supabase, id]);
+
+  useEffect(() => { refreshPtptn(); }, [refreshPtptn]);
 
   /**
    * Days of unpaid leave, by month. Days rather than amounts, so the deduction
@@ -819,6 +862,9 @@ export default function PayrollEmployeePage() {
       epfOver60Contributing: emp.epf_over60_contributing,
       manualPcb: pcb[m - 1] || 0,
       eplDeduction: eplForMonth(m),
+      // Withheld and remitted to PTPTN. Off take-home after the statutory
+      // figures, exactly as a loan instalment is.
+      ptptnDeduction: ptptnForMonth(m),
       is13thMonth: false,
       rates,
       customItems: (customItemsByMonth[m] ?? []).map(toCalcItem),
@@ -1139,6 +1185,7 @@ export default function PayrollEmployeePage() {
     { bg: SHEET.stat, group: "EIS", label: "Employee", rule: true },
     { bg: SHEET.stat, group: "EIS", label: "Employer" },
     { bg: SHEET.deduct, label: "EPL", rule: true },
+    { bg: SHEET.deduct, label: "PTPTN", title: "Withheld from pay and remitted to PTPTN. LCM is not the lender \u2014 it is directed to deduct \u2014 so this comes off take-home after the statutory figures, like a loan instalment." },
     { bg: SHEET.deduct, group: "Unpaid", label: "days",
       title: "Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS." },
     // An in-gross item is already counted in the Gross column to the left, so
@@ -1185,19 +1232,19 @@ export default function PayrollEmployeePage() {
       `Increment since ${commencementYear ?? "commencement"}`, `Increment ${year}`,
       "Experience", "Allowances", "Gross", "PCB",
       "EPF Employee", "EPF Employer", "SOCSO Employee", "SKBBK", "SOCSO Employer",
-      "EIS Employee", "EIS Employer", "EPL", ...customHead, "Net", "Total LCM"];
+      "EIS Employee", "EIS Employer", "EPL", "PTPTN", ...customHead, "Net", "Total LCM"];
     const parts = (l: CalcLine, monthNum: number) => {
       const g = grossPartsFor(monthNum, l);
       return GROSS_PART_KEYS.map(part => g?.[part] ?? "");
     };
     const mkRow = (label: string, l: CalcLine, monthNum: number) =>
-      [label, ...parts(l, monthNum), l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
+      [label, ...parts(l, monthNum), l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction, l.ptptnDeduction,
        ...customCols.map(c => customAmt(monthNum, c)), l.net, l.totalLcmPayment];
     const rows: (string | number)[][] = monthLines.map((l, i) => mkRow(MONTHS[i], l, i + 1));
     if (thirteenth) rows.push(mkRow("13th MTH", thirteenth, 13));
     rows.push(["ANNUAL",
       ...GROSS_PART_KEYS.map(part => round2(sum((l, m) => grossPartsFor(m, l)?.[part] ?? 0))),
-      sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.skbbk), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
+      sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.skbbk), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), sum(l => l.ptptnDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
     const csv = [head, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -1597,6 +1644,7 @@ export default function PayrollEmployeePage() {
                         />
                       ))}
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(l.ptptnDeduction)}</td>
                       <UnpaidDaysCell
                         employeeId={emp.id} employeeName={emp.full_name}
                         year={year} month={monthNum}
@@ -1664,6 +1712,7 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.ptptnDeduction, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-red-700">
                       {monthLines.some(l => l.unpaidLeave.days > 0)
                         ? <>{monthLines.reduce((s, l) => s + l.unpaidLeave.days, 0)}
@@ -1759,6 +1808,9 @@ export default function PayrollEmployeePage() {
                         />
                       ))}
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
+                      {/* Nil by rule: a monthly direction is a direction for
+                          the months, so a bonus carries no instalment. */}
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(thirteenth.ptptnDeduction)}</td>
                       {/* No day of a bonus can be unpaid — it is a payment for
                           the year, not a month worked. */}
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-200"
@@ -1826,6 +1878,7 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
+                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.ptptnDeduction))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">
                       {sum(l => l.unpaidLeave.days) > 0
                         ? <>{sum(l => l.unpaidLeave.days)}
@@ -2952,6 +3005,11 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const hasExp = Number(salary.experience_bonus) > 0;
   const annualEpl = sum(l => l.eplDeduction);
   const hasEpl = annualEpl > 0;
+  // PTPTN sits beside EPL and wears the same red, because the two are the same
+  // kind of money: off take-home after the statutory figures, and neither of
+  // them LCM's. The difference is only who is owed.
+  const annualPtptn = sum(l => l.ptptnDeduction);
+  const hasPtptn = annualPtptn > 0;
   const specialCustom = customCols; // all custom items are "special"
 
   /**
@@ -2976,7 +3034,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
   const ym = (d: { year: number; month: number }) => `${MONTH_SHORT[d.month - 1]} ${d.year}`;
   const revLabel = "ys-rev-lab w-[76px] shrink-0 text-[9.5px] font-bold uppercase tracking-wider text-stone-400";
 
-  const hasAnySpecial = hasFamily || hasStm || hasExp || hasEpl || specialCustom.length > 0;
+  const hasAnySpecial = hasFamily || hasStm || hasExp || hasEpl || hasPtptn || specialCustom.length > 0;
 
   const emailSubject = `${emp.full_name} — Salary Sheet ${year}`;
   const emailBody = `Please find attached the ${year} Yearly Salary Statement for ${emp.full_name}.\n\nAnnual Gross: RM ${num(sum(l => l.gross))}\nAnnual Net:   RM ${num(sum(l => l.net))}\n\nLutheran Church in Malaysia`;
@@ -3198,6 +3256,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <th colSpan={3} className="border border-[#3d5c8f] px-2 py-1 text-center text-[11px] uppercase tracking-wider">SOCSO</th>
                 <th colSpan={2} className="border border-[#3d5c8f] px-2 py-1 text-center text-[11px] uppercase tracking-wider">EIS</th>
                 {hasEpl && <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-right align-bottom bg-red-800">EPL</th>}
+                {hasPtptn && <th rowSpan={2} className="border border-[#3d5c8f] px-2 py-1.5 text-right align-bottom bg-red-800">PTPTN</th>}
                 {customCols.map(col => (
                   <th key={col.label} rowSpan={2} className={`border border-[#3d5c8f] px-2 py-1.5 text-right align-bottom ${col.type === "allowance" ? "bg-green-800" : "bg-red-800"}`}>
                     <div className="text-[10px] truncate max-w-[80px]">{col.label}</div>
@@ -3237,6 +3296,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.eis.ee)}</td>
                     <td className="border border-stone-200 px-2 py-1 text-right font-mono">{num(l.eis.er)}</td>
                     {hasEpl && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{l.eplDeduction > 0 ? num(l.eplDeduction) : <span className="text-stone-200">—</span>}</td>}
+                    {hasPtptn && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{l.ptptnDeduction > 0 ? num(l.ptptnDeduction) : <span className="text-stone-200">—</span>}</td>}
                     {customCols.map(col => {
                       const amt = customAmt(monthNum, col);
                       return (
@@ -3265,6 +3325,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                 <td className="border border-stone-300 px-2 py-1 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                 {hasEpl && <td className="border border-stone-300 px-2 py-1 text-right font-mono bg-red-50 text-red-700">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>}
+                {hasPtptn && <td className="border border-stone-300 px-2 py-1 text-right font-mono bg-red-50 text-red-700">{num(monthLines.reduce((s, l) => s + l.ptptnDeduction, 0))}</td>}
                 {customCols.map(col => {
                   const t = customColSubTotal(col);
                   return <td key={col.label} className={`border border-stone-300 px-2 py-1 text-right font-mono ${col.type === "allowance" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</td>;
@@ -3286,6 +3347,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.eis.ee)}</td>
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono text-stone-400">{num(thirteenth.eis.er)}</td>
                   {hasEpl && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{thirteenth.eplDeduction > 0 ? num(thirteenth.eplDeduction) : <span className="text-stone-200">—</span>}</td>}
+                  {hasPtptn && <td className="border border-stone-200 px-2 py-1 text-right font-mono bg-red-50 text-red-700 font-semibold">{thirteenth.ptptnDeduction > 0 ? num(thirteenth.ptptnDeduction) : <span className="text-stone-200">—</span>}</td>}
                   {customCols.map(col => {
                     const amt = customAmt(13, col);
                     return (
@@ -3300,7 +3362,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                   <td className="border border-stone-200 px-2 py-1 text-right font-mono font-semibold text-[#4a6da7]">{num(thirteenth.totalLcmPayment)}</td>
                 </tr>
               ) : (
-                <tr><td colSpan={10 + (hasEpl ? 1 : 0) + customCols.length} className="border border-stone-200 px-2 py-1 text-stone-400 italic text-center">13th month — excluded (Orang Asli)</td></tr>
+                <tr><td colSpan={10 + (hasEpl ? 1 : 0) + (hasPtptn ? 1 : 0) + customCols.length} className="border border-stone-200 px-2 py-1 text-stone-400 italic text-center">13th month — excluded (Orang Asli)</td></tr>
               )}
               {/* Annual total */}
               <tr className="ys-annual ys-keep bg-[#4a6da7] text-white font-bold">
@@ -3315,6 +3377,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                 <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                 {hasEpl && <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono bg-red-700">{num(sum(l => l.eplDeduction))}</td>}
+                {hasPtptn && <td className="border border-[#3d5c8f] px-2 py-1.5 text-right font-mono bg-red-700">{num(annualPtptn)}</td>}
                 {customCols.map(col => {
                   const t = customColTotal(col);
                   return <td key={col.label} className={`border border-[#3d5c8f] px-2 py-1.5 text-right font-mono ${col.type === "allowance" ? "bg-green-700" : "bg-red-700"}`}>{t !== 0 ? (col.type === "allowance" ? "+" : "−") + num(t) : "—"}</td>;
@@ -3330,6 +3393,7 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
         <div className="ys-notes text-[10px] text-stone-400 mb-6 space-y-0.5">
           <p>EPF / SOCSO / EIS auto-calculated. PCB values as entered. Current-year increment effective from {["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][effMonth - 1]}.</p>
           {hasEpl && <p className="text-red-500">EPL column (highlighted red): loan repayment deductions included in monthly net.</p>}
+          {hasPtptn && <p className="text-red-500">PTPTN column (highlighted red): withheld from pay and remitted to PTPTN. LCM is not the lender.</p>}
           {customCols.filter(c => c.type === "allowance").length > 0 && <p className="text-green-600">Green columns: special allowances included in gross/net calculation.</p>}
           {customCols.filter(c => c.type === "deduction").length > 0 && <p className="text-red-500">Red columns: additional deductions subtracted from net.</p>}
         </div>
@@ -3488,7 +3552,7 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
   // gross − deductions = net, which is the one sum anybody reading a payslip
   // actually checks.
   const totalDeductions = line.epf.ee + line.socso.ee + line.skbbk + line.eis.ee
-    + line.pcb + line.eplDeduction + line.customDeductions - line.netAdjustment;
+    + line.pcb + line.eplDeduction + line.ptptnDeduction + line.customDeductions - line.netAdjustment;
 
   // Allowances are paid on top of the wage rather than forming part of it —
   // calcLine adds them to net without adding them to gross, because gross is
@@ -3574,6 +3638,7 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
     ...(line.skbbk !== 0 ? [`  SKBBK (Lindung 24)           ${n2(line.skbbk)}`] : []),
     `  Employee EIS                 ${n2(line.eis.ee)}`,
     line.eplDeduction > 0 ? `  EPL Loan Deduction           ${n2(line.eplDeduction)}` : null,
+    line.ptptnDeduction > 0 ? `  PTPTN                        ${n2(line.ptptnDeduction)}` : null,
     `  ${"".padEnd(28, "─")}`,
     `  TOTAL DEDUCTION              ${n2(totalDeductions)}`,
     ``,
@@ -3660,6 +3725,9 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
                   { label: "Employee EIS", amount: line.eis.ee },
                   ...(line.pcb > 0 ? [{ label: "PCB (Income Tax)", amount: line.pcb }] : []),
                   ...(line.eplDeduction > 0 ? [{ label: "Deduction (EPL)", amount: line.eplDeduction }] : []),
+                  // Named in full, because the statement the borrower gets from
+                  // PTPTN calls it that and the two have to be matchable.
+                  ...(line.ptptnDeduction > 0 ? [{ label: "PTPTN", amount: line.ptptnDeduction }] : []),
                   ...line.customItems.filter(i => i.type === "deduction").map(i => ({ label: i.label, amount: i.amount })),
                   ...line.adjustments.filter(a => a.category === "NET")
                     .map(a => ({ label: a.reason || "Adjustment", amount: -Number(a.amount) })),
@@ -3791,9 +3859,13 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
                 <td className="border border-stone-400 border-l-0 px-2 py-1 align-top text-center" style={{ width: "18%" }}>
                   <div className="font-semibold text-[10px] mb-1">———DEDUCTION———</div>
                   <div className="text-[10px] text-stone-500 mb-0.5">-Amt-</div>
-                  {line.eplDeduction > 0 ? (
+                  {line.eplDeduction > 0 && (
                     <><div className="text-[11px]">EPL</div><div className="font-mono text-right">{n2(line.eplDeduction)}</div></>
-                  ) : (
+                  )}
+                  {line.ptptnDeduction > 0 && (
+                    <><div className="text-[11px]">PTPTN</div><div className="font-mono text-right">{n2(line.ptptnDeduction)}</div></>
+                  )}
+                  {line.eplDeduction === 0 && line.ptptnDeduction === 0 && (
                     <div className="text-stone-300 text-[10px]">—</div>
                   )}
                 </td>
