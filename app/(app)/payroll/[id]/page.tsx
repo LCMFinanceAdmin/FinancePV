@@ -718,7 +718,7 @@ export default function PayrollEmployeePage() {
         // year rather than a fourteenth month of it — times the fraction of it
         // earned, which is 1 for everybody who was here the whole year.
         // Without the STM allowance: a 13th month is a thirteenth of the
-        // wage, and STM is attached to a posting rather than earned monthly.
+        // wage, and a secondment allowance is not wage.
         gross: round2(thirteenthMonthBase(salaryForMonth(12) ?? sal) * thirteenthDue.fraction),
         age: ageAt(emp.dob, year, 12),
         employmentType: emp.employment_type,

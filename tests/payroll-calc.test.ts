@@ -300,7 +300,7 @@ test("a part month is paid in proportion, and says so on the payslip", () => {
     Math.round(3200 * 17 / 31 * 100) / 100);
   assert.equal(grossForMonth(SALARY, "2020-01-01", 10, false, null), 3200,
     "no days given behaves as it always did");
-  // 3,100 and not 3,200: the STM allowance is no longer paid as part of a
+  // 3,100 and not 3,200: a secondment allowance is not paid as part of a
   // 13th month. It was when this was written, and the change was asked for.
   // What this line is actually here to catch is unchanged — that a part month
   // does not pro-rate the bonus — so it is expressed against the rule rather
@@ -1094,10 +1094,11 @@ test("every item is reported with its flag, so a sheet can say which is which", 
 
 // ── What a 13th month is paid on ─────────────────────────────────────────
 //
-// A thirteenth payment of the wage. The STM allowance is not wage — it is
-// money attached to a posting — and it does not become a thirteenth of itself
-// at the end of the year. On a record carrying 2,060 of it, leaving it in is
-// 2,060 of bonus nobody agreed to.
+// A thirteenth payment of the wage. The STM allowance is not wage — it is a
+// secondment allowance, paid because the person holds a post at STM alongside
+// a pastoral role in LCM — and it does not earn a thirteenth of itself at year
+// end. Leaving it in paid a whole extra month of secondment allowance as
+// bonus, every year, to everybody who had one.
 
 const WITH_STM = {
   base_salary: 4520, increment_carried: 90, increment_current: 90,
