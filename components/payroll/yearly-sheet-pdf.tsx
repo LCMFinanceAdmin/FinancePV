@@ -182,9 +182,16 @@ export interface YearlySheetPDFProps {
    */
   qualificationLabel?: string | null;
   qualificationAmount?: number | null;
+  /**
+   * LCM's record of the PTPTN debt at the end of the year, where PTPTN has
+   * advised a balance to count down from. Null where they have not — and shown
+   * as absent rather than inferred, because a figure printed on somebody's own
+   * statement about their own debt is read as fact.
+   */
+  ptptnClosing?: number | null;
 }
 
-export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts, qualificationLabel, qualificationAmount }: YearlySheetPDFProps) {
+export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts, qualificationLabel, qualificationAmount, ptptnClosing }: YearlySheetPDFProps) {
   const customCols: { label: string; type: "allowance" | "deduction" }[] = [];
   const seen = new Set<string>();
   for (let m = 1; m <= 13; m++) for (const ci of customItemsByMonth[m] ?? []) {
@@ -283,7 +290,7 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
               {hasS && <View style={s.spItem}><Text style={s.spLbl}>STM Allowance</Text><Text style={s.spAmt}>RM {n(Number(salary.stm_allowance))} /month</Text><Text style={s.spSub}>Annual: RM {n(Number(salary.stm_allowance)*12)}</Text></View>}
               {hasE && <View style={s.spItem}><Text style={s.spLbl}>Experience Bonus</Text><Text style={s.spAmt}>RM {n(Number(salary.experience_bonus))} /month</Text><Text style={s.spSub}>Annual: RM {n(Number(salary.experience_bonus)*12)}</Text></View>}
               {hasEpl && <View style={[s.spItem, s.spItemR]}><Text style={[s.spLbl, s.spLblR]}>EPL Deduction</Text><Text style={[s.spAmt, s.spAmtR]}>RM {n(eplAnn)} annual</Text><Text style={s.spSub}>Loan repayment</Text></View>}
-              {hasPtptn && <View style={[s.spItem, s.spItemR]}><Text style={[s.spLbl, s.spLblR]}>PTPTN</Text><Text style={[s.spAmt, s.spAmtR]}>RM {n(ptptnAnn)} annual</Text><Text style={s.spSub}>Withheld and remitted to PTPTN</Text></View>}
+              {hasPtptn && <View style={[s.spItem, s.spItemR]}><Text style={[s.spLbl, s.spLblR]}>PTPTN</Text><Text style={[s.spAmt, s.spAmtR]}>RM {n(ptptnAnn)} annual</Text><Text style={s.spSub}>{ptptnClosing === null || ptptnClosing === undefined ? "Withheld and remitted to PTPTN" : `Our record at year end: RM ${n(ptptnClosing)}`}</Text></View>}
               {hasUnpaid && <View style={[s.spItem, s.spItemR]}><Text style={[s.spLbl, s.spLblR]}>Unpaid leave</Text><Text style={[s.spAmt, s.spAmtR]}>RM {n(unpaidAnn)} annual</Text><Text style={s.spSub}>{unpaidDaysAnn} {unpaidDaysAnn===1?"day":"days"} — statutory on the full wage</Text></View>}
               {customCols.map(col => { const t=cTotal(col); if(!t) return null; const a=col.type==="allowance";
                 return <View key={col.label} style={[s.spItem, a?s.spItemG:s.spItemR]}><Text style={[s.spLbl, a?s.spLblG:s.spLblR]}>{col.label.toUpperCase()} ({a?"allowance":"deduction"})</Text><Text style={[s.spAmt, a?s.spAmtG:s.spAmtR]}>{a?"+":"−"}RM {n(t)} annual</Text></View>;

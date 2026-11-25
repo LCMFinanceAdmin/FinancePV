@@ -316,16 +316,34 @@ export default function PayrollEmployeePage() {
    *
    * Thirteen entries, index 12 being the 13th month, which is always nil.
    */
-  const ptptnByMonth = useMemo(() => {
-    const totals = Array<number>(13).fill(0);
+  const ptptn = useMemo(() => {
+    const amounts = Array<number>(13).fill(0);
+    // Null until some direction has a balance to contribute. Where PTPTN has
+    // advised none, the figure is absent rather than inferred — a number shown
+    // to somebody about their own debt is read as fact.
+    const balances = Array<number | null>(13).fill(null);
     for (const dir of ptptnDirections) {
       ptptnForYear(dir, ptptnTaken, year).forEach((due, i) => {
-        totals[i] = round2(totals[i] + due.amount);
+        amounts[i] = round2(amounts[i] + due.amount);
+        if (due.balanceAfter !== null) {
+          balances[i] = round2((balances[i] ?? 0) + due.balanceAfter);
+        }
       });
     }
-    return totals;
+    return { amounts, balances };
   }, [ptptnDirections, ptptnTaken, year]);
-  const ptptnForMonth = (m: number) => ptptnByMonth[m - 1] ?? 0;
+  const ptptnForMonth = (m: number) => ptptn.amounts[m - 1] ?? 0;
+  /** Our record after that month's deduction, or null where none was advised. */
+  const ptptnBalance = (m: number) => ptptn.balances[m - 1] ?? null;
+  /**
+   * Whether the sheet carries the pair of PTPTN columns at all.
+   *
+   * On the record, not on the figures: a direction that has been stopped, or
+   * one that starts in August, is still something this employee has, and a
+   * sheet that hid it until the first deduction would answer "is there a
+   * PTPTN here" with silence in exactly the months somebody asks.
+   */
+  const showPtptn = ptptnDirections.length > 0;
   const [showYearlySheet, setShowYearlySheet] = useState(false);
   const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "documents">("overview");
 
@@ -1185,7 +1203,15 @@ export default function PayrollEmployeePage() {
     { bg: SHEET.stat, group: "EIS", label: "Employee", rule: true },
     { bg: SHEET.stat, group: "EIS", label: "Employer" },
     { bg: SHEET.deduct, label: "EPL", rule: true },
-    { bg: SHEET.deduct, label: "PTPTN", title: "Withheld from pay and remitted to PTPTN. LCM is not the lender \u2014 it is directed to deduct \u2014 so this comes off take-home after the statutory figures, like a loan instalment." },
+    // A pair, and only where there is a direction. The deduction, then what
+    // our record says is left after it — which is the question the column
+    // exists to answer, and the reason it is not just a figure on a payslip.
+    ...(showPtptn ? [
+      { bg: SHEET.deduct, group: "PTPTN", label: "Deducted",
+        title: "Withheld from pay and remitted to PTPTN. LCM is not the lender — it is directed to deduct — so this comes off take-home after the statutory figures, like a loan instalment." },
+      { bg: SHEET.deduct, group: "PTPTN", label: "Balance",
+        title: "What LCM's record says is left after that month's deduction: the balance PTPTN last advised, less what has been deducted since. NOT a total — the Sub-total and Annual rows show the closing figure, not a sum. It is not the borrower's true position either: they may have paid PTPTN directly, and the interest is not LCM's to compute." },
+    ] : []),
     { bg: SHEET.deduct, group: "Unpaid", label: "days",
       title: "Days of unpaid leave. Priced at the month's gross over its calendar days, and taken off take-home after EPF, SOCSO and EIS." },
     // An in-gross item is already counted in the Gross column to the left, so
@@ -1232,19 +1258,24 @@ export default function PayrollEmployeePage() {
       `Increment since ${commencementYear ?? "commencement"}`, `Increment ${year}`,
       "Experience", "Allowances", "Gross", "PCB",
       "EPF Employee", "EPF Employer", "SOCSO Employee", "SKBBK", "SOCSO Employer",
-      "EIS Employee", "EIS Employer", "EPL", "PTPTN", ...customHead, "Net", "Total LCM"];
+      "EIS Employee", "EIS Employer", "EPL",
+      ...(showPtptn ? ["PTPTN Deducted", "PTPTN Balance"] : []),
+      ...customHead, "Net", "Total LCM"];
     const parts = (l: CalcLine, monthNum: number) => {
       const g = grossPartsFor(monthNum, l);
       return GROSS_PART_KEYS.map(part => g?.[part] ?? "");
     };
     const mkRow = (label: string, l: CalcLine, monthNum: number) =>
-      [label, ...parts(l, monthNum), l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction, l.ptptnDeduction,
+      [label, ...parts(l, monthNum), l.gross, l.pcb, l.epf.ee, l.epf.er, l.socso.ee, l.skbbk, l.socso.er, l.eis.ee, l.eis.er, l.eplDeduction,
+       ...(showPtptn ? [l.ptptnDeduction, ptptnBalance(monthNum) ?? ""] : []),
        ...customCols.map(c => customAmt(monthNum, c)), l.net, l.totalLcmPayment];
     const rows: (string | number)[][] = monthLines.map((l, i) => mkRow(MONTHS[i], l, i + 1));
     if (thirteenth) rows.push(mkRow("13th MTH", thirteenth, 13));
     rows.push(["ANNUAL",
       ...GROSS_PART_KEYS.map(part => round2(sum((l, m) => grossPartsFor(m, l)?.[part] ?? 0))),
-      sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.skbbk), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction), sum(l => l.ptptnDeduction), ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
+      sum(l => l.gross), sum(l => l.pcb), sum(l => l.epf.ee), sum(l => l.epf.er), sum(l => l.socso.ee), sum(l => l.skbbk), sum(l => l.socso.er), sum(l => l.eis.ee), sum(l => l.eis.er), sum(l => l.eplDeduction),
+      ...(showPtptn ? [sum(l => l.ptptnDeduction), ptptnBalance(13) ?? ""] : []),
+      ...customCols.map(c => customColTotal(c)), sum(l => l.net), sum(l => l.totalLcmPayment)]);
     const csv = [head, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -1652,7 +1683,14 @@ export default function PayrollEmployeePage() {
                         />
                       ))}
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(l.eplDeduction)}</td>
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(l.ptptnDeduction)}</td>
+                      {showPtptn && <>
+                        <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(l.ptptnDeduction)}</td>
+                        <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-500">
+                          {ptptnBalance(monthNum) === null
+                            ? <span className="text-stone-300" title="PTPTN has advised no balance, so there is none to count down.">—</span>
+                            : num(ptptnBalance(monthNum)!)}
+                        </td>
+                      </>}
                       <UnpaidDaysCell
                         employeeId={emp.id} employeeName={emp.full_name}
                         year={year} month={monthNum}
@@ -1720,7 +1758,15 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.ee, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eis.er, 0))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.eplDeduction, 0))}</td>
-                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.ptptnDeduction, 0))}</td>
+                    {showPtptn && <>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(monthLines.reduce((s, l) => s + l.ptptnDeduction, 0))}</td>
+                      {/* The closing figure, not a sum. Twelve balances added
+                          together is a number that means nothing. */}
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-500"
+                          title="Our record after December — the closing figure, not a total.">
+                        {ptptnBalance(12) === null ? <span className="text-stone-300">—</span> : num(ptptnBalance(12)!)}
+                      </td>
+                    </>}
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-red-700">
                       {monthLines.some(l => l.unpaidLeave.days > 0)
                         ? <>{monthLines.reduce((s, l) => s + l.unpaidLeave.days, 0)}
@@ -1816,9 +1862,15 @@ export default function PayrollEmployeePage() {
                         />
                       ))}
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(thirteenth.eplDeduction)}</td>
-                      {/* Nil by rule: a monthly direction is a direction for
-                          the months, so a bonus carries no instalment. */}
-                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(thirteenth.ptptnDeduction)}</td>
+                      {showPtptn && <>
+                        {/* Nil by rule: a monthly direction is a direction for
+                            the months, so a bonus carries no instalment, and
+                            the record is where December left it. */}
+                        <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-400">{num(thirteenth.ptptnDeduction)}</td>
+                        <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-500">
+                          {ptptnBalance(13) === null ? <span className="text-stone-300">—</span> : num(ptptnBalance(13)!)}
+                        </td>
+                      </>}
                       {/* No day of a bonus can be unpaid — it is a payment for
                           the year, not a month worked. */}
                       <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-200"
@@ -1886,7 +1938,13 @@ export default function PayrollEmployeePage() {
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eis.ee))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eis.er))}</td>
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.eplDeduction))}</td>
-                    <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.ptptnDeduction))}</td>
+                    {showPtptn && <>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">{num(sum(l => l.ptptnDeduction))}</td>
+                      <td className="border border-stone-200 px-1 py-0.5 text-right font-mono text-stone-500"
+                          title="Our record at the end of the year — the closing figure, not a total.">
+                        {ptptnBalance(13) === null ? <span className="text-stone-300">—</span> : num(ptptnBalance(13)!)}
+                      </td>
+                    </>}
                     <td className="border border-stone-200 px-1 py-0.5 text-right font-mono">
                       {sum(l => l.unpaidLeave.days) > 0
                         ? <>{sum(l => l.unpaidLeave.days)}
@@ -2743,6 +2801,7 @@ export default function PayrollEmployeePage() {
           pcbArr={pcb} customItemsByMonth={customItemsByMonth}
           effMonth={effMonth} grossParts={monthLines.map((l, i) => grossPartsFor(i + 1, l))}
           qualificationLabel={qualificationLabel} qualificationAmount={qualificationAmount}
+          ptptnClosing={ptptnBalance(13)}
           adjustments={adjustments} loans={loans}
           onClose={() => setShowYearlySheet(false)}
         />
@@ -2752,7 +2811,7 @@ export default function PayrollEmployeePage() {
 }
 
 // ─── Yearly Sheet Modal ──────────────────────────────────────────────────────
-function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts, qualificationLabel, qualificationAmount, adjustments, loans, onClose }: {
+function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, customItemsByMonth, effMonth, grossParts, qualificationLabel, qualificationAmount, ptptnClosing, adjustments, loans, onClose }: {
   emp: PayrollEmployee;
   year: number;
   salary: PayrollSalary;
@@ -2770,6 +2829,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
    */
   qualificationLabel: string | null;
   qualificationAmount: number | null;
+  /** Our record of the PTPTN debt at the end of the year, where one was advised. */
+  ptptnClosing: number | null;
   /** This year's corrections. Already scoped to the year by the query. */
   adjustments: PayrollAdjustment[];
   loans: EmployeeLoan[];
@@ -3145,7 +3206,8 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
         <YearlySheetPDF emp={emp} year={year} salary={salary} monthLines={monthLines}
           thirteenth={thirteenth} pcbArr={pcbArr} customItemsByMonth={customItemsByMonth}
           effMonth={effMonth} grossParts={grossParts}
-          qualificationLabel={qualificationLabel} qualificationAmount={qualificationAmount} />
+          qualificationLabel={qualificationLabel} qualificationAmount={qualificationAmount}
+          ptptnClosing={ptptnClosing} />
       ).toBlob();
       const fileName = `${emp.full_name.replace(/\s+/g, "_")}_${year}_Salary.pdf`;
       const file = new File([blob], fileName, { type: "application/pdf" });
@@ -3304,6 +3366,21 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
                   <div className="text-[10px] text-red-600 font-semibold uppercase">EPL Deduction</div>
                   <div className="text-sm font-bold text-red-700 font-mono">RM {num(annualEpl)}<span className="text-[10px] font-normal text-stone-400"> annual</span></div>
                   <div className="text-[10px] text-stone-500">Loan repayment installments</div>
+                </div>
+              )}
+              {/* Without this the panel could be opened by hasPtptn and then
+                  render nothing — a heading over an empty box. */}
+              {hasPtptn && (
+                <div className="bg-white border border-red-200 rounded-lg px-3 py-2 min-w-[160px]">
+                  <div className="text-[10px] text-red-600 font-semibold uppercase">PTPTN</div>
+                  <div className="text-sm font-bold text-red-700 font-mono">RM {num(annualPtptn)}<span className="text-[10px] font-normal text-stone-400"> annual</span></div>
+                  {/* Our record, never "balance". LCM is directed to deduct and
+                      remit; it is not the lender and cannot know the rest. */}
+                  <div className="text-[10px] text-stone-500">
+                    {ptptnClosing === null || ptptnClosing === undefined
+                      ? "No balance advised by PTPTN"
+                      : `Our record at year end: RM ${num(ptptnClosing)}`}
+                  </div>
                 </div>
               )}
               {specialCustom.map(col => {

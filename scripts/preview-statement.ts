@@ -142,6 +142,9 @@ await renderToFile(
   createElement(YearlySheetPDF, {
     emp, year: YEAR, salary, monthLines, thirteenth: null,
     pcbArr: monthLines.map(l => l.pcb), customItemsByMonth, effMonth: 1, grossParts,
+    // So the PTPTN tile's closing line is exercised rather than taken on
+    // trust. 120 a month from March is 1,200 off a record of 9,400.
+    ptptnClosing: plain ? null : 8200,
   }),
   out,
 );
