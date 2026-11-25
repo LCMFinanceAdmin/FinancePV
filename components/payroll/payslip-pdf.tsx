@@ -1,7 +1,7 @@
 "use client";
 import { Document, Font, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary } from "@/lib/types";
-import { grossComponentsForMonth } from "@/lib/payroll/calc";
+import { grossComponentsForMonth, type EarningComponent } from "@/lib/payroll/calc";
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 
 // Noto Sans SC supports Simplified Chinese (马来西亚基督教信义会 etc.)
@@ -169,7 +169,7 @@ export function PayslipPDF({
     : (emp.department || emp.designation || "—").toUpperCase();
 
   // Earning components
-  const earns: { label: string; amount: number }[] = [];
+  const earns: EarningComponent[] = [];
   if (salary) {
     // From calc.ts, so the items listed are exactly the ones inside the gross
     // printed below them — including whether this month's gross carries the
@@ -255,8 +255,19 @@ export function PayslipPDF({
     customItems.filter(i => i.type === "deduction" && !i.inGross).reduce((s, i) => s + i.amount, 0)
     - netAdjustments.reduce((s, a) => s + Number(a.amount), 0);
 
-  const maxRows = Math.max(earns.length, deds.length);
-  const rows = Array.from({ length: maxRows }, (_, i) => ({ e: earns[i], d: deds[i] }));
+  // The line that accounts for a payment that is not a whole month's — an
+  // incomplete month, or a pro-rated 13th — goes last, whatever was added
+  // after it. It was produced with the salary components and the custom items
+  // are appended after, so a pro-rated bonus printed that line in the middle,
+  // above an item the same fraction had already been applied to. Reading down,
+  // it looked as though the item was about to be cut again.
+  const earnRows = [
+    ...earns.filter(c => c.bucket !== "incomplete"),
+    ...earns.filter(c => c.bucket === "incomplete"),
+  ];
+
+  const maxRows = Math.max(earnRows.length, deds.length);
+  const rows = Array.from({ length: maxRows }, (_, i) => ({ e: earnRows[i], d: deds[i] }));
 
   return (
     <Document title={`Payslip — ${monthLabel} ${year} — ${emp.full_name}`} author="Lutheran Church in Malaysia">
@@ -299,7 +310,11 @@ export function PayslipPDF({
           <View style={s.slipBox}>
             <Text style={s.slipTitle}>PAYSLIP</Text>
             <Text style={s.slipPer}>{monthLabel.toUpperCase()} {year}</Text>
-            <Text style={s.slipSub}>Monthly</Text>
+            {/* A 13th month is the one payment that is not monthly, and a
+                payslip headed "13TH MONTH 2026 / Monthly" says so twice and
+                wrongly. It is paid once a year, which is also why SOCSO and
+                EIS read nil in the deductions below. */}
+            <Text style={s.slipSub}>{is13thMonth ? "Annual" : "Monthly"}</Text>
           </View>
         </View>
 
