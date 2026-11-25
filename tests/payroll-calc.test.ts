@@ -1373,3 +1373,49 @@ test("an open-ended item runs until somebody stops it", async () => {
   assert.equal(itemAppliesToMonth(open, 2026, 5), true);
   assert.equal(itemAppliesToMonth(open, 2030, 1), true);
 });
+
+test("an item that runs to the 13th month is paid in it once, not twice", async () => {
+  // A 13th month draws on two months: December, whose salary it is paid on,
+  // and the 13th itself. An item running "until the 13th month" belongs to
+  // both, and the sheet used to take the two lists and join them — so RM 870
+  // of outstanding salary came out as RM 1,740 in the bonus, and the gross
+  // with it. The run never had the fault, which is the argument for both
+  // calling the same function.
+  const { itemsForRun } = await import("@/lib/payroll/custom-items");
+  const toThirteenth = {
+    id: "a", amount: 870, in_gross: true, in_thirteenth: true,
+    year: 2026, month: 1, is_recurring: true,
+    recur_until_year: 2026, recur_until_month: 13,
+  };
+  const toDecember = { ...toThirteenth, id: "b", recur_until_month: 12 };
+
+  assert.equal(itemsForRun([toThirteenth], 2026, 13).length, 1, "to the 13th: once");
+  assert.equal(itemsForRun([toDecember], 2026, 13).length, 1, "to December: once");
+  assert.equal(itemsForRun([toThirteenth, toDecember], 2026, 13).length, 2,
+    "and two items are still two");
+  // An ordinary month is unaffected either way.
+  assert.equal(itemsForRun([toThirteenth, toDecember], 2026, 6).length, 2);
+  assert.equal(itemsForRun([toThirteenth, toDecember], 2027, 13).length, 0, "and not next year");
+});
+
+test("the bonus adds a December item once, whatever its last month says", async () => {
+  // The figure, not the count: 3,930 of wage and 870 of outstanding salary is
+  // 4,800. It was 5,670.
+  const { itemsForRun, toCalcItem } = await import("@/lib/payroll/custom-items");
+  const { thirteenthMonthItems } = await import("@/lib/payroll/calc");
+  const rows = [
+    { id: "a", label: "Salary Difference from 2024 and 2025", type: "allowance" as const,
+      amount: 870, in_gross: true, in_thirteenth: true,
+      year: 2026, month: 1, is_recurring: true,
+      recur_until_year: 2026, recur_until_month: 13 },
+    { id: "b", label: "COLA", type: "allowance" as const,
+      amount: 450, in_gross: true, in_thirteenth: false,
+      year: 2026, month: 1, is_recurring: true,
+      recur_until_year: 2026, recur_until_month: 12 },
+  ];
+  const forBonus = thirteenthMonthItems(itemsForRun(rows, 2026, 13).map(toCalcItem), 1);
+  assert.deepEqual(forBonus.map(i => i.amount), [870]);
+
+  const bonus = line({ gross: 3930, is13thMonth: true, customItems: forBonus });
+  assert.equal(bonus.gross, 4800);
+});

@@ -10,7 +10,7 @@ import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayabl
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
-import { itemAppliesToMonth, toCalcItem } from "@/lib/payroll/custom-items";
+import { itemAppliesToMonth, itemsForRun, toCalcItem } from "@/lib/payroll/custom-items";
 import { useToast, Toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
@@ -720,8 +720,14 @@ export default function PayrollEmployeePage() {
         // difference is wages owed for an earlier period and earns one, while
         // a cost-of-living allowance pays for the months it is lived through.
         // calcLine adds these to the gross above, so they are not added twice.
+        //
+        // Selected from every item rather than by joining customItemsByMonth's
+        // December and 13th lists. An item running "until the 13th month" is
+        // in both of those, and joining them paid it twice — 870 of
+        // outstanding salary came out as 1,740. itemsForRun counts it once,
+        // and is what the payroll run uses, so the two cannot disagree.
         customItems: thirteenthMonthItems(
-          [...(customItemsByMonth[12] ?? []), ...(customItemsByMonth[13] ?? [])].map(toCalcItem),
+          itemsForRun(customItems, year, 13).map(toCalcItem),
           thirteenthDue.fraction,
         ),
         age: ageAt(emp.dob, year, 12),

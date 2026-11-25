@@ -9,7 +9,7 @@ import { PayslipPDF } from "@/components/payroll/payslip-pdf";
 import { BankExportModal, buildBankRows, generateWorkbook } from "@/components/payroll/bank-export-modal";
 import { generateStatutorySummary } from "@/components/payroll/statutory-summary";
 import { calcLine, ageAt, grossForMonth, monthDays, owedForRunMonth, thirteenthMonthItems, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
-import { itemAppliesToMonth, itemMonthsForRun, toCalcItem } from "@/lib/payroll/custom-items";
+import { itemsForRun, toCalcItem } from "@/lib/payroll/custom-items";
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
@@ -174,10 +174,9 @@ export default function PayrollRunDetailPage() {
     const { data: cItems } = await supabase
       .from("payroll_employee_custom_items")
       .select("*");
-    const itemMonths = itemMonthsForRun(runRow.month);
     const customByEmp: Record<string, CustomPayrollItem[]> = {};
-    for (const item of (cItems as PayrollEmployeeCustomItem[]) ?? []) {
-      if (!itemMonths.some(m => itemAppliesToMonth(item, runRow.year, m))) continue;
+    for (const item of itemsForRun(
+      (cItems as PayrollEmployeeCustomItem[]) ?? [], runRow.year, runRow.month)) {
       (customByEmp[item.employee_id] ??= []).push({
         label: item.label, type: item.type, amount: Number(item.amount),
         in_gross: !!item.in_gross, in_thirteenth: !!item.in_thirteenth,

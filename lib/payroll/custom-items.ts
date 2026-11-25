@@ -55,6 +55,28 @@ export function itemMonthsForRun(month: number): readonly number[] {
   return month === 13 ? [12, 13] : [month];
 }
 
+/**
+ * The items a run of `month` pays, each counted ONCE.
+ *
+ * The counting is the point. A 13th month draws on two months — December,
+ * whose salary it is paid on, and the 13th itself — and an item can belong to
+ * both: a standing allowance running "until the 13th month" matches December
+ * and the 13th. Taking the two months' lists and joining them paid such an
+ * item twice, which is exactly what happened: RM 870 of outstanding salary
+ * became RM 1,740 of it in the bonus, and the gross with it.
+ *
+ * So the selection is a filter over every item rather than a join of per-month
+ * lists, and `.some` collapses the two months to one hit. The yearly sheet and
+ * the payroll run both call this, because they must agree about a figure
+ * somebody is paid.
+ */
+export function itemsForRun<T extends ItemPeriod>(
+  items: readonly T[], year: number, month: number,
+): T[] {
+  const months = itemMonthsForRun(month);
+  return items.filter(i => months.some(m => itemAppliesToMonth(i, year, m)));
+}
+
 /** Every month of `year` an item is paid in, the 13th included. */
 export function monthsCovered(item: ItemPeriod, year: number): number[] {
   return Array.from({ length: 13 }, (_, i) => i + 1)
