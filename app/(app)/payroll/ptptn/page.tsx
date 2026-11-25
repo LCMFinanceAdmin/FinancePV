@@ -20,14 +20,10 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import {
   recordedBalance, needsAttention,
-  type PtptnDirection, type PtptnDeduction,
+  type PtptnRecord, type PtptnDeduction,
 } from "@/lib/payroll/ptptn";
 
-type Row = PtptnDirection & {
-  employee_id: string;
-  reference_no: string | null;
-  note: string | null;
-};
+type Row = PtptnRecord;
 type Employee = { id: string; full_name: string; emp_no: string | null };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -39,6 +35,7 @@ type Draft = {
   employee_id: string;
   reference_no: string;
   monthly_amount: string;
+  loan_amount: string;
   opening_balance: string;
   balance_as_at: string;
   started_on: string;
@@ -46,7 +43,7 @@ type Draft = {
 };
 
 const blank = (): Draft => ({
-  employee_id: "", reference_no: "", monthly_amount: "",
+  employee_id: "", reference_no: "", monthly_amount: "", loan_amount: "",
   opening_balance: "", balance_as_at: "", started_on: today(), note: "",
 });
 
@@ -105,6 +102,8 @@ export default function PtptnPage() {
       employee_id: draft.employee_id,
       reference_no: draft.reference_no.trim() || null,
       monthly_amount: amount,
+      // Reference only. Nothing is worked out from it — see migration 285.
+      loan_amount: draft.loan_amount.trim() === "" ? null : parseFloat(draft.loan_amount),
       opening_balance: hasBalance ? parseFloat(draft.opening_balance) : null,
       balance_as_at: hasBalance ? draft.balance_as_at : null,
       started_on: draft.started_on,
@@ -203,8 +202,10 @@ export default function PtptnPage() {
                             <h3 className="text-base font-bold text-stone-800">{nameOf(row.employee_id)}</h3>
                             <p className="text-[12px] text-stone-500">
                               {formatCurrency(Number(row.monthly_amount))} a month
+                              {row.loan_amount !== null && <> · loan {formatCurrency(Number(row.loan_amount))}</>}
                               {row.reference_no ? <> · ref {row.reference_no}</> : null}
                               {" · from "}{fmtDate(row.started_on)}
+                              {row.ended_on && row.status === "ACTIVE" && <> {"–"} {fmtDate(row.ended_on)}</>}
                               {row.ended_on ? <> · stopped {fmtDate(row.ended_on)}</> : null}
                             </p>
                           </div>
@@ -215,6 +216,7 @@ export default function PtptnPage() {
                                   id: row.id, employee_id: row.employee_id,
                                   reference_no: row.reference_no ?? "",
                                   monthly_amount: String(row.monthly_amount),
+                                  loan_amount: row.loan_amount === null ? "" : String(row.loan_amount),
                                   opening_balance: row.opening_balance === null ? "" : String(row.opening_balance),
                                   balance_as_at: row.balance_as_at ?? "",
                                   started_on: row.started_on, note: row.note ?? "",
@@ -308,6 +310,21 @@ export default function PtptnPage() {
                   <input className={fld} type="date" value={draft.started_on}
                     onChange={e => setDraft({ ...draft, started_on: e.target.value })} />
                 </div>
+              </div>
+
+              <div>
+                <label className={lbl}>Loan amount (RM) <span className="font-normal text-stone-400">— if known</span></label>
+                <input className={`${fld} font-mono`} type="number" step="0.01"
+                  value={draft.loan_amount}
+                  onChange={e => setDraft({ ...draft, loan_amount: e.target.value })}
+                  placeholder="What PTPTN lent" />
+                {/* Said plainly, because the obvious assumption is wrong: the
+                    gap between this and the balance below is repayments LCM
+                    did not make and interest LCM does not compute. */}
+                <p className="mt-1 text-[10.5px] text-stone-400">
+                  Recorded for the record only. The deduction runs off the monthly amount and
+                  counts down from the balance PTPTN advised — nothing is worked out from this.
+                </p>
               </div>
 
               <div>

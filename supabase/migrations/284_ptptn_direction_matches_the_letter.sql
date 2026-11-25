@@ -1,8 +1,12 @@
 -- 284: one PTPTN direction set to what PTPTN's letter says.
 --
 -- EMP-135 carries a direction keyed before the letter was to hand, and three
--- fields differ from it. PTPTN's letter of 11 June 2026 (ref
--- PTPTN/BPG - 760311065787-e908336, loan 908336) states:
+-- fields differ from it. PTPTN's letter of 11 June 2026 states:
+--
+-- (Its reference carries the borrower's IC and loan number. Those are not
+-- repeated here: a migration is a public-facing file in a repository, and the
+-- employee record and the audit row below already identify who this is to
+-- anybody entitled to look.)
 --
 --   ANSURAN     RM 182.30
 --   BULAN MULA  Jun 2026
@@ -76,7 +80,7 @@ END $$;
 
 INSERT INTO payroll_audit_log (action, entity, employee_id, detail, actor)
 SELECT 'PTPTN_UPDATED', COALESCE(p.reference_no, 'PTPTN'), p.employee_id,
-       'Set to PTPTN''s letter of 11 June 2026 (loan 908336): instalment 182.35 → 182.30, '
+       'Set to PTPTN''s letter of 11 June 2026: instalment 182.35 → 182.30, '
        || 'first month May 2026 → June 2026, and an end of November 2037 recorded where '
        || 'there had been none. The advised balance of 19,685.51 is unchanged. No deduction '
        || 'had been made, so nothing remitted is restated. Migration 284.',

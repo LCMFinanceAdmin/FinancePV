@@ -41,6 +41,24 @@ export interface PtptnDirection {
   status: "ACTIVE" | "STOPPED" | "COMPLETED";
 }
 
+/**
+ * The stored row: everything the calculation needs, plus what is only read.
+ *
+ * `PtptnDirection` above is deliberately the smaller shape — it is what the
+ * arithmetic is entitled to see. The loan amount is not part of that and must
+ * not become part of it: the gap between what PTPTN lent and what they last
+ * advised is outstanding is repayments LCM did not make and interest LCM does
+ * not compute. It is recorded because Finance wants the record to read like a
+ * staff loan does, and it is never a figure anything is derived from.
+ */
+export interface PtptnRecord extends PtptnDirection {
+  employee_id: string;
+  reference_no: string | null;
+  /** What PTPTN lent, where the letter says. Null where it does not. */
+  loan_amount: number | null;
+  note: string | null;
+}
+
 export interface PtptnDeduction {
   ptptn_id: string;
   year: number;

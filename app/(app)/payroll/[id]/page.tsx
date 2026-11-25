@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown, Church } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown, Church, GraduationCap, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, grossPartsAsAt, thirteenthMonthBase, thirteenthMonthItems, GROSS_PART_KEYS, figureOf, fullGross, type CalcLine, type GrossBreakdown, type GrossPartKey, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
@@ -12,7 +12,7 @@ import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 import { itemAppliesToMonth, itemsForRun, toCalcItem } from "@/lib/payroll/custom-items";
 import { pcbForMonth } from "@/lib/payroll/pcb";
-import { ptptnForYear, type PtptnDirection, type PtptnDeduction } from "@/lib/payroll/ptptn";
+import { ptptnForYear, recordedBalance, needsAttention, type PtptnRecord, type PtptnDeduction } from "@/lib/payroll/ptptn";
 import { PcbCell } from "@/components/payroll/pcb-cell";
 import { useToast, Toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -242,7 +242,7 @@ export default function PayrollEmployeePage() {
    * LCM is not the lender here. PTPTN lends, the employee borrows, and LCM is
    * directed to deduct and remit; see lib/payroll/ptptn.
    */
-  const [ptptnDirections, setPtptnDirections] = useState<PtptnDirection[]>([]);
+  const [ptptnDirections, setPtptnDirections] = useState<PtptnRecord[]>([]);
   const [ptptnTaken, setPtptnTaken] = useState<PtptnDeduction[]>([]);
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [bands, setBands] = useState<ContributionBand[]>([]);
@@ -383,7 +383,7 @@ export default function PayrollEmployeePage() {
       supabase.from("employee_ptptn").select("*").eq("employee_id", id),
       supabase.from("ptptn_deductions").select("ptptn_id,year,month,amount,payroll_run_id"),
     ]);
-    setPtptnDirections((dirs as PtptnDirection[]) ?? []);
+    setPtptnDirections((dirs as PtptnRecord[]) ?? []);
     setPtptnTaken((deds as PtptnDeduction[]) ?? []);
   }, [supabase, id]);
 
@@ -1293,15 +1293,23 @@ export default function PayrollEmployeePage() {
             ["salary", "Salary & Allowances", Wallet],
             ["sheet", "Yearly Sheet", Table2],
             ["payslips", "Payslips", Receipt],
-            ["loans", "Loans", HandCoins],
+            // "Loans & PTPTN", because the tab now holds both and a tab
+            // nobody expects to find PTPTN in is a tab they will not open.
+            ["loans", "Loans & PTPTN", HandCoins],
             ["documents", "Documents", FolderOpen],
           ] as const).map(([key, label, Icon]) => (
             <button key={key} onClick={() => setTab(key)}
               className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
                 tab === key ? "border-[#4a6da7] text-[#4a6da7]" : "border-transparent text-stone-400 hover:text-stone-600"}`}>
               <Icon size={14} /> {label}
-              {key === "loans" && loans.filter(l => l.status === "ACTIVE").length > 0 && (
-                <span className="text-[10px] px-1.5 rounded-full bg-[#4a6da7]/10 text-[#4a6da7] font-bold">{loans.filter(l => l.status === "ACTIVE").length}</span>
+              {/* Counts both, because the badge is "is there anything in
+                  here", and a PTPTN direction on its own is something. */}
+              {key === "loans" && loans.filter(l => l.status === "ACTIVE").length
+                + ptptnDirections.filter(d => d.status === "ACTIVE").length > 0 && (
+                <span className="text-[10px] px-1.5 rounded-full bg-[#4a6da7]/10 text-[#4a6da7] font-bold">
+                  {loans.filter(l => l.status === "ACTIVE").length
+                    + ptptnDirections.filter(d => d.status === "ACTIVE").length}
+                </span>
               )}
             </button>
           ))}
@@ -2585,6 +2593,75 @@ export default function PayrollEmployeePage() {
               })}
             </div>
           )}
+
+          {/* ── PTPTN ──
+              Here because it is the same thing to the person reading it:
+              money coming out of salary every month until a debt is paid. It
+              is NOT the same thing underneath — LCM lends the staff loan above
+              and merely remits this one — so the figures are labelled for what
+              they are and nothing is inferred from the loan amount. */}
+          <div className="mt-6 border-t border-stone-100 pt-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold text-stone-700 flex items-center gap-1.5">
+                <GraduationCap size={15} className="text-[#4a6da7]" /> PTPTN
+              </h2>
+              <Link href="/payroll/ptptn" className="flex items-center gap-1 text-xs font-semibold text-[#4a6da7] hover:text-[#3d5c8f] transition-colors">
+                PTPTN register <ExternalLink size={12} />
+              </Link>
+            </div>
+            {ptptnDirections.length === 0 ? (
+              <p className="text-sm text-stone-400">
+                No PTPTN deduction on record for this employee.{" "}
+                <Link href="/payroll/ptptn" className="font-semibold text-[#4a6da7] hover:underline">Add one</Link> if there is a direction to deduct.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {ptptnDirections.map(d => {
+                  const left = recordedBalance(d, ptptnTaken);
+                  const flag = needsAttention(d, ptptnTaken);
+                  const statusStyle: Record<string, string> = {
+                    ACTIVE: "bg-green-100 text-green-700",
+                    STOPPED: "bg-stone-100 text-stone-500",
+                    COMPLETED: "bg-stone-100 text-stone-500",
+                  };
+                  return (
+                    <div key={d.id} className="border border-stone-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-stone-700">{d.reference_no || "PTPTN"}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${statusStyle[d.status] ?? "bg-stone-100 text-stone-500"}`}>{d.status}</span>
+                        </div>
+                        <span className="text-xs text-stone-400">
+                          From {fmtDate(d.started_on)}
+                          {d.ended_on && <> · to {fmtDate(d.ended_on)}</>}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 mt-3 text-sm">
+                        <Field label="Loan amount" value={d.loan_amount === null ? "—" : formatCurrency(Number(d.loan_amount))} />
+                        <Field label="Instalment" value={`${formatCurrency(Number(d.monthly_amount))} / mth`} />
+                        {/* Never "balance" on its own. It is what PTPTN last
+                            advised less what LCM has deducted since, and the
+                            employee may have paid PTPTN directly. */}
+                        <Field label="Outstanding (our record)" value={left === null ? "not advised" : formatCurrency(left)} />
+                        <Field label="Advised" value={d.balance_as_at ? fmtDate(d.balance_as_at) : "—"} />
+                      </div>
+                      {flag.attention && flag.why && (
+                        <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+                          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                          <span>{flag.why}</span>
+                        </p>
+                      )}
+                      {d.status === "ACTIVE" && (
+                        <p className="text-[10px] text-stone-400 mt-2">
+                          Deductions appear in the PTPTN column of the yearly sheet from {fmtDate(d.started_on)}, and are recorded when a payroll run is finalised.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
