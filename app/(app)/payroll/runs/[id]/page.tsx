@@ -8,7 +8,8 @@ import { formatCurrency } from "@/lib/utils";
 import { PayslipPDF } from "@/components/payroll/payslip-pdf";
 import { BankExportModal, buildBankRows, generateWorkbook } from "@/components/payroll/bank-export-modal";
 import { generateStatutorySummary } from "@/components/payroll/statutory-summary";
-import { calcLine, ageAt, grossForMonth, monthDays, owedForRunMonth, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { calcLine, ageAt, grossForMonth, monthDays, owedForRunMonth, thirteenthMonthItems, type CalcLine, type RateConfig, type ContributionBand } from "@/lib/payroll/calc";
+import { itemAppliesToMonth, itemMonthsForRun, toCalcItem } from "@/lib/payroll/custom-items";
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 import { logPayrollAudit } from "@/lib/payroll/audit";
 import { dueFromBalance } from "@/lib/payroll/loan";
@@ -30,7 +31,7 @@ function listNames(names: string[]): string {
 /** Only the fields the balance needs; the full row lives in the table. */
 interface LoanRepaymentRow { loan_id: string; amount: number; payroll_run_id: string | null }
 type PtptnRow = PtptnDirection & { employee_id: string };
-import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem, PayrollAdjustmentSnapshot } from "@/lib/types";
+import type { UserProfile, PayrollEmployee, PayrollSalary, EmployeeLoan, PayrollRun, PayrollLine, PayrollVoucher, CustomPayrollItem, PayrollEmployeeCustomItem, PayrollAdjustmentSnapshot } from "@/lib/types";
 
 const MONTH_LABELS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "13th Month"];
 function num(n: number): string { return n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -160,22 +161,27 @@ export default function PayrollRunDetailPage() {
       setVouchers((pv as PayrollVoucher[]) ?? []);
     }
 
-    // Load custom items per employee — include recurring items from other months
+    // Load custom items per employee — standing items from earlier months
+    // included, and for a 13th month those of December, which is the salary
+    // the bonus is paid on. Both the rule and the mapping are shared with the
+    // yearly sheet now: see lib/payroll/custom-items for what the copy that
+    // used to live here got wrong.
+    //
+    // Every column, not a hand-picked list. The list left out in_gross, so an
+    // item marked as part of the salary was paid outside the gross in every
+    // run — no EPF on either side, no SOCSO, no EIS, undeclared for PCB —
+    // while the sheet beside it showed the figure inside the gross.
     const { data: cItems } = await supabase
       .from("payroll_employee_custom_items")
-      .select("employee_id, label, type, amount, is_recurring, year, month, recur_until_year, recur_until_month");
+      .select("*");
+    const itemMonths = itemMonthsForRun(runRow.month);
     const customByEmp: Record<string, CustomPayrollItem[]> = {};
-    for (const item of (cItems as { employee_id: string; label: string; type: "allowance" | "deduction"; amount: number; is_recurring: boolean; year: number; month: number; recur_until_year: number | null; recur_until_month: number | null }[]) ?? []) {
-      const applies = !item.is_recurring
-        ? item.year === runRow.year && item.month === runRow.month
-        : (() => {
-            const started = item.year < runRow.year || (item.year === runRow.year && item.month <= runRow.month);
-            if (!started) return false;
-            if (item.recur_until_year === null || item.recur_until_year === undefined) return true;
-            return item.recur_until_year > runRow.year ||
-              (item.recur_until_year === runRow.year && (item.recur_until_month ?? 13) >= runRow.month);
-          })();
-      if (applies) (customByEmp[item.employee_id] ??= []).push({ label: item.label, type: item.type, amount: Number(item.amount) });
+    for (const item of (cItems as PayrollEmployeeCustomItem[]) ?? []) {
+      if (!itemMonths.some(m => itemAppliesToMonth(item, runRow.year, m))) continue;
+      (customByEmp[item.employee_id] ??= []).push({
+        label: item.label, type: item.type, amount: Number(item.amount),
+        in_gross: !!item.in_gross, in_thirteenth: !!item.in_thirteenth,
+      });
     }
     setEmpCustomItems(customByEmp);
 
@@ -292,9 +298,16 @@ export default function PayrollRunDetailPage() {
           daysInMonth: new Date(run.year, run.month, 0).getDate(),
         },
         is13thMonth: is13th, rates,
-        // in_gross as the calculator spells it: an item that is part of the
-        // salary moves the gross before any contribution is worked out.
-        customItems: (empCustomItems[e.id] ?? []).map(c => ({ ...c, inGross: !!c.in_gross })),
+        // Both flags as the calculator spells them: an item that is part of
+        // the salary moves the gross before any contribution is worked out,
+        // and one that earns a thirteenth payment joins the bonus.
+        //
+        // A 13th month pays only the items that earn one, at the fraction of
+        // a month being paid — December's standing items, less those that pay
+        // for an arrangement while it lasts rather than being wages.
+        customItems: is13th
+          ? thirteenthMonthItems((empCustomItems[e.id] ?? []).map(toCalcItem), thirteenth)
+          : (empCustomItems[e.id] ?? []).map(toCalcItem),
         adjustments: empAdjustments[e.id] ?? [],
       });
       return { emp: e, line };

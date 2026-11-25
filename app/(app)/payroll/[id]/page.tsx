@@ -5,11 +5,12 @@ import Link from "next/link";
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, Minus, Clock, Table2, Download, Printer, Plus, X, Share2, ListPlus, Trash2, HandCoins, FolderOpen, User, Receipt, ExternalLink, Scale, Pencil, Repeat, ChevronDown, Church } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, grossPartsAsAt, thirteenthMonthBase, GROSS_PART_KEYS, figureOf, fullGross, type CalcLine, type GrossBreakdown, type GrossPartKey, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
+import { calcLine, ageAt, incrementEffectiveMonth, grossForMonth, monthDays, grossComponentsForMonth, grossBreakdownForMonth, grossPartsAsAt, thirteenthMonthBase, thirteenthMonthItems, GROSS_PART_KEYS, figureOf, fullGross, type CalcLine, type GrossBreakdown, type GrossPartKey, type RateConfig, type ContributionBand, type SalaryComponents } from "@/lib/payroll/calc";
 import { installmentForMonth, installmentAmount, outstandingAfter, totalRepayable } from "@/lib/payroll/loan";
 import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range";
 import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
+import { itemAppliesToMonth, toCalcItem } from "@/lib/payroll/custom-items";
 import { useToast, Toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
@@ -56,14 +57,6 @@ function monthsLabel(months: readonly number[]): string {
     .join(", ");
 }
 
-function itemAppliesToMonth(item: { year: number; month: number; is_recurring: boolean; recur_until_year: number | null; recur_until_month: number | null }, targetYear: number, targetMonth: number): boolean {
-  if (!item.is_recurring) return item.year === targetYear && item.month === targetMonth;
-  const started = item.year < targetYear || (item.year === targetYear && item.month <= targetMonth);
-  if (!started) return false;
-  if (item.recur_until_year === null || item.recur_until_year === undefined) return true;
-  return item.recur_until_year > targetYear ||
-    (item.recur_until_year === targetYear && (item.recur_until_month ?? 13) >= targetMonth);
-}
 /**
  * One heading on the yearly sheet: the scheme it belongs to, then the figure.
  *
@@ -720,6 +713,17 @@ export default function PayrollEmployeePage() {
         // Without the STM allowance: a 13th month is a thirteenth of the
         // wage, and a secondment allowance is not wage.
         gross: round2(thirteenthMonthBase(salaryForMonth(12) ?? sal) * thirteenthDue.fraction),
+        // The standing items that earn a thirteenth payment, at the fraction
+        // being paid. December's, because the bonus is paid on December's
+        // salary, plus anything keyed to the 13th month itself. Only items
+        // marked as part of the bonus survive thirteenthMonthItems: a salary
+        // difference is wages owed for an earlier period and earns one, while
+        // a cost-of-living allowance pays for the months it is lived through.
+        // calcLine adds these to the gross above, so they are not added twice.
+        customItems: thirteenthMonthItems(
+          [...(customItemsByMonth[12] ?? []), ...(customItemsByMonth[13] ?? [])].map(toCalcItem),
+          thirteenthDue.fraction,
+        ),
         age: ageAt(emp.dob, year, 12),
         employmentType: emp.employment_type,
         isOrangAsli: emp.is_orang_asli,
@@ -761,9 +765,7 @@ export default function PayrollEmployeePage() {
       eplDeduction: eplForMonth(m),
       is13thMonth: false,
       rates,
-      customItems: (customItemsByMonth[m] ?? []).map(c => ({
-        label: c.label, type: c.type, amount: Number(c.amount), inGross: !!c.in_gross,
-      })),
+      customItems: (customItemsByMonth[m] ?? []).map(toCalcItem),
       adjustments: adj,
     });
   };
@@ -940,6 +942,16 @@ export default function PayrollEmployeePage() {
    * a deduction sharing a name cannot cancel each other out.
    */
   function customAmt(monthNum: number, col: { label: string; type: "allowance" | "deduction" }): number {
+    // The 13th row reads the line that was computed, not the item rows. Only
+    // some items earn a thirteenth payment and those that do are paid at the
+    // fraction of the bonus being paid, so re-deriving the figure here would
+    // be a second answer to a question calcLine has already answered — and
+    // the column would disagree with the gross beside it.
+    if (monthNum === 13) {
+      return (thirteenth?.customItems ?? [])
+        .filter(i => i.label === col.label && i.type === col.type)
+        .reduce((t, i) => t + Number(i.amount), 0);
+    }
     return (customItemsByMonth[monthNum] ?? [])
       .filter(i => i.label === col.label && i.type === col.type)
       .reduce((t, i) => t + Number(i.amount), 0);
@@ -952,18 +964,29 @@ export default function PayrollEmployeePage() {
   }
 
   /**
-   * The gross on a row, in the four parts the sheet shows.
+   * The gross on a row, in the parts the sheet shows.
    *
    * Taken from grossBreakdownForMonth so the increment timing is decided in
    * one place, then reconciled to the figure the row actually prints — which
-   * is not always the salary record's. Two things move it: a 13th month is a
-   * fraction of December's gross, and Finance may key a correction against
-   * any month. The first is scaled, because every part of the payment is
-   * proportionally smaller; the second lands on basic, because a correction
-   * is a sum of money and not a share of one.
+   * is not always the salary record's. Three things move it, and each is put
+   * where it belongs rather than wherever makes the total work:
    *
-   * Either way the four columns add up to the Gross beside them. Columns that
-   * nearly add up would be worse than no columns.
+   *  - A 13th month is a fraction of December's wage, so every part of the
+   *    wage is that fraction. Taken from the entitlement, not inferred from
+   *    the ratio of two grosses: that ratio stopped being the fraction the
+   *    moment a custom item joined the bonus.
+   *  - A custom item that is part of the gross is in the printed figure and
+   *    not in the salary record, so it joins Allowances, beside the family
+   *    and secondment ones. It used to land on Basic, as the only part that
+   *    was ever adjusted to make the row add up — which read a basic of 3,200
+   *    plus an 870 salary difference and a 450 cost-of-living allowance as a
+   *    basic of 4,520, on the sheet and in the printed statement's breakdown.
+   *  - Anything still unaccounted for is a correction Finance keyed against
+   *    the month. That does land on Basic, because a correction is a sum of
+   *    money and not a share of one.
+   *
+   * Either way the parts add up to the Gross beside them. Columns that nearly
+   * add up would be worse than no columns.
    */
   const grossPartsFor = (m: number, line: CalcLine): GrossBreakdown | null => {
     const sal = salaryForMonth(m === 13 ? 12 : m) ?? salaryForMonth(m);
@@ -974,22 +997,27 @@ export default function PayrollEmployeePage() {
       is13 ? null : monthDays(emp.date_commenced, emp.resigned_date, year, m),
       { year, effectiveFrom: sal.effective_from },
     );
-    if (round2(line.gross) === round2(base.gross)) return base;
-    if (is13 && base.gross > 0) {
-      const k = line.gross / base.gross;
-      const experience = round2(base.experience * k);
-      const carried = round2(base.carried * k);
-      const current = round2(base.current * k);
-      const allowances = round2(base.allowances * k);
-      return {
-        experience, carried, current, allowances,
-        basic: round2(line.gross - experience - carried - current - allowances),
-        gross: round2(line.gross),
-      };
-    }
+    const fraction = is13 ? thirteenthDue.fraction : 1;
+    const scaled: GrossBreakdown = fraction === 1 ? base : {
+      basic: round2(base.basic * fraction),
+      experience: round2(base.experience * fraction),
+      carried: round2(base.carried * fraction),
+      current: round2(base.current * fraction),
+      allowances: round2(base.allowances * fraction),
+      gross: round2(base.gross * fraction),
+    };
+    // Allowances up, deductions down — the figure calcLine actually moved the
+    // gross by, already at the fraction a 13th month pays.
+    const items = round2(line.customInGross);
+    const withItems: GrossBreakdown = items === 0 ? scaled : {
+      ...scaled,
+      allowances: round2(scaled.allowances + items),
+      gross: round2(scaled.gross + items),
+    };
+    if (round2(line.gross) === round2(withItems.gross)) return withItems;
     return {
-      ...base,
-      basic: round2(base.basic + (line.gross - base.gross)),
+      ...withItems,
+      basic: round2(withItems.basic + (line.gross - withItems.gross)),
       gross: round2(line.gross),
     };
   };
@@ -2827,6 +2855,16 @@ function YearlySheetModal({ emp, year, salary, monthLines, thirteenth, pcbArr, c
    * a deduction sharing a name cannot cancel each other out.
    */
   function customAmt(monthNum: number, col: { label: string; type: "allowance" | "deduction" }): number {
+    // The 13th row reads the line that was computed, not the item rows. Only
+    // some items earn a thirteenth payment and those that do are paid at the
+    // fraction of the bonus being paid, so re-deriving the figure here would
+    // be a second answer to a question calcLine has already answered — and
+    // the column would disagree with the gross beside it.
+    if (monthNum === 13) {
+      return (thirteenth?.customItems ?? [])
+        .filter(i => i.label === col.label && i.type === col.type)
+        .reduce((t, i) => t + Number(i.amount), 0);
+    }
     return (customItemsByMonth[monthNum] ?? [])
       .filter(i => i.label === col.label && i.type === col.type)
       .reduce((t, i) => t + Number(i.amount), 0);

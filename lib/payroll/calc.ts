@@ -252,8 +252,22 @@ export interface CalcInput {
    * SOCSO and PCB. Set true it moves the gross BEFORE the contributions are
    * worked out, so every statutory figure follows it — which is what back
    * pay, a salary difference or an arrears payment actually is.
+   *
+   * `inThirteenth` is a second and separate question: does this item earn a
+   * thirteenth payment at the end of the year? Being part of the gross does
+   * not answer it. A secondment allowance is in the gross and is not paid a
+   * thirteenth time; so is a cost-of-living allowance, which pays for the
+   * months it is lived through. A salary difference is wages owed for an
+   * earlier period, and a thirteenth of the wage it corrects is part of what
+   * was owed. Default false, so nothing joins a bonus by accident.
    */
-  customItems?: Array<{ label?: string; type: "allowance" | "deduction"; amount: number; inGross?: boolean }>;
+  customItems?: Array<{
+    label?: string;
+    type: "allowance" | "deduction";
+    amount: number;
+    inGross?: boolean;
+    inThirteenth?: boolean;
+  }>;
   /**
    * Corrections landing in this month.
    *
@@ -301,8 +315,14 @@ export interface CalcLine {
   totalLcmPayment: number;     // gross + employer contributions + custom allowances
   customAllowances: number;
   customDeductions: number;
-  /** Every item, with the flag, so a sheet can say which are already in the gross. */
-  customItems: Array<{ label: string; type: "allowance" | "deduction"; amount: number; inGross: boolean }>;
+  /** Every item, with the flags, so a sheet can say which are already in the
+      gross and which of those also earn a thirteenth payment. Both are kept
+      on a finalised run, so a reprinted payslip reads them rather than the
+      item rows, which may have moved on since. */
+  customItems: Array<{
+    label: string; type: "allowance" | "deduction"; amount: number;
+    inGross: boolean; inThirteenth: boolean;
+  }>;
   /** What the in-gross items moved the gross by: allowances up, deductions down. */
   customInGross: number;
   /** What was applied, kept so a payslip can itemise it rather than just differ. */
@@ -484,6 +504,29 @@ export function fullGross(s: SalaryComponents): number {
  */
 export function thirteenthMonthBase(s: SalaryComponents): number {
   return round2(fullGross(s) - Number(s.stm_allowance));
+}
+
+/**
+ * The custom items that join a 13th month, at the amounts it pays them.
+ *
+ * Two jobs, in one function because the sheet and the payroll run must agree
+ * about a figure somebody is paid: pick the items that earn a thirteenth
+ * payment, and scale them by the fraction of the bonus being paid. A joiner
+ * part-way through the year gets a fraction of the wage, and an item that is
+ * part of that wage is a fraction of it too.
+ *
+ * `items` is December's items — the bonus is paid on December's salary, so it
+ * is paid on December's standing items. An item that stops in December
+ * therefore leaves the bonus of its own accord the following year, which is
+ * the whole of why no end date needs managing twice.
+ */
+export function thirteenthMonthItems<
+  T extends { amount: number; inGross?: boolean; inThirteenth?: boolean },
+>(items: readonly T[], fraction: number): T[] {
+  return items
+    .filter(i => i.inGross && i.inThirteenth && Number(i.amount) > 0)
+    .map(i => ({ ...i, amount: round2(Number(i.amount) * fraction) }))
+    .filter(i => i.amount > 0);
 }
 
 // Gross for a given month, applying increment timing (current-year increment only
@@ -845,7 +888,13 @@ export function calcLine(input: CalcInput): CalcLine {
   // They are then deliberately NOT added again below. That is the one error
   // this could make which nobody would catch by looking: the sheet would show
   // the right gross and the net would be out by exactly the item.
-  const customRaw = input.customItems ?? [];
+  //
+  // On a 13th month only the items marked as part of it survive. Being part
+  // of the gross is not enough — see `inThirteenth` above — and the gate is
+  // here rather than only at the call sites so that a caller handing over
+  // December's items unfiltered cannot pay a bonus on a COLA.
+  const customRaw = (input.customItems ?? [])
+    .filter(i => !is13thMonth || (i.inGross && i.inThirteenth));
   const customInGross = round2(customRaw
     .filter(i => i.inGross && i.amount > 0)
     .reduce((t, i) => t + (i.type === "allowance" ? i.amount : -i.amount), 0));
@@ -1038,7 +1087,10 @@ export function calcLine(input: CalcInput): CalcLine {
     customAllowances,
     customDeductions,
     customItems: customRaw.filter(i => i.amount > 0)
-      .map(i => ({ label: i.label ?? "", type: i.type, amount: i.amount, inGross: !!i.inGross })),
+      .map(i => ({
+        label: i.label ?? "", type: i.type, amount: i.amount,
+        inGross: !!i.inGross, inThirteenth: !!i.inThirteenth,
+      })),
     customInGross,
     adjustments,
     netAdjustment: adj.NET,

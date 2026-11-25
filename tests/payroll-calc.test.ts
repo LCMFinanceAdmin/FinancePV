@@ -1142,3 +1142,149 @@ test("and an ordinary month's earnings still include it", async () => {
   assert.ok(parts.some(p => p.label.includes("STM")));
   assert.equal(round2(parts.reduce((t, p) => t + p.amount, 0)), fullGross(WITH_STM));
 });
+
+// ── Which custom items earn a thirteenth payment ───────────────────────
+//
+// Being part of the gross does not answer it. A secondment allowance and a
+// cost-of-living allowance are both wage for EPF and neither is paid a
+// thirteenth time: they pay for an arrangement while it lasts. Wages owed for
+// an earlier period are different — a thirteenth of the salary being corrected
+// was owed too — so an item says which it is. Migration 282.
+
+const DIFFERENCE = {
+  label: "Salary Difference from 2024 and 2025", type: "allowance" as const,
+  amount: 870, inGross: true, inThirteenth: true,
+};
+const COLA = {
+  label: "COLA", type: "allowance" as const,
+  amount: 450, inGross: true, inThirteenth: false,
+};
+const OUTSIDE = {
+  label: "Education allowance", type: "allowance" as const,
+  amount: 200, inGross: false, inThirteenth: false,
+};
+
+test("only the items marked as earning one join a 13th month", async () => {
+  const { thirteenthMonthItems } = await import("@/lib/payroll/calc");
+  const picked = thirteenthMonthItems([DIFFERENCE, COLA, OUTSIDE], 1);
+  assert.deepEqual(picked.map(i => i.label), ["Salary Difference from 2024 and 2025"]);
+});
+
+test("an item outside the gross cannot earn one, however it is flagged", async () => {
+  // Nothing earns a thirteenth of the wage without being part of the wage.
+  // The database refuses the pair too; this is the same rule in the one place
+  // that computes a figure from it.
+  const { thirteenthMonthItems } = await import("@/lib/payroll/calc");
+  assert.deepEqual(thirteenthMonthItems([{ ...OUTSIDE, inThirteenth: true }], 1), []);
+});
+
+test("a part-year joiner's bonus items are the same fraction as their bonus", async () => {
+  const { thirteenthMonthItems } = await import("@/lib/payroll/calc");
+  const [half] = thirteenthMonthItems([DIFFERENCE], 0.5);
+  assert.equal(half.amount, 435);
+  // And an item too small to survive the fraction is dropped rather than
+  // printed as a zero line on a payslip.
+  assert.deepEqual(thirteenthMonthItems([{ ...DIFFERENCE, amount: 0.001 }], 0.5), []);
+});
+
+test("a 13th month is paid on the items that earn one, and the statutory follows", async () => {
+  // 3,930 of wage plus the 870 that was owed for earlier years. The COLA and
+  // the education allowance are handed over unfiltered on purpose: calcLine
+  // is the gate, so a caller that forgets cannot pay a bonus on them.
+  const bonus = line({
+    gross: 3930, is13thMonth: true,
+    customItems: [DIFFERENCE, COLA, OUTSIDE],
+  });
+  assert.equal(bonus.gross, 4800, "the item is inside the gross, not added after it");
+  assert.equal(bonus.customInGross, 870);
+  assert.deepEqual(bonus.customItems.map(i => i.label), ["Salary Difference from 2024 and 2025"]);
+  assert.equal(bonus.customAllowances, 0, "and not paid a second time on top");
+  // EPF is worked out on the moved gross, which is the whole point of the
+  // item being in it rather than beside it.
+  const without = line({ gross: 3930, is13thMonth: true });
+  assert.ok(bonus.epf.ee > without.epf.ee, "EPF follows the gross it is inside");
+  // A 13th month carries EPF and PCB only — that rule is untouched.
+  assert.equal(bonus.socso.ee, 0);
+  assert.equal(bonus.eis.ee, 0);
+});
+
+test("an ordinary month still pays every item that applies to it", async () => {
+  const ordinary = line({
+    gross: 5990, month: 6,
+    customItems: [DIFFERENCE, COLA, OUTSIDE],
+  });
+  // 5,990 + 870 + 450: the two in-gross items move the gross, the one outside
+  // it is paid on top. This is the figure the church's own import carries.
+  assert.equal(ordinary.gross, 7310);
+  assert.equal(ordinary.customInGross, 1320);
+  assert.equal(ordinary.customAllowances, 200);
+  assert.equal(ordinary.customItems.length, 3, "nothing is filtered out of an ordinary month");
+});
+
+test("the flags survive the trip from an item row to the calculator", async () => {
+  // They did not. The run page selected the columns it needed and left
+  // in_gross out of them, so an item marked as part of the salary was paid
+  // outside the gross in every run — no EPF on either side, no SOCSO, no EIS,
+  // undeclared for PCB — while the sheet beside it showed the figure inside.
+  // One mapping now, in lib/payroll/custom-items.
+  const { toCalcItem } = await import("@/lib/payroll/custom-items");
+  assert.deepEqual(
+    toCalcItem({ label: "x", type: "allowance", amount: "870" as unknown as number,
+                 in_gross: true, in_thirteenth: true }),
+    { label: "x", type: "allowance", amount: 870, inGross: true, inThirteenth: true });
+  // A finalised run stores the other spelling on its line, so a reprinted
+  // payslip reads that one.
+  assert.deepEqual(
+    toCalcItem({ label: "x", type: "allowance", amount: 450, inGross: true, inThirteenth: false }),
+    { label: "x", type: "allowance", amount: 450, inGross: true, inThirteenth: false });
+  // Absent means no, which is what every item recorded before 280 and 282 is.
+  const old = toCalcItem({ label: "x", type: "deduction", amount: 50 });
+  assert.equal(old.inGross, false);
+  assert.equal(old.inThirteenth, false);
+});
+
+test("a 13th month pays December's standing items, and an ordinary month its own", async () => {
+  const { itemMonthsForRun } = await import("@/lib/payroll/custom-items");
+  assert.deepEqual([...itemMonthsForRun(6)], [6]);
+  // December, because the bonus is paid on December's salary — and 13 as well,
+  // for anything keyed directly to the bonus.
+  assert.deepEqual([...itemMonthsForRun(13)], [12, 13]);
+});
+
+test("an item that ends in December leaves the next year's bonus by itself", async () => {
+  // Which is why "this year only" needs no second end date to keep in step.
+  const { itemAppliesToMonth, itemMonthsForRun } = await import("@/lib/payroll/custom-items");
+  const item = {
+    year: 2026, month: 1, is_recurring: true,
+    recur_until_year: 2026, recur_until_month: 12,
+  };
+  const paidIn = (year: number, month: number) =>
+    itemMonthsForRun(month).some(m => itemAppliesToMonth(item, year, m));
+  assert.equal(paidIn(2026, 1), true);
+  assert.equal(paidIn(2026, 12), true);
+  assert.equal(paidIn(2026, 13), true, "2026's bonus, because December pays it");
+  assert.equal(paidIn(2027, 1), false);
+  assert.equal(paidIn(2027, 13), false, "and 2027's bonus does not");
+});
+
+test("a one-off item applies to its own month and no other", async () => {
+  const { itemAppliesToMonth } = await import("@/lib/payroll/custom-items");
+  const once = {
+    year: 2026, month: 3, is_recurring: false,
+    recur_until_year: null, recur_until_month: null,
+  };
+  assert.equal(itemAppliesToMonth(once, 2026, 3), true);
+  assert.equal(itemAppliesToMonth(once, 2026, 4), false);
+  assert.equal(itemAppliesToMonth(once, 2027, 3), false);
+});
+
+test("an open-ended item runs until somebody stops it", async () => {
+  const { itemAppliesToMonth } = await import("@/lib/payroll/custom-items");
+  const open = {
+    year: 2026, month: 5, is_recurring: true,
+    recur_until_year: null, recur_until_month: null,
+  };
+  assert.equal(itemAppliesToMonth(open, 2026, 4), false, "not before it starts");
+  assert.equal(itemAppliesToMonth(open, 2026, 5), true);
+  assert.equal(itemAppliesToMonth(open, 2030, 1), true);
+});

@@ -203,8 +203,12 @@ export function YearlySheetPDF({ emp, year, salary, monthLines, thirteenth, pcbA
     experience: "Experience",
     allowances: "Allowances",
   })[key];
+  // The 13th row reads the computed line, not the item rows: only some items
+  // earn a thirteenth payment, and those are paid at the fraction of the bonus
+  // being paid. Re-deriving it here would put a different figure in the column
+  // from the one in the gross beside it.
   const cAmt = (mo: number, col: { label: string; type: "allowance" | "deduction" }) =>
-    (customItemsByMonth[mo] ?? [])
+    (mo === 13 ? (thirteenth?.customItems ?? []) : (customItemsByMonth[mo] ?? []))
       .filter(i => i.label === col.label && i.type === col.type)
       .reduce((t, i) => t + Number(i.amount), 0);
   const cTotal = (col: { label: string; type: "allowance" | "deduction" }) => Array.from({length:13},(_,i)=>i+1).reduce((s,m)=>s+cAmt(m,col),0);

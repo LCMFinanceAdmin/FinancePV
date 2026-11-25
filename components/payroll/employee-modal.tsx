@@ -21,6 +21,10 @@ import { dobFromIc } from "@/lib/ic-no";
 import { ComboBox } from "@/components/ui/combo-box";
 import { incrementEffectiveMonth } from "@/lib/payroll/calc";
 import type { UserProfile, PayrollEmployee, EmploymentType, PostingType, PayrollEmployeeCustomItem } from "@/lib/types";
+import { itemAppliesToMonth } from "@/lib/payroll/custom-items";
+
+/** Said the same way in both forms, because it is the same decision. */
+const THIRTEENTH_HELP = "Tick for wages owed for an earlier period — a salary difference, arrears — where a thirteenth of the salary being corrected was owed as well. Leave off for money that pays for an arrangement while it lasts, such as a secondment or cost-of-living allowance: part of the gross, and not paid a thirteenth time.";
 
 // LCM and the Trustees of the Lutheran Church in Malaysia Registered (194).
 // Separate employers, separate EPF/SOCSO/LHDN registrations, separate runs.
@@ -32,14 +36,6 @@ interface Employer {
 const MONTH_SHORT_DIR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","13th"];
 function monthShortDir(m: number): string { return MONTH_SHORT_DIR[m - 1] ?? String(m); }
 
-function itemAppliesToMonth(item: { year: number; month: number; is_recurring: boolean; recur_until_year: number | null; recur_until_month: number | null }, targetYear: number, targetMonth: number): boolean {
-  if (!item.is_recurring) return item.year === targetYear && item.month === targetMonth;
-  const started = item.year < targetYear || (item.year === targetYear && item.month <= targetMonth);
-  if (!started) return false;
-  if (item.recur_until_year === null || item.recur_until_year === undefined) return true;
-  return item.recur_until_year > targetYear ||
-    (item.recur_until_year === targetYear && (item.recur_until_month ?? 13) >= targetMonth);
-}
 
 // Marital-status options encode spouse-working for the Married variants.
 function fmtLongDate(iso: string): string {
@@ -274,6 +270,10 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
    * every statutory figure with them.
    */
   const [newItemInGross, setNewItemInGross] = useState(false);
+  // A second and separate question from the one above — see migration 282.
+  // Only askable of an item that is part of the gross, because nothing can
+  // earn a thirteenth of the wage without being part of the wage.
+  const [newItemInThirteenth, setNewItemInThirteenth] = useState(false);
   /**
    * The item being corrected, if any, and the two fields worth correcting.
    *
@@ -286,6 +286,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
   const [editItemLabel, setEditItemLabel] = useState("");
   const [editItemAmount, setEditItemAmount] = useState("");
   const [editItemInGross, setEditItemInGross] = useState(false);
+  const [editItemInThirteenth, setEditItemInThirteenth] = useState(false);
   // The period: which month it starts in, whether it repeats, and where it
   // stops. Editable for the same reason the amount is — a recurring item keyed
   // from the wrong month was previously a delete and a re-key, which throws
@@ -342,6 +343,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
       employee_id: existing!.id, year: itemYear, month: itemMonth,
       label: newItemLabel.trim(), type: newItemType, amount,
       in_gross: newItemInGross,
+      in_thirteenth: newItemInGross && newItemInThirteenth,
       is_recurring: newItemRecurring,
       recur_until_year: hasEnd ? Number(newItemUntilYear) : null,
       recur_until_month: hasEnd ? newItemUntilMonth : null,
@@ -349,7 +351,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
     });
     if (e) { setItemError(e.message); return; }
     setNewItemLabel(""); setNewItemAmount(""); setNewItemRecurring(false);
-    setNewItemInGross(false); setNewItemNoEnd(false); setAddingItem(false);
+    setNewItemInGross(false); setNewItemInThirteenth(false); setNewItemNoEnd(false); setAddingItem(false);
     loadCustomItems();
   }
 
@@ -358,6 +360,7 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
     setEditItemLabel(item.label);
     setEditItemAmount(String(Number(item.amount)));
     setEditItemInGross(!!item.in_gross);
+    setEditItemInThirteenth(!!item.in_thirteenth);
     setEditItemMonth(item.month);
     setEditItemYear(item.year);
     setEditItemRecurring(item.is_recurring);
@@ -389,6 +392,8 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
         label: editItemLabel.trim(),
         amount,
         in_gross: editItemInGross,
+        // Never one without the other: the database refuses it too.
+        in_thirteenth: editItemInGross && editItemInThirteenth,
         month: editItemMonth,
         year: Number(editItemYear),
         is_recurring: editItemRecurring,
@@ -1399,9 +1404,26 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
 
                           <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-stone-500 select-none">
                             <input type="checkbox" checked={editItemInGross}
-                              onChange={e => setEditItemInGross(e.target.checked)} className="rounded" />
+                              onChange={e => {
+                                setEditItemInGross(e.target.checked);
+                                if (!e.target.checked) setEditItemInThirteenth(false);
+                              }} className="rounded" />
                             Part of the gross &mdash; EPF, SOCSO, EIS and PCB are worked out on it
                           </label>
+                          {editItemInGross && (
+                            <label className="ml-4 flex items-start gap-1.5 cursor-pointer text-[11px] text-stone-500 select-none"
+                              title={THIRTEENTH_HELP}>
+                              <input type="checkbox" checked={editItemInThirteenth}
+                                onChange={e => setEditItemInThirteenth(e.target.checked)} className="mt-0.5 rounded" />
+                              <span>
+                                Earns a 13th month
+                                <span className="block text-[10px] text-stone-400">
+                                  Wages owed for an earlier period do. A secondment or cost-of-living
+                                  allowance does not &mdash; it pays for the months it covers.
+                                </span>
+                              </span>
+                            </label>
+                          )}
 
                           {/* The period: which month it starts in, whether it
                               repeats, and where it stops. */}
@@ -1466,6 +1488,15 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                               <span className="ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-[#2f5b9c]/10 text-[#2f5b9c] align-middle"
                                 title="Part of the gross — EPF, SOCSO, EIS and PCB are worked out on it">
                                 in gross
+                              </span>
+                            )}
+                            {/* Said for the same reason as the badge above it:
+                                it is not visible in the figure, and it decides
+                                whether the item is paid a thirteenth time. */}
+                            {item.in_thirteenth && (
+                              <span className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 align-middle"
+                                title="Earns a 13th month — paid again with the bonus, at the fraction of it being paid">
+                                13th
                               </span>
                             )}
                             {item.is_recurring ? (
@@ -1533,7 +1564,12 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                       here that moves what three statutory boards are owed. */}
                   <label className="flex items-start gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
                     <input type="checkbox" checked={newItemInGross}
-                      onChange={e => setNewItemInGross(e.target.checked)} className="mt-0.5 rounded" />
+                      onChange={e => {
+                        setNewItemInGross(e.target.checked);
+                        // Nothing earns a thirteenth of the wage without being
+                        // part of the wage, so the answer below goes with it.
+                        if (!e.target.checked) setNewItemInThirteenth(false);
+                      }} className="mt-0.5 rounded" />
                     <span>
                       Part of the gross
                       <span className="block text-[11px] text-stone-400">
@@ -1545,6 +1581,21 @@ export function EmployeeModal({ user, existing, departments, onClose, onSaved }:
                       </span>
                     </span>
                   </label>
+
+                  {/* Asked only of salary, and asked separately, because being
+                      part of the gross does not answer it: a secondment
+                      allowance is in the gross and is not paid a thirteenth
+                      time. */}
+                  {newItemInGross && (
+                    <label className="ml-6 flex items-start gap-2 cursor-pointer text-[12px] text-stone-600 select-none">
+                      <input type="checkbox" checked={newItemInThirteenth}
+                        onChange={e => setNewItemInThirteenth(e.target.checked)} className="mt-0.5 rounded" />
+                      <span>
+                        Earns a 13th month
+                        <span className="block text-[11px] text-stone-400">{THIRTEENTH_HELP}</span>
+                      </span>
+                    </label>
+                  )}
 
                   {/* Recurring toggle */}
                   <label className="flex items-center gap-2 cursor-pointer text-[12px] text-stone-600 select-none">

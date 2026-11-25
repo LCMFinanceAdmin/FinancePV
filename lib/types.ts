@@ -707,6 +707,21 @@ export interface CustomPayrollItem {
    */
   in_gross?: boolean;
   inGross?: boolean;
+  /**
+   * Whether this item earns a thirteenth payment at the end of the year.
+   *
+   * A separate question from `in_gross`, and not answered by it. Both the
+   * secondment allowance and a cost-of-living allowance are part of the gross
+   * and neither is paid a thirteenth time: they pay for an arrangement while
+   * it lasts. A salary difference is wages owed for an earlier period, so a
+   * thirteenth of the wage it corrects was owed too.
+   *
+   * Two spellings for the same two reasons as `in_gross`: `in_thirteenth` is
+   * the column, `inThirteenth` is what a run stores on its line. Absent means
+   * no, which is what every item recorded before migration 282 means.
+   */
+  in_thirteenth?: boolean;
+  inThirteenth?: boolean;
 }
 
 export interface PayrollEmployeeCustomItem {
@@ -722,6 +737,8 @@ export interface PayrollEmployeeCustomItem {
   recur_until_month: number | null; // 1-13
   /** Part of the gross, and so subject to EPF, SOCSO, EIS and PCB — see 280. */
   in_gross?: boolean;
+  /** Also earns a thirteenth payment — see 282. Only meaningful with in_gross. */
+  in_thirteenth?: boolean;
   created_by: string | null;
   created_at: string;
 }

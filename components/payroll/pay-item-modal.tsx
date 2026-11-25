@@ -45,6 +45,13 @@ export function PayItemModal({
   const [type, setType] = useState<"allowance" | "deduction">(editing?.type ?? "deduction");
   const [amount, setAmount] = useState(editing ? String(editing.amount) : "");
   const [startMonth, setStartMonth] = useState(editing?.month ?? month);
+  // The two questions migrations 280 and 282 added. This form could not ask
+  // either of them, so an item added from the sheet sat outside the gross
+  // whatever it was, and the Edit Employee modal was the only place to say
+  // otherwise — for a form whose own help text says the item becomes a column
+  // on that sheet.
+  const [inGross, setInGross] = useState(!!editing?.in_gross);
+  const [inThirteenth, setInThirteenth] = useState(!!editing?.in_thirteenth);
   const [recurring, setRecurring] = useState(editing?.is_recurring ?? false);
   const [openEnded, setOpenEnded] = useState(
     (editing?.is_recurring ?? false) && editing?.recur_until_year == null);
@@ -67,14 +74,19 @@ export function PayItemModal({
   const effect = (() => {
     if (Number.isNaN(amt) || amt <= 0) return null;
     const verb = type === "allowance" ? "paid" : "deducted";
+    const statutory = inGross
+      ? (inThirteenth
+          ? " Part of the gross, so EPF, SOCSO, EIS and PCB are worked out on it, and it earns a 13th month."
+          : " Part of the gross, so EPF, SOCSO, EIS and PCB are worked out on it. Not paid in the 13th month.")
+      : "";
     const per = `RM ${num(amt)}`;
-    if (!recurring) return `${per} ${verb} once, in ${monthName(startMonth)} ${year}.`;
-    if (openEnded) return `${per} ${verb} every month from ${monthName(startMonth)} ${year}, until it is stopped.`;
+    if (!recurring) return `${per} ${verb} once, in ${monthName(startMonth)} ${year}.${statutory}`;
+    if (openEnded) return `${per} ${verb} every month from ${monthName(startMonth)} ${year}, until it is stopped.${statutory}`;
     const range = `${monthName(startMonth)} ${year} to ${monthName(endMonth)} ${endYear}`;
-    if (endYear !== year) return `${per} ${verb} every month from ${range}.`;
+    if (endYear !== year) return `${per} ${verb} every month from ${range}.${statutory}`;
     const months = endMonth - startMonth + 1;
     return `${per} ${verb} every month from ${range} — ${months} month${months === 1 ? "" : "s"}, `
-      + `RM ${num(amt * months)} in total.`;
+      + `RM ${num(amt * months)} in total.${statutory}`;
   })();
 
   async function save() {
@@ -84,6 +96,10 @@ export function PayItemModal({
     const row = {
       employee_id: employeeId, year, month: startMonth,
       label: label.trim(), type, amount: amt,
+      in_gross: inGross,
+      // Nothing earns a thirteenth of the wage without being part of the
+      // wage. The database refuses the pair as well.
+      in_thirteenth: inGross && inThirteenth,
       is_recurring: recurring,
       recur_until_year: hasEnd ? endYear : null,
       recur_until_month: hasEnd ? endMonth : null,
@@ -148,6 +164,47 @@ export function PayItemModal({
               <input className={`${fld} font-mono`} type="number" step="0.01" min="0"
                 value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
             </div>
+          </div>
+
+          {/* Salary, or money alongside the salary — the one choice on this
+              form that changes what three statutory boards are owed. Then,
+              separately, whether it earns a thirteenth payment: being part of
+              the gross does not answer that, because a secondment or
+              cost-of-living allowance is part of the gross and pays for the
+              months it covers rather than earning a thirteenth of itself. */}
+          <div className="rounded-xl border-2 border-stone-200 p-3">
+            <label className="flex items-start gap-2 text-[12px] font-semibold text-stone-700">
+              <input type="checkbox" className="mt-0.5 h-3.5 w-3.5 accent-[#2f5b9c]"
+                checked={inGross}
+                onChange={e => {
+                  setInGross(e.target.checked);
+                  if (!e.target.checked) setInThirteenth(false);
+                }} />
+              <span>
+                Part of the gross
+                <span className="mt-0.5 block text-[10.5px] font-normal text-stone-400">
+                  {inGross
+                    ? type === "allowance"
+                      ? "Added to the gross before EPF, SOCSO, EIS and PCB are worked out — back pay, a salary difference, arrears."
+                      : "Taken off the gross before EPF, SOCSO, EIS and PCB are worked out — less salary, not a deduction from take-home."
+                    : "Leave off for money outside the salary, such as COLA, which carries no EPF, SOCSO, EIS or PCB."}
+                </span>
+              </span>
+            </label>
+            {inGross && (
+              <label className="mt-2 ml-5 flex items-start gap-2 text-[12px] font-semibold text-stone-700">
+                <input type="checkbox" className="mt-0.5 h-3.5 w-3.5 accent-[#2f5b9c]"
+                  checked={inThirteenth} onChange={e => setInThirteenth(e.target.checked)} />
+                <span>
+                  Earns a 13th month
+                  <span className="mt-0.5 block text-[10.5px] font-normal text-stone-400">
+                    Wages owed for an earlier period do — a salary difference, arrears — because a
+                    thirteenth of the salary being corrected was owed as well. A secondment or
+                    cost-of-living allowance does not.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
 
           {/* The schedule, stated rather than inherited from whichever row was
