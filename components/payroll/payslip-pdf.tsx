@@ -2,6 +2,7 @@
 import { Document, Font, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollEmployee, PayrollSalary } from "@/lib/types";
 import { grossComponentsForMonth } from "@/lib/payroll/calc";
+import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 
 // Noto Sans SC supports Simplified Chinese (马来西亚基督教信义会 etc.)
 Font.register({
@@ -173,8 +174,15 @@ export function PayslipPDF({
     // From calc.ts, so the items listed are exactly the ones inside the gross
     // printed below them — including whether this month's gross carries the
     // current year's increment yet.
+    // The entitlement is worked out here rather than passed in, so that every
+    // caller gets it — the run's Send Payslip list, a reprint from a finalised
+    // run, and the employee's own copy under My Salary. It depends only on
+    // whether they are a pastor or Orang Asli and the months of THIS year they
+    // were on the payroll, so a later resignation cannot change a bonus
+    // already paid.
     earns.push(...grossComponentsForMonth(salary, emp.date_commenced, month, is13thMonth,
-      emp.increment_month_override, null, { year, effectiveFrom: salary.effective_from }));
+      emp.increment_month_override, null, { year, effectiveFrom: salary.effective_from },
+      is13thMonth ? thirteenthMonthFor(emp, year) : null));
     // Gross corrections belong on the earnings side, or the items listed there
     // stop adding up to the GROSS PAY figure printed below them.
     for (const a of adjustments.filter(a => a.category === "GROSS")) {

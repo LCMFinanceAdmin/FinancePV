@@ -711,6 +711,17 @@ export function grossComponentsForMonth(
   days?: MonthDays | null,
   /** As grossForMonth: which increment period this month falls in. */
   period?: { year: number; effectiveFrom: string | null } | null,
+  /**
+   * How much of a 13th month is being paid, for somebody who was not on the
+   * payroll for the whole year — `thirteenthMonthFor(emp, year)`.
+   *
+   * Absent, or a fraction of 1, means the whole bonus and changes nothing.
+   * Below 1 it adds the named line that accounts for the rest, the same way
+   * an incomplete month does. Without it the components listed on a part-year
+   * bonus payslip add up to a full month's wage while the GROSS PAY printed
+   * under them is eight twelfths of it.
+   */
+  thirteenth?: { fraction: number; monthsInYear: number } | null,
 ): EarningComponent[] {
   const eff = incrementEffectiveMonth(dateCommenced, incrementMonthOverride);
   const paidFrom = period
@@ -750,6 +761,26 @@ export function grossComponentsForMonth(
     out.push({
       label: `Incomplete month (${days.daysPaid} of ${days.daysInMonth} days, ${days.reason})`,
       amount: round2(full * fraction) - round2(full),
+      bucket: "incomplete",
+    });
+  }
+
+  // A part-year 13th month, said the same way and for the same reason. The
+  // bonus is a fraction of December's wage for somebody who was on the
+  // payroll for part of the year — six months is the floor, see
+  // lib/payroll/thirteenth-month — and the person reading the payslip
+  // recognises their monthly salary, not eight twelfths of each line of it.
+  // So the agreed figures stand and one named line accounts for the rest.
+  //
+  // Scaling every component would also leave the one question this payslip
+  // raises unanswered: not "what is my basic", which they know, but "why is
+  // my bonus smaller than my salary".
+  if (is13th && thirteenth && thirteenth.fraction < 1) {
+    const full = out.reduce((t, c) => t + c.amount, 0);
+    const m = thirteenth.monthsInYear;
+    out.push({
+      label: `13th month pro-rated (${m} of 12 month${m === 1 ? "" : "s"} on the payroll)`,
+      amount: round2(full * thirteenth.fraction) - round2(full),
       bucket: "incomplete",
     });
   }

@@ -3430,7 +3430,14 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
   // calcLine adds them to net without adding them to gross, because gross is
   // what the statutory contributions are computed on. So they belong below the
   // gross line, not in the earnings that make it up.
-  const allowances = line.customItems.filter(i => i.type === "allowance");
+  //
+  // Only the ones outside the gross, though. An item marked as part of the
+  // salary is already inside line.gross; listed here as well it reads as being
+  // paid on top of a gross it is already in, and the earnings above stop
+  // adding up to the GROSS PAY printed under them — short by exactly the
+  // item. The same two faults were fixed in components/payroll/payslip-pdf
+  // and this slip, which Finance prints and emails, did not get the fix.
+  const allowances = line.customItems.filter(i => i.type === "allowance" && !i.inGross);
   const totalAllowances = allowances.reduce((t, i) => t + i.amount, 0);
   const dept = emp.posting_type === "CHURCH"
     ? `${emp.designation || "PASTOR"} - ${(emp.church_name || "").toUpperCase()}`
@@ -3448,6 +3455,15 @@ function SlipModal({ emp, month, monthNum, year, line, salary, onClose }: {
     // A gross correction, so the earnings listed still add up to GROSS PAY.
     for (const a of line.adjustments.filter(a => a.category === "GROSS")) {
       components.push({ label: a.reason || "Adjustment", amount: Number(a.amount) });
+    }
+    // And an item that is part of the salary — back pay, a salary difference
+    // — for the same reason: it is inside the gross, so it is one of the
+    // things that add up to it.
+    for (const i of line.customItems.filter(i => i.inGross)) {
+      components.push({
+        label: i.label,
+        amount: i.type === "allowance" ? Number(i.amount) : -Number(i.amount),
+      });
     }
   } else {
     components.push({ label: "Basic Salary", amount: line.gross });

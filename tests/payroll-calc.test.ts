@@ -1143,6 +1143,91 @@ test("and an ordinary month's earnings still include it", async () => {
   assert.equal(round2(parts.reduce((t, p) => t + p.amount, 0)), fullGross(WITH_STM));
 });
 
+// ── A bonus that is not a whole month ────────────────────────────────
+//
+// Staff who joined part-way through the year are pro-rated by the months they
+// were on the payroll, six being the floor. The gross on the line was always
+// that fraction; the components listed above it on the payslip were a whole
+// month's, so they added up to more than the GROSS PAY printed under them.
+// Nothing wrong had been printed — no 13th month has ever been run — but it
+// would have been the first time one was.
+
+const MAY_JOINER = {
+  is_pastor: false, is_orang_asli: false,
+  date_commenced: "2026-05-01", resigned_date: null,
+};
+
+test("a part-year bonus payslip's earnings add up to the bonus", async () => {
+  const { grossComponentsForMonth, grossForMonth } = await import("@/lib/payroll/calc");
+  const { thirteenthMonthFor } = await import("@/lib/payroll/thirteenth-month");
+  const due = thirteenthMonthFor(MAY_JOINER, 2026);
+  assert.equal(due.monthsInYear, 8, "May to December");
+
+  const parts = grossComponentsForMonth(
+    WITH_STM, MAY_JOINER.date_commenced, 13, true, null, null,
+    { year: 2026, effectiveFrom: "2026-01-01" }, due);
+
+  // The figure the run actually pays, worked out the way the run works it out.
+  const paid = round2(
+    grossForMonth(WITH_STM, MAY_JOINER.date_commenced, 13, true) * due.fraction);
+  assert.equal(paid, 3500, "eight twelfths of the 5,250 the bonus is paid on");
+  assert.equal(round2(parts.reduce((t, p) => t + p.amount, 0)), paid);
+});
+
+test("and it says why, rather than shrinking every line", async () => {
+  // The person reading it recognises their monthly salary. What they do not
+  // know is why the bonus is smaller than it, so that is the line that is
+  // added — the same choice an incomplete month already makes.
+  const { grossComponentsForMonth } = await import("@/lib/payroll/calc");
+  const { thirteenthMonthFor } = await import("@/lib/payroll/thirteenth-month");
+  const parts = grossComponentsForMonth(
+    WITH_STM, MAY_JOINER.date_commenced, 13, true, null, null, null,
+    thirteenthMonthFor(MAY_JOINER, 2026));
+
+  assert.equal(parts[0].label, "Basic Salary");
+  assert.equal(parts[0].amount, WITH_STM.base_salary, "the agreed figure, unscaled");
+  const prorata = parts[parts.length - 1];
+  assert.equal(prorata.label, "13th month pro-rated (8 of 12 months on the payroll)");
+  assert.equal(prorata.amount, -1750);
+  // And the secondment allowance is still not in what is being pro-rated.
+  assert.ok(!parts.some(p => p.label.includes("STM")));
+});
+
+test("a whole year's bonus gains no such line", async () => {
+  const { grossComponentsForMonth, thirteenthMonthBase } = await import("@/lib/payroll/calc");
+  const { thirteenthMonthFor } = await import("@/lib/payroll/thirteenth-month");
+  const whole = { ...MAY_JOINER, date_commenced: "2020-01-01" };
+  const due = thirteenthMonthFor(whole, 2026);
+  assert.equal(due.fraction, 1);
+  const parts = grossComponentsForMonth(WITH_STM, whole.date_commenced, 13, true,
+    null, null, null, due);
+  assert.ok(!parts.some(p => p.bucket === "incomplete"), "nothing to explain");
+  assert.equal(round2(parts.reduce((t, p) => t + p.amount, 0)), thirteenthMonthBase(WITH_STM));
+});
+
+test("a caller that passes no entitlement is left as it was", async () => {
+  // grossBreakdownForMonth is one: the yearly sheet scales its five columns
+  // from the entitlement itself, because there is no column to put a named
+  // line in. Both reconcile to the same gross; they differ only in how they
+  // show it.
+  const { grossComponentsForMonth, thirteenthMonthBase } = await import("@/lib/payroll/calc");
+  const parts = grossComponentsForMonth(WITH_STM, MAY_JOINER.date_commenced, 13, true);
+  assert.equal(round2(parts.reduce((t, p) => t + p.amount, 0)), thirteenthMonthBase(WITH_STM));
+});
+
+test("a pastor is never pro-rated, so never carries the line", async () => {
+  // All or nothing on twelve months of service — there is no half a 13th
+  // month for a pastor. See lib/payroll/thirteenth-month.
+  const { grossComponentsForMonth } = await import("@/lib/payroll/calc");
+  const { thirteenthMonthFor } = await import("@/lib/payroll/thirteenth-month");
+  const pastor = { ...MAY_JOINER, is_pastor: true };
+  const due = thirteenthMonthFor(pastor, 2026);
+  assert.equal(due.entitled, false, "eight months is short of twelve");
+  const parts = grossComponentsForMonth(WITH_STM, pastor.date_commenced, 13, true,
+    null, null, null, due.entitled ? due : null);
+  assert.ok(!parts.some(p => p.bucket === "incomplete"));
+});
+
 // ── Which custom items earn a thirteenth payment ───────────────────────
 //
 // Being part of the gross does not answer it. A secondment allowance and a
