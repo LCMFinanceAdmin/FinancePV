@@ -32,7 +32,14 @@ export type PayrollAuditAction =
   // Standing allowances and deductions. A recurring one keeps taking money
   // every month long after the decision behind it has been forgotten, so who
   // set it up, and when, is worth keeping.
-  | "PAY_ITEM_ADDED" | "PAY_ITEM_UPDATED" | "PAY_ITEM_DELETED";
+  | "PAY_ITEM_ADDED" | "PAY_ITEM_UPDATED" | "PAY_ITEM_DELETED"
+  // PCB keyed on the yearly sheet for a month not yet run — migration 283. It
+  // is a figure nobody computes: no rate table produces it, it is what Finance
+  // expects LHDN to be owed, and it goes into the run as the month's PCB. So
+  // who said so, and when, is the whole of its justification. A month already
+  // run shows what was withheld and cannot be keyed, so nothing here can
+  // restate a month that has been paid.
+  | "PCB_SET" | "PCB_CLEARED";
 
 export async function logPayrollAudit(
   supabase: SupabaseClient,

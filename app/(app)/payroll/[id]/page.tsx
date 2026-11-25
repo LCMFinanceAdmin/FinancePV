@@ -11,6 +11,8 @@ import { groupAdjustments, compressMonths } from "@/lib/payroll/adjustment-range
 import { statutoryRevisions, itemRevisions, payRevisions, loanRevision } from "@/lib/payroll/revision-log";
 import { thirteenthMonthFor } from "@/lib/payroll/thirteenth-month";
 import { itemAppliesToMonth, itemsForRun, toCalcItem } from "@/lib/payroll/custom-items";
+import { pcbForMonth } from "@/lib/payroll/pcb";
+import { PcbCell } from "@/components/payroll/pcb-cell";
 import { useToast, Toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { inForceFor, inForceOrEarliest } from "@/lib/payroll/salary-in-force";
@@ -209,25 +211,24 @@ export default function PayrollEmployeePage() {
   const [addingAllowance, setAddingAllowance] = useState(false);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [pcb, setPcb] = useState<number[]>(Array(13).fill(0)); // 0-11 = months, 12 = 13th month
   /**
-   * Seed the twelve months from the employee's standing PCB.
+   * PCB by month: what a finalised run withheld, and what Finance keyed.
    *
-   * Only fills a month still at zero, so a figure typed here — or one
-   * loaded from a finalized run — is never overwritten. The 13th month is
-   * left alone: it is taxed on its own footing and is not the monthly
-   * deduction repeated.
+   * Both, because they answer different questions and one of them settles the
+   * other. A month that has been run shows what was actually withheld and is
+   * not editable here — the sheet is printed as the Employee Salary Statement,
+   * and a statement contradicting the payslip issued for the same month is
+   * worse than one with a gap in it. A month not yet run shows what was keyed,
+   * falling back to the employee's standing monthly figure. The order is
+   * pcbForMonth in lib/payroll/pcb.ts, so the printed statement reads it too.
+   *
+   * Until migration 283 neither was loaded. The boxes were page state seeded
+   * from the standing figure, and a figure typed into one lasted until the
+   * page was refreshed — so two people could print the same employee's
+   * statement and get different annual PCB.
    */
-  useEffect(() => {
-    const standing = Number(emp?.fixed_pcb ?? 0);
-    if (!standing) return;
-    setPcb(prev => {
-      if (prev.slice(0, 12).every(v => v)) return prev;
-      const next = [...prev];
-      for (let i = 0; i < 12; i++) if (!next[i]) next[i] = standing;
-      return next;
-    });
-  }, [emp?.fixed_pcb]);
+  const [keyedPcb, setKeyedPcb] = useState<Record<number, number>>({});
+  const [paidPcb, setPaidPcb] = useState<Record<number, number>>({});
   const [rates, setRates] = useState<RateConfig | undefined>(undefined);
   const [bands, setBands] = useState<ContributionBand[]>([]);
   const [canEdit, setCanEdit] = useState(false);
@@ -280,6 +281,19 @@ export default function PayrollEmployeePage() {
   // salary from May is eight identical entries, and a second category beside it
   // makes sixteen — at which point the list stops being read.
   const adjustmentGroups = useMemo(() => groupAdjustments(adjustments), [adjustments]);
+
+  /**
+   * The thirteen figures, each with where it came from, and the plain array
+   * the arithmetic and the printed statement still want.
+   *
+   * Index 0-11 are January to December and index 12 is the bonus, which is how
+   * the sheet has always held them.
+   */
+  const pcbView = useMemo(
+    () => Array.from({ length: 13 }, (_, i) =>
+      pcbForMonth(i + 1, paidPcb[i + 1], keyedPcb[i + 1], Number(emp?.fixed_pcb ?? 0))),
+    [paidPcb, keyedPcb, emp?.fixed_pcb]);
+  const pcb = useMemo(() => pcbView.map(v => v.amount), [pcbView]);
   const [showYearlySheet, setShowYearlySheet] = useState(false);
   const [tab, setTab] = useState<"overview" | "salary" | "sheet" | "payslips" | "loans" | "documents">("overview");
 
@@ -295,6 +309,42 @@ export default function PayrollEmployeePage() {
     setCustomItemsByMonth(byMonth);
     setCustomItems(allItems);
   }, [supabase, id, year]);
+
+  /**
+   * The two PCB sources for this employee and year.
+   *
+   * Lines are fetched through their runs rather than on their own, so that a
+   * draft run — which can carry lines of its own while it is being worked on
+   * — never settles a month that has not actually been paid.
+   */
+  const refreshPcb = useCallback(async () => {
+    const [{ data: keyed }, { data: runRows }] = await Promise.all([
+      supabase.from("payroll_sheet_pcb")
+        .select("month, amount").eq("employee_id", id).eq("year", year),
+      supabase.from("payroll_runs").select("id, month, status").eq("year", year),
+    ]);
+    const byMonth: Record<number, number> = {};
+    for (const r of (keyed as { month: number; amount: number }[]) ?? []) {
+      byMonth[r.month] = Number(r.amount);
+    }
+    setKeyedPcb(byMonth);
+
+    const finalised = ((runRows as { id: string; month: number; status: string }[]) ?? [])
+      .filter(r => r.status !== "DRAFT");
+    if (finalised.length === 0) { setPaidPcb({}); return; }
+    const monthOf = new Map(finalised.map(r => [r.id, r.month]));
+    const { data: lines } = await supabase.from("payroll_lines")
+      .select("run_id, pcb").eq("employee_id", id)
+      .in("run_id", finalised.map(r => r.id));
+    const paid: Record<number, number> = {};
+    for (const l of (lines as { run_id: string; pcb: number }[]) ?? []) {
+      const m = monthOf.get(l.run_id);
+      if (m !== undefined) paid[m] = Number(l.pcb);
+    }
+    setPaidPcb(paid);
+  }, [supabase, id, year]);
+
+  useEffect(() => { refreshPcb(); }, [refreshPcb]);
 
   /**
    * Days of unpaid leave, by month. Days rather than amounts, so the deduction
@@ -1512,8 +1562,12 @@ export default function PayrollEmployeePage() {
                           screen would stop matching the one that was typed. */}
                       <td className={`border border-stone-200 px-0.5 py-0.5 text-right${adjCell(monthNum, "PCB").className}`}
                           title={adjCell(monthNum, "PCB").title}>
-                        <input type="number" value={pcb[i] || ""} onChange={e => setPcb(p => { const n = [...p]; n[i] = parseFloat(e.target.value) || 0; return n; })}
-                          className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
+                        <PcbCell
+                          employeeId={id} employeeName={emp.full_name} year={year} month={monthNum}
+                          value={pcbView[i]} canEdit={canEditFigures}
+                          onSaved={() => { setFigureError(""); refreshPcb(); if (showLog) loadLog(); }}
+                          onError={setFigureError}
+                        />
                         {adjAmt(monthNum, "PCB") !== 0 && (
                           <div className="pr-1 text-[8px] font-semibold text-amber-800">
                             {adjAmt(monthNum, "PCB") > 0 ? "+" : "−"}{num(Math.abs(adjAmt(monthNum, "PCB")))} → {num(l.pcb)}
@@ -1666,8 +1720,12 @@ export default function PayrollEmployeePage() {
                       />
                       <td className={`border border-stone-200 px-0.5 py-0.5 text-right${adjCell(13, "PCB").className}`}
                           title={adjCell(13, "PCB").title}>
-                        <input type="number" value={pcb[12] || ""} onChange={e => setPcb(p => { const n = [...p]; n[12] = parseFloat(e.target.value) || 0; return n; })}
-                          className="w-16 text-right font-mono px-1 py-0.5 rounded border border-transparent hover:border-stone-200 focus:border-[#2f5b9c] outline-none bg-transparent" placeholder="0.00" />
+                        <PcbCell
+                          employeeId={id} employeeName={emp.full_name} year={year} month={13}
+                          value={pcbView[12]} canEdit={canEditFigures}
+                          onSaved={() => { setFigureError(""); refreshPcb(); if (showLog) loadLog(); }}
+                          onError={setFigureError}
+                        />
                         {adjAmt(13, "PCB") !== 0 && (
                           <div className="pr-1 text-[8px] font-semibold text-amber-800">
                             {adjAmt(13, "PCB") > 0 ? "+" : "−"}{num(Math.abs(adjAmt(13, "PCB")))} → {num(thirteenth.pcb)}

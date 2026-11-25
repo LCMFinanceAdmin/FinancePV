@@ -743,6 +743,20 @@ export interface PayrollEmployeeCustomItem {
   created_at: string;
 }
 
+/** A PCB figure keyed on the yearly sheet for a month not yet run — see 283. */
+export interface PayrollSheetPcb {
+  id: string;
+  employee_id: string;
+  year: number;
+  /** 1-13, 13 being the bonus. */
+  month: number;
+  amount: number;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
 export interface PayrollLine {
   id: string;
   run_id: string;

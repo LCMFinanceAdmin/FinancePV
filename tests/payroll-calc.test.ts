@@ -1419,3 +1419,90 @@ test("the bonus adds a December item once, whatever its last month says", async 
   const bonus = line({ gross: 3930, is13thMonth: true, customItems: forBonus });
   assert.equal(bonus.gross, 4800);
 });
+
+// ── Which PCB a month on the sheet shows ─────────────────────────────
+//
+// Three figures can claim a month and the order between them is the point.
+// Until migration 283 none of them was loaded: the boxes were page state
+// seeded from the standing figure, so a PCB typed on the sheet lasted until
+// the page was refreshed — and the sheet is printed as the Employee Salary
+// Statement, so two people could print the same employee and get different
+// annual totals.
+
+test("a month that has been run shows what was withheld, and is settled", async () => {
+  const { pcbForMonth } = await import("@/lib/payroll/pcb");
+  // Keyed 912, but the run withheld 850. The run is not a view about the
+  // month, it is the month — and the statement must not contradict the
+  // payslip issued for it.
+  const p = pcbForMonth(6, 850, 912, 384);
+  assert.equal(p.amount, 850);
+  assert.equal(p.source, "run");
+  assert.equal(p.locked, true);
+});
+
+test("a run that withheld nothing still settles the month", async () => {
+  // Zero from a run is a figure, not an absence. Read as absent it would hand
+  // a paid month back to the standing 384 and overstate the year.
+  const { pcbForMonth } = await import("@/lib/payroll/pcb");
+  const p = pcbForMonth(6, 0, 912, 384);
+  assert.equal(p.amount, 0);
+  assert.equal(p.source, "run");
+  assert.equal(p.locked, true);
+});
+
+test("a keyed figure stands for a month not yet run", async () => {
+  const { pcbForMonth } = await import("@/lib/payroll/pcb");
+  const p = pcbForMonth(6, null, 912, 384);
+  assert.equal(p.amount, 912);
+  assert.equal(p.source, "keyed");
+  assert.equal(p.locked, false);
+});
+
+test("keyed nothing is a decision; keyed nothing at all is not", async () => {
+  const { pcbForMonth } = await import("@/lib/payroll/pcb");
+  // "No PCB this month" — kept, and it overrides the standing figure.
+  assert.equal(pcbForMonth(6, null, 0, 384).amount, 0);
+  assert.equal(pcbForMonth(6, null, 0, 384).source, "keyed");
+  // Nobody has said — the standing monthly figure fills in.
+  assert.equal(pcbForMonth(6, null, null, 384).amount, 384);
+  assert.equal(pcbForMonth(6, null, null, 384).source, "standing");
+});
+
+test("the 13th month is never seeded from the monthly figure", async () => {
+  // A bonus is taxed on its own footing and is not the monthly deduction
+  // repeated. The old sheet left it blank on purpose and this keeps that.
+  const { pcbForMonth } = await import("@/lib/payroll/pcb");
+  const p = pcbForMonth(13, null, null, 384);
+  assert.equal(p.amount, 0);
+  assert.equal(p.source, "none");
+  // It takes a keyed figure, and a run still settles it.
+  assert.equal(pcbForMonth(13, null, 912, 384).amount, 912);
+  assert.equal(pcbForMonth(13, 900, 912, 384).amount, 900);
+});
+
+test("every figure says where it came from", async () => {
+  // The cell's tooltip is the only place somebody learns whether the number
+  // in front of them was withheld, expected, or merely assumed.
+  const { pcbForMonth } = await import("@/lib/payroll/pcb");
+  for (const p of [
+    pcbForMonth(6, 850, null, 384),
+    pcbForMonth(6, null, 912, 384),
+    pcbForMonth(6, null, null, 384),
+    pcbForMonth(13, null, null, 384),
+  ]) {
+    assert.ok(p.reason.length > 20, `thin reason: ${p.reason}`);
+  }
+});
+
+test("the thirteen figures the statement is drawn from", async () => {
+  const { pcbArrayFor } = await import("@/lib/payroll/pcb");
+  // January and February run, the 13th month keyed, the rest standing.
+  const arr = pcbArrayFor({ 1: 384, 2: 400 }, { 13: 912 }, 384);
+  assert.equal(arr.length, 13);
+  assert.equal(arr[0], 384);
+  assert.equal(arr[1], 400);
+  assert.equal(arr[5], 384, "a month nobody has touched");
+  assert.equal(arr[12], 912, "index 12 is the bonus");
+  // The annual total the statement prints.
+  assert.equal(arr.reduce((t, n) => t + n, 0), 384 * 11 + 400 + 912);
+});

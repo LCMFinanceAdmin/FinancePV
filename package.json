@@ -15,6 +15,7 @@
     "worksheet:increments": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/increment-worksheet.ts",
     "preview:statement": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/helpers/register-tsx.mjs scripts/preview-statement.ts",
     "preview:payslip": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/helpers/register-tsx.mjs scripts/preview-payslip.ts",
+    "preview:pcb": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/helpers/register-tsx.mjs scripts/preview-pcb.ts",
     "preview:row": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/helpers/register-tsx.mjs scripts/preview-row.ts"
   },
   "dependencies": {
