@@ -11,7 +11,7 @@
 
 import type { ReactNode } from "react";
 import type { UserProfile } from "@/lib/types";
-import { isStaffMember } from "@/lib/types";
+import { isStaffMember, administersLeave } from "@/lib/types";
 import {
   LayoutDashboard, FilePlus, FileText, LayoutGrid, RefreshCw, Users, Building2,
   Settings, Activity, ClipboardCheck, PiggyBank, FlaskConical, ShoppingCart, Gavel,
@@ -428,7 +428,10 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/my-leaves", label: "My Leave", desc: "Apply for leave and see your balance",
-        icon: <CalendarDays size={size} />, show: (u) => isStaffMember(u),
+        // Not isStaffMember: LCM administers the leave of two people it does
+        // not employ, and the page has let them in since migration 241 while
+        // this line went on hiding it from them. See administersLeave.
+        icon: <CalendarDays size={size} />, show: (u) => administersLeave(u),
       },
       {
         href: "/my-loans", label: "My Loan (EPL)", desc: "Apply for and track a staff loan",

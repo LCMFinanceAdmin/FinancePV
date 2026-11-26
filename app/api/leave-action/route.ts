@@ -159,11 +159,12 @@ export async function POST(req: NextRequest) {
         : {}),
     };
 
-    // Everyone named on the chain has to sign — a pastor's leave needs both the
-    // head pastor (or Dean) and the church council President, so one approval
-    // leaves the application pending rather than granting it. A senior acting
-    // on a leave they aren't named on keeps the old override behaviour and
-    // settles it outright.
+    // Everyone named on the chain has to sign, so one approval leaves the
+    // application pending rather than granting it — a pastor's goes to the
+    // Pastor in Charge and then the Dean. The church council Chairman/Rep is
+    // no longer among them: they are told, not asked, and nothing waits on
+    // them. A senior acting on a leave they aren't named on keeps the old
+    // override behaviour and settles it outright.
     let updatedApprovals: ApprovalEntry[];
     let newStatus: string;
     if (action === "CANCELLED") {

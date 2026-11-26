@@ -8,11 +8,17 @@
 // Order of precedence:
 //   1. An explicit assignment in leave_approver_assignments always wins. That
 //      is the escape hatch for anyone the rules don't describe.
-//   2. A pastor's leave is settled by any ONE of the Bishop, their district
-//      Dean, or the Pastor in Charge of their congregation — the General
-//      Manager's rule of September 2026. A Dean's own leave is the same, minus
-//      their own district.
-//   3. Everyone else goes to the Bishop, plus the GM when they report to both.
+//   2. A pastor's leave climbs one rung at a time: the Pastor in Charge of
+//      their congregation, then their district Dean. A Pastor in Charge goes
+//      to the Dean, then the Bishop. A Dean goes to the Bishop alone. A rung
+//      nobody fills is skipped rather than blocking, and one person never
+//      holds two rungs of the same chain.
+//   3. Everyone else goes to the General Manager, then the Bishop.
+//
+// Note 2 replaced the September 2026 rule, under which any ONE of the Bishop,
+// the Dean or the Pastor in Charge could settle it alone. This header said
+// otherwise for some weeks after the body stopped doing it, which is the sort
+// of thing somebody repeats to a room of pastors.
 //
 // The congregation is told, not asked. The Council Chairman/Rep used to be a
 // required signature, reached through a one-time emailed link because they hold
@@ -20,16 +26,14 @@
 // waiting on somebody who had never asked to be in a finance system. They are
 // on `inform` now: nothing to click, nothing recorded against their name.
 //
-// Outside the pastoral slot everyone on the chain must still approve; nobody is
-// a rubber stamp and order of signing doesn't matter (see `lib/leave-decision.ts`).
+// Everyone on a chain must approve, and the order is now enforced: a signature
+// given before the step above it has signed answers a question nobody has put
+// (see `lib/leave-decision.ts`).
 //
 // Self-approval is skipped at every step, so a Dean never signs their own
 // leave — they go straight to the Bishop.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-
-/** The one slot a pastor's approvers share — see `group` in leave-decision. */
-export const PASTORAL_SLOT = "pastoral";
 
 export interface LeaveApprover {
   email: string;

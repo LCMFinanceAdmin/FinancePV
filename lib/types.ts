@@ -112,6 +112,15 @@ export interface UserProfile {
   displayName?: string;
   hasRoleRow?: boolean;
   isLcmStaff?: boolean;  // employed by LCM — gates leave, staff loans, payroll
+  /**
+   * LCM administers this person's leave although it does not employ them.
+   *
+   * A Trustees employee at HQ — see migration 241. It grants leave and nothing
+   * else: no claim entitlement, no staff loan, no salary. Kept separate from
+   * isLcmStaff for that reason, and because isLcmStaff is derived from payroll
+   * on every write and would not hold a hand-set value anyway.
+   */
+  leaveUnderLcm?: boolean;
   isPastor?: boolean;
   isDean?: boolean;      // derived: leads a district
   /**
@@ -143,6 +152,25 @@ export interface UserProfile {
  */
 export function isStaffMember(u: Pick<UserProfile, "isLcmStaff">): boolean {
   return u.isLcmStaff !== false;
+}
+
+/**
+ * May this person file leave through LCM?
+ *
+ * Employment is the usual answer, and for a Trustees employee at HQ it is not
+ * the only one: migration 241 separated "does LCM employ you" from "does LCM
+ * administer your leave" precisely so those two could file. StaffOnly has
+ * honoured that since, and the sidebar did not — so Sean Cham and Eddie Kwan
+ * were admitted by the page and never shown the way to it, which left the
+ * migration doing nothing for the two men it was written for.
+ *
+ * Only leave. Salary and the staff loan stay on isStaffMember, because neither
+ * is LCM's to give somebody it does not employ.
+ */
+export function administersLeave(
+  u: Pick<UserProfile, "isLcmStaff" | "leaveUnderLcm">,
+): boolean {
+  return isStaffMember(u) || u.leaveUnderLcm === true;
 }
 
 export interface PV {

@@ -120,6 +120,9 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     // above is the wrong way round for them and a row predating the trigger
     // would otherwise be offered leave, salary and loans.
     isLcmStaff: role === "GUEST" ? false : (profile?.is_lcm_staff ?? true),
+    // Not defaulted to true the way isLcmStaff is: this one is only ever
+    // set by hand, and absent means absent.
+    leaveUnderLcm: profile?.leave_under_lcm === true,
     isPastor: profile?.is_pastor ?? false,
     isDean: !!deanOf,
     congregation: (congregation as { name?: string } | null)?.name ?? undefined,

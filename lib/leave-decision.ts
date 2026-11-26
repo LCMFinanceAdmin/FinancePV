@@ -3,8 +3,13 @@
 // A chain is a list of slots, and the leave is granted when every slot is
 // settled. Most slots hold one person and need that person's signature. A slot
 // can also hold several, marked with the same `group`, and any one of them
-// settles it — which is how the General Manager's September 2026 rule for
-// pastors works: Bishop, Dean or Pastor in Charge, whichever of them gets to it.
+// settles it.
+//
+// Nothing builds a grouped slot today: the September 2026 rule that needed one
+// — Bishop, Dean or Pastor in Charge, whichever got to it — was replaced by a
+// chain that climbs one rung at a time. The machinery stays because
+// applications filed under that rule still carry grouped chains and must go on
+// settling the way they were filed.
 //
 // Rejection by anybody ends the application either way.
 //

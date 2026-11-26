@@ -212,3 +212,21 @@ test("an EXCO member's queue outranks their own claim form", () => {
   const ids = visibleGroups(VOLUNTEER, true).map(g => g.id);
   assert.ok(ids.indexOf("approvals") < ids.indexOf("claims"));
 });
+
+test("LCM administers the leave of two people it does not employ, and says so", () => {
+  // Migration 241 let a Trustees employee at HQ file leave, and StaffOnly has
+  // honoured it since. The sidebar asked isStaffMember instead, so the page
+  // admitted them and nothing ever showed them the way in — the migration did
+  // nothing at all for the two men it was written for.
+  const trusteesStaff = who({ role: "STAFF" as never, isLcmStaff: false, leaveUnderLcm: true });
+  assert.ok(nested(trusteesStaff).includes("/my-leaves"),
+    "somebody whose leave LCM administers is offered My Leave");
+
+  // And it grants leave only. Salary and the staff loan are LCM's to give the
+  // people LCM employs.
+  assert.ok(!nested(trusteesStaff).includes("/my-salary"));
+  assert.ok(!nested(trusteesStaff).includes("/my-loans"));
+
+  // Nobody else gains it.
+  assert.ok(!nested(who({ role: "STAFF" as never, isLcmStaff: false })).includes("/my-leaves"));
+});
