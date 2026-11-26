@@ -8,12 +8,16 @@
 // Order of precedence:
 //   1. An explicit assignment in leave_approver_assignments always wins. That
 //      is the escape hatch for anyone the rules don't describe.
-//   2. A pastor's leave climbs one rung at a time: the Pastor in Charge of
+//   2. A pastor who serves a congregation has their leave climb one rung at
+//      a time: the Pastor in Charge of
 //      their congregation, then their district Dean. A Pastor in Charge goes
 //      to the Dean, then the Bishop. A Dean goes to the Bishop alone. A rung
 //      nobody fills is skipped rather than blocking, and one person never
 //      holds two rungs of the same chain.
-//   3. Everyone else goes to the General Manager, then the Bishop.
+//   3. Everyone else goes to the General Manager, then the Bishop — including
+//      an ordained pastor posted to the office or retired onto a contract
+//      there, who is office staff for this purpose however they are addressed.
+//      The directory decides that, not the is_pastor flag: see migration 287.
 //
 // Note 2 replaced the September 2026 rule, under which any ONE of the Bishop,
 // the Dean or the Pastor in Charge could settle it alone. This header said
@@ -115,6 +119,14 @@ export interface LeaveRouting {
    * Bishop, whose empty chain is the rule rather than a fault.
    */
   gap: RoutingGap;
+  /**
+   * Whether the congregational chain was used.
+   *
+   * Not the same as "is a pastor": a retired pastor on contract at HQ is
+   * ordained and is office staff, and the form should not be asking him to
+   * tell a congregation he does not serve.
+   */
+  pastoral: boolean;
 }
 
 export async function resolveLeaveApprovers(
@@ -155,6 +167,7 @@ export async function leaveRouting(
       inform,
       // An explicit assignment is somebody's decision, whatever it says.
       gap: null,
+      pastoral: false,
     };
   }
 
@@ -184,7 +197,7 @@ export async function leaveRouting(
   // routed to a congregation he does not serve.
   const applicantIsBishop = (bishops.data ?? []).some(b => eq(b.email, applicantEmail));
   if (applicantIsBishop) {
-    return { approvers: [], notifyOnly: true, informEveryone: true, inform, gap: null };
+    return { approvers: [], notifyOnly: true, informEveryone: true, inform, gap: null, pastoral: false };
   }
 
   // Dean is derived from the district record rather than a flag on the person,
@@ -209,7 +222,20 @@ export async function leaveRouting(
   // The congregation is told and is not asked. They have nothing to click and
   // nothing recorded against their name — acknowledging is something they do
   // among themselves, which is the General Manager's point.
-  if (me?.is_pastor || isDean) {
+  // Does this person serve a congregation, or the office?
+  //
+  // user_roles.is_pastor answers "is ordained", which is not the question the
+  // chain turns on. The directory answers the right one — posting, and whether
+  // they have retired — and migration 287 exposes it as one boolean through a
+  // definer, because `people` is not readable by the person being routed.
+  //
+  // NULL means the directory does not say, and then is_pastor stands as it
+  // always has. So this can only move somebody off the congregational chain,
+  // and only when the directory positively says they are at HQ or retired.
+  const { data: servesCongregation } = await supabase
+    .rpc("serves_a_congregation", { p_email: applicantEmail });
+
+  if ((me?.is_pastor && servesCongregation !== false) || isDean) {
     let congregationName = "";
     let districtId: string | null = null;
     let headPastorEmail: string | null = null;
@@ -329,6 +355,7 @@ export async function leaveRouting(
       notifyOnly: false,
       informEveryone: false,
       inform,
+      pastoral: true,
       gap: !fellBack ? null
         : bishopChain.length === 0 ? "NO_APPROVER"
         : !me?.congregation_id ? "NO_CONGREGATION"
@@ -369,7 +396,7 @@ export async function leaveRouting(
   const staffChain = [...chain, ...bishopChain.map(b => ({ ...b, step: bishopStep }))];
   return {
     approvers: staffChain,
-    notifyOnly: false, informEveryone: false, inform,
+    notifyOnly: false, informEveryone: false, inform, pastoral: false,
     // No Bishop and no General Manager on record at all. It has never happened
     // and it would strand every application, so it is worth naming.
     gap: staffChain.length === 0 ? "NO_APPROVER" : null,

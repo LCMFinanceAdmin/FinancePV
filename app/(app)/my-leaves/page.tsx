@@ -78,7 +78,6 @@ function MyLeavesInner() {
   const [userName,         setUserName]         = useState("");
   const [userDesignation,  setUserDesignation]  = useState("");
   /** Only a pastor is asked to notify a congregation. */
-  const [isPastor, setIsPastor] = useState(false);
   const [toast,            setToast]            = useState({ msg: "", ok: true });
   const year = new Date().getFullYear();
 
@@ -122,7 +121,7 @@ function MyLeavesInner() {
         .order("applied_at", { ascending: false }),
       supabase.from("replacement_days_earned").select("*").eq("employee_email", email)
         .gte("work_date", `${year}-01-01`).lte("work_date", `${year}-12-31`),
-      supabase.from("user_roles").select("full_name,designation,is_pastor,role").eq("email", email).single(),
+      supabase.from("user_roles").select("full_name,designation,role").eq("email", email).single(),
       supabase.rpc("my_leave_entitlements"),
     ]);
     await loadRoles(supabase);
@@ -183,7 +182,6 @@ function MyLeavesInner() {
     // for a job title the role does not describe — "LCM Office Staff" against a
     // STAFF role.
     setUserDesignation(profile?.designation?.trim() || roleLabel(profile?.role));
-    setIsPastor(profile?.is_pastor === true);
     setLoading(false);
   }
 
@@ -579,12 +577,22 @@ function MyLeavesInner() {
   const [chainPreview, setChainPreview] = useState("");
   /** Set when the chain is not the one the rules describe — see RoutingGap. */
   const [chainGap, setChainGap] = useState<RoutingGap>(null);
+  /**
+   * Whether the congregational chain was used — not whether they are ordained.
+   *
+   * A retired pastor on contract at the office is both a pastor and office
+   * staff, and asking him to tell a congregation he does not serve reads as
+   * the app not knowing who he is. Null until the routing has answered, so the
+   * question is not asked and then withdrawn.
+   */
+  const [pastoralChain, setPastoralChain] = useState<boolean | null>(null);
   useEffect(() => {
     if (!showApply || !userEmail) return;
     let cancelled = false;
     leaveRouting(supabase, userEmail).then(r => {
       if (cancelled) return;
       setChainGap(r.gap);
+      setPastoralChain(r.pastoral);
       // An empty list means two opposite things. Saying the wrong one tells
       // the Bishop his leave is stuck, or tells somebody whose routing is
       // broken that all is well.
@@ -919,7 +927,7 @@ function MyLeavesInner() {
 
                   Never required. A pastor who telephoned the chairman has done
                   what the church asks; the note is for saying so. */}
-              {isPastor && (
+              {pastoralChain === true && (
                 <div className="mt-3 rounded-xl border border-[#dbe9fb] bg-[#f7fbff] p-3">
                   <p className="flex items-center gap-1.5 text-[13px] font-semibold text-stone-700">
                     <Upload size={13} className="text-[#4a6da7]" /> Did you tell your congregation?

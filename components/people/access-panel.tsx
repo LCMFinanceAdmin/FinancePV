@@ -420,6 +420,11 @@ export function AccessPanel({
                 district. The council chairman is told, not asked. Leave this blank and there is
                 nobody above them to sign, so it falls back to the Bishop alone.
               </p>
+              <p className="mt-1 text-[11px] text-stone-500">
+                A pastor the directory records as posted to HQ, or retired, takes the office
+                chain to the General Manager instead &mdash; ordination is not what decides it,
+                and nothing here needs changing for them.
+              </p>
             </div>
           )}
 

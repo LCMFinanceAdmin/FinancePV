@@ -23,13 +23,23 @@ function directory(tables: Record<string, Row[]>) {
     };
     return q;
   };
-  // The rules only ever call .from(); the cast keeps the test honest about that.
-  return { from } as unknown as Parameters<typeof leaveRouting>[0];
+  // serves_a_congregation (migration 287): the directory's answer to "office
+  // or congregation", as one boolean. A table in the fixture stands in for it,
+  // with no row meaning the directory does not say — which is the case the
+  // rules must fall back from rather than reclassify somebody on.
+  const rpc = async (name: string, args: Record<string, unknown>) => {
+    if (name !== "serves_a_congregation") return { data: null };
+    const row = (tables.postings ?? []).find(r =>
+      norm(r.email) === norm(args.p_email));
+    return { data: row ? (row.serves as boolean) : null };
+  };
+  // The cast keeps the test honest about what the rules are allowed to call.
+  return { from, rpc } as unknown as Parameters<typeof leaveRouting>[0];
 }
 
 const BISHOP = { email: "bishop@lcm", full_name: "Bishop Thomas", role: "BISHOP" };
 const GM = { email: "gm@lcm", full_name: "Jeffrey Koit", role: "GENERAL_MANAGER" };
-const EMPTY = { leave_approver_assignments: [], districts: [], congregations: [] };
+const EMPTY = { leave_approver_assignments: [], districts: [], congregations: [], postings: [] };
 
 /** "1:Name  2:Name", or what happened instead of a chain. */
 async function chain(tables: Record<string, Row[]>, email: string) {
@@ -253,4 +263,81 @@ test("every gap says something, and no gap says nothing", () => {
     assert.ok(gapReason(g).length > 20, g);
   }
   assert.equal(gapReason(null), "");
+});
+
+// ── Ordained is not the same question as serving ──────────────────────────
+
+test("a retired pastor on contract at the office is office staff", async () => {
+  // Chan Mun Kwan: ordained, retired, working at HQ under the Education Desk.
+  // The directory has said so since his record was made; the routing used to
+  // read user_roles.is_pastor, which only says "is ordained", and sent him
+  // looking for a Pastor in Charge and a Dean he does not have.
+  const tables = {
+    user_roles: [BISHOP, GM,
+      { email: "chan@lcm", full_name: "Chan", role: "STAFF",
+        is_pastor: true, reports_to: "GM_AND_BISHOP" }],
+    postings: [{ email: "chan@lcm", serves: false }],
+  };
+  assert.equal(await chain(tables, "chan@lcm"), "1:Jeffrey Koit  2:Bishop Thomas");
+  // And so there is nothing wrong with his record to report.
+  assert.equal(await gapOf(tables, "chan@lcm"), null);
+});
+
+test("a pastor serving a congregation is unaffected", async () => {
+  const tables = {
+    user_roles: [BISHOP,
+      { email: "p@lcm", full_name: "Chan", role: "STAFF", is_pastor: true, congregation_id: "c1" },
+      { email: "head@lcm", full_name: "Reena", role: "STAFF" },
+      { email: "dean@lcm", full_name: "Phillip", role: "STAFF" }],
+    congregations: [{ id: "c1", name: "Rawang", district_id: "d1", head_pastor_email: "head@lcm" }],
+    districts: [{ id: "d1", name: "Central 3", dean_email: "dean@lcm" }],
+    postings: [{ email: "p@lcm", serves: true }],
+  };
+  assert.equal(await chain(tables, "p@lcm"), "1:Reena  2:Phillip");
+});
+
+test("a directory that says nothing leaves the old behaviour alone", async () => {
+  // Six of the eleven pastor accounts have no posting recorded. If an absent
+  // answer read as "office", every one of them would move onto the General
+  // Manager's chain the moment this shipped — so absent means absent.
+  const tables = {
+    user_roles: [BISHOP, GM,
+      { email: "p@lcm", full_name: "Chan", role: "STAFF", is_pastor: true, congregation_id: "c1" },
+      { email: "head@lcm", full_name: "Reena", role: "STAFF" }],
+    congregations: [{ id: "c1", name: "Rawang", head_pastor_email: "head@lcm" }],
+    postings: [],
+  };
+  assert.equal(await chain(tables, "p@lcm"), "1:Reena");
+});
+
+test("a Dean posted to the office is still a Dean", async () => {
+  // Deanship comes from the district record and outranks a posting: he leads
+  // the district wherever he sits, and his own leave goes to the Bishop.
+  const tables = {
+    user_roles: [BISHOP, GM,
+      { email: "dean@lcm", full_name: "Phillip", role: "STAFF", is_pastor: true }],
+    districts: [{ id: "d1", name: "Central 2", dean_email: "dean@lcm" }],
+    postings: [{ email: "dean@lcm", serves: false }],
+  };
+  assert.equal(await chain(tables, "dean@lcm"), "1:Bishop Thomas");
+  assert.equal(await gapOf(tables, "dean@lcm"), null);
+});
+
+test("the form knows whether it is a congregational chain", async () => {
+  // my-leaves asks the congregation acknowledgement of a pastor. A retired
+  // pastor at the office has no congregation to tell, and being asked reads
+  // as the app not knowing who he is.
+  const office = await leaveRouting(directory({ ...EMPTY,
+    user_roles: [BISHOP, GM, { email: "chan@lcm", full_name: "Chan", role: "STAFF",
+                               is_pastor: true, reports_to: "GM_AND_BISHOP" }],
+    postings: [{ email: "chan@lcm", serves: false }] }), "chan@lcm");
+  assert.equal(office.pastoral, false);
+
+  const serving = await leaveRouting(directory({ ...EMPTY,
+    user_roles: [BISHOP, { email: "p@lcm", full_name: "P", role: "STAFF",
+                           is_pastor: true, congregation_id: "c1" },
+                 { email: "head@lcm", full_name: "Reena", role: "STAFF" }],
+    congregations: [{ id: "c1", name: "Rawang", head_pastor_email: "head@lcm" }],
+    postings: [{ email: "p@lcm", serves: true }] }), "p@lcm");
+  assert.equal(serving.pastoral, true);
 });
