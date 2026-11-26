@@ -2,6 +2,8 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { type RoutingGap } from "@/lib/leave-approvers";
+import { RoutingGapNotice } from "@/components/leave/routing-gap-notice";
 import { formatDate } from "@/lib/utils";
 import { describeSlots } from "@/lib/approver-label";
 import { partitionQueue, slotIsMine } from "@/lib/leave-queue";
@@ -23,6 +25,8 @@ interface LeaveApp {
   congregation_ack_name?: string | null;
   congregation_ack_note?: string | null;
   balance_annual_before?: number | null; balance_medical_before?: number | null;
+  /** Why this chain is not the one the rules describe — migration 286. */
+  routing_gap?: RoutingGap | null;
   required_approvers: { email: string; name: string; position?: string; external?: boolean; group?: string; step?: number }[];
   approvals: { email: string; name: string; position?: string; action: string; timestamp: string; remarks?: string; for_email?: string; signature_data?: string }[];
 }
@@ -278,6 +282,7 @@ function LeaveQueueInner() {
                   left blank — "nothing recorded" is a fact worth reading before
                   signing, and a blank space says nothing at all. */}
               <CongregationNotice leave={approveTarget} />
+              <RoutingGapNotice gap={approveTarget.routing_gap} className="mt-2" />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-stone-500">
@@ -376,6 +381,11 @@ function LeaveQueueInner() {
                     <span className="text-stone-500">{formatDate(app.applied_at)}</span>
                   </div>
                 </div>
+
+                {/* Said before the signature, not after it. An approver is the
+                    last person who looks, and the one most likely to know
+                    which Dean is missing. */}
+                <RoutingGapNotice gap={app.routing_gap} className="mt-2" />
 
                 {/* Approving doesn't grant the leave on its own when another
                     slot is still open — say so before they click. The people

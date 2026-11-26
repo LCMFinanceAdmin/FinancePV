@@ -15,6 +15,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { type RoutingGap } from "@/lib/leave-approvers";
+import { RoutingGapNotice } from "@/components/leave/routing-gap-notice";
 import { formatDate, formatDays } from "@/lib/utils";
 import { remainingApprovers, slotsOf, type RequiredApprover, type ApprovalEntry } from "@/lib/leave-decision";
 import { describeSlots } from "@/lib/approver-label";
@@ -38,6 +40,8 @@ interface LeaveApp {
   reason: string | null;
   required_approvers: Approver[] | null;
   approvals: Approval[] | null;
+  /** Why this chain is not the one the rules describe — migration 286. */
+  routing_gap?: RoutingGap | null;
 }
 interface Person {
   email: string; full_name: string | null; role: string;
@@ -227,11 +231,13 @@ export default function LeaveOverviewPage() {
   /**
    * What this is waiting on — as slots, not names.
    *
-   * A pastor's chain holds the Bishop, the district Dean and the Pastor in
-   * Charge in one slot that any of them settles, so three names listed flat
-   * read as three missing signatures when there is one, and an application
-   * about to be granted looks like one that has stalled. Whoever is chasing
-   * these is the person who most needs to tell those apart.
+   * Applications filed under the September 2026 rule hold the Bishop, the
+   * Dean and the Pastor in Charge in one slot that any of them settles, and
+   * still settle that way. Listed flat, three names read as three missing
+   * signatures when there is one, so an application about to be granted looks
+   * like one that has stalled — and whoever is chasing these is the person who
+   * most needs to tell those apart. A chain filed since climbs one rung at a
+   * time and has a slot per rung, which this shape handles unchanged.
    */
   const stillToSign = useCallback((l: LeaveApp) =>
     slotsOf(remainingApprovers(
@@ -351,6 +357,11 @@ export default function LeaveOverviewPage() {
                             roleByEmail)}
                         </span></>}
                   </p>
+
+                  {/* Oversight is where this is most likely to be acted on:
+                      the people reading this page are the ones who can put a
+                      congregation against a name. */}
+                  <RoutingGapNotice gap={l.routing_gap} className="mt-1.5" />
                 </div>
               );
             })}

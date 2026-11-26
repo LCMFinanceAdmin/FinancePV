@@ -435,6 +435,10 @@ function MyLeavesInner() {
         ? { congregation_ack_at: new Date().toISOString() } : {}),
       applicant_signature: applicantSig,
       required_approvers: resolvedApprovers,
+      // Kept, not recomputed later: the chain is a record of what was decided
+      // at submission and so is the reason it looks the way it does. Null when
+      // there was nothing wrong with it.
+      routing_gap: routing.gap,
       // The Bishop's leave needs no approval, so it is not left sitting in a
       // queue nobody can clear — it is granted here and announced below.
       ...(routing.notifyOnly ? { status: "APPROVED" } : {}),
