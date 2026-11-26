@@ -65,6 +65,38 @@ const eq = (a?: string | null, b?: string | null) =>
  * `approvers`, and telling a person the wrong one of those two things is the
  * difference between "you are on leave" and "nobody can approve this".
  */
+/**
+ * Why a chain is not the chain the rules describe.
+ *
+ * A pastor whose record is incomplete is not refused leave — their
+ * application goes to the Bishop and is dealt with, which is the right
+ * behaviour and the reason nobody noticed. It is also silent: the applicant
+ * reads "the Bishop" and has no way to know the Pastor in Charge and the Dean
+ * were skipped, and whoever set the account up is never told at all.
+ *
+ * With 52 congregations and a dozen pastor accounts, most of these records are
+ * still to be created. A gap that reports itself is the difference between one
+ * record to fix and forty.
+ */
+export type RoutingGap = "NO_CONGREGATION" | "NOBODY_ABOVE" | "NO_APPROVER" | null;
+
+/** The gap in words, for whoever is looking at it. */
+export function gapReason(gap: RoutingGap): string {
+  switch (gap) {
+    case "NO_CONGREGATION":
+      return "No congregation is recorded against this account, so there is no "
+           + "Pastor in Charge and no Dean to route to. It falls back to the Bishop alone.";
+    case "NOBODY_ABOVE":
+      return "This congregation has no Pastor in Charge and no Dean recorded, so "
+           + "there is nobody above them to sign. It falls back to the Bishop alone.";
+    case "NO_APPROVER":
+      return "Nobody could be worked out to approve this at all. The application "
+           + "would have nowhere to go.";
+    default:
+      return "";
+  }
+}
+
 export interface LeaveRouting {
   approvers: LeaveApprover[];
   notifyOnly: boolean;
@@ -77,6 +109,12 @@ export interface LeaveRouting {
    * appear on the chain, and nothing waits on them.
    */
   inform: { email: string; name: string; reason?: string }[];
+  /**
+   * Set when the chain below is not the one the rules describe — see
+   * RoutingGap. Null when the chain is what it should be, including for the
+   * Bishop, whose empty chain is the rule rather than a fault.
+   */
+  gap: RoutingGap;
 }
 
 export async function resolveLeaveApprovers(
@@ -115,6 +153,8 @@ export async function leaveRouting(
       notifyOnly: false,
       informEveryone: false,
       inform,
+      // An explicit assignment is somebody's decision, whatever it says.
+      gap: null,
     };
   }
 
@@ -144,7 +184,7 @@ export async function leaveRouting(
   // routed to a congregation he does not serve.
   const applicantIsBishop = (bishops.data ?? []).some(b => eq(b.email, applicantEmail));
   if (applicantIsBishop) {
-    return { approvers: [], notifyOnly: true, informEveryone: true, inform };
+    return { approvers: [], notifyOnly: true, informEveryone: true, inform, gap: null };
   }
 
   // Dean is derived from the district record rather than a flag on the person,
@@ -275,6 +315,11 @@ export async function leaveRouting(
     // applicant is both. Falling back to the Bishop keeps an application from
     // being left with nobody able to act; where the Bishop is the applicant,
     // the branch above has already granted it.
+    // Falling back is correct and should go on happening — leave must not wait
+    // on a directory entry. It should not happen quietly, which is the part
+    // that was missing: say which of the two reasons it was, so whoever reads
+    // it knows whether to add a congregation or a Dean.
+    const fellBack = anyOne.length === 0;
     return {
       // The fallback carries its step too. Unset reads as 1 and behaves the
       // same, but a stored chain with no steps is indistinguishable from one
@@ -284,6 +329,10 @@ export async function leaveRouting(
       notifyOnly: false,
       informEveryone: false,
       inform,
+      gap: !fellBack ? null
+        : bishopChain.length === 0 ? "NO_APPROVER"
+        : !me?.congregation_id ? "NO_CONGREGATION"
+        : "NOBODY_ABOVE",
     };
   }
 
@@ -317,8 +366,12 @@ export async function leaveRouting(
     }
   }
   const bishopStep = chain.length > 0 ? 2 : 1;
+  const staffChain = [...chain, ...bishopChain.map(b => ({ ...b, step: bishopStep }))];
   return {
-    approvers: [...chain, ...bishopChain.map(b => ({ ...b, step: bishopStep }))],
+    approvers: staffChain,
     notifyOnly: false, informEveryone: false, inform,
+    // No Bishop and no General Manager on record at all. It has never happened
+    // and it would strand every application, so it is worth naming.
+    gap: staffChain.length === 0 ? "NO_APPROVER" : null,
   };
 }

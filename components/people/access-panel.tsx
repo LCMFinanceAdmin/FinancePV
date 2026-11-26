@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { fieldClass, labelClass } from "@/lib/field-styles";
 import { ProfileSection, EmptyState } from "@/components/people/ui";
+import { RoutingPreview } from "@/components/leave/routing-preview";
 import { roleLabel } from "@/lib/utils";
 import { loadRoles, assignableRoles, type AppRole } from "@/lib/roles";
 import {
@@ -415,10 +416,22 @@ export function AccessPanel({
                 {congregations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               <p className="mt-1 text-[11px] text-stone-500">
-                Their leave goes to this church&rsquo;s head pastor, council chairman and Dean.
+                Their leave goes to this church&rsquo;s Pastor in Charge, then to the Dean of its
+                district. The council chairman is told, not asked. Leave this blank and there is
+                nobody above them to sign, so it falls back to the Bishop alone.
               </p>
             </div>
           )}
+
+          {/* What all of the above actually comes to.
+              A routing mistake is invisible otherwise: a pastor with no
+              congregation has a working chain and the wrong one, so nothing
+              about the account looks amiss until their leave has already gone
+              to the wrong person. Shown here because this is where the facts
+              it depends on are set. */}
+          <RoutingPreview
+            email={account.email}
+            watch={`${account.is_pastor}|${account.congregation_id ?? ""}|${account.role}|${account.reports_to ?? ""}`} />
 
           {account.role === "MINISTRY_HEAD" && (
             <div>

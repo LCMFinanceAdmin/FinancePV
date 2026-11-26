@@ -5,13 +5,13 @@ import { formatDate, formatDays as tidy } from "@/lib/utils";
 import { ApprovalChain } from "@/components/leave/approval-chain";
 import { roleLabel } from "@/lib/utils";
 import { loadRoles } from "@/lib/roles";
-import { leaveRouting } from "@/lib/leave-approvers";
+import { leaveRouting, gapReason, type RoutingGap } from "@/lib/leave-approvers";
 import { slotsOf, type RequiredApprover } from "@/lib/leave-decision";
 import { describeSlots } from "@/lib/approver-label";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { SignaturePad } from "@/components/ui/signature-pad";
 import { openLeaveForm } from "@/components/leave/leave-form-html";
-import { CalendarDays, Plus, CheckCircle2, XCircle, Clock, X, Upload, Check } from "lucide-react";
+import { CalendarDays, Plus, CheckCircle2, XCircle, Clock, X, Upload, Check, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 
@@ -573,11 +573,14 @@ function MyLeavesInner() {
 
   // Who this will go to, resolved live so the applicant knows before sending.
   const [chainPreview, setChainPreview] = useState("");
+  /** Set when the chain is not the one the rules describe — see RoutingGap. */
+  const [chainGap, setChainGap] = useState<RoutingGap>(null);
   useEffect(() => {
     if (!showApply || !userEmail) return;
     let cancelled = false;
     leaveRouting(supabase, userEmail).then(r => {
       if (cancelled) return;
+      setChainGap(r.gap);
       // An empty list means two opposite things. Saying the wrong one tells
       // the Bishop his leave is stuck, or tells somebody whose routing is
       // broken that all is well.
@@ -959,6 +962,23 @@ function MyLeavesInner() {
                 <p className="mt-0.5 text-[13px] text-stone-600">
                   {chainPreview || "Working out your approvers…"}
                 </p>
+
+                {/* A chain that fell back works, and is not the chain the
+                    rules describe. Nothing here stops the application — leave
+                    must not wait on a directory entry — but the applicant is
+                    the person best placed to notice that their own Dean is
+                    missing from it. */}
+                {chainGap && (
+                  <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
+                    <p className="text-[12px] leading-relaxed text-amber-800">
+                      {gapReason(chainGap)}{" "}
+                      <span className="font-semibold">
+                        You can still send it — but tell Finance, so your record is corrected.
+                      </span>
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* ── The declaration ─────────────────────────────────
